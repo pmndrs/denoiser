@@ -2,7 +2,7 @@
 // op (see ./unet.ts) behind the same seam as the ORT runtime, so the regular
 // Denoiser facade (tiling, HDR transfer, texture IO) drives it unchanged.
 //
-//   const denoiser = await Denoiser.create({ runtime: new KernelsRuntime({ tzaUrl }) });
+//   const denoiser = await Denoiser.create({ runtime: new KernelsRuntime() });
 //
 // Today's limits of kernels 0.0.1-preview.3 (docs/specs/runtimes.md):
 // - It creates its own GPUDevice. We hand it ours through deviceShim (demo-only
@@ -20,9 +20,12 @@ import { KernelsUNet } from './unet';
 import { parseTZA } from './tza';
 import { shareDeviceWithKernels } from './deviceShim';
 
+/** Upstream OIDN `.tza` weights (sha256-identical to RenderKit/oidn-weights), on jsDelivr. */
+export const DEFAULT_TZA_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas';
+
 export interface KernelsRuntimeOptions {
-  /** Base URL the OIDN `.tza` weight files are served from. */
-  tzaUrl: string;
+  /** Base URL the OIDN `.tza` weight files are served from (default: jsDelivr CDN, models-v3). */
+  tzaUrl?: string;
   /** Run on this device (default: one with the adapter's max limits + features). */
   device?: GPUDevice;
   /** Bind the engine straight to kernels-owned IO tensors (default true). */
@@ -37,7 +40,7 @@ let pageDevice: Promise<GPUDevice> | undefined;
 export class KernelsRuntime implements NetworkRuntime {
   readonly name = 'hf-kernels';
 
-  constructor(private opts: KernelsRuntimeOptions) {}
+  constructor(private opts: KernelsRuntimeOptions = {}) {}
 
   /** The page's kernels device (created on first load). */
   static get device(): Promise<GPUDevice> | undefined { return pageDevice; }
@@ -48,7 +51,7 @@ export class KernelsRuntime implements NetworkRuntime {
     if (this.opts.device && this.opts.device !== device) {
       throw new Error('KernelsRuntime: @huggingface/kernels is already bound to another GPUDevice on this page (it keeps one global runtime)');
     }
-    const res = await fetch(`${this.opts.tzaUrl}/${model.name}.tza`);
+    const res = await fetch(`${this.opts.tzaUrl ?? DEFAULT_TZA_URL}/${model.name}.tza`);
     if (!res.ok) throw new Error(`KernelsRuntime: failed to load ${model.name}.tza (${res.status})`);
     const weights = parseTZA(await res.arrayBuffer());
     // kernels creates its runtime on its first call — make that call land on our

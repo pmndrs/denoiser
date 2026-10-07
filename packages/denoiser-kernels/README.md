@@ -15,7 +15,7 @@ import { Denoiser } from 'denoiser';
 import { KernelsRuntime } from 'denoiser/kernels';
 
 const denoiser = await Denoiser.create({
-  runtime: new KernelsRuntime({ tzaUrl: '/tzas' }),
+  runtime: new KernelsRuntime(), // weights: jsDelivr models-v3 by default; or { tzaUrl: '/tzas' }
 });
 ```
 
