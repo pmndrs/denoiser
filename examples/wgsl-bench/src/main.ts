@@ -182,68 +182,110 @@ async function fp32Reference(img: Images) {
   return { color, aux, tex, tiled, tiledBatch };
 }
 
-async function facadeRun(name: string, img: Images): Promise<FacadeOut> {
+interface Live { name: string; rt: NetworkRuntime; dn: Denoiser; out: FacadeOut }
+
+/** Phase 1, per runtime: create + every output used for parity. The Denoiser stays alive for timing. */
+async function facadeOutputs(name: string, img: Images): Promise<Live> {
   const rt = makeRuntime(name);
-  let t = performance.now();
+  const t = performance.now();
   const dn = await Denoiser.create({ precision, runtime: rt });
   const createMs = performance.now() - t;
   const actual = (dn as unknown as { precision: string }).precision;
 
   const color = (await dn.denoise(img.noisy))!.data;
-  const warmMs = await timed(WARM, () => dn.denoise(img.noisy));
   const aux = (await dn.denoise(img.noisy, { albedo: img.albedo, normal: img.normal }))!.data;
   const auxModel = dn.modelName;
-  const warmAuxMs = await timed(WARM, () => dn.denoise(img.noisy, { albedo: img.albedo, normal: img.normal }));
-  await dn.denoise(img.hd);
-  const warmHdMs = await timed(WARM, () => dn.denoise(img.hd));
-
   const ct = toTexture(dn.device, img.noisy);
   const tex = await readTexture(dn.device, (await dn.denoiseTextures({ color: ct }))!);
   ct.destroy();
 
   // large topology: the only *_large model the facade selects is rt_hdr_calb_cnrm_large
   dn.quality = 'high';
-  const hc = toTexture(dn.device, img.noisy, 4);
-  const at = toTexture(dn.device, img.albedo);
-  const nt = toTexture(dn.device, img.normal, 2, -1);
-  const largeCall = () => dn.denoiseTextures({ color: hc, albedo: at, normal: nt, hdr: true, transfer: 'aces-srgb' });
-  const large = await readTexture(dn.device, (await largeCall())!);
+  const lt = largeTextures(dn.device, img);
+  const large = await readTexture(dn.device, (await largeCall(dn, lt))!);
   const largeModel = dn.modelName;
-  const warmLargeMs = await timed(Math.max(3, WARM >> 1), largeCall);
-  hc.destroy(); at.destroy(); nt.destroy();
+  for (const x of Object.values(lt)) x.destroy();
   dn.quality = 'fast';
+  await dn.denoise(img.noisy); // back on the fast model
 
   // tiled path. 1280x720 with a 256² run budget: the engine plans 1024² tiles, batch 1.
   // 496² with a 2x256² budget: 256² tiles, batch 2 (9 tiles -> 5 runs, the last partial).
   let tiled: Uint8ClampedArray | undefined;
   let tiledBatch: Uint8ClampedArray | undefined;
-  let warmTiledMs: number | undefined;
   if (name !== 'kernels') { // kernels binds to one device per page
-    const tiledRun = async (input: ImageData, maxRunPixels: number, timeIt: boolean) => {
+    const tiledRun = async (input: ImageData, maxRunPixels: number) => {
       const tdn = await Denoiser.create({ precision, runtime: name === 'wgsl' ? rt : makeRuntime(name), maxRunPixels });
       const out = (await tdn.denoise(input))!.data;
       const st = tdn.stats;
       log(`  ${name} tiled ${input.width}x${input.height}: ${st?.tiles} tiles in ${st?.batches} runs of ${st?.batchSize}x${st?.tileW}x${st?.tileH}`);
-      if (timeIt) warmTiledMs = await timed(Math.max(3, WARM >> 1), () => tdn.denoise(input));
       if (name !== 'wgsl') tdn.destroyDevice(); else tdn.dispose();
       return out;
     };
-    tiled = await tiledRun(img.wide, 256 * 256, true);
-    tiledBatch = await tiledRun(img.small, 2 * 256 * 256, false);
+    tiled = await tiledRun(img.wide, 256 * 256);
+    tiledBatch = await tiledRun(img.small, 2 * 256 * 256);
   }
+  log(`${name.padEnd(8)} [${actual}] create ${createMs.toFixed(0)} ms · aux model ${auxModel} · large model ${largeModel}`);
+  return {
+    name, rt, dn,
+    out: { precision: actual, color, aux, tex, large, tiled, tiledBatch, auxModel, largeModel, createMs, warmMs: 0, warmAuxMs: 0, warmHdMs: 0, warmLargeMs: 0 },
+  };
+}
 
-  log(`${name.padEnd(8)} [${actual}] create ${createMs.toFixed(0)} ms · warm 512² ${warmMs.toFixed(1)} · aux (${auxModel}) ${warmAuxMs.toFixed(1)} · 1920×1080 ${warmHdMs.toFixed(1)} · large (${largeModel}) ${warmLargeMs.toFixed(1)}${warmTiledMs ? ` · tiled 720p ${warmTiledMs.toFixed(1)}` : ''} ms`);
-  dn.destroyDevice();
-  if (rt instanceof WgslRuntime) await rt.destroy();
-  return { precision: actual, color, aux, tex, large, tiled, tiledBatch, auxModel, largeModel, createMs, warmMs, warmAuxMs, warmHdMs, warmLargeMs, warmTiledMs };
+function largeTextures(device: GPUDevice, img: Images) {
+  return {
+    color: toTexture(device, img.noisy, 4), albedo: toTexture(device, img.albedo), normal: toTexture(device, img.normal, 2, -1),
+  };
+}
+function largeCall(dn: Denoiser, t: ReturnType<typeof largeTextures>) {
+  return dn.denoiseTextures({ ...t, hdr: true, transfer: 'aces-srgb' });
+}
+
+/**
+ * Phase 2: warm timings, round-robin across runtimes (one call each per round) so
+ * background GPU load — this machine has plenty — hits every runtime alike.
+ * Returns median + min per runtime.
+ */
+async function roundRobin(lives: Live[], rounds: number, call: (l: Live) => Promise<unknown>) {
+  for (const l of lives) { await call(l); await call(l); } // warm-up (binds, pipelines)
+  const xs = new Map<string, number[]>(lives.map((l) => [l.name, []]));
+  for (let r = 0; r < rounds; r++) {
+    for (const l of lives) {
+      const t = performance.now();
+      await call(l);
+      xs.get(l.name)!.push(performance.now() - t);
+    }
+  }
+  return new Map([...xs].map(([k, v]) => [k, { median: median(v), min: Math.min(...v) }]));
 }
 
 async function facadeMode() {
   const [noisy, reference, albedo, normal] = await Promise.all([noisyUrl, referenceUrl, albedoUrl, normalUrl].map(loadImage));
   const img: Images = { noisy, albedo, normal, hd: resized(noisy, 1920, 1080), wide: resized(noisy, 1280, 720), small: resized(noisy, 496, 496) };
-  log(`facade · ${precision} · spheres 512² · warm = median of ${WARM}`);
-  const outs: Record<string, FacadeOut> = {};
-  for (const name of runtimes) outs[name] = await facadeRun(name, img);
+  log(`facade · ${precision} · spheres 512² · warm = median (min) of ${WARM}, runtimes interleaved`);
+  const lives: Live[] = [];
+  for (const name of runtimes) lives.push(await facadeOutputs(name, img));
+  const outs: Record<string, FacadeOut> = Object.fromEntries(lives.map((l) => [l.name, l.out]));
+
+  const timing: Record<string, Record<string, { median: number; min: number }>> = {};
+  const record = (key: string, m: Map<string, { median: number; min: number }>) => {
+    for (const [k, v] of m) (timing[k] ??= {})[key] = v;
+    log(`warm ${key.padEnd(10)} ${[...m].map(([k, v]) => `${k} ${v.median.toFixed(1)} (${v.min.toFixed(1)})`).join(' · ')} ms`);
+  };
+  record('512', await roundRobin(lives, WARM, (l) => l.dn.denoise(img.noisy)));
+  record('512+aux', await roundRobin(lives, WARM, (l) => l.dn.denoise(img.noisy, { albedo: img.albedo, normal: img.normal })));
+  record('1920x1080', await roundRobin(lives, WARM, (l) => l.dn.denoise(img.hd)));
+  for (const l of lives) l.dn.quality = 'high';
+  const lts = new Map(lives.map((l) => [l.name, largeTextures(l.dn.device, img)]));
+  record('512 large', await roundRobin(lives, Math.max(3, WARM >> 1), (l) => largeCall(l.dn, lts.get(l.name)!)));
+  for (const t of lts.values()) for (const x of Object.values(t)) x.destroy();
+  for (const l of lives) {
+    const o = l.out;
+    const tm = timing[l.name];
+    o.warmMs = tm['512'].median; o.warmAuxMs = tm['512+aux'].median; o.warmHdMs = tm['1920x1080'].median; o.warmLargeMs = tm['512 large'].median;
+    l.dn.destroyDevice();
+    if (l.rt instanceof WgslRuntime) await l.rt.destroy();
+  }
+  results.timing = timing;
   draw('noisy', noisy);
   for (const [name, o] of Object.entries(outs)) draw(name, { data: o.color, width: 512, height: 512 });
   draw('reference', reference);
