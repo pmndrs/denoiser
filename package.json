@@ -13,6 +13,7 @@
     "dev:test": "yarn workspace denoiser-package-test dev",
     "dev:bench": "yarn workspace bench dev",
     "dev:smoke": "yarn workspace webgpu-ort-smoke dev",
+    "dev:kernels": "yarn workspace kernels-smoke dev",
     "examples": "node tools/examples.mjs",
     "test": "yarn workspaces foreach -A -t run test",
     "build": "yarn workspaces foreach -A -t run build",

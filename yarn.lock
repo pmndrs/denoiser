@@ -104,6 +104,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@huggingface/kernels@npm:0.0.1-preview.3":
+  version: 0.0.1-preview.3
+  resolution: "@huggingface/kernels@npm:0.0.1-preview.3"
+  checksum: 10c0/ba5d8990a145e5c061ccf2bb398523222c832af6ca8178304fa8087bfcec9528456b80cdc3b9aeda0e2470307402188ffff4143da7e273ebb990eb6ca4a79b0b
+  languageName: node
+  linkType: hard
+
 "@humanfs/core@npm:^0.19.2":
   version: 0.19.2
   resolution: "@humanfs/core@npm:0.19.2"
@@ -1989,6 +1996,18 @@ __metadata:
   checksum: 10c0/7dc94b628d57a66b71fb1b79510d460d662eb975b5f876d723f81549c2e9cd316d58a2ddf742b2b93a4fa6b17b2accaf1a738a0e2ea114bdfb13a32e5377e480
   languageName: node
   linkType: hard
+
+"kernels-smoke@workspace:examples/kernels-smoke":
+  version: 0.0.0-use.local
+  resolution: "kernels-smoke@workspace:examples/kernels-smoke"
+  dependencies:
+    "@huggingface/kernels": "npm:0.0.1-preview.3"
+    denoiser: "workspace:*"
+    onnxruntime-web: "npm:^1.27.0"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+  languageName: unknown
+  linkType: soft
 
 "keyv@npm:^4.5.4":
   version: 4.5.4
