@@ -1,0 +1,20 @@
+{
+  "name": "denoiser-eval",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Every OIDN RT model on every runtime/precision vs native OIDN: quality (vs native CPU + converged reference) and speed (512^2, 1080p). Data from tools/eval/native.py.",
+  "scripts": {
+    "dev": "vite --port 5196 --strictPort",
+    "eval": "node run.mjs"
+  },
+  "dependencies": {
+    "@huggingface/kernels": "0.0.1-preview.3",
+    "denoiser": "workspace:*",
+    "onnxruntime-web": "^1.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}

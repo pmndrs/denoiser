@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Denoiser eval</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
+      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; white-space: pre-wrap; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1 style="font-size:1.1rem">Denoiser eval — every RT model vs native OIDN</h1>
+    <p>Driven by <code>run.mjs</code>: <code>?runtime=ort|kernels|wgsl|wgsl-portable&amp;precision=fp32|fp16</code>.
+      Data from <code>tools/eval/native.py</code>.</p>
+    <pre id="status"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
