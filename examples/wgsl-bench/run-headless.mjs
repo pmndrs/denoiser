@@ -56,7 +56,7 @@ async function runMode(query) {
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
     '--enable-features=Vulkan', `--remote-debugging-port=${port}`,
     `--user-data-dir=${path.join(os.tmpdir(), `wgsl-bench-${process.pid}-${Date.now()}`)}`,
-    `${BASE}?${query}`,
+    query.includes(".html") ? `${BASE}${query}` : `${BASE}?${query}`,
   ], { stdio: 'ignore' });
   let ws;
   try {

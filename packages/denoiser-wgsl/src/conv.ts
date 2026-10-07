@@ -17,6 +17,8 @@ export interface ConvTiling {
   /** Workgroup size in threads. */
   wgx: number;
   wgy: number;
+  /** Experiment switches (tuning only). */
+  exp?: string[];
 }
 
 export interface ConvShaderInfo {
@@ -34,6 +36,15 @@ export const ceil4 = (c: number) => Math.ceil(c / 4);
 
 export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvShaderInfo {
   const { pw, ph, wgx, wgy } = tiling;
+  const exp = new Set(tiling.exp ?? []);
+  // Pixel columns per thread: pooled convs keep 2 adjacent columns per thread (the
+  // 2x2 max is in-register); others interleave threads (column = l.x + px * wgx)
+  // so each store instruction writes contiguous vec4s across the SIMD group.
+  const strided = !op.pool && !exp.has('adjacent');
+  const colOf = (px: number) => (strided ? px * wgx : px);
+  // Weights for the chunk staged in workgroup memory (one cooperative load per
+  // chunk, broadcast reads) instead of per-thread global loads.
+  const wShared = exp.has('wShared');
   const final = op.dst < 0;
   const cout4 = ceil4(op.cout);
   const oc4 = Math.min(tiling.oc4, cout4);
@@ -87,18 +98,27 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
   }
   const accDecl = lines.join('\n  ');
 
+  // Taps: either fully unrolled, or a runtime loop over ky (default; 'unroll' to disable) so the
+  // compiler can't hoist all 9 taps' weight loads at once (register pressure). Measured: enc_conv0 12.9 -> 3.2 ms at 1080p.
+  const kyLoop = !exp.has('unroll');
   const body: string[] = [];
-  for (let ky = 0; ky < 3; ky++) {
+  if (kyLoop) body.push('for (var ky = 0u; ky < 3u; ky++) {');
+  for (let ky = 0; ky < (kyLoop ? 1 : 3); ky++) {
     for (let kx = 0; kx < 3; kx++) {
       const t = ky * 3 + kx;
-      for (let o = 0; o < oc4; o++) body.push(`let m${o}_${t} = mat4x4f(w[wb${o} + ${t}u]);`);
+      const tap = kyLoop ? `ky * 3u + ${kx}u` : `${t}u`;
+      for (let o = 0; o < oc4; o++) {
+        body.push(wShared ? `let m${o}_${t} = wsh[${o * 9}u + ${tap}];` : `let m${o}_${t} = mat4x4f(w[wb${o} + ${tap}]);`);
+      }
       for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
-        body.push(`{ let x = tile[base + ${(py + ky) * ttw + px + kx}u];`);
+        const off = (py + ky) * ttw + colOf(px) + kx;
+        body.push(`{ let x = tile[base + ${kyLoop ? `ky * ${ttw}u + ` : ''}${off}u];`);
         for (let o = 0; o < oc4; o++) body.push(`  ${acc(py, px, o)} += m${o}_${t} * x;`);
         body.push('}');
       }
     }
   }
+  if (kyLoop) body.push('}');
 
   const epi: string[] = [];
   const act = (e: string) => (op.relu ? `clamp(${e}, vec4f(0.0), vec4f(6.0))` : e);
@@ -106,7 +126,7 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
     epi.push(`{ let oc = og * ${oc4}u + ${o}u;`);
     if (final) {
       for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
-        epi.push(`  { let y = oy + ${py}u; let x = ox + ${px}u; if (y < H && x < W) { let r = ${act(acc(py, px, o))};`);
+        epi.push(`  { let y = oy + ${py}u; let x = ox + ${colOf(px)}u; if (y < H && x < W) { let r = ${act(acc(py, px, o))};`);
         for (let c = 0; c < Math.min(4, op.cout - o * 4); c++) {
           epi.push(`    dst[((b * ${op.cout}u + oc * 4u + ${c}u) * H + y) * W + x] = ${T}(r[${c}]);`);
         }
@@ -120,7 +140,7 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
       }
     } else {
       for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
-        epi.push(`  { let y = oy + ${py}u; let x = ox + ${px}u; if (y < H && x < W) {`);
+        epi.push(`  { let y = oy + ${py}u; let x = ox + ${colOf(px)}u; if (y < H && x < W) {`);
         epi.push(`    dst[((b * ${cout4}u + oc) * H + y) * W + x] = vec4<${T}>(${act(acc(py, px, o))}); } }`);
       }
     }
@@ -138,6 +158,7 @@ ${c2_4 ? srcDecl(4, planar2) : ''}
 @group(0) @binding(5) var<storage, read_write> dst: array<${final ? T : `vec4<${T}>`}>;
 
 var<workgroup> tile: array<vec4f, ${tn}>;
+${wShared ? `var<workgroup> wsh: array<mat4x4f, ${9 * oc4}>;` : ''}
 
 @compute @workgroup_size(${wgx}, ${wgy}, 1)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u, @builtin(local_invocation_index) li: u32) {
@@ -148,8 +169,8 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u
   let ty0 = i32(wg.y * ${tileH}u) - 1;
   let tx0 = i32(wg.x * ${tileW}u) - 1;
   let oy = wg.y * ${tileH}u + l.y * ${ph}u;
-  let ox = wg.x * ${tileW}u + l.x * ${pw}u;
-  let base = l.y * ${ph * ttw}u + l.x * ${pw}u;
+  let ox = wg.x * ${tileW}u + l.x * ${strided ? 1 : pw}u;
+  let base = l.y * ${ph * ttw}u + l.x * ${strided ? 1 : pw}u;
   ${Array.from({ length: oc4 }, (_, o) => `let bv${o} = bias[og * ${oc4}u + ${o}u];`).join('\n  ')}
   ${accDecl}
   for (var k = 0u; k < ${nch}u; k++) {
@@ -158,16 +179,23 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u
       let gx = tx0 + i32(i % ${ttw}u);
       var v = vec4f(0.0);
       if (gy >= 0 && gy < i32(H) && gx >= 0 && gx < i32(W)) {
-        ${load}
+        ${exp.has('noLoad') ? 'v = vec4f(f32(i));' : load}
       }
       tile[i] = v;
-    }
+    }${wShared ? `
+    for (var i = li; i < ${36 * oc4}u; i += ${wgx * wgy}u) {
+      let m = i / 4u;
+      let o = m / 9u;
+      wsh[m][i % 4u] = vec4f(w[((og * ${oc4}u + o) * ${nch}u + k) * 9u + m % 9u][i % 4u]);
+    }` : ''}
     workgroupBarrier();
-    ${Array.from({ length: oc4 }, (_, o) => `let wb${o} = ((og * ${oc4}u + ${o}u) * ${nch}u + k) * 9u;`).join('\n    ')}
+    ${wShared ? '' : Array.from({ length: oc4 }, (_, o) => `let wb${o} = ((og * ${oc4}u + ${o}u) * ${nch}u + k) * 9u;`).join('\n    ')}
     ${body.join('\n    ')}
     workgroupBarrier();
   }
+  ${exp.has('noStore') ? `if (${acc(0, 0, 0)}.x == -1234.5) {` : '{'}
   ${epi.join('\n  ')}
+  }
 }
 `;
   return { code, tiling: { ...tiling, oc4 }, nch, c1_4, cout4, tileW, tileH };

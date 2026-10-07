@@ -24,11 +24,12 @@ export interface WgslRuntimeOptions {
    * diagnostics only. Results land in `WgslRuntime.lastProfile`.
    */
   profile?: boolean;
-  /** Override the conv tiling (all layers) — for tuning experiments. */
-  tiling?: Partial<ConvTiling>;
+  /** Override the conv tiling (all layers, or per layer name) — for tuning experiments. */
+  tiling?: TilingOverride;
 }
 
 export interface LayerTiming { name: string; ms: number }
+export type TilingOverride = Partial<ConvTiling> & { layers?: Record<string, Partial<ConvTiling>> };
 
 const F16 = (globalThis as unknown as { Float16Array?: Float32ArrayConstructor }).Float16Array;
 
@@ -76,10 +77,11 @@ interface Layer {
 }
 
 /** Default tiling, by layer shape. */
-function tilingFor(op: ConvOp, override?: Partial<ConvTiling>): ConvTiling {
-  const base: ConvTiling = { pw: 4, ph: 2, oc4: 2, wgx: 8, wgy: 8 };
+function tilingFor(op: ConvOp, override?: TilingOverride): ConvTiling {
+  const base: ConvTiling = { pw: 2, ph: 2, oc4: 2, wgx: 8, wgy: 8 };
   if (op.dst < 0) base.oc4 = 1;
-  return { ...base, ...override };
+  const { layers, ...all } = override ?? {};
+  return { ...base, ...all, ...layers?.[op.name] };
 }
 
 class WgslSession implements NetworkSession {
@@ -94,7 +96,7 @@ class WgslSession implements NetworkSession {
     private onProfile: (p: LayerTiming[]) => void,
   ) {}
 
-  async init(weights: Map<string, { data: Float32Array; shape: number[] }>, tiling?: Partial<ConvTiling>) {
+  async init(weights: Map<string, { data: Float32Array; shape: number[] }>, tiling?: TilingOverride) {
     const d = this.device;
     this.layers = await Promise.all(this.graph.ops.map(async (op) => {
       const info = convShader(op, this.f16, tilingFor(op, tiling));

@@ -13,7 +13,7 @@
 import { Denoiser, OrtRuntime, type NetworkRuntime, type NetworkSession } from 'denoiser';
 import * as ort from 'onnxruntime-web/webgpu';
 import { KernelsRuntime } from '@pmndrs/denoiser-kernels';
-import { WgslRuntime, type ConvTiling } from '@pmndrs/denoiser-wgsl';
+import { WgslRuntime, type ConvTiling, type TilingOverride } from '@pmndrs/denoiser-wgsl';
 import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import albedoUrl from '../../gallery/public/scenes/spheres/albedo.png?url';
@@ -32,10 +32,17 @@ const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
 const results: Record<string, unknown> = { mode, precision, warm: WARM, runtimes, tiling };
 (window as unknown as { __wgslBench: typeof results }).__wgslBench = results;
 
-function parseTiling(s: string | null): Partial<ConvTiling> | undefined {
-  if (!s) return undefined;
-  const [pw, ph, oc4, wgx, wgy] = s.split(',').map(Number);
-  return { pw, ph, oc4, wgx, wgy };
+/** tiling=pw,ph,oc4,wgx,wgy (all layers) · tl=name:pw,ph,oc4,wgx,wgy;name:... · exp=flag,flag */
+function parseTiling(s: string | null): TilingOverride | undefined {
+  const exp = params.get('exp')?.split(',');
+  const one = (t: string): Partial<ConvTiling> => {
+    const [pw, ph, oc4, wgx, wgy] = t.split(',').map(Number);
+    return { pw, ph, oc4, wgx, wgy };
+  };
+  const out: TilingOverride = { ...(s ? one(s) : {}), ...(exp ? { exp } : {}) };
+  const tl = params.get('tl');
+  if (tl) out.layers = Object.fromEntries(tl.split(';').map((e) => { const [n, t] = e.split(':'); return [n, one(t)]; }));
+  return Object.keys(out).length ? out : undefined;
 }
 
 function makeRuntime(name: string, profile = false): NetworkRuntime {
