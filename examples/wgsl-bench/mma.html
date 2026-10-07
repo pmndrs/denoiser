@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Subgroup matrix probe</title>
+  </head>
+  <body>
+    <pre id="status"></pre>
+    <script type="module">
+      // chromium-experimental-subgroup-matrix: check load/store conventions
+      // (C = A * B with A, B row-major 8x8) and raw f32 MMA throughput.
+      const results = {};
+      window.__wgslBench = results;
+      const log = (m) => { document.querySelector('#status').textContent += m + '\n'; };
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice({ requiredFeatures: ['chromium-experimental-subgroup-matrix', 'subgroups', 'timestamp-query', 'shader-f16'] });
+        device.pushErrorScope('validation');
+        const A = new Float32Array(64), B = new Float32Array(64);
+        for (let i = 0; i < 64; i++) { A[i] = (i % 7) - 3; B[i] = ((i * 5) % 11) - 5; }
+        const mk = (data, usage) => { const b = device.createBuffer({ size: 256, usage }); if (data) device.queue.writeBuffer(b, 0, data); return b; };
+        const S = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
+        const a = mk(A, S), b = mk(B, S), c = mk(null, S);
+        const code = `
+          enable chromium_experimental_subgroup_matrix;
+          @group(0) @binding(0) var<storage, read> a: array<f32>;
+          @group(0) @binding(1) var<storage, read> b: array<f32>;
+          @group(0) @binding(2) var<storage, read_write> c: array<f32>;
+          var<workgroup> wa: array<f32, 64>;
+          @compute @workgroup_size(32) fn main(@builtin(local_invocation_index) li: u32) {
+            wa[li] = a[li]; wa[li + 32u] = a[li + 32u];
+            workgroupBarrier();
+            let l = subgroupMatrixLoad<subgroup_matrix_left<f32, 8, 8>>(&wa, 0u, false, 8u);
+            let r = subgroupMatrixLoad<subgroup_matrix_right<f32, 8, 8>>(&b, 0u, false, 8u);
+            var acc = subgroup_matrix_result<f32, 8, 8>();
+            acc = subgroupMatrixMultiplyAccumulate(l, r, acc);
+            subgroupMatrixStore(&c, 0u, acc, false, 8u);
+          }`;
+        const p = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code }), entryPoint: 'main' } });
+        const bg = device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: [a, b, c].map((buffer, i) => ({ binding: i, resource: { buffer } })) });
+        const rb = device.createBuffer({ size: 256, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        const enc = device.createCommandEncoder();
+        const pass = enc.beginComputePass(); pass.setPipeline(p); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(1); pass.end();
+        enc.copyBufferToBuffer(c, 0, rb, 0, 256);
+        device.queue.submit([enc.finish()]);
+        await rb.mapAsync(GPUMapMode.READ);
+        const C = new Float32Array(rb.getMappedRange().slice(0));
+        let err = 0;
+        for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+          let s = 0; for (let k = 0; k < 8; k++) s += A[i * 8 + k] * B[k * 8 + j];
+          err = Math.max(err, Math.abs(s - C[i * 8 + j]));
+        }
+        log(`C = A*B row-major max err ${err}`);
+        results.mmaErr = err;
+        const e = await device.popErrorScope();
+        if (e) log(`validation: ${e.message}`);
+
+        // raw throughput: each subgroup does ITER x 16 MMAs on register operands
+        const qs = device.createQuerySet({ type: 'timestamp', count: 2 });
+        const qr = device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+        const qm = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        const big = device.createBuffer({ size: 1 << 22, usage: S });
+        const ITER = 256, GROUPS = 4096;
+        for (const [T, R] of [['f32', 'f32'], ['f16', 'f16']]) {
+          const code2 = `
+            enable chromium_experimental_subgroup_matrix;
+            enable f16;
+            @group(0) @binding(0) var<storage, read_write> o: array<${R}>;
+            var<workgroup> wa: array<${T}, 512>;
+            @compute @workgroup_size(32) fn main(@builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wg: vec3u) {
+              for (var i = li; i < 512u; i += 32u) { wa[i] = ${T}(f32(i % 7u) * 0.001); }
+              workgroupBarrier();
+              let l0 = subgroupMatrixLoad<subgroup_matrix_left<${T}, 8, 8>>(&wa, 0u, false, 8u);
+              let l1 = subgroupMatrixLoad<subgroup_matrix_left<${T}, 8, 8>>(&wa, 64u, false, 8u);
+              let l2 = subgroupMatrixLoad<subgroup_matrix_left<${T}, 8, 8>>(&wa, 128u, false, 8u);
+              let l3 = subgroupMatrixLoad<subgroup_matrix_left<${T}, 8, 8>>(&wa, 192u, false, 8u);
+              let r0 = subgroupMatrixLoad<subgroup_matrix_right<${T}, 8, 8>>(&wa, 256u, false, 8u);
+              let r1 = subgroupMatrixLoad<subgroup_matrix_right<${T}, 8, 8>>(&wa, 320u, false, 8u);
+              let r2 = subgroupMatrixLoad<subgroup_matrix_right<${T}, 8, 8>>(&wa, 384u, false, 8u);
+              let r3 = subgroupMatrixLoad<subgroup_matrix_right<${T}, 8, 8>>(&wa, 448u, false, 8u);
+              ${Array.from({ length: 16 }, (_, k) => `var c${k} = subgroup_matrix_result<${R}, 8, 8>();`).join('\n')}
+              for (var it = 0u; it < ${ITER}u; it++) {
+                ${Array.from({ length: 16 }, (_, k) => `c${k} = subgroupMatrixMultiplyAccumulate(l${k >> 2}, r${k & 3}, c${k});`).join('\n')}
+              }
+              ${Array.from({ length: 16 }, (_, k) => `subgroupMatrixStore(&o, (wg.x % 64u) * 1024u + ${k * 64}u, c${k}, false, 8u);`).join('\n')}
+            }`;
+          const p2 = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: code2 }), entryPoint: 'main' } });
+          const bg2 = device.createBindGroup({ layout: p2.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: big } }] });
+          const xs = [];
+          for (let r = 0; r < 5; r++) {
+            const enc2 = device.createCommandEncoder();
+            const ps = enc2.beginComputePass({ timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } });
+            ps.setPipeline(p2); ps.setBindGroup(0, bg2); ps.dispatchWorkgroups(GROUPS); ps.end();
+            enc2.resolveQuerySet(qs, 0, 2, qr, 0);
+            enc2.copyBufferToBuffer(qr, 0, qm, 0, 16);
+            device.queue.submit([enc2.finish()]);
+            await qm.mapAsync(GPUMapMode.READ);
+            const t = new BigUint64Array(qm.getMappedRange().slice(0));
+            qm.unmap();
+            xs.push(Number(t[1] - t[0]) / 1e6);
+          }
+          xs.sort((a, b) => a - b);
+          const macs = GROUPS * ITER * 16 * 512;
+          log(`${T}->${R} MMA: ${xs[0].toFixed(2)} ms min = ${(macs / xs[0] / 1e9).toFixed(2)} TMAC/s`);
+          results[`mma_${T}`] = macs / xs[0] / 1e9;
+        }
+        // scalar f32 FMA (vec4) throughput for comparison
+        {
+          const code3 = `
+            @group(0) @binding(0) var<storage, read_write> o: array<vec4f>;
+            @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3u) {
+              var a0 = vec4f(f32(g.x)); var a1 = a0 + 1.0; var a2 = a0 + 2.0; var a3 = a0 + 3.0;
+              var a4 = a0 + 4.0; var a5 = a0 + 5.0; var a6 = a0 + 6.0; var a7 = a0 + 7.0;
+              let m = vec4f(0.999); let k = vec4f(0.001);
+              for (var it = 0u; it < ${ITER * 4}u; it++) {
+                a0 = fma(a0, m, k); a1 = fma(a1, m, k); a2 = fma(a2, m, k); a3 = fma(a3, m, k);
+                a4 = fma(a4, m, k); a5 = fma(a5, m, k); a6 = fma(a6, m, k); a7 = fma(a7, m, k);
+              }
+              o[g.x % 65536u] = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7;
+            }`;
+          const p3 = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: code3 }), entryPoint: 'main' } });
+          const bg3 = device.createBindGroup({ layout: p3.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: big } }] });
+          const xs = [];
+          const N3 = 65536 * 4;
+          for (let r = 0; r < 5; r++) {
+            const enc3 = device.createCommandEncoder();
+            const ps = enc3.beginComputePass({ timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } });
+            ps.setPipeline(p3); ps.setBindGroup(0, bg3); ps.dispatchWorkgroups(N3 / 64); ps.end();
+            enc3.resolveQuerySet(qs, 0, 2, qr, 0);
+            enc3.copyBufferToBuffer(qr, 0, qm, 0, 16);
+            device.queue.submit([enc3.finish()]);
+            await qm.mapAsync(GPUMapMode.READ);
+            const t = new BigUint64Array(qm.getMappedRange().slice(0));
+            qm.unmap();
+            xs.push(Number(t[1] - t[0]) / 1e6);
+          }
+          xs.sort((a, b) => a - b);
+          const fmas = N3 * ITER * 4 * 8 * 4;
+          log(`scalar f32 FMA: ${xs[0].toFixed(2)} ms min = ${(fmas / xs[0] / 1e9).toFixed(2)} TFMA/s`);
+          results.fma = fmas / xs[0] / 1e9;
+        }
+      } catch (e) {
+        results.error = String(e);
+        log(String(e));
+      }
+      results.ready = true;
+    </script>
+  </body>
+</html>

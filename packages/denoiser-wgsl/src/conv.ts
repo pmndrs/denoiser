@@ -45,6 +45,11 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
   // Weights for the chunk staged in workgroup memory (one cooperative load per
   // chunk, broadcast reads) instead of per-thread global loads.
   const wShared = exp.has('wShared');
+  // f16 math (fp16 models only): tile + weights stay f16, each tap's 4-term
+  // mat4x4 * vec4 product is f16, accumulation stays f32.
+  const h16 = f16 && exp.has('h16');
+  const MT = h16 ? 'mat4x4<f16>' : 'mat4x4f';
+  const VT = h16 ? 'vec4<f16>' : 'vec4f';
   const final = op.dst < 0;
   const cout4 = ceil4(op.cout);
   const oc4 = Math.min(tiling.oc4, cout4);
@@ -100,25 +105,28 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
 
   // Taps: either fully unrolled, or a runtime loop over ky (default; 'unroll' to disable) so the
   // compiler can't hoist all 9 taps' weight loads at once (register pressure). Measured: enc_conv0 12.9 -> 3.2 ms at 1080p.
-  const kyLoop = !exp.has('unroll');
+  const tapLoop = exp.has('tapLoop'); // runtime loop over all 9 taps
+  const kyLoop = !tapLoop && !exp.has('unroll');
   const body: string[] = [];
   if (kyLoop) body.push('for (var ky = 0u; ky < 3u; ky++) {');
-  for (let ky = 0; ky < (kyLoop ? 1 : 3); ky++) {
-    for (let kx = 0; kx < 3; kx++) {
+  if (tapLoop) body.push('for (var t = 0u; t < 9u; t++) {', `let toff = (t / 3u) * ${ttw}u + t % 3u;`);
+  for (let ky = 0; ky < (kyLoop || tapLoop ? 1 : 3); ky++) {
+    for (let kx = 0; kx < (tapLoop ? 1 : 3); kx++) {
       const t = ky * 3 + kx;
-      const tap = kyLoop ? `ky * 3u + ${kx}u` : `${t}u`;
+      const tap = tapLoop ? 't' : kyLoop ? `ky * 3u + ${kx}u` : `${t}u`;
       for (let o = 0; o < oc4; o++) {
-        body.push(wShared ? `let m${o}_${t} = wsh[${o * 9}u + ${tap}];` : `let m${o}_${t} = mat4x4f(w[wb${o} + ${tap}]);`);
+        body.push(wShared ? `let m${o}_${t} = wsh[${o * 9}u + ${tap}];` : `let m${o}_${t} = ${MT}(w[wb${o} + ${tap}]);`);
       }
       for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
         const off = (py + ky) * ttw + colOf(px) + kx;
-        body.push(`{ let x = tile[base + ${kyLoop ? `ky * ${ttw}u + ` : ''}${off}u];`);
-        for (let o = 0; o < oc4; o++) body.push(`  ${acc(py, px, o)} += m${o}_${t} * x;`);
+        const dyn = tapLoop ? 'toff + ' : kyLoop ? `ky * ${ttw}u + ` : '';
+        body.push(`{ let x = tile[base + ${dyn}${off}u];`);
+        for (let o = 0; o < oc4; o++) body.push(h16 ? `  ${acc(py, px, o)} += vec4f(m${o}_${t} * x);` : `  ${acc(py, px, o)} += m${o}_${t} * x;`);
         body.push('}');
       }
     }
   }
-  if (kyLoop) body.push('}');
+  if (kyLoop || tapLoop) body.push('}');
 
   const epi: string[] = [];
   const act = (e: string) => (op.relu ? `clamp(${e}, vec4f(0.0), vec4f(6.0))` : e);
@@ -157,8 +165,8 @@ ${srcDecl(3, planar1)}
 ${c2_4 ? srcDecl(4, planar2) : ''}
 @group(0) @binding(5) var<storage, read_write> dst: array<${final ? T : `vec4<${T}>`}>;
 
-var<workgroup> tile: array<vec4f, ${tn}>;
-${wShared ? `var<workgroup> wsh: array<mat4x4f, ${9 * oc4}>;` : ''}
+var<workgroup> tile: array<${VT}, ${tn}>;
+${wShared ? `var<workgroup> wsh: array<${MT}, ${9 * oc4}>;` : ''}
 
 @compute @workgroup_size(${wgx}, ${wgy}, 1)
 fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u, @builtin(local_invocation_index) li: u32) {
@@ -181,12 +189,12 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u
       if (gy >= 0 && gy < i32(H) && gx >= 0 && gx < i32(W)) {
         ${exp.has('noLoad') ? 'v = vec4f(f32(i));' : load}
       }
-      tile[i] = v;
+      tile[i] = ${VT}(v);
     }${wShared ? `
     for (var i = li; i < ${36 * oc4}u; i += ${wgx * wgy}u) {
       let m = i / 4u;
       let o = m / 9u;
-      wsh[m][i % 4u] = vec4f(w[((og * ${oc4}u + o) * ${nch}u + k) * 9u + m % 9u][i % 4u]);
+      wsh[m][i % 4u] = ${VT}(w[((og * ${oc4}u + o) * ${nch}u + k) * 9u + m % 9u][i % 4u]);
     }` : ''}
     workgroupBarrier();
     ${wShared ? '' : Array.from({ length: oc4 }, (_, o) => `let wb${o} = ((og * ${oc4}u + ${o}u) * ${nch}u + k) * 9u;`).join('\n    ')}

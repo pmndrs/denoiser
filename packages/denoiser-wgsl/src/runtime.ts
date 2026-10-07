@@ -11,7 +11,8 @@ import type {
 } from '@pmndrs/denoiser-core';
 import { parseTZA } from './tza';
 import { assignSlots, buildGraph, type ConvOp, type Graph } from './graph';
-import { ceil4, convShader, packBias, packWeights, type ConvShaderInfo, type ConvTiling } from './conv';
+import { ceil4, convShader, packBias, packWeights, type ConvTiling } from './conv';
+import { mmaShader, packWeightsMma, type MmaTiling } from './mma';
 
 export interface WgslRuntimeOptions {
   /** Base URL the OIDN `.tza` weight files are served from. */
@@ -26,6 +27,15 @@ export interface WgslRuntimeOptions {
   profile?: boolean;
   /** Override the conv tiling (all layers, or per layer name) — for tuning experiments. */
   tiling?: TilingOverride;
+  /**
+   * Run convs as 8x8 subgroup-matrix GEMMs (Metal simdgroup_matrix) when the
+   * device has `chromium-experimental-subgroup-matrix` with an f32 8x8x8 config
+   * and 32-wide subgroups. 'auto' (default) = when available; or a list of layer
+   * names to restrict it to. The portable vec4 kernel is the fallback.
+   */
+  subgroupMatrix?: boolean | 'auto' | string[];
+  /** Override the subgroup-matrix tiling — for tuning experiments. */
+  mmaTiling?: Partial<MmaTiling> & { layers?: Record<string, Partial<MmaTiling>> };
 }
 
 export interface LayerTiming { name: string; ms: number }
@@ -57,7 +67,10 @@ export class WgslRuntime implements NetworkRuntime {
     }
     const profile = !!this.opts.profile && device.features.has('timestamp-query');
     const session = new WgslSession(device, graph, f16, profile, (p) => { this.lastProfile = p; });
-    await session.init(weights, this.opts.tiling);
+    const mmaOk = hasSubgroupMatrix(device);
+    const sm = this.opts.subgroupMatrix ?? 'auto';
+    const useMma = (op: ConvOp) => mmaOk && (Array.isArray(sm) ? sm.includes(op.name) : sm !== false);
+    await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling);
     return session;
   }
 
@@ -70,10 +83,30 @@ export class WgslRuntime implements NetworkRuntime {
 
 interface Layer {
   op: ConvOp;
-  info: ConvShaderInfo;
   pipeline: GPUComputePipeline;
   weights: GPUBuffer;
   bias: GPUBuffer;
+  /** Workgroups along z per batch item (output-channel groups). */
+  ocg: number;
+  /** Output pixels per workgroup. */
+  tileW: number;
+  tileH: number;
+  mma: boolean;
+}
+
+/** f32 8x8x8 subgroup matrices on 32-wide subgroups (Apple simdgroup_matrix). */
+function hasSubgroupMatrix(device: GPUDevice): boolean {
+  if (!device.features.has('chromium-experimental-subgroup-matrix' as GPUFeatureName)) return false;
+  const info = (device as unknown as { adapterInfo?: { subgroupMinSize?: number; subgroupMaxSize?: number; subgroupMatrixConfigs?: Array<Record<string, unknown>> } }).adapterInfo;
+  if (!info || info.subgroupMinSize !== 32 || info.subgroupMaxSize !== 32) return false;
+  return !!info.subgroupMatrixConfigs?.some((c) => c.componentType === 'f32' && c.resultComponentType === 'f32'
+    && c.M === 8 && c.N === 8 && c.K === 8);
+}
+
+function mmaTilingFor(op: ConvOp, override?: WgslRuntimeOptions['mmaTiling']): MmaTiling {
+  const base: MmaTiling = { tw: 8, th: 4, ns: 1, ob: 4 };
+  const { layers, ...all } = override ?? {};
+  return { ...base, ...all, ...layers?.[op.name] };
 }
 
 /** Default tiling, by layer shape. */
@@ -81,7 +114,12 @@ function tilingFor(op: ConvOp, override?: TilingOverride): ConvTiling {
   const base: ConvTiling = { pw: 2, ph: 2, oc4: 2, wgx: 8, wgy: 8 };
   if (op.dst < 0) base.oc4 = 1;
   const { layers, ...all } = override ?? {};
-  return { ...base, ...all, ...layers?.[op.name] };
+  const t = { ...base, ...all, ...layers?.[op.name] };
+  if (op.pool) { // the 2x2 max is in-register: even pixel blocks
+    t.pw = Math.max(2, t.pw & ~1);
+    t.ph = Math.max(2, t.ph & ~1);
+  }
+  return t;
 }
 
 class WgslSession implements NetworkSession {
@@ -96,18 +134,46 @@ class WgslSession implements NetworkSession {
     private onProfile: (p: LayerTiming[]) => void,
   ) {}
 
-  async init(weights: Map<string, { data: Float32Array; shape: number[] }>, tiling?: TilingOverride) {
+  async init(
+    weights: Map<string, { data: Float32Array; shape: number[] }>,
+    tiling: TilingOverride | undefined,
+    useMma: (op: ConvOp) => boolean,
+    mmaTiling: WgslRuntimeOptions['mmaTiling'],
+  ) {
     const d = this.device;
-    this.layers = await Promise.all(this.graph.ops.map(async (op) => {
-      const info = convShader(op, this.f16, tilingFor(op, tiling));
-      const module = d.createShaderModule({ code: info.code, label: op.name });
-      const pipeline = await d.createComputePipelineAsync({
-        layout: 'auto', compute: { module, entryPoint: 'main' }, label: op.name,
-      });
+    this.layers = await Promise.all(this.graph.ops.map(async (op): Promise<Layer> => {
       const w = weights.get(`${op.name}.weight`)!;
       const b = weights.get(`${op.name}.bias`)!;
-      const packed = packWeights(w.data, op.cout, op.c1, op.c2);
-      const wData = this.f16 ? new F16!(packed) : packed;
+      const mma = useMma(op);
+      let code: string;
+      let wData: Float32Array;
+      let ocg: number;
+      let tileW: number;
+      let tileH: number;
+      if (mma) {
+        const info = mmaShader(op, this.f16, mmaTilingFor(op, mmaTiling));
+        code = info.code;
+        wData = packWeightsMma(w.data, op.cout, op.c1, op.c2); // f32: the MMA operands are f32
+        ocg = info.cout8 / info.ob;
+        tileW = info.tiling.tw;
+        tileH = info.tiling.th;
+      } else {
+        const info = convShader(op, this.f16, tilingFor(op, tiling));
+        code = info.code;
+        const packed = packWeights(w.data, op.cout, op.c1, op.c2);
+        wData = this.f16 ? new F16!(packed) : packed;
+        ocg = info.cout4 / info.tiling.oc4;
+        tileW = info.tileW;
+        tileH = info.tileH;
+      }
+      const module = d.createShaderModule({ code, label: op.name });
+      const pipeline = await d.createComputePipelineAsync({
+        layout: 'auto', compute: { module, entryPoint: 'main' }, label: op.name,
+      }).catch(async (err) => {
+        const msgs = (await module.getCompilationInfo()).messages
+          .map((m) => `${m.type} ${m.lineNum}:${m.linePos} ${m.message}`).join('\n');
+        throw new Error(`WgslRuntime: ${op.name}${mma ? ' (subgroup matrix)' : ''}: ${err}\n${msgs}`);
+      });
       const wBuf = d.createBuffer({
         size: Math.max(16, wData.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: `${op.name}.w`,
       });
@@ -115,7 +181,7 @@ class WgslSession implements NetworkSession {
       const bData = packBias(b.data, op.cout);
       const bBuf = d.createBuffer({ size: bData.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: `${op.name}.b` });
       d.queue.writeBuffer(bBuf, 0, bData as unknown as BufferSource);
-      return { op, info, pipeline, weights: wBuf, bias: bBuf };
+      return { op, pipeline, weights: wBuf, bias: bBuf, ocg, tileW, tileH, mma };
     }));
   }
 
@@ -140,10 +206,9 @@ class WgslSession implements NetworkSession {
     const srcBuf = (s: ConvOp['src1']) => (s.kind === 'input' ? input : tensorBuf(s.id));
 
     const owned: GPUBuffer[] = [input, output, ...slotBufs];
-    const steps = this.layers.map(({ op, info, pipeline, weights, bias }) => {
+    const steps = this.layers.map(({ op, pipeline, weights, bias, ocg, tileW, tileH }) => {
       const h = H >> op.level;
       const w = W >> op.level;
-      const ocg = info.cout4 / info.tiling.oc4;
       const params = new Uint32Array([h, w, h >> 1, w >> 1, ocg, 0, 0, 0]);
       const ub = d.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       d.queue.writeBuffer(ub, 0, params);
@@ -157,7 +222,7 @@ class WgslSession implements NetworkSession {
       ];
       if (op.src2) entries.push({ binding: 4, resource: { buffer: srcBuf(op.src2) } });
       const bindGroup = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries, label: op.name });
-      const groups: [number, number, number] = [Math.ceil(w / info.tileW), Math.ceil(h / info.tileH), B * ocg];
+      const groups: [number, number, number] = [Math.ceil(w / tileW), Math.ceil(h / tileH), B * ocg];
       return { name: op.name, pipeline, bindGroup, groups };
     });
 

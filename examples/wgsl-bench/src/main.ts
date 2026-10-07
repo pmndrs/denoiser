@@ -45,10 +45,18 @@ function parseTiling(s: string | null): TilingOverride | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/** sm=0 | 1 | auto (default) | layer,layer — WgslRuntime subgroupMatrix option. */
+function smParam(v: string | null | undefined): boolean | 'auto' | string[] {
+  if (v == null || v === 'auto') return 'auto';
+  if (v === '0') return false;
+  if (v === '1') return true;
+  return v.split('+');
+}
+
 function makeRuntime(name: string, profile = false): NetworkRuntime {
   if (name === 'ort') return new OrtRuntime({ weightsUrl: '/models' });
   if (name === 'kernels') return new KernelsRuntime({ tzaUrl: '/tzas' });
-  if (name === 'wgsl') return new WgslRuntime({ tzaUrl: '/tzas', tiling, profile });
+  if (name === 'wgsl') return new WgslRuntime({ tzaUrl: '/tzas', tiling, profile, subgroupMatrix: smParam(params.get('sm')) });
   throw new Error(`unknown runtime ${name}`);
 }
 
@@ -152,6 +160,24 @@ interface FacadeOut {
   createMs: number; warmMs: number; warmAuxMs: number; warmHdMs: number; warmLargeMs: number; warmTiledMs?: number;
 }
 
+/** fp16 runs: the same calls on ORT fp32, to see which fp16 runtime is closer to it. */
+async function fp32Reference(img: Images) {
+  const dn = await Denoiser.create({ precision: 'fp32', runtime: makeRuntime('ort') });
+  const color = (await dn.denoise(img.noisy))!.data;
+  const aux = (await dn.denoise(img.noisy, { albedo: img.albedo, normal: img.normal }))!.data;
+  const ct = toTexture(dn.device, img.noisy);
+  const tex = await readTexture(dn.device, (await dn.denoiseTextures({ color: ct }))!);
+  ct.destroy();
+  const t1 = await Denoiser.create({ precision: 'fp32', runtime: makeRuntime('ort'), maxRunPixels: 256 * 256 });
+  const tiled = (await t1.denoise(img.wide))!.data;
+  t1.destroyDevice();
+  const t2 = await Denoiser.create({ precision: 'fp32', runtime: makeRuntime('ort'), maxRunPixels: 2 * 256 * 256 });
+  const tiledBatch = (await t2.denoise(img.small))!.data;
+  t2.destroyDevice();
+  dn.destroyDevice();
+  return { color, aux, tex, tiled, tiledBatch };
+}
+
 async function facadeRun(name: string, img: Images): Promise<FacadeOut> {
   const rt = makeRuntime(name);
   let t = performance.now();
@@ -239,6 +265,20 @@ async function facadeMode() {
     const r = cmp(outs.wgsl.large, outs.kernels.large);
     parity['wgsl-vs-kernels-large'] = { large: r! };
     log(`wgsl vs kernels large: ${fmt(r)}`);
+  }
+  if (precision === 'fp16' && params.get('ref') !== '0') {
+    const ref = await fp32Reference(img);
+    const vs32: Record<string, unknown> = {};
+    for (const name of runtimes) {
+      const a = outs[name];
+      const r = {
+        color: cmp(a.color, ref.color), aux: cmp(a.aux, ref.aux), texture: cmp(a.tex, ref.tex),
+        tiled: cmp(a.tiled, ref.tiled), tiledBatch: cmp(a.tiledBatch, ref.tiledBatch),
+      };
+      vs32[name] = r;
+      log(`${name} fp16 vs ORT fp32: denoise ${fmt(r.color)} · aux ${fmt(r.aux)} · textures ${fmt(r.texture)} · tiled ${fmt(r.tiled)} · tiled batch ${fmt(r.tiledBatch)}`);
+    }
+    results.vsFp32 = vs32;
   }
   results.parity = parity;
   const vsRef: Record<string, number> = {};
@@ -346,7 +386,81 @@ async function netMode() {
   results.maxAbsDiff = diffs;
 }
 
-(mode === 'net' ? netMode() : facadeMode())
+
+// ---- tune mode ----------------------------------------------------------------
+// Several WGSL configs on ONE device, timed round-robin so background GPU load
+// hits them alike: &cfg=<pw,ph,oc4,wgx,wgy | ->[@exp+exp][;layer=pw,ph,oc4,wgx,wgy]...
+// (repeat cfg); append !sm=0|1|layer+layer to pick the subgroup-matrix path and
+// !mt=tw,th,ns,ob for its tiling.
+// Reports min / median per config and max |Δ| vs the first.
+
+function parseCfg(c: string): TilingOverride {
+  const [head, ...layerParts] = c.replace(/!(sm|mt)=[^@;!]*/g, '').split(';');
+  const [t, e] = head.split('@');
+  const one = (x: string): Partial<ConvTiling> => {
+    const [pw, ph, oc4, wgx, wgy] = x.split(',').map(Number);
+    return { pw, ph, oc4, wgx, wgy };
+  };
+  const out: TilingOverride = { ...(t && t !== '-' ? one(t) : {}), ...(e ? { exp: e.split('+') } : {}) };
+  if (layerParts.length) out.layers = Object.fromEntries(layerParts.map((l) => { const [n, x] = l.split('='); return [n, one(x)]; }));
+  return out;
+}
+
+async function tuneMode() {
+  const model = params.get('model') ?? 'rt_ldr_small';
+  const ch = Number(params.get('ch') ?? 3);
+  const [w, h] = (params.get('size') ?? '1920x1088').split('x').map(Number);
+  const rounds = Number(params.get('rounds') ?? 15);
+  const cfgs = params.getAll('cfg');
+  if (!cfgs.length) cfgs.push('-');
+  const f16 = precision === 'fp16';
+  log(`tune · ${model} · ${precision} · ${w}x${h} · ${rounds} rounds`);
+  const first = new WgslRuntime({ tzaUrl: '/tzas' });
+  const s0 = await first.load({ name: model, channels: ch, precision });
+  const device = s0.device;
+  s0.release();
+  const n = ch * w * h;
+  const host = new Float32Array(n);
+  let sd = 1234567;
+  for (let i = 0; i < n; i++) { sd = (sd * 1103515245 + 12345) >>> 0; host[i] = (sd >>> 8) / 16777216; }
+  const entries = [];
+  for (const c of cfgs) {
+    const t = parseCfg(c);
+    const smm = /!sm=([^@;!]*)/.exec(c)?.[1];
+    const mt = /!mt=([^@;!]*)/.exec(c)?.[1]?.split(',').map(Number);
+    const rt = new WgslRuntime({
+      tzaUrl: '/tzas', device, tiling: t, subgroupMatrix: smParam(smm ?? params.get('sm')),
+      mmaTiling: mt ? { tw: mt[0], th: mt[1], ns: mt[2], ob: mt[3] } : undefined,
+    });
+    const sess = await rt.load({ name: model, channels: ch, precision });
+    const b = await sess.bind({ batch: 1, tileW: w, tileH: h });
+    device.queue.writeBuffer(b.input, 0, (f16 ? new F16(host) : host) as unknown as BufferSource);
+    await b.run();
+    const out = await readBuffer(device, b.output, f16);
+    entries.push({ c, b, out, times: [] as number[] });
+  }
+  for (let r = 0; r < rounds; r++) {
+    for (const e of entries) {
+      await device.queue.onSubmittedWorkDone();
+      const t = performance.now();
+      await e.b.run();
+      await device.queue.onSubmittedWorkDone();
+      e.times.push(performance.now() - t);
+    }
+  }
+  const rows: Record<string, unknown> = {};
+  for (const e of entries) {
+    let m = 0;
+    for (let j = 0; j < e.out.length; j++) m = Math.max(m, Math.abs(e.out[j] - entries[0].out[j]));
+    const min = Math.min(...e.times);
+    const med = median(e.times);
+    rows[e.c] = { min, median: med, maxAbsDiff: m };
+    log(`cfg ${e.c.padEnd(40)} min ${min.toFixed(2)} · median ${med.toFixed(2)} ms · max |Δ| ${m.toExponential(1)}`);
+  }
+  results.tune = rows;
+}
+
+(mode === 'net' ? netMode() : mode === 'tune' ? tuneMode() : facadeMode())
   .then(() => { results.ready = true; })
   .catch((err) => {
     results.error = String(err?.stack ?? err);

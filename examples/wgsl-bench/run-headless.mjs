@@ -55,6 +55,7 @@ async function runMode(query) {
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
     '--enable-features=Vulkan', `--remote-debugging-port=${port}`,
+    ...(process.env.CHROME_FLAGS ? process.env.CHROME_FLAGS.split(' ') : []),
     `--user-data-dir=${path.join(os.tmpdir(), `wgsl-bench-${process.pid}-${Date.now()}`)}`,
     query.includes(".html") ? `${BASE}${query}` : `${BASE}?${query}`,
   ], { stdio: 'ignore' });
