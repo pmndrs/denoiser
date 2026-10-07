@@ -171,7 +171,7 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_index) li: u
   let ox0 = wg.x * ${tw}u;
   let ty0 = i32(oy0) - 1;
   let tx0 = i32(ox0) - 1;
-  let sg = ${ns === 1 ? "0u" : "li / 32u"}; // ns > 1 fails uniformity analysis (offsets must be uniform)
+  let sg = ${ns === 1 ? "0u" : "li / 32u"}; // NB ns > 1 fails uniformity analysis (matrix offsets must be workgroup-uniform; subgroupBroadcastFirst does not count)
   ${Array.from({ length: sps }, (_, j) => `let seg${j} = sg * ${sps}u + ${j}u; let lb${j} = ((seg${j} / ${tw / 8}u) * ${ttw}u + (seg${j} % ${tw / 8}u) * 8u) * 8u; let ob${j} = ((seg${j} / ${tw / 8}u) * ${tw}u + (seg${j} % ${tw / 8}u) * 8u) * ${ocb}u;`).join('\n  ')}
   ${accs.join('\n  ')}
   for (var kb = 0u; kb < ${nkb}u; kb++) {
