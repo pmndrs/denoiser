@@ -13,7 +13,6 @@ import { parseTZA } from './tza';
 import { assignSlots, buildGraph, type ConvOp, type Graph } from './graph';
 import { ceil4, convShader, packBias, packWeights, type ConvTiling } from './conv';
 import { mmaShader, packWeightsMma, type MmaTiling } from './mma';
-import { packWeightsWino, winoShader, type WinoTiling } from './wino';
 
 export interface WgslRuntimeOptions {
   /** Base URL the OIDN `.tza` weight files are served from. */
@@ -35,13 +34,6 @@ export interface WgslRuntimeOptions {
    * names to restrict it to. The portable vec4 kernel is the fallback.
    */
   subgroupMatrix?: boolean | 'auto' | string[];
-  /**
-   * On the subgroup-matrix path, run convs as Winograd F(2x2,3x3) (2.25x fewer
-   * multiplies). true / false / a list of layer names.
-   */
-  winograd?: boolean | string[];
-  /** Override the Winograd tiling — for tuning experiments. */
-  winoTiling?: Partial<WinoTiling> & { layers?: Record<string, Partial<WinoTiling>> };
   /** Override the subgroup-matrix tiling — for tuning experiments. */
   mmaTiling?: Partial<MmaTiling> & { layers?: Record<string, Partial<MmaTiling>> };
 }
@@ -78,9 +70,7 @@ export class WgslRuntime implements NetworkRuntime {
     const mmaOk = hasSubgroupMatrix(device);
     const sm = this.opts.subgroupMatrix ?? 'auto';
     const useMma = (op: ConvOp) => mmaOk && (Array.isArray(sm) ? sm.includes(op.name) : sm !== false);
-    const wn = this.opts.winograd ?? false;
-    const useWino = (op: ConvOp) => useMma(op) && (Array.isArray(wn) ? wn.includes(op.name) : wn);
-    await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling, useWino, this.opts.winoTiling);
+    await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling);
     return session;
   }
 
@@ -149,8 +139,6 @@ class WgslSession implements NetworkSession {
     tiling: TilingOverride | undefined,
     useMma: (op: ConvOp) => boolean,
     mmaTiling: WgslRuntimeOptions['mmaTiling'],
-    useWino: (op: ConvOp) => boolean = () => false,
-    winoTiling: WgslRuntimeOptions['winoTiling'] = undefined,
   ) {
     const d = this.device;
     this.layers = await Promise.all(this.graph.ops.map(async (op): Promise<Layer> => {
@@ -162,15 +150,7 @@ class WgslSession implements NetworkSession {
       let ocg: number;
       let tileW: number;
       let tileH: number;
-      if (useWino(op)) {
-        const { layers, ...all } = winoTiling ?? {};
-        const info = winoShader(op, this.f16, { nseg: 1, ob: 2, ...all, ...layers?.[op.name] });
-        code = info.code;
-        wData = packWeightsWino(w.data, op.cout, op.c1, op.c2);
-        ocg = info.cout8 / info.ob;
-        tileW = info.tileW;
-        tileH = info.tileH;
-      } else if (mma) {
+      if (mma) {
         const info = mmaShader(op, this.f16, mmaTilingFor(op, mmaTiling));
         code = info.code;
         wData = packWeightsMma(w.data, op.cout, op.c1, op.c2); // f32: the MMA operands are f32

@@ -53,19 +53,12 @@ function smParam(v: string | null | undefined): boolean | 'auto' | string[] {
   return v.split('+');
 }
 
-/** wino=0 | 1 | layer+layer — WgslRuntime winograd option. */
-function winoParam(v: string | null | undefined): boolean | string[] | undefined {
-  if (v == null) return undefined;
-  if (v === '0' || v === '1') return v === '1';
-  return v.split('+');
-}
-
 function makeRuntime(name: string, profile = false): NetworkRuntime {
   if (name === 'ort') return new OrtRuntime({ weightsUrl: '/models' });
   if (name === 'kernels') return new KernelsRuntime({ tzaUrl: '/tzas' });
   if (name === 'wgsl') {
     return new WgslRuntime({
-      tzaUrl: '/tzas', tiling, profile, subgroupMatrix: smParam(params.get('sm')), winograd: winoParam(params.get('wino')),
+      tzaUrl: '/tzas', tiling, profile, subgroupMatrix: smParam(params.get('sm')),
     });
   }
   throw new Error(`unknown runtime ${name}`);
@@ -402,11 +395,11 @@ async function netMode() {
 // Several WGSL configs on ONE device, timed round-robin so background GPU load
 // hits them alike: &cfg=<pw,ph,oc4,wgx,wgy | ->[@exp+exp][;layer=pw,ph,oc4,wgx,wgy]...
 // (repeat cfg); append !sm=0|1|layer+layer to pick the subgroup-matrix path and
-// !mt=tw,th,ns,ob for its tiling, !wino=0|1|layer+layer and !wt=nseg,ob for Winograd.
+// !mt=tw,th,ns,ob for its tiling.
 // Reports min / median per config and max |Δ| vs the first.
 
 function parseCfg(c: string): TilingOverride {
-  const [head, ...layerParts] = c.replace(/!(sm|mt|wino|wt)=[^@;!]*/g, '').split(';');
+  const [head, ...layerParts] = c.replace(/!(sm|mt)=[^@;!]*/g, '').split(';');
   const [t, e] = head.split('@');
   const one = (x: string): Partial<ConvTiling> => {
     const [pw, ph, oc4, wgx, wgy] = x.split(',').map(Number);
@@ -439,13 +432,9 @@ async function tuneMode() {
     const t = parseCfg(c);
     const smm = /!sm=([^@;!]*)/.exec(c)?.[1];
     const mt = /!mt=([^@;!]*)/.exec(c)?.[1]?.split(',').map(Number);
-    const wino = /!wino=([^@;!]*)/.exec(c)?.[1];
-    const wt = /!wt=([^@;!]*)/.exec(c)?.[1]?.split(',').map(Number);
     const rt = new WgslRuntime({
       tzaUrl: '/tzas', device, tiling: t, subgroupMatrix: smParam(smm ?? params.get('sm')),
       mmaTiling: mt ? { tw: mt[0], th: mt[1], ns: mt[2], ob: mt[3] } : undefined,
-      winograd: winoParam(wino ?? params.get('wino')),
-      winoTiling: wt ? { nseg: wt[0], ob: wt[1] } : undefined,
     });
     const sess = await rt.load({ name: model, channels: ch, precision });
     const b = await sess.bind({ batch: 1, tileW: w, tileH: h });
