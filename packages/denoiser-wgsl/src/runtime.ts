@@ -1,6 +1,8 @@
 // EXPERIMENTAL NetworkRuntime in hand-written WGSL: the OIDN U-Net as ~16 fused
 // conv dispatches (see ./graph.ts, ./conv.ts), encoded into ONE command encoder
-// per run, all intermediates in persistent per-geometry buffers.
+// per run, all intermediates in persistent per-geometry buffers. Two conv
+// kernels: portable vec4 (./conv.ts) and, when the device has the experimental
+// subgroup-matrix feature, an 8x8-matrix GEMM (./mma.ts; fp32 by default).
 //
 //   const denoiser = await Denoiser.create({ runtime: new WgslRuntime({ tzaUrl }) });
 //

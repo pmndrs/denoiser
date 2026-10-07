@@ -4,7 +4,9 @@
 // pixels x OC4 groups of 4 output channels (vec4 accumulators, f32). Per group of
 // 4 input channels ("chunk") the workgroup stages its (TH+2) x (TW+2) input tile
 // in workgroup memory (zero padding, nearest upsample and the two-source concat
-// all resolved in the loader), then every thread does mat4x4 * vec4 per tap.
+// all resolved in the loader), then every thread does mat4x4 * vec4 per tap
+// (a runtime loop over ky keeps the compiler from hoisting all 9 taps' weights).
+// fp16 models: f16 weights/tile, each chunk's products summed in f16.
 // Weights: mat4x4 per (oc4, chunk, tap), column j = input channel j of the chunk.
 import type { ConvOp } from './graph';
 
@@ -17,7 +19,12 @@ export interface ConvTiling {
   /** Workgroup size in threads. */
   wgx: number;
   wgy: number;
-  /** Experiment switches (tuning only). */
+  /**
+   * Experiment switches (tuning only; all measured slower or equal, see
+   * docs/specs/runtimes.md): 'adjacent' (thread-adjacent output columns), 'wShared'
+   * (weights via workgroup memory), 'tapLoop' / 'unroll' (tap loop shape), 'h16'
+   * (fp16: f16 product per tap), 'f32math' (fp16: no f16 sums).
+   */
   exp?: string[];
 }
 
@@ -206,7 +213,7 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u
       let gx = tx0 + i32(i % ${ttw}u);
       var v = vec4f(0.0);
       if (gy >= 0 && gy < i32(H) && gx >= 0 && gx < i32(W)) {
-        ${exp.has('noLoad') ? 'v = vec4f(f32(i));' : load}
+        ${load}
       }
       tile[i] = ${VT}(v);
     }${wShared ? `
@@ -220,7 +227,7 @@ fn main(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) l: vec3u
     ${body.join('\n    ')}
     workgroupBarrier();
   }
-  ${exp.has('noStore') ? `if (${acc(0, 0, 0)}.x == -1234.5) {` : '{'}
+  {
   ${epi.join('\n  ')}
   }
 }
