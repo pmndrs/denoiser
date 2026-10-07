@@ -49,7 +49,8 @@ export interface SplitOptions {
   encWeights: Float32Array; // OIHW [encOutChannels, channels, 3, 3]
   encBias: Float32Array; // [encOutChannels]
   encOutChannels: number; // enc_conv0 output channels (32 for the OIDN aux nets)
-  featInputName?: string; // tail input for the feature map (default 'enc_conv0_relu6_2')
+  featInputName?: string; // tail input for the feature map (default: the tail's non-raw input —
+                          // 'enc_conv0_relu6_2' for base/small, 'enc_conv1a_relu6_2' for large)
   rawInputName?: string; // tail input for the raw image (default 'input')
 }
 
@@ -66,6 +67,7 @@ export class OrtRuntime implements NetworkRuntime {
   readonly name = 'ort-webgpu';
   private models = Models.getInstance();
   private splitWarned = false;
+  private largeWarned = false;
 
   constructor(private opts: OrtRuntimeOptions = {}) {
     if (opts.weightsUrl) this.models.url = opts.weightsUrl;
@@ -73,9 +75,20 @@ export class OrtRuntime implements NetworkRuntime {
 
   async load(model: NetworkModel, hints?: { geometry?: NetworkGeometry }): Promise<OrtSession> {
     this.models.precision = model.precision;
+    // onnxruntime-web's WebGPU EP miscomputes the UNetLarge topology (~9 dB vs
+    // native OIDN even with the split-graph fix — tools/eval). Run the base
+    // model instead of returning garbage; other runtimes run *_large correctly.
+    let name = model.name;
+    if (name.endsWith('_large')) {
+      name = name.slice(0, -'_large'.length);
+      if (!this.largeWarned) {
+        this.largeWarned = true;
+        console.warn(`Denoiser: ${model.name} is miscomputed by onnxruntime-web's WebGPU EP; running ${name} instead. Use the wgsl or kernels runtime for quality: 'high'.`);
+      }
+    }
     // For 9ch cleanAux models the split tail REPLACES the model bytes.
-    const split = await this.loadSplitArtifacts(model.name, model.channels);
-    const bytes = split ? split.tailBytes : await this.models.get(model.name);
+    const split = await this.loadSplitArtifacts(name, model.channels);
+    const bytes = split ? split.tailBytes : await this.models.get(name);
     return OrtSession.create(bytes, {
       channels: model.channels,
       precision: model.precision,
@@ -143,8 +156,6 @@ export class OrtRuntime implements NetworkRuntime {
 
 interface SplitState {
   encOutChannels: number;
-  featInputName: string;
-  rawInputName: string;
   weightBuf: GPUBuffer; // uploaded once (device-lifetime)
   biasBuf: GPUBuffer;
   kernel: EncConv0;
@@ -241,8 +252,6 @@ export class OrtSession implements NetworkSession {
       device.queue.writeBuffer(biasBuf, 0, o.encBias as BufferSource);
       s.split = {
         encOutChannels: o.encOutChannels,
-        featInputName: o.featInputName ?? 'enc_conv0_relu6_2',
-        rawInputName: o.rawInputName ?? 'input',
         weightBuf, biasBuf,
         kernel: new EncConv0(device, s.precision === 'fp16'),
       };
@@ -280,9 +289,14 @@ export class OrtSession implements NetworkSession {
     }
 
     this.outputName = session.outputNames[0];
-    const splitNames = this.splitOpts
-      ? [this.splitOpts.featInputName ?? 'enc_conv0_relu6_2', this.splitOpts.rawInputName ?? 'input']
-      : undefined;
+    let splitNames: [string, string] | undefined;
+    if (this.splitOpts) {
+      const raw = this.splitOpts.rawInputName ?? 'input';
+      // The feature-map input is named after the network's first conv, which
+      // differs by topology — take it from the tail model unless overridden.
+      const feat = this.splitOpts.featInputName ?? session.inputNames.find((n) => n !== raw) ?? 'enc_conv0_relu6_2';
+      splitNames = [feat, raw];
+    }
     if (splitNames) {
       // Tail model has two inputs: the enc_conv0 feature map and the raw image.
       for (const n of splitNames) {
