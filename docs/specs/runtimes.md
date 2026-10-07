@@ -290,8 +290,13 @@ round-robin on one device), `sm=0|1` (subgroup-matrix path), `bw.html`,
    | fp16 ORT → kernels | 15.9 → 13.7 ms | 50.4 → 44.2 ms | 110.9 → 94.5 ms (1.17×) |
 
    Both runtimes only submit in run() (`runMs` ≈ 1–2 ms for each); the network's
-   GPU time lands in `resolveMs`, where the final readback waits. Compare totals. **Gallery: blocked on hosting `.tza` weights** — only `.onnx` is on the
-   CDN, and jsDelivr serves this repo's LFS pointers, not the blobs.
+   GPU time lands in `resolveMs`, where the final readback waits. Compare totals. Gallery: Runtime control (ONNX Runtime / HF kernels / hand-written
+   WGSL, `?runtime=`), non-default runtimes lazy-loaded; `.tza` weights served from
+   `pmndrs/denoiser-weights@models-v3/tzas`. First denoise per model in the gallery:
+   WGSL 11–16 ms, ORT 0.15–1.1 s, kernels ~1.2 s (kernel fetch + compile).
+   The bench regression also checks tiled-vs-whole-frame PSNR (~50 dB, all
+   runtimes) now that the planner respects `maxRunPixels` (it used to keep 1024²
+   tiles under a smaller budget).
 5. OIDN 3 on the winning runtime; add `createStream()` (temporal state, `reset()`)
    and `motion`/`depth` inputs once its inputs are public.
 6. WebNN runtime; ~~hand-written WGSL runtime (fusion, single encoder per frame),
