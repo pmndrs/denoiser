@@ -4,7 +4,7 @@
 // tools/eval/out/report.{json,md}. Needs the dev server up (`yarn dev`, :5196).
 //
 //   node run.mjs                         # full matrix
-//   node run.mjs ort:fp32 wgsl:fp16      # subset
+//   node run.mjs ort:fp32 wgsl:fp16      # subset (-> report-partial-<ts>.{md,json})
 //   ONLY='spheres/' node run.mjs         # filter cases (regex on scene/model)
 //
 // Headless Chrome runs with --enable-unsafe-webgpu, which exposes the
@@ -140,6 +140,9 @@ for (const combo of COMBOS) {
   if (state.error) console.log(`  page error: ${state.error}`);
   runs.push(state);
 }
-writeFileSync(path.join(OUT, 'report.json'), JSON.stringify({ native, runs }, null, 1));
-writeFileSync(path.join(OUT, 'report.md'), report(native, runs));
-console.log(`\nwrote ${path.join(OUT, 'report.md')}`);
+// Partial runs (combo subset or ONLY filter) never overwrite the full report.
+const partial = process.argv.slice(2).length > 0 || !!process.env.ONLY;
+const stem = partial ? `report-partial-${Date.now()}` : 'report';
+writeFileSync(path.join(OUT, `${stem}.json`), JSON.stringify({ native, runs }, null, 1));
+writeFileSync(path.join(OUT, `${stem}.md`), report(native, runs));
+console.log(`\nwrote ${path.join(OUT, `${stem}.md`)}`);
