@@ -16,12 +16,9 @@
 import type {
   NetworkBinding, NetworkGeometry, NetworkModel, NetworkRuntime, NetworkSession,
 } from '@pmndrs/denoiser-core';
+import { DEFAULT_TZA_URL, parseTZA } from '@pmndrs/denoiser-core';
 import { KernelsUNet } from './unet';
-import { parseTZA } from './tza';
 import { shareDeviceWithKernels } from './deviceShim';
-
-/** Upstream OIDN `.tza` weights (sha256-identical to RenderKit/oidn-weights), on jsDelivr. */
-export const DEFAULT_TZA_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas';
 
 export interface KernelsRuntimeOptions {
   /** Base URL the OIDN `.tza` weight files are served from (default: jsDelivr CDN, models-v3). */

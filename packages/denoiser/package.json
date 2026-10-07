@@ -48,6 +48,11 @@
             "types": "./dist/kernels.d.ts",
             "import": "./dist/kernels.mjs",
             "require": "./dist/kernels.cjs"
+        },
+        "./wgsl": {
+            "types": "./dist/wgsl.d.ts",
+            "import": "./dist/wgsl.mjs",
+            "require": "./dist/wgsl.cjs"
         }
     },
     "typesVersions": {
@@ -60,6 +65,9 @@
             ],
             "kernels": [
                 "./dist/kernels.d.ts"
+            ],
+            "wgsl": [
+                "./dist/wgsl.d.ts"
             ]
         }
     },
@@ -89,6 +97,7 @@
         "@pmndrs/denoiser-core": "workspace:*",
         "@pmndrs/denoiser-kernels": "workspace:*",
         "@pmndrs/denoiser-ort": "workspace:*",
+        "@pmndrs/denoiser-wgsl": "workspace:*",
         "@rollup/plugin-commonjs": "^29.0.3",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",

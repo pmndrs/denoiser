@@ -4,6 +4,7 @@
 // (table) and #json (machine-readable, window.__benchResults).
 import { Denoiser, type NetworkRuntime } from 'denoiser';
 import { KernelsRuntime } from 'denoiser/kernels';
+import { WgslRuntime } from 'denoiser/wgsl';
 import { runRegression } from './regression';
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
@@ -16,11 +17,13 @@ const batchParam = params.get('batch') ? Number(params.get('batch')) : undefined
 const captureParam = params.get('capture') === '1';
 const maxRunPixelsParam = params.get('maxRunPixels') ? Number(params.get('maxRunPixels')) : undefined;
 
-// ?runtime=ort|kernels (or the selector). ORT = the package default (undefined).
-// Kernels serves .tza weights from /tzas (dev middleware, see vite.config.ts).
-type RuntimeName = 'ort' | 'kernels';
+// ?runtime=ort|kernels|wgsl (or the selector). ORT = the package default (undefined).
+// kernels/wgsl read .tza weights from /tzas (dev middleware, see vite.config.ts).
+type RuntimeName = 'ort' | 'kernels' | 'wgsl';
 const makeRuntime = (name: RuntimeName): NetworkRuntime | undefined =>
-  name === 'kernels' ? new KernelsRuntime({ tzaUrl: '/tzas' }) : undefined;
+  name === 'kernels' ? new KernelsRuntime({ tzaUrl: '/tzas' })
+    : name === 'wgsl' ? new WgslRuntime({ tzaUrl: '/tzas' })
+      : undefined;
 const SCENARIOS = [
   { label: '512x512', w: 512, h: 512 },
   { label: '1280x720', w: 1280, h: 720 },
@@ -36,7 +39,7 @@ const cleanCanvas = document.querySelector<HTMLCanvasElement>('#clean')!;
 const precisionSel = document.querySelector<HTMLSelectElement>('#precision')!;
 const qualitySel = document.querySelector<HTMLSelectElement>('#quality')!;
 const runtimeSel = document.querySelector<HTMLSelectElement>('#runtime')!;
-if (params.get('runtime') === 'kernels') runtimeSel.value = 'kernels';
+if (['kernels', 'wgsl'].includes(params.get('runtime') ?? '')) runtimeSel.value = params.get('runtime')!;
 const runAllBtn = document.querySelector<HTMLButtonElement>('#runAll')!;
 
 const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };

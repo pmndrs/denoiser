@@ -33,7 +33,8 @@ r185 WebGPU path tracer example. Written as a resumable checkpoint.
 ## Library architecture (workspace packages)
 Internal (private, never published) `@pmndrs/denoiser-core` / `-ort` / `-kernels` ship as
 subpath entries of the one published `denoiser` package: `denoiser` (core + ORT preset),
-`denoiser/core`, `denoiser/ort`, `denoiser/kernels` (experimental). See docs/specs/runtimes.md.
+`denoiser/core`, `denoiser/ort`, `denoiser/kernels`, `denoiser/wgsl` (both experimental).
+See docs/specs/runtimes.md.
 - core `denoiser.ts` — public `Denoiser` class (WebGPU-only); `runtime` option, overridable
   `defaultRuntime` (the preset in `packages/denoiser/src/index.ts` returns `OrtRuntime`).
   Exposes **`denoiser.device`** (the runtime's GPUDevice) to share.

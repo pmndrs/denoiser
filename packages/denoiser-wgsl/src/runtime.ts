@@ -4,21 +4,21 @@
 // kernels: portable vec4 (./conv.ts) and, when the device has the experimental
 // subgroup-matrix feature, an 8x8-matrix GEMM (./mma.ts; fp32 by default).
 //
-//   const denoiser = await Denoiser.create({ runtime: new WgslRuntime({ tzaUrl }) });
+//   const denoiser = await Denoiser.create({ runtime: new WgslRuntime() });
 //
 // run() only encodes + submits: the engine's next GPU work (accumulate/resolve)
 // is queued behind it on the same device, so no host sync is needed in between.
 import type {
   NetworkBinding, NetworkGeometry, NetworkModel, NetworkRuntime, NetworkSession,
 } from '@pmndrs/denoiser-core';
-import { parseTZA } from './tza';
+import { DEFAULT_TZA_URL, parseTZA } from '@pmndrs/denoiser-core';
 import { assignSlots, buildGraph, type ConvOp, type Graph } from './graph';
 import { ceil4, convShader, packBias, packWeights, type ConvTiling } from './conv';
 import { mmaShader, packWeightsMma, type MmaTiling } from './mma';
 
 export interface WgslRuntimeOptions {
-  /** Base URL the OIDN `.tza` weight files are served from. */
-  tzaUrl: string;
+  /** Base URL the OIDN `.tza` weight files are served from (default: jsDelivr CDN, models-v3). */
+  tzaUrl?: string;
   /** Run on this device (default: one with the adapter's max limits + features). */
   device?: GPUDevice;
   /**
@@ -52,7 +52,7 @@ export class WgslRuntime implements NetworkRuntime {
   /** Per-layer GPU ms of the most recent profiled run (profile: true). */
   lastProfile?: LayerTiming[];
 
-  constructor(private opts: WgslRuntimeOptions) {}
+  constructor(private opts: WgslRuntimeOptions = {}) {}
 
   async load(model: NetworkModel): Promise<NetworkSession> {
     this.device ??= this.opts.device ? Promise.resolve(this.opts.device) : requestMaxDevice();
@@ -61,7 +61,7 @@ export class WgslRuntime implements NetworkRuntime {
     if (f16 && !device.features.has('shader-f16')) {
       throw new Error('WgslRuntime: fp16 needs the shader-f16 feature');
     }
-    const res = await fetch(`${this.opts.tzaUrl}/${model.name}.tza`);
+    const res = await fetch(`${this.opts.tzaUrl ?? DEFAULT_TZA_URL}/${model.name}.tza`);
     if (!res.ok) throw new Error(`WgslRuntime: failed to load ${model.name}.tza (${res.status})`);
     const weights = parseTZA(await res.arrayBuffer());
     const graph = buildGraph(weights);

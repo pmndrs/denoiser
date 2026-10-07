@@ -15,7 +15,7 @@
     "dev:smoke": "yarn workspace webgpu-ort-smoke dev",
     "dev:kernels": "yarn workspace kernels-smoke dev",
     "dev:wgsl": "yarn workspace wgsl-bench dev",
-    "build:lib": "yarn workspaces foreach -R --topological-dev --from denoiser --from @pmndrs/denoiser-kernels --from @pmndrs/denoiser-wgsl run build",
+    "build:lib": "yarn workspaces foreach -R --topological-dev --from denoiser run build",
     "examples": "node tools/examples.mjs",
     "test": "yarn workspaces foreach -A --topological-dev run test",
     "build": "yarn workspaces foreach -A --topological-dev run build",

@@ -6,5 +6,3 @@ export type { ConvOp, Graph } from './graph';
 export { convShader } from './conv';
 export { mmaShader } from './mma';
 export type { ConvTiling } from './conv';
-export { parseTZA, halfToFloat } from './tza';
-export type { TensorMap, WeightTensor } from './tza';

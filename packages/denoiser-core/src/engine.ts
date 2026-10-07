@@ -183,6 +183,8 @@ export class TiledEngine {
     for (const t of [1024, 512, this.tile]) {
       if (t > Math.max(pw, ph)) continue; // pointless: bigger than the image
       const perTile = t * t;
+      // a single tile must fit the per-run budget (the base tile is the floor)
+      if (perTile > this.maxRunPixels && t !== this.tile) continue;
       const batch = Math.min(
         this.batch,
         Math.max(1, Math.floor(this.maxRunPixels / perTile)),

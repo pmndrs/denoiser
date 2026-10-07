@@ -10,7 +10,7 @@
 //                                         the rest; nothing is materialized
 // The network input/output stay NCHW (the NetworkBinding contract); every
 // intermediate is channel-packed NC4HW4 (vec4 of 4 channels per pixel).
-import type { TensorMap } from './tza';
+import type { TensorMap } from '@pmndrs/denoiser-core';
 
 /** Where a conv reads its input channels from. */
 export type Source =

@@ -288,9 +288,10 @@ Entry points (one package):
 | import | contents |
 |---|---|
 | `denoiser` | everything below except kernels; `Denoiser` defaults to `OrtRuntime` |
-| `denoiser/core` | runtime-agnostic `Denoiser` (requires `runtime`), `TiledEngine`, runtime types |
+| `denoiser/core` | runtime-agnostic `Denoiser` (requires `runtime`), `TiledEngine`, runtime types, `parseTZA` / `DEFAULT_TZA_URL` (OIDN `.tza` weights for non-ORT runtimes) |
 | `denoiser/ort` | `OrtRuntime`, `OrtSession`, `Models`, `DenoiseEngine` |
 | `denoiser/kernels` | **experimental** `KernelsRuntime` on `@huggingface/kernels` (optional peer dependency — install it to use this entry) |
+| `denoiser/wgsl` | **experimental** `WgslRuntime`: the U-Net in hand-written WGSL (no dependencies) — fastest today, validated on Apple GPUs only |
 
 The entries share one copy of the core, so classes from `denoiser` and
 `denoiser/core` are the same. The interface is new in this release and may

@@ -96,7 +96,20 @@ async function readTexture(device: GPUDevice, tex: GPUTexture): Promise<Uint8Arr
   return out;
 }
 
-export interface RegressionCase { name: string; model?: string; tiles?: number; hash: string }
+export interface RegressionCase {
+  name: string; model?: string; tiles?: number; hash: string;
+  /** Tiled case only: PSNR against the whole-frame result (seams / blend check). */
+  psnrVsWholeFrame?: number;
+}
+
+function psnr(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  let se = 0;
+  let n = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    for (let c = 0; c < 3; c++) { const d = a[i + c] - b[i + c]; se += d * d; n++; }
+  }
+  return se === 0 ? Infinity : 10 * Math.log10((255 * 255) / (se / n));
+}
 
 export async function runRegression(
   weightsUrl: string | undefined, precision: Precision,
@@ -120,7 +133,8 @@ export async function runRegression(
     }))!.data);
 
     const big = scene(1280, 720, 4, 'color');
-    push('image-1280x720', (await dn.denoise({ data: toBytes(big), width: 1280, height: 720 }))!.data);
+    const whole = (await dn.denoise({ data: toBytes(big), width: 1280, height: 720 }))!.data;
+    push('image-1280x720', whole);
 
     const dev = dn.device;
     const cTex = texture(dev, color, W, H);
@@ -140,7 +154,10 @@ export async function runRegression(
     dn.destroyDevice();
     const tiled = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', weightsUrl, maxRunPixels: 256 * 256 });
     const r = (await tiled.denoise({ data: toBytes(big), width: 1280, height: 720 }))!;
-    out.push({ name: 'image-1280x720-tiled', model: tiled.modelName, tiles: tiled.stats?.tiles, hash: fnv1a(r.data) });
+    out.push({
+      name: 'image-1280x720-tiled', model: tiled.modelName, tiles: tiled.stats?.tiles, hash: fnv1a(r.data),
+      psnrVsWholeFrame: psnr(r.data, whole),
+    });
     tiled.destroyDevice();
   } catch (err) {
     dn.destroyDevice();

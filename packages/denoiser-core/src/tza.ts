@@ -1,5 +1,9 @@
-// OIDN TZA weight blob parser — JS port of tools/onnx-convert/tza.py.
-// Conv weights stay OIHW, which is what FusedConv (NCHW) wants.
+// OIDN TZA weight blob parser — JS port of tools/onnx-convert/tza.py. Shared by
+// the runtimes that read OIDN weights directly (HF kernels, hand-written WGSL).
+// Conv weights stay OIHW.
+
+/** Upstream OIDN `.tza` weights (sha256-identical to RenderKit/oidn-weights), on jsDelivr. */
+export const DEFAULT_TZA_URL = 'https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas';
 
 export interface WeightTensor {
   data: Float32Array;

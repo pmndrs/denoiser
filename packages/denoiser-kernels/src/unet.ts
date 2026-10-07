@@ -8,7 +8,7 @@
 // reads back. The final conv has no activation (matches upstream OIDN / the
 // default --final-activation none ONNX models).
 import { getKernel, type Kernel, type KernelGpuTensor } from '@huggingface/kernels';
-import type { TensorMap } from './tza';
+import type { TensorMap } from '@pmndrs/denoiser-core';
 
 export type Precision = 'fp32' | 'fp16';
 

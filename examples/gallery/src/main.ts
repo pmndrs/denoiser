@@ -35,9 +35,9 @@ const statusEl = document.querySelector<HTMLElement>('#status')!;
 const runtimeControlEl = document.querySelector<HTMLElement>('#runtime-control')!;
 const runtimeHintEl = document.querySelector<HTMLElement>('#runtime-hint')!;
 
-// Which network runtime runs the U-Net: ?runtime=ort (default) | kernels. The
-// kernels runtime binds page-global state to a device, so switching reloads.
-type RuntimeId = 'ort' | 'kernels';
+// Which network runtime runs the U-Net: ?runtime=ort (default) | kernels | wgsl.
+// Switching reloads (the kernels runtime binds page-global state to a device).
+type RuntimeId = 'ort' | 'kernels' | 'wgsl';
 // Non-default runtimes load on demand, so ORT visitors don't download them.
 const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined> }[] = [
   { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU (default)', make: async () => undefined },
@@ -45,8 +45,13 @@ const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promis
     id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op',
     make: async () => new (await import('denoiser/kernels')).KernelsRuntime(),
   },
+  {
+    id: 'wgsl', label: 'Hand-written WGSL', hint: 'experimental: fused WGSL, one command encoder per run',
+    make: async () => new (await import('denoiser/wgsl')).WgslRuntime(),
+  },
 ];
-const runtimeId: RuntimeId = new URLSearchParams(location.search).get('runtime') === 'kernels' ? 'kernels' : 'ort';
+const requested = new URLSearchParams(location.search).get('runtime');
+const runtimeId: RuntimeId = RUNTIMES.find((r) => r.id === requested)?.id ?? 'ort';
 const runtime = RUNTIMES.find((r) => r.id === runtimeId)!;
 
 function renderRuntimeControl(): void {

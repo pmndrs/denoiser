@@ -1405,6 +1405,7 @@ __metadata:
     "@pmndrs/denoiser-core": "workspace:*"
     "@pmndrs/denoiser-kernels": "workspace:*"
     "@pmndrs/denoiser-ort": "workspace:*"
+    "@pmndrs/denoiser-wgsl": "workspace:*"
     "@rollup/plugin-commonjs": "npm:^29.0.3"
     "@rollup/plugin-node-resolve": "npm:^16.0.3"
     "@rollup/plugin-typescript": "npm:^12.3.0"

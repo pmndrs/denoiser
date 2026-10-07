@@ -5,9 +5,8 @@
 import * as ort from 'onnxruntime-web/webgpu';
 import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
-import {
-  parseTZA, halfToFloat, KernelsUNet, shareDeviceWithKernels, type KernelsPrecision as Precision,
-} from 'denoiser/kernels';
+import { parseTZA, halfToFloat } from 'denoiser';
+import { KernelsUNet, shareDeviceWithKernels, type KernelsPrecision as Precision } from 'denoiser/kernels';
 
 const tzaUrls = import.meta.glob('../../../packages/denoiser/tzas/rt_ldr*.tza',
   { query: '?url', import: 'default', eager: true }) as Record<string, string>;
