@@ -48,7 +48,7 @@ back to tiling if either is exceeded.
 
 The U-Net's decoder concat levels are the widest point in the graph — up to
 **~96 channels** at full resolution (a conservative upper bound the engine
-uses, `WORST_FULLRES_CHANNELS` in `ort/engine.ts`, covering every model
+uses, `WORST_FULLRES_CHANNELS` in `engine.ts`, covering every model
 variant's decoder concat). A run's worst single intermediate tensor is
 roughly:
 

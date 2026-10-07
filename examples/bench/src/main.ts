@@ -3,6 +3,7 @@
 // Denoiser.lastStats, PSNR parity between precisions. Results land in #results
 // (table) and #json (machine-readable, window.__benchResults).
 import { Denoiser } from 'denoiser';
+import { runRegression } from './regression';
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
 // production builds omit the override so the denoiser falls back to its shipped CDN default.
@@ -193,6 +194,8 @@ async function runAll() {
   return { data: out.data, stats };
 };
 (window as unknown as Record<string, unknown>).__psnr = psnr;
+(window as unknown as Record<string, unknown>).__regression = (precision: 'fp32' | 'fp16' = 'fp32') =>
+  runRegression(WEIGHTS_URL, precision);
 
 async function main() {
   if (!('gpu' in navigator)) { log('ERROR: WebGPU not available.'); return; }

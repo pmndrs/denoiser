@@ -1,3 +1,5 @@
+import type { NetworkRuntime } from './runtime';
+
 export type Quality = 'fast' | 'balanced' | 'high';
 
 export type ImgInput =
@@ -14,6 +16,12 @@ export type ImgInput =
 export type OutputTransfer = 'linear' | 'srgb' | 'aces-srgb';
 
 export interface DenoiserCreateOptions {
+  /**
+   * What executes the network. Default: onnxruntime-web on WebGPU, configured
+   * by `weightsUrl` / `wasmPaths` / `graphCapture` / `splitAux` below (those
+   * options are ignored when a runtime is passed — configure it directly).
+   */
+  runtime?: NetworkRuntime;
   /** fp16 models + tensors when the device supports shader-f16 (auto-falls back). */
   precision?: 'fp32' | 'fp16';
   /** Model family size: fast = *_small, balanced = base, high = *_large where available. */

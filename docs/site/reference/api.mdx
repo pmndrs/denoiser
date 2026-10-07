@@ -36,6 +36,7 @@ static async create(options?: DenoiserCreateOptions): Promise<Denoiser>
 | `maxRunPixels` | `number` | `2048 * 1152` (2 359 296) | per-run pixel budget (padded W×H); above it the engine tiles instead of running whole-frame. See [Large images & tiling](../guides/large-images-and-tiling) |
 | `batch` | `number` | `8` | max tiles batched into one `session.run` in tiled mode |
 | `graphCapture` | `boolean` | `false` | opt-in ORT WebGPU graph capture. Leave off — measured no gain, and onnxruntime-web 1.27 crashes captured sessions after ~150–250 cumulative replays |
+| `runtime` | `NetworkRuntime` | `OrtRuntime` built from the options in this table | what executes the network — see [Network runtimes](#network-runtimes-experimental). When passed, `weightsUrl` / `wasmPaths` / `graphCapture` / `splitAux` are ignored (configure the runtime itself) |
 | `splitAux` | `boolean` | `true` | works around an onnxruntime-web WebGPU bug on the 9-channel `cleanAux` models by running the first conv in WGSL; fetches `<model>.tail.onnx` + `<model>.enc0.bin` next to the model. Falls back to the plain (unfixed) model with a one-time console warning if those artifacts aren't hosted. No effect on 3/6-channel models |
 
 ### Properties
@@ -226,7 +227,7 @@ Singleton `.onnx` model loader/cache `Denoiser` uses internally.
 | `Models.getInstance()` | `static (): Models` | the singleton instance |
 | `path` | `string \| undefined` | subdirectory under the site root, used only when `url` is unset |
 | `url` | `string` | remote base URL for models (default: the jsDelivr `models-v2` URL — same default as `DenoiserCreateOptions.weightsUrl`) |
-| `precision` | `'fp32' \| 'fp16'` | default `'fp32'`; `Denoiser.create({ precision })` sets this |
+| `precision` | `'fp32' \| 'fp16'` | default `'fp32'`; `OrtRuntime` sets it from the precision of each model it loads |
 | `get(name, overrideUrl?)` | `(string, string?) => Promise<Uint8Array>` | fetch (and cache) a model's raw bytes |
 | `has(name)` | `(string) => boolean` | whether a model is already cached for the current precision |
 
@@ -258,6 +259,32 @@ bypassing the high-level model-selection logic.
 and `TextureDenoiseOptions` (`DenoiseOptions` + `inputFlipY?` + `auxInputFlipY?`
 + `toTexture?` + `outputTexture?`) are the lower-level shapes
 `DenoiseTexturesOptions` maps onto.
+
+### Network runtimes (experimental)
+
+`Denoiser` and `TiledEngine` do all tiling, transfer functions and WGSL
+pre/post themselves; a **`NetworkRuntime`** only executes the U-Net. The
+default is `OrtRuntime` (onnxruntime-web, WebGPU EP). Other runtimes (HF
+kernels, WebNN, hand-written WGSL) plug in through the same interface:
+
+```ts
+import { Denoiser, OrtRuntime } from 'denoiser';
+
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models' }), // or any NetworkRuntime
+});
+```
+
+| type | role |
+|---|---|
+| `NetworkRuntime` | `load(model: NetworkModel, hints?) => Promise<NetworkSession>` — fetches and opens a model by OIDN name (`{ name, channels, precision }`). The first load may create the `GPUDevice` |
+| `NetworkSession` | `device` (the engine runs its WGSL here too), optional `fixedGeometry`, `bind(geometry) => Promise<NetworkBinding>`, `release()` |
+| `NetworkBinding` | `input` / `output` `GPUBuffer`s (NCHW `[B, C, H, W]` / `[B, 3, H, W]` in model precision) and `run()`: the engine writes `input`, awaits `run()`, reads `output` |
+| `TiledEngine.load(runtime, model, options?)` | the runtime-agnostic engine `Denoiser` uses (same members as `DenoiseEngine` below, minus the ORT-specific ones) |
+| `OrtRuntime` / `OrtSession` | the onnxruntime-web implementation; `OrtRuntimeOptions` = `{ weightsUrl?, wasmPaths?, graphCapture?, splitAux? }` |
+
+The interface is new in this release and may change while the second runtime
+lands — pin your version if you implement it.
 
 ### `determineModel(selector)`
 

@@ -35,10 +35,15 @@ r185 WebGPU path tracer example. Written as a resumable checkpoint.
   `setInputImage`/`setInputData`, `setCanvas`, `onExecute`/`onProgress`/`onBackendReady`,
   props (`quality`/`hdr`/`srgb`/`height`/`width`/aux flags), `weightsUrl`/`weightsPath`,
   `flipOutputY`, `build`, `dispose`. Exposes **`denoiser.device`** (ORT's GPUDevice) to share.
-- `ort/engine.ts` — `DenoiseEngine`: ORT InferenceSession + IO-bound gpu-buffer tensors,
-  256² tiling (overlap 32, stride 224) with overlap-blend, on the shared device.
-- `ort/wgsl.ts` — `GpuImageOps`: WGSL compute kernels — extract/normalize/HWC→NCHW
+- `runtime.ts` — `NetworkRuntime` / `NetworkSession` / `NetworkBinding`: the seam between the
+  engine and whatever executes the U-Net (ORT today; HF kernels / WebNN / hand-written WGSL next).
+- `engine.ts` — `TiledEngine`: runtime-agnostic pipeline — whole-frame/tiled geometry planning,
+  overlap-blend, CPU + texture inputs, resolve/readback, all on the session's device.
+- `gpu/imageOps.ts` — `GpuImageOps`: WGSL compute kernels — extract/normalize/HWC→NCHW
   (3/6/9ch concat + sRGB→linear), accumulate (min-of-sigmoid blend), resolve (→RGBA, sRGB, clamp).
+- `ort/runtime.ts` — `OrtRuntime` / `OrtSession`: ORT InferenceSession per geometry (pinned free
+  dims), IO-bound gpu-buffer tensors, max-limits device patch, split-aux workaround (`ort/splitAux.ts`).
+- `ort/engine.ts` — `DenoiseEngine`: 2.x compat — `TiledEngine` on an ORT session from raw bytes.
 - `weights.ts` — `Models`: fetch+cache `.onnx` by name (replaces TZA parser). CDN-hosted.
 - `modelName.ts` — props → ONNX model name (port of `determineTensorMap`) + channel count.
 - `utils.ts` — pure-DOM helpers (image→RGBA, flip, formatTime). `types.ts`, `global.d.ts`.

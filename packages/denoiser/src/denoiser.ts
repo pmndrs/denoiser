@@ -1,12 +1,13 @@
-import { Models } from './weights';
-import { DenoiseEngine } from './ort/engine';
+import { TiledEngine } from './engine';
+import { OrtRuntime } from './ort/runtime';
 import { determineModel } from './modelName';
 import { imgToRGBA, getCorrectImageData, hasSizeMissmatch } from './utils';
 import {
   DenoiserCreateOptions, DenoiseImageOptions, DenoiseTexturesOptions, DenoiserEvent,
   DenoiserInputError, Quality,
 } from './types';
-import type { DenoiseStats } from './ort/engine';
+import type { DenoiseStats } from './engine';
+import type { NetworkRuntime, Precision } from './runtime';
 
 /**
  * Browser OIDN denoiser running fully on WebGPU via onnxruntime-web (v2 API).
@@ -25,8 +26,10 @@ export class Denoiser {
   /** The shared GPUDevice ORT created — pass to three.js WebGPURenderer. */
   device!: GPUDevice;
 
-  private models: Models;
-  private engine!: DenoiseEngine;
+  /** What executes the network (default: onnxruntime-web on WebGPU). */
+  readonly runtime: NetworkRuntime;
+  private precision: Precision;
+  private engine!: TiledEngine;
   private activeModelName?: string;
   private aborted = false;
   private opts: Required<Pick<DenoiserCreateOptions, 'quality'>> & DenoiserCreateOptions;
@@ -44,9 +47,13 @@ export class Denoiser {
     // splitAux defaults ON so 9ch cleanAux "just works" (dodges the ORT-web
     // WebGPU Conv bug); falls back to the plain model if artifacts aren't hosted.
     this.opts = { quality: 'fast', splitAux: true, ...opts };
-    this.models = Models.getInstance();
-    if (opts.precision) this.models.precision = opts.precision;
-    if (opts.weightsUrl) this.models.url = opts.weightsUrl;
+    this.precision = opts.precision ?? 'fp32';
+    this.runtime = opts.runtime ?? new OrtRuntime({
+      weightsUrl: opts.weightsUrl,
+      wasmPaths: opts.wasmPaths,
+      graphCapture: opts.graphCapture,
+      splitAux: this.opts.splitAux,
+    });
   }
 
   /** Async construction: loads the default model and creates the GPUDevice. */
@@ -182,90 +189,24 @@ export class Denoiser {
       cleanAux: sel.albedo && sel.normal, dirtyAux: false,
     });
     if (this.engine && this.activeModelName === name) return;
-    // Aux split-graph workaround: for 9ch cleanAux models, fetch a re-exported
-    // tail + enc_conv0 weights and run enc_conv0 in WGSL (dodges the ORT-web
-    // WebGPU Conv bug). The tail REPLACES the model bytes.
-    const split = await this.loadSplitArtifacts(name, channels);
-    const create = async () =>
-      DenoiseEngine.create(split ? split.tailBytes : await this.models.get(name), {
-        channels,
-        wasmPaths: this.opts.wasmPaths,
-        graphCapture: this.opts.graphCapture,
-        batch: this.opts.batch,
-        maxRunPixels: this.opts.maxRunPixels,
-        precision: this.models.precision,
-        split: split?.engine,
-      });
+    const create = () => TiledEngine.load(
+      this.runtime,
+      { name, channels, precision: this.precision },
+      { batch: this.opts.batch, maxRunPixels: this.opts.maxRunPixels },
+    );
     const old = this.engine;
     try {
       this.engine = await create();
     } catch (err) {
-      if (this.models.precision !== 'fp16') throw err;
+      if (this.precision !== 'fp16') throw err;
       console.warn('Denoiser: fp16 unavailable, falling back to fp32', err);
-      this.models.precision = 'fp32';
+      this.precision = 'fp32';
       this.engine = await create();
     }
     old?.destroy();
     this.activeModelName = name;
     this.device = this.engine.device;
   }
-
-  /**
-   * Fetch the split-graph artifacts (tail model + first-conv weights) for a
-   * cleanAux model when splitAux is on. Returns undefined otherwise (incl. when
-   * artifacts aren't hosted — falls back to the plain model with a warning, so
-   * default-on splitAux never hard-fails). Artifacts live next to the model,
-   * with the same precision suffix: `<name>[.fp16].tail.onnx` and
-   * `<name>[.fp16].enc0.bin` (f32 OIHW weights [COUT,channels,3,3] then bias).
-   */
-  private async loadSplitArtifacts(name: string, channels: number): Promise<
-    { tailBytes: Uint8Array; engine: NonNullable<Parameters<typeof DenoiseEngine.create>[1]['split']> } | undefined
-  > {
-    if (!this.opts.splitAux || channels < 9) return undefined;
-    const m = this.models;
-    const suffix = m.precision === 'fp16' ? '.fp16' : ''; // mirror Models.fileFor
-    const stem = m.url ? `${m.url}/${name}${suffix}` : `/${m.path ?? 'models'}/${name}${suffix}`;
-    const fetchBytes = async (url: string) => {
-      const r = await fetch(url);
-      // A dev server's SPA fallback (e.g. Vite's default appType) can answer a
-      // missing artifact with a 200 + index.html rather than a 404 — treat any
-      // HTML response as "not found" too, or the bogus bytes below throw a
-      // confusing low-level error instead of the intended graceful fallback.
-      const contentType = r.headers.get('content-type') ?? '';
-      if (!r.ok || contentType.includes('text/html')) {
-        throw new Error(`${url} (${r.status}${contentType ? `, ${contentType}` : ''})`);
-      }
-      return r.arrayBuffer();
-    };
-    let tail: ArrayBuffer, encBuf: ArrayBuffer;
-    try {
-      [tail, encBuf] = await Promise.all([
-        fetchBytes(`${stem}.tail.onnx`),
-        fetchBytes(`${stem}.enc0.bin`),
-      ]);
-    } catch (err) {
-      // Artifacts missing/unreachable — run the plain (speckled) model instead of
-      // failing. Aux on WebGPU has a known ORT bug; this is the fallback path.
-      if (!this.splitWarned) {
-        this.splitWarned = true;
-        console.warn(`Denoiser: splitAux artifacts unavailable for ${name}${suffix}, aux will speckle (ORT-web WebGPU Conv bug). Host <name>.tail.onnx + <name>.enc0.bin next to the model, or set splitAux:false to silence.`, err);
-      }
-      return undefined;
-    }
-    const f = new Float32Array(encBuf);
-    // f = [COUT*channels*9 weights][COUT bias]  ->  len = COUT*(channels*9 + 1)
-    const cout = Math.round(f.length / (channels * 9 + 1));
-    return {
-      tailBytes: new Uint8Array(tail),
-      engine: {
-        encWeights: f.slice(0, cout * channels * 9),
-        encBias: f.slice(cout * channels * 9, cout * channels * 9 + cout),
-        encOutChannels: cout,
-      },
-    };
-  }
-
-  private splitWarned = false;
 
   /** Aux textures are optional, but one PASSED yet resolving to undefined (e.g. a
    *  failed render-target unwrap) would silently degrade to color-only — warn
