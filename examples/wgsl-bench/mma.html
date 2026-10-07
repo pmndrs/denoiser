@@ -104,19 +104,21 @@
           log(`${T}->${R} MMA: ${xs[0].toFixed(2)} ms min = ${(macs / xs[0] / 1e9).toFixed(2)} TMAC/s`);
           results[`mma_${T}`] = macs / xs[0] / 1e9;
         }
-        // scalar f32 FMA (vec4) throughput for comparison
-        {
+        // scalar FMA (vec4) throughput for comparison, f32 and f16
+        for (const FT of ['f32', 'f16']) {
           const code3 = `
+            enable f16;
+            alias V = vec4<${FT}>;
             @group(0) @binding(0) var<storage, read_write> o: array<vec4f>;
             @compute @workgroup_size(64) fn main(@builtin(global_invocation_id) g: vec3u) {
-              var a0 = vec4f(f32(g.x)); var a1 = a0 + 1.0; var a2 = a0 + 2.0; var a3 = a0 + 3.0;
+              var a0 = V(${FT}(g.x % 7u)); var a1 = a0 + 1.0; var a2 = a0 + 2.0; var a3 = a0 + 3.0;
               var a4 = a0 + 4.0; var a5 = a0 + 5.0; var a6 = a0 + 6.0; var a7 = a0 + 7.0;
-              let m = vec4f(0.999); let k = vec4f(0.001);
+              let m = V(0.999); let k = V(0.001);
               for (var it = 0u; it < ${ITER * 4}u; it++) {
                 a0 = fma(a0, m, k); a1 = fma(a1, m, k); a2 = fma(a2, m, k); a3 = fma(a3, m, k);
                 a4 = fma(a4, m, k); a5 = fma(a5, m, k); a6 = fma(a6, m, k); a7 = fma(a7, m, k);
               }
-              o[g.x % 65536u] = a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7;
+              o[g.x % 65536u] = vec4f(a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7);
             }`;
           const p3 = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: code3 }), entryPoint: 'main' } });
           const bg3 = device.createBindGroup({ layout: p3.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: big } }] });
@@ -136,8 +138,8 @@
           }
           xs.sort((a, b) => a - b);
           const fmas = N3 * ITER * 4 * 8 * 4;
-          log(`scalar f32 FMA: ${xs[0].toFixed(2)} ms min = ${(fmas / xs[0] / 1e9).toFixed(2)} TFMA/s`);
-          results.fma = fmas / xs[0] / 1e9;
+          log(`scalar ${FT} FMA: ${xs[0].toFixed(2)} ms min = ${(fmas / xs[0] / 1e9).toFixed(2)} TFMA/s`);
+          results[`fma_${FT}`] = fmas / xs[0] / 1e9;
         }
       } catch (e) {
         results.error = String(e);

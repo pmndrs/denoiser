@@ -50,7 +50,7 @@ function smParam(v: string | null | undefined): boolean | 'auto' | string[] {
   if (v == null || v === 'auto') return 'auto';
   if (v === '0') return false;
   if (v === '1') return true;
-  return v.split('+');
+  return v.split(/[+ ]/); // '+' arrives as ' ' in a query string
 }
 
 function makeRuntime(name: string, profile = false): NetworkRuntime {

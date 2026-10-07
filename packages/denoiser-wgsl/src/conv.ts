@@ -47,7 +47,12 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
   const wShared = exp.has('wShared');
   // f16 math (fp16 models only): tile + weights stay f16, each tap's 4-term
   // mat4x4 * vec4 product is f16, accumulation stays f32.
-  const h16 = f16 && exp.has('h16');
+  // fp16 models: f16 products summed in f16 over one 4-channel input chunk (9 taps
+  // x 4 channels = 36 terms), added to the f32 accumulator once per chunk. Apple
+  // GPUs run f16 FMA at 2x the f32 rate (mma.html); measured 1080p 44 -> 37 ms,
+  // output still within 1 LSB of fp32 (ORT fp16: 2-3). 'f32math' turns it off.
+  const h16c = f16 && !exp.has('f32math');
+  const h16 = f16 && (exp.has('h16') || h16c);
   const MT = h16 ? 'mat4x4<f16>' : 'mat4x4f';
   const VT = h16 ? 'vec4<f16>' : 'vec4f';
   const final = op.dst < 0;
@@ -108,6 +113,12 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
   const tapLoop = exp.has('tapLoop'); // runtime loop over all 9 taps
   const kyLoop = !tapLoop && !exp.has('unroll');
   const body: string[] = [];
+  const part = (py: number, px: number, o: number) => `h${py}_${px}_${o}`;
+  if (h16c) {
+    for (let o = 0; o < oc4; o++) for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
+      body.push(`var ${part(py, px, o)} = vec4<f16>(0.0);`);
+    }
+  }
   if (kyLoop) body.push('for (var ky = 0u; ky < 3u; ky++) {');
   if (tapLoop) body.push('for (var t = 0u; t < 9u; t++) {', `let toff = (t / 3u) * ${ttw}u + t % 3u;`);
   for (let ky = 0; ky < (kyLoop || tapLoop ? 1 : 3); ky++) {
@@ -121,12 +132,20 @@ export function convShader(op: ConvOp, f16: boolean, tiling: ConvTiling): ConvSh
         const off = (py + ky) * ttw + colOf(px) + kx;
         const dyn = tapLoop ? 'toff + ' : kyLoop ? `ky * ${ttw}u + ` : '';
         body.push(`{ let x = tile[base + ${dyn}${off}u];`);
-        for (let o = 0; o < oc4; o++) body.push(h16 ? `  ${acc(py, px, o)} += vec4f(m${o}_${t} * x);` : `  ${acc(py, px, o)} += m${o}_${t} * x;`);
+        for (let o = 0; o < oc4; o++) {
+          body.push(h16c ? `  ${part(py, px, o)} += m${o}_${t} * x;`
+            : h16 ? `  ${acc(py, px, o)} += vec4f(m${o}_${t} * x);` : `  ${acc(py, px, o)} += m${o}_${t} * x;`);
+        }
         body.push('}');
       }
     }
   }
   if (kyLoop || tapLoop) body.push('}');
+  if (h16c) {
+    for (let o = 0; o < oc4; o++) for (let py = 0; py < ph; py++) for (let px = 0; px < pw; px++) {
+      body.push(`${acc(py, px, o)} += vec4f(${part(py, px, o)});`);
+    }
+  }
 
   const epi: string[] = [];
   const act = (e: string) => (op.relu ? `clamp(${e}, vec4f(0.0), vec4f(6.0))` : e);

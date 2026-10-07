@@ -30,8 +30,9 @@ export interface WgslRuntimeOptions {
   /**
    * Run convs as 8x8 subgroup-matrix GEMMs (Metal simdgroup_matrix) when the
    * device has `chromium-experimental-subgroup-matrix` with an f32 8x8x8 config
-   * and 32-wide subgroups. 'auto' (default) = when available; or a list of layer
-   * names to restrict it to. The portable vec4 kernel is the fallback.
+   * and 32-wide subgroups. 'auto' (default) = when available, for fp32 models
+   * (for fp16 the portable kernel's f16 math is faster); true = for both
+   * precisions; or a list of layer names. The portable vec4 kernel is the fallback.
    */
   subgroupMatrix?: boolean | 'auto' | string[];
   /** Override the subgroup-matrix tiling — for tuning experiments. */
@@ -69,7 +70,8 @@ export class WgslRuntime implements NetworkRuntime {
     const session = new WgslSession(device, graph, f16, profile, (p) => { this.lastProfile = p; });
     const mmaOk = hasSubgroupMatrix(device);
     const sm = this.opts.subgroupMatrix ?? 'auto';
-    const useMma = (op: ConvOp) => mmaOk && (Array.isArray(sm) ? sm.includes(op.name) : sm !== false);
+    const useMma = (op: ConvOp) => mmaOk
+      && (Array.isArray(sm) ? sm.includes(op.name) : sm === true || (sm === 'auto' && !f16));
     await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling);
     return session;
   }
