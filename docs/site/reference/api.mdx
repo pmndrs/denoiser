@@ -178,7 +178,7 @@ most recently completed run:
 | `batchSize` | `number` | tiles per batch actually used |
 | `uploadMs` | `number` | input upload + accumulate/weight buffer clear |
 | `encodeMs` | `number` | WGSL extract/accumulate encode + submit (CPU-side) |
-| `runMs` | `number` | sum of awaited network-run time (`NetworkBinding.run()`). Runtime-dependent: ORT awaits GPU completion; runtimes that only submit (HF kernels) report CPU time here and their GPU time shows up in `resolveMs` — compare `totalMs` across runtimes |
+| `runMs` | `number` | sum of awaited network-run time (`NetworkBinding.run()`). Runtimes submit GPU work asynchronously (ORT and HF kernels both return in ~1 ms), so this is mostly CPU encode/submit time; the network's GPU time lands in `resolveMs`, where the readback waits for the queue. Use `totalMs` to compare runtimes |
 | `resolveMs` | `number` | resolve pass + readback/map |
 | `totalMs` | `number` | wall clock for the whole call |
 
