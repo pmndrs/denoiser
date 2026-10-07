@@ -1,0 +1,53 @@
+{
+    "name": "@pmndrs/denoiser-wgsl",
+    "description": "EXPERIMENTAL hand-written WGSL (WebGPU) network runtime for @pmndrs/denoiser-core",
+    "keywords": [
+        "OIDN",
+        "denoiser",
+        "webgpu",
+        "wgsl"
+    ],
+    "version": "0.1.0",
+    "private": true,
+    "author": "Dennis Smolek",
+    "license": "MIT",
+    "homepage": "https://github.com/pmndrs/denoiser",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pmndrs/denoiser.git",
+        "directory": "packages/denoiser-wgsl"
+    },
+    "bugs": {
+        "url": "https://github.com/pmndrs/denoiser/issues"
+    },
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.cjs"
+        }
+    },
+    "files": [
+        "dist/**",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "rm -rf dist && tsc && rollup --config rollup.config.mjs"
+    },
+    "dependencies": {
+        "@pmndrs/denoiser-core": "workspace:*"
+    },
+    "devDependencies": {
+        "@rollup/plugin-commonjs": "^29.0.3",
+        "@rollup/plugin-node-resolve": "^16.0.3",
+        "@rollup/plugin-typescript": "^12.3.0",
+        "@webgpu/types": "^0.1.71",
+        "rollup": "^4.62.2",
+        "tslib": "^2.8.1",
+        "typescript": "^5.9.3"
+    }
+}

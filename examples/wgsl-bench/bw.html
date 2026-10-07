@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WGSL store bandwidth probe</title>
+  </head>
+  <body>
+    <pre id="status"></pre>
+    <script type="module">
+      // Store/load bandwidth probe: how fast can a compute shader write a 267 MB
+      // buffer (= one 32-channel fp32 1080p tensor) with various patterns?
+      const status = document.querySelector('#status');
+      const results = {};
+      window.__wgslBench = results;
+      const log = (m) => { status.textContent += m + '\n'; };
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        const limits = {};
+        for (const k of ['maxBufferSize', 'maxStorageBufferBindingSize']) limits[k] = adapter.limits[k];
+        const device = await adapter.requestDevice({ requiredFeatures: ['timestamp-query'], requiredLimits: limits });
+        const N = 1920 * 1088 * 8; // vec4 count
+        const usage = GPUBufferUsage.STORAGE;
+        const dst = device.createBuffer({ size: N * 16, usage });
+        const src = device.createBuffer({ size: N * 16, usage });
+        const qs = device.createQuerySet({ type: 'timestamp', count: 2 });
+        const qr = device.createBuffer({ size: 16, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+        const qm = device.createBuffer({ size: 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+        async function time(code, groups, binds) {
+          const p = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code }), entryPoint: 'main' } });
+          const bg = device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: binds.map((b, i) => ({ binding: i, resource: { buffer: b } })) });
+          const xs = [];
+          for (let r = 0; r < 6; r++) {
+            const enc = device.createCommandEncoder();
+            const pass = enc.beginComputePass({ timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } });
+            pass.setPipeline(p); pass.setBindGroup(0, bg); pass.dispatchWorkgroups(...groups); pass.end();
+            enc.resolveQuerySet(qs, 0, 2, qr, 0);
+            enc.copyBufferToBuffer(qr, 0, qm, 0, 16);
+            device.queue.submit([enc.finish()]);
+            await qm.mapAsync(GPUMapMode.READ);
+            const t = new BigUint64Array(qm.getMappedRange().slice(0));
+            qm.unmap();
+            xs.push(Number(t[1] - t[0]) / 1e6);
+          }
+          xs.sort((a, b) => a - b);
+          return xs[3];
+        }
+        const MB = (N * 16) / 1e6;
+        const report = (name, ms, mb = MB) => { results[name] = ms; log(`${name}: ${ms.toFixed(2)} ms = ${(mb / ms).toFixed(0)} GB/s`); };
+        // 1. linear write, one vec4 per thread
+        report('write linear', await time(`
+          @group(0) @binding(0) var<storage, read_write> d: array<vec4f>;
+          @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) n: vec3u) {
+            let i = g.x + g.y * n.x * 256u; d[i] = vec4f(f32(i)); }`, [N / 256 / 64, 64, 1], [dst]));
+        // 2. copy linear
+        report('copy linear (r+w)', await time(`
+          @group(0) @binding(0) var<storage, read_write> d: array<vec4f>;
+          @group(0) @binding(1) var<storage, read> s: array<vec4f>;
+          @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) n: vec3u) {
+            let i = g.x + g.y * n.x * 256u; d[i] = s[i] + vec4f(1.0); }`, [N / 256 / 64, 64, 1], [dst, src]), 2 * MB);
+        // 3. 4 vec4 per thread, contiguous per thread
+        report('write 4/thread adjacent', await time(`
+          @group(0) @binding(0) var<storage, read_write> d: array<vec4f>;
+          @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u, @builtin(num_workgroups) n: vec3u) {
+            let t = g.x + g.y * n.x * 256u; for (var k = 0u; k < 4u; k++) { d[t * 4u + k] = vec4f(f32(t)); } }`, [N / 256 / 64 / 4, 64, 1], [dst]));
+        // 4. 4 vec4 per thread, interleaved
+        report('write 4/thread interleaved', await time(`
+          @group(0) @binding(0) var<storage, read_write> d: array<vec4f>;
+          @compute @workgroup_size(256) fn main(@builtin(workgroup_id) w: vec3u, @builtin(local_invocation_index) l: u32, @builtin(num_workgroups) n: vec3u) {
+            let wg = w.x + w.y * n.x; for (var k = 0u; k < 4u; k++) { d[wg * 1024u + k * 256u + l] = vec4f(f32(l)); } }`, [N / 1024 / 64, 64, 1], [dst]));
+        // 5. the conv epilogue's pattern: NC4HW4 planes, 8x8 threads x 2x2 px, z = oc group
+        const nc4 = (zFirst, strided) => `
+          @group(0) @binding(0) var<storage, read_write> d: array<vec4f>;
+          @compute @workgroup_size(8, 8) fn main(@builtin(workgroup_id) w: vec3u, @builtin(local_invocation_id) l: vec3u) {
+            let W = 1920u; let H = 1088u;
+            ${zFirst ? 'let oc = w.x % 8u; let tx = w.x / 8u;' : 'let oc = w.z; let tx = w.x;'}
+            let oy = w.y * 16u + l.y * 2u;
+            let ox = tx * 16u + l.x * ${strided ? 1 : 2}u;
+            for (var py = 0u; py < 2u; py++) { for (var px = 0u; px < 2u; px++) {
+              d[(oc * H + oy + py) * W + ox + px * ${strided ? 8 : 1}u] = vec4f(f32(px)); } } }`;
+        report('nc4hw4 2x2 adjacent, z=oc', await time(nc4(false, false), [120, 68, 8], [dst]));
+        report('nc4hw4 2x2 strided, z=oc', await time(nc4(false, true), [120, 68, 8], [dst]));
+        report('nc4hw4 2x2 strided, oc in x', await time(nc4(true, true), [960, 68, 1], [dst]));
+      } catch (e) {
+        results.error = String(e);
+        log(String(e));
+      }
+      results.ready = true;
+    </script>
+  </body>
+</html>
