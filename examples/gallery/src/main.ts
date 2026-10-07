@@ -1,5 +1,4 @@
 import { Denoiser, type NetworkRuntime } from 'denoiser';
-import { KernelsRuntime } from 'denoiser/kernels';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
 
 // ---- manifest -------------------------------------------------------------
@@ -39,9 +38,13 @@ const runtimeHintEl = document.querySelector<HTMLElement>('#runtime-hint')!;
 // Which network runtime runs the U-Net: ?runtime=ort (default) | kernels. The
 // kernels runtime binds page-global state to a device, so switching reloads.
 type RuntimeId = 'ort' | 'kernels';
-const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => NetworkRuntime | undefined }[] = [
-  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU (default)', make: () => undefined },
-  { id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op', make: () => new KernelsRuntime() },
+// Non-default runtimes load on demand, so ORT visitors don't download them.
+const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined> }[] = [
+  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU (default)', make: async () => undefined },
+  {
+    id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op',
+    make: async () => new (await import('denoiser/kernels')).KernelsRuntime(),
+  },
 ];
 const runtimeId: RuntimeId = new URLSearchParams(location.search).get('runtime') === 'kernels' ? 'kernels' : 'ort';
 const runtime = RUNTIMES.find((r) => r.id === runtimeId)!;
@@ -309,7 +312,7 @@ async function main(): Promise<void> {
   }
 
   loadingEl.textContent = 'fetching model + creating WebGPU device...';
-  denoiser = await Denoiser.create({ runtime: runtime.make() });
+  denoiser = await Denoiser.create({ runtime: await runtime.make() });
 
   selectScene(manifest.scenes[0]);
 }
