@@ -17,36 +17,18 @@ export type OutputTransfer = 'linear' | 'srgb' | 'aces-srgb';
 
 export interface DenoiserCreateOptions {
   /**
-   * What executes the network. Default: onnxruntime-web on WebGPU, configured
-   * by `weightsUrl` / `wasmPaths` / `graphCapture` / `splitAux` below (those
-   * options are ignored when a runtime is passed — configure it directly).
+   * What executes the network. Required here; the `denoiser` package defaults it
+   * to onnxruntime-web (OrtRuntime) and adds its options (weightsUrl, splitAux...).
    */
   runtime?: NetworkRuntime;
   /** fp16 models + tensors when the device supports shader-f16 (auto-falls back). */
   precision?: 'fp32' | 'fp16';
   /** Model family size: fast = *_small, balanced = base, high = *_large where available. */
   quality?: Quality;
-  /** Where the .onnx models are served (default: jsDelivr CDN). */
-  weightsUrl?: string;
-  /** Where ORT loads its wasm assets (default: jsDelivr CDN). */
-  wasmPaths?: string;
   /** Per-run pixel budget: images above it tile instead of whole-frame. Default 2048*1152. */
   maxRunPixels?: number;
   /** Max tiles per model run in tiled mode (default 8). */
   batch?: number;
-  /** Opt-in ORT WebGPU graph capture (unstable in onnxruntime-web 1.27 past ~150 replays). */
-  graphCapture?: boolean;
-  /**
-   * Aux split-graph workaround for the onnxruntime-web WebGPU Conv bug that
-   * speckles the 9-channel cleanAux models (the first conv reducing the raw >3ch
-   * input miscomputes — see tools/ort-webgpu-aux-repro). When on, cleanAux models
-   * fetch a re-exported tail (`<name>.tail.onnx`) + enc_conv0 weights
-   * (`<name>.enc0.bin`) alongside the model and run enc_conv0 in WGSL. Verified
-   * to restore native quality. No effect on 3/6-channel models. **Default on** —
-   * falls back to the plain (speckled) model with a warning if the artifacts
-   * aren't hosted next to the weights. Set false to force the plain model.
-   */
-  splitAux?: boolean;
 }
 
 export interface DenoiseImageOptions {

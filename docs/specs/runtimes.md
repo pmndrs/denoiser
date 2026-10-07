@@ -1,9 +1,10 @@
 # Network runtimes: one engine, many executors
 
-> Status 2026-10-07: **steps 1–2 done** — runtime seam inside `packages/denoiser`
-> (outputs byte-identical), and an experimental `KernelsRuntime`
-> (`examples/kernels-smoke/src/kernelsRuntime.ts`) driving the unchanged `Denoiser`
-> facade. Next: the package split.
+> Status 2026-10-07: **steps 1–3 done** — runtime seam (outputs byte-identical),
+> experimental `KernelsRuntime` driving the unchanged `Denoiser` facade with
+> zero-copy IO, and the package split: `@pmndrs/denoiser-core`,
+> `@pmndrs/denoiser-ort`, `@pmndrs/denoiser-kernels`, with `denoiser` as the
+> bundled core + ORT preset. Next: runtime-parametric bench/gallery.
 
 ## Why
 
@@ -126,8 +127,13 @@ runtime, same calls, spheres 512², warm median of 10:
 1. ~~Runtime seam inside `packages/denoiser`, no public API change~~ ✓
 2. ~~`KernelsRuntime` behind the seam (experimental)~~ ✓ — blocker 1 via the shim,
    blocker 2 via kernels-allocated IO tensors (zero-copy).
-3. Package split: `@pmndrs/denoiser-core` (engine, ops, types), `-runtime-ort`,
-   `-runtime-kernels`; `denoiser` stays the core + ORT preset (2.x compatible).
+3. ~~Package split~~ ✓ — `packages/denoiser-core`, `packages/denoiser-ort`,
+   `packages/denoiser-kernels` (all `private` for now); `denoiser` is the core + ORT
+   preset and **bundles** core + ort (JS via rollup, types via rollup-plugin-dts), so
+   npm still gets one self-contained package and the release workflow is unchanged
+   apart from build order (`--topological-dev`: the preset lists them as
+   devDependencies). Publishing the scoped packages is a separate decision (npm
+   access to the `@pmndrs` scope + a multi-package release workflow).
 4. Bench + gallery + regression parametric over runtimes.
 5. OIDN 3 on the winning runtime; add `createStream()` (temporal state, `reset()`)
    and `motion`/`depth` inputs once its inputs are public.

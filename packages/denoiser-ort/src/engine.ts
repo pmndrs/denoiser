@@ -1,12 +1,12 @@
 // DenoiseEngine: the 2.x engine API — TiledEngine on an ORT session opened
 // from raw model bytes. Kept for compatibility (exported, and used directly by
 // examples/aux-split-verify); the Denoiser facade goes through a NetworkRuntime.
-import { TiledEngine, type TiledEngineOptions } from '../engine';
+import { TiledEngine, type TiledEngineOptions } from '@pmndrs/denoiser-core';
 import { OrtSession, type SplitOptions } from './runtime';
 
 export type {
   DenoiseOptions, TextureInputs, TextureDenoiseOptions, DenoiseStats,
-} from '../engine';
+} from '@pmndrs/denoiser-core';
 
 export interface EngineOptions extends TiledEngineOptions {
   channels: number; // 3 | 6 | 9 — must match the model

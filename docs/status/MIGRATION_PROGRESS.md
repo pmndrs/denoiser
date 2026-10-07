@@ -30,23 +30,24 @@ r185 WebGPU path tracer example. Written as a resumable checkpoint.
   - `denoiser-package-test` — the real `Denoiser` package end-to-end (~28ms).
   - `three-pathtracer-webgpu` — three r185 WebGPUPathTracer → denoiser, shared device.
 
-## Library architecture (`packages/denoiser/src`)
-- `denoiser.ts` — public `Denoiser` class (WebGPU-only). API kept close to old: `execute`,
-  `setInputImage`/`setInputData`, `setCanvas`, `onExecute`/`onProgress`/`onBackendReady`,
-  props (`quality`/`hdr`/`srgb`/`height`/`width`/aux flags), `weightsUrl`/`weightsPath`,
-  `flipOutputY`, `build`, `dispose`. Exposes **`denoiser.device`** (ORT's GPUDevice) to share.
-- `runtime.ts` — `NetworkRuntime` / `NetworkSession` / `NetworkBinding`: the seam between the
-  engine and whatever executes the U-Net (ORT today; HF kernels / WebNN / hand-written WGSL next).
-- `engine.ts` — `TiledEngine`: runtime-agnostic pipeline — whole-frame/tiled geometry planning,
+## Library architecture (workspace packages)
+`denoiser` (preset, published) = `@pmndrs/denoiser-core` + `@pmndrs/denoiser-ort`, bundled.
+`@pmndrs/denoiser-kernels` is the experimental HF-kernels runtime. See docs/specs/runtimes.md.
+- core `denoiser.ts` — public `Denoiser` class (WebGPU-only); `runtime` option, overridable
+  `defaultRuntime` (the preset in `packages/denoiser/src/index.ts` returns `OrtRuntime`).
+  Exposes **`denoiser.device`** (the runtime's GPUDevice) to share.
+- core `runtime.ts` — `NetworkRuntime` / `NetworkSession` / `NetworkBinding`: the seam between the
+  engine and whatever executes the U-Net (ORT, HF kernels; WebNN / hand-written WGSL next).
+- core `engine.ts` — `TiledEngine`: runtime-agnostic pipeline — whole-frame/tiled geometry planning,
   overlap-blend, CPU + texture inputs, resolve/readback, all on the session's device.
-- `gpu/imageOps.ts` — `GpuImageOps`: WGSL compute kernels — extract/normalize/HWC→NCHW
+- core `gpu/imageOps.ts` — `GpuImageOps`: WGSL compute kernels — extract/normalize/HWC→NCHW
   (3/6/9ch concat + sRGB→linear), accumulate (min-of-sigmoid blend), resolve (→RGBA, sRGB, clamp).
-- `ort/runtime.ts` — `OrtRuntime` / `OrtSession`: ORT InferenceSession per geometry (pinned free
-  dims), IO-bound gpu-buffer tensors, max-limits device patch, split-aux workaround (`ort/splitAux.ts`).
-- `ort/engine.ts` — `DenoiseEngine`: 2.x compat — `TiledEngine` on an ORT session from raw bytes.
-- `weights.ts` — `Models`: fetch+cache `.onnx` by name (replaces TZA parser). CDN-hosted.
-- `modelName.ts` — props → ONNX model name (port of `determineTensorMap`) + channel count.
-- `utils.ts` — pure-DOM helpers (image→RGBA, flip, formatTime). `types.ts`, `global.d.ts`.
+- ort `runtime.ts` — `OrtRuntime` / `OrtSession`: ORT InferenceSession per geometry (pinned free
+  dims), IO-bound gpu-buffer tensors, max-limits device patch, split-aux workaround (`splitAux.ts`).
+- ort `engine.ts` — `DenoiseEngine`: 2.x compat — `TiledEngine` on an ORT session from raw bytes.
+- ort `weights.ts` — `Models`: fetch+cache `.onnx` by name. CDN-hosted.
+- core `modelName.ts` — props → ONNX model name (port of `determineTensorMap`) + channel count.
+- core `utils.ts` — pure-DOM helpers (image→RGBA, flip, formatTime). `types.ts`, `global.d.ts`.
 - **Deleted**: `tza.ts`, `unet.ts`, `tiler.ts`, `denoiserUtils.ts`, `webglStateManager.ts`.
 - **Deps**: dropped `@tensorflow/*`; added `onnxruntime-web` (external in rollup), `@webgpu/types`.
 

@@ -19,11 +19,15 @@ export default defineConfig({
   // Exactly one three instance: the pathtracer (served as source) and our
   // `three/webgpu` import must resolve to the same copy, or material nodes from
   // one instance are unrecognized by the other (-> "bsdfSample of null").
-  // Use the worktree's denoiser SOURCE (not the built dist) so local engine edits
+  // Use the denoiser packages' SOURCE (not the built dist) so local engine edits
   // — e.g. the aux split-graph workaround — are picked up without a rebuild.
   resolve: {
     dedupe: ['three', 'three-mesh-bvh'],
-    alias: { denoiser: fileURLToPath(new URL('../../packages/denoiser/src/index.ts', import.meta.url)) },
+    alias: {
+      denoiser: fileURLToPath(new URL('../../packages/denoiser/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-core': fileURLToPath(new URL('../../packages/denoiser-core/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-ort': fileURLToPath(new URL('../../packages/denoiser-ort/src/index.ts', import.meta.url)),
+    },
   },
   optimizeDeps: {
     // Serve three + the pathtracer + mesh-bvh as source (not pre-bundled): keeps a

@@ -15,7 +15,7 @@
 //   for comparison.
 import type {
   NetworkBinding, NetworkGeometry, NetworkModel, NetworkRuntime, NetworkSession,
-} from 'denoiser';
+} from '@pmndrs/denoiser-core';
 import { KernelsUNet } from './unet';
 import { parseTZA } from './tza';
 import { shareDeviceWithKernels } from './deviceShim';

@@ -1,5 +1,4 @@
 import { TiledEngine } from './engine';
-import { OrtRuntime } from './ort/runtime';
 import { determineModel } from './modelName';
 import { imgToRGBA, getCorrectImageData, hasSizeMissmatch } from './utils';
 import {
@@ -10,23 +9,24 @@ import type { DenoiseStats } from './engine';
 import type { NetworkRuntime, Precision } from './runtime';
 
 /**
- * Browser OIDN denoiser running fully on WebGPU via onnxruntime-web (v2 API).
+ * Browser OIDN denoiser running fully on WebGPU; the network runs on a
+ * pluggable NetworkRuntime (the `denoiser` package defaults to onnxruntime-web).
  *
  * Execution is stateless per call — everything about a run is in the call's
  * options. The instance owns identity only: models, sessions, and the shared
- * GPUDevice (ORT creates it; read `denoiser.device` to share with three.js).
+ * GPUDevice (the runtime provides it; read `denoiser.device` to share with three.js).
  *
  * ```ts
- * const denoiser = await Denoiser.create({ precision: 'fp16' });
+ * const denoiser = await Denoiser.create({ runtime, precision: 'fp16' });
  * const img = await denoiser.denoise(noisyImage);                    // ImageData
  * const tex = await denoiser.denoiseTextures({ color, hdr: true });  // GPUTexture
  * ```
  */
 export class Denoiser {
-  /** The shared GPUDevice ORT created — pass to three.js WebGPURenderer. */
+  /** The shared GPUDevice the runtime provides — pass to three.js WebGPURenderer. */
   device!: GPUDevice;
 
-  /** What executes the network (default: onnxruntime-web on WebGPU). */
+  /** What executes the network. */
   readonly runtime: NetworkRuntime;
   private precision: Precision;
   private engine!: TiledEngine;
@@ -43,22 +43,21 @@ export class Denoiser {
   get quality(): Quality { return this.opts.quality; }
   set quality(q: Quality) { this.opts.quality = q; }
 
-  private constructor(opts: DenoiserCreateOptions) {
-    // splitAux defaults ON so 9ch cleanAux "just works" (dodges the ORT-web
-    // WebGPU Conv bug); falls back to the plain model if artifacts aren't hosted.
-    this.opts = { quality: 'fast', splitAux: true, ...opts };
+  protected constructor(opts: DenoiserCreateOptions) {
+    this.opts = { quality: 'fast', ...opts };
     this.precision = opts.precision ?? 'fp32';
-    this.runtime = opts.runtime ?? new OrtRuntime({
-      weightsUrl: opts.weightsUrl,
-      wasmPaths: opts.wasmPaths,
-      graphCapture: opts.graphCapture,
-      splitAux: this.opts.splitAux,
-    });
+    this.runtime = opts.runtime ?? (this.constructor as typeof Denoiser).defaultRuntime(opts);
+  }
+
+  /** The runtime used when none is passed. Presets (the `denoiser` package) override it. */
+  protected static defaultRuntime(_opts: DenoiserCreateOptions): NetworkRuntime {
+    throw new Error('Denoiser: no network runtime — pass { runtime }, or use the `denoiser` package (onnxruntime-web preset)');
   }
 
   /** Async construction: loads the default model and creates the GPUDevice. */
   static async create(opts: DenoiserCreateOptions = {}): Promise<Denoiser> {
-    const d = new Denoiser(opts);
+    // `this`: subclasses (presets) construct themselves through this factory.
+    const d = new (this as unknown as new (o: DenoiserCreateOptions) => Denoiser)(opts);
     await d.ensureEngine({ hdr: false, albedo: false, normal: false });
     return d;
   }
@@ -150,7 +149,7 @@ export class Denoiser {
   dispose() { this.engine?.trim(); }
 
   /**
-   * Full teardown. Releasing the last ORT session DESTROYS the shared
+   * Full teardown. With ORT, releasing the last session DESTROYS the shared
    * GPUDevice — three.js renderers and canvases on it die too. Only call
    * this when the whole WebGPU stack is going away.
    */
@@ -181,7 +180,7 @@ export class Denoiser {
   }
 
   /** (Re)build the engine when the required model changes. Overlaps creation
-   *  with disposal so the ORT session count never hits zero (device survives). */
+   *  with disposal so (with ORT) the session count never hits zero (device survives). */
   private async ensureEngine(sel: { hdr: boolean; albedo: boolean; normal: boolean }) {
     const { name, channels } = determineModel({
       filterType: 'rt', quality: this.opts.quality, hdr: sel.hdr,

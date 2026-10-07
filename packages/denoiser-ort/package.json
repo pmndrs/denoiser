@@ -1,22 +1,23 @@
 {
-    "name": "denoiser",
-    "description": "OIDN denoiser for the web, running fully on WebGPU via onnxruntime-web",
+    "name": "@pmndrs/denoiser-ort",
+    "description": "onnxruntime-web (WebGPU) network runtime for @pmndrs/denoiser-core",
     "keywords": [
         "OIDN",
-        "denoise",
         "denoiser",
-        "unet",
         "webgpu",
         "onnx",
         "onnxruntime"
     ],
-    "version": "2.0.0",
+    "version": "0.1.0",
+    "private": true,
     "author": "Dennis Smolek",
-    "contributors": [
-        "Dennis Smolek"
-    ],
     "license": "MIT",
     "homepage": "https://github.com/pmndrs/denoiser",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pmndrs/denoiser.git",
+        "directory": "packages/denoiser-ort"
+    },
     "bugs": {
         "url": "https://github.com/pmndrs/denoiser/issues"
     },
@@ -36,33 +37,19 @@
         "LICENSE"
     ],
     "scripts": {
-        "test": "vitest run --coverage",
-        "build": "rm -rf dist && tsc && rollup --config rollup.config.mjs",
-        "format": "prettier --write ."
+        "build": "rm -rf dist && tsc && rollup --config rollup.config.mjs"
+    },
+    "dependencies": {
+        "@pmndrs/denoiser-core": "workspace:*",
+        "onnxruntime-web": "^1.27.0"
     },
     "devDependencies": {
-        "@pmndrs/denoiser-core": "workspace:*",
-        "@pmndrs/denoiser-ort": "workspace:*",
         "@rollup/plugin-commonjs": "^29.0.3",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
-        "@typescript-eslint/eslint-plugin": "^8.63.0",
-        "@typescript-eslint/parser": "^8.63.0",
         "@webgpu/types": "^0.1.71",
-        "eslint": "^10.6.0",
-        "prettier": "^3.9.5",
         "rollup": "^4.62.2",
-        "rollup-plugin-copy": "^3.5.0",
-        "rollup-plugin-dts": "^6.5.1",
         "tslib": "^2.8.1",
         "typescript": "^5.9.3"
-    },
-    "dependencies": {
-        "onnxruntime-web": "^1.27.0"
-    },
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/pmndrs/denoiser.git",
-        "directory": "packages/denoiser"
     }
 }

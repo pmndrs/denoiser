@@ -35,7 +35,7 @@ need to be physically correct, just consistent with these conventions.
 Albedo can exceed `[0,1]` for HDR environment/emissive colors seen directly
 (an env pixel's "albedo" is its own color, which can be arbitrarily bright).
 The engine defensively clamps albedo to `[0,1]` in the texture path
-(`gpu/imageOps.ts`), but don't rely on that alone — an unclamped HDR albedo plane
+(`packages/denoiser-core/src/gpu/imageOps.ts`), but don't rely on that alone — an unclamped HDR albedo plane
 was one of [the three real aux bugs](#the-real-bugs-we-shipped) below, and
 clamping upstream (where you rasterize) keeps energy loss predictable instead
 of accidental.
@@ -133,7 +133,7 @@ correct/incorrect examples show side by side:
    after.
 3. **Unclamped HDR albedo.** An env pixel's albedo (its own HDR color) could
    exceed `[0,1]` and was fed to the network un-clamped. Fix: clamp albedo to
-   `[0,1]` defensively in the engine (`gpu/imageOps.ts`) in addition to clamping
+   `[0,1]` defensively in the engine (`packages/denoiser-core/src/gpu/imageOps.ts`) in addition to clamping
    at render time.
 
 ## Debugging: see exactly what the network sees

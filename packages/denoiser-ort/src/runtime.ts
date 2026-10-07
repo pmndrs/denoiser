@@ -7,12 +7,12 @@
 // scoped requestAdapter patch that asks for the adapter's max limits/features
 // (whole-frame U-Net intermediates need them; restored immediately after).
 import * as ort from 'onnxruntime-web/webgpu';
-import { Models } from '../weights';
-import { DenoiserUnsupportedError } from '../types';
+import { Models } from './weights';
+import { DenoiserUnsupportedError } from '@pmndrs/denoiser-core';
 import { EncConv0 } from './splitAux';
 import type {
   NetworkBinding, NetworkGeometry, NetworkModel, NetworkRuntime, NetworkSession, Precision,
-} from '../runtime';
+} from '@pmndrs/denoiser-core';
 
 export interface OrtRuntimeOptions {
   /** Where the .onnx models are served (default: jsDelivr CDN). */

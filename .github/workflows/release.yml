@@ -38,8 +38,10 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - name: Install
         run: yarn install --immutable
+      # Builds @pmndrs/denoiser-core + -ort first; the `denoiser` preset bundles
+      # them (JS + types), so only `denoiser` itself is published.
       - name: Build
-        run: yarn workspace denoiser build
+        run: yarn workspaces foreach -R --topological-dev --from denoiser run build
       - name: Typecheck
         run: yarn workspace denoiser exec tsc --noEmit
       - name: Show what will publish
