@@ -283,11 +283,18 @@ const denoiser = await Denoiser.create({
 | `TiledEngine.load(runtime, model, options?)` | the runtime-agnostic engine `Denoiser` uses (same members as `DenoiseEngine` below, minus the ORT-specific ones) |
 | `OrtRuntime` / `OrtSession` | the onnxruntime-web implementation; `OrtRuntimeOptions` = `{ weightsUrl?, wasmPaths?, graphCapture?, splitAux? }` |
 
-Package layout: `denoiser` (this package) bundles `@pmndrs/denoiser-core`
-(facade, engine, runtime interface) and `@pmndrs/denoiser-ort` (the default
-runtime). `@pmndrs/denoiser-kernels` is an experimental runtime on
-`@huggingface/kernels`. The interface is new in this release and may change —
-pin your version if you implement it.
+Entry points (one package):
+
+| import | contents |
+|---|---|
+| `denoiser` | everything below except kernels; `Denoiser` defaults to `OrtRuntime` |
+| `denoiser/core` | runtime-agnostic `Denoiser` (requires `runtime`), `TiledEngine`, runtime types |
+| `denoiser/ort` | `OrtRuntime`, `OrtSession`, `Models`, `DenoiseEngine` |
+| `denoiser/kernels` | **experimental** `KernelsRuntime` on `@huggingface/kernels` (optional peer dependency — install it to use this entry) |
+
+The entries share one copy of the core, so classes from `denoiser` and
+`denoiser/core` are the same. The interface is new in this release and may
+change — pin your version if you implement it.
 
 ### `determineModel(selector)`
 

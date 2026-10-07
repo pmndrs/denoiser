@@ -2,9 +2,9 @@
 
 > Status 2026-10-07: **steps 1–3 done** — runtime seam (outputs byte-identical),
 > experimental `KernelsRuntime` driving the unchanged `Denoiser` facade with
-> zero-copy IO, and the package split: `@pmndrs/denoiser-core`,
-> `@pmndrs/denoiser-ort`, `@pmndrs/denoiser-kernels`, with `denoiser` as the
-> bundled core + ORT preset. Next: runtime-parametric bench/gallery.
+> zero-copy IO, and the package split into internal workspaces shipped as
+> subpath entries of `denoiser` (`denoiser/core`, `/ort`, `/kernels`).
+> Next: runtime-parametric bench/gallery; hand-written WGSL runtime in progress.
 
 ## Why
 
@@ -127,13 +127,13 @@ runtime, same calls, spheres 512², warm median of 10:
 1. ~~Runtime seam inside `packages/denoiser`, no public API change~~ ✓
 2. ~~`KernelsRuntime` behind the seam (experimental)~~ ✓ — blocker 1 via the shim,
    blocker 2 via kernels-allocated IO tensors (zero-copy).
-3. ~~Package split~~ ✓ — `packages/denoiser-core`, `packages/denoiser-ort`,
-   `packages/denoiser-kernels` (all `private` for now); `denoiser` is the core + ORT
-   preset and **bundles** core + ort (JS via rollup, types via rollup-plugin-dts), so
-   npm still gets one self-contained package and the release workflow is unchanged
-   apart from build order (`--topological-dev`: the preset lists them as
-   devDependencies). Publishing the scoped packages is a separate decision (npm
-   access to the `@pmndrs` scope + a multi-package release workflow).
+3. ~~Package split~~ ✓ — internal workspace packages `packages/denoiser-core`,
+   `-ort`, `-kernels` (private, never published) ship as **subpath entries of the one
+   `denoiser` package**: `denoiser` (core + ORT preset), `denoiser/core`,
+   `denoiser/ort`, `denoiser/kernels`. One rollup pass with shared chunks (a single
+   copy of the core); types via rollup-plugin-dts. `@huggingface/kernels` is an
+   optional peer dependency. One publish, one version; the release workflow only
+   needed the build order (`--topological-dev`).
 4. Bench + gallery + regression parametric over runtimes.
 5. OIDN 3 on the winning runtime; add `createStream()` (temporal state, `reset()`)
    and `motion`/`depth` inputs once its inputs are public.

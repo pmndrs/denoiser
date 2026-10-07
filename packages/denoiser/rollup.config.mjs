@@ -4,22 +4,33 @@ import typescript from '@rollup/plugin-typescript';
 import { dts } from 'rollup-plugin-dts';
 import path from 'node:path';
 
-// The preset BUNDLES @pmndrs/denoiser-core + @pmndrs/denoiser-ort (JS from their
-// dist builds, types inlined by rollup-plugin-dts) so the published `denoiser`
-// stays one self-contained package. onnxruntime-web ships its own wasm/jsep
-// assets and is large — keep it external (a regular dependency).
+// One package, several entry points: `denoiser` (core + ORT preset),
+// `denoiser/core`, `denoiser/ort`, `denoiser/kernels`. The internal workspace
+// packages (@pmndrs/denoiser-*) are BUNDLED — never published — and built in one
+// pass so the entries share chunks (one copy of Denoiser/TiledEngine, so
+// `denoiser` and `denoiser/core` classes are the same). Runtime libraries stay
+// external: onnxruntime-web (dependency) and @huggingface/kernels (optional peer).
+const input = {
+    index: './src/index.ts',
+    core: './src/core.ts',
+    ort: './src/ort.ts',
+    kernels: './src/kernels.ts',
+};
 const external = [
     'onnxruntime-web',
     'onnxruntime-web/webgpu',
+    '@huggingface/kernels',
 ];
 
 export default [
     {
-        input: './src/index.ts',
+        input,
         external,
         output: [
-            { file: 'dist/index.mjs', format: 'es', sourcemap: true, exports: 'named' },
-            { file: 'dist/index.cjs', format: 'cjs', sourcemap: true, exports: 'named' },
+            { dir: 'dist', format: 'es', sourcemap: true, exports: 'named',
+                entryFileNames: '[name].mjs', chunkFileNames: 'chunks/[name]-[hash].mjs' },
+            { dir: 'dist', format: 'cjs', sourcemap: true, exports: 'named',
+                entryFileNames: '[name].cjs', chunkFileNames: 'chunks/[name]-[hash].cjs' },
         ],
         plugins: [
             nodeResolve(),
@@ -28,9 +39,9 @@ export default [
         ],
     },
     {
-        input: './src/index.ts',
+        input,
         external: [...external, /^@webgpu\//],
-        output: { file: 'dist/index.d.ts', format: 'es' },
+        output: { dir: 'dist', format: 'es', entryFileNames: '[name].d.ts', chunkFileNames: 'chunks/[name]-[hash].d.ts' },
         plugins: [dts({ respectExternal: true, tsconfig: path.resolve('tsconfig.json') })],
     },
 ];

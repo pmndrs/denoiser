@@ -10,7 +10,7 @@
     "preview": "vite preview --port 5185"
   },
   "dependencies": {
-    "@pmndrs/denoiser-kernels": "workspace:*",
+    "@huggingface/kernels": "0.0.1-preview.3",
     "denoiser": "workspace:*",
     "onnxruntime-web": "^1.27.0"
   },
