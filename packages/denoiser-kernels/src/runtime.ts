@@ -29,15 +29,25 @@ export interface KernelsRuntimeOptions {
   zeroCopy?: boolean;
 }
 
+// kernels keeps ONE page-global runtime, bound to the device its first call saw.
+// So every KernelsRuntime on a page shares that device: the first one picks it
+// (its `device` option, or a max-limits device), later ones must agree.
+let pageDevice: Promise<GPUDevice> | undefined;
+
 export class KernelsRuntime implements NetworkRuntime {
   readonly name = 'hf-kernels';
-  private device?: Promise<GPUDevice>;
 
   constructor(private opts: KernelsRuntimeOptions) {}
 
+  /** The page's kernels device (created on first load). */
+  static get device(): Promise<GPUDevice> | undefined { return pageDevice; }
+
   async load(model: NetworkModel): Promise<NetworkSession> {
-    this.device ??= this.opts.device ? Promise.resolve(this.opts.device) : requestMaxDevice();
-    const device = await this.device;
+    pageDevice ??= this.opts.device ? Promise.resolve(this.opts.device) : requestMaxDevice();
+    const device = await pageDevice;
+    if (this.opts.device && this.opts.device !== device) {
+      throw new Error('KernelsRuntime: @huggingface/kernels is already bound to another GPUDevice on this page (it keeps one global runtime)');
+    }
     const res = await fetch(`${this.opts.tzaUrl}/${model.name}.tza`);
     if (!res.ok) throw new Error(`KernelsRuntime: failed to load ${model.name}.tza (${res.status})`);
     const weights = parseTZA(await res.arrayBuffer());
@@ -57,11 +67,8 @@ export class KernelsRuntime implements NetworkRuntime {
     return new KernelsSession(device, net, this.opts.zeroCopy ?? true);
   }
 
-  /** The device is runtime-owned (it outlives model switches). Call on teardown. */
-  async destroy() {
-    if (this.device && !this.opts.device) (await this.device).destroy();
-    this.device = undefined;
-  }
+  /** The kernels device outlives Denoiser instances and model switches (kernels'
+   *  runtime stays bound to it). It is never destroyed here — tear down the page. */
 }
 
 class KernelsSession implements NetworkSession {

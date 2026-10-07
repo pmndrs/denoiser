@@ -3,7 +3,7 @@
 // path), and the zero-copy texture path (LDR, HDR + autoexposure, aux + tonemap).
 // Hashes must match before/after an internal refactor; run it twice on one build
 // first to confirm the GPU path is deterministic on the machine.
-import { Denoiser } from 'denoiser';
+import { Denoiser, type NetworkRuntime } from 'denoiser';
 
 type Precision = 'fp32' | 'fp16';
 
@@ -98,9 +98,12 @@ async function readTexture(device: GPUDevice, tex: GPUTexture): Promise<Uint8Arr
 
 export interface RegressionCase { name: string; model?: string; tiles?: number; hash: string }
 
-export async function runRegression(weightsUrl: string | undefined, precision: Precision): Promise<RegressionCase[]> {
+export async function runRegression(
+  weightsUrl: string | undefined, precision: Precision,
+  makeRuntime: () => NetworkRuntime | undefined = () => undefined,
+): Promise<RegressionCase[]> {
   const out: RegressionCase[] = [];
-  const dn = await Denoiser.create({ precision, quality: 'fast', weightsUrl });
+  const dn = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', weightsUrl });
   const push = (name: string, bytes: Uint8Array | Uint8ClampedArray) =>
     out.push({ name, model: dn.modelName, tiles: dn.stats?.tiles, hash: fnv1a(bytes) });
   try {
@@ -135,7 +138,7 @@ export async function runRegression(weightsUrl: string | undefined, precision: P
 
     // tiled path: force it with a small per-run pixel budget on a fresh instance
     dn.destroyDevice();
-    const tiled = await Denoiser.create({ precision, quality: 'fast', weightsUrl, maxRunPixels: 256 * 256 });
+    const tiled = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', weightsUrl, maxRunPixels: 256 * 256 });
     const r = (await tiled.denoise({ data: toBytes(big), width: 1280, height: 720 }))!;
     out.push({ name: 'image-1280x720-tiled', model: tiled.modelName, tiles: tiled.stats?.tiles, hash: fnv1a(r.data) });
     tiled.destroyDevice();

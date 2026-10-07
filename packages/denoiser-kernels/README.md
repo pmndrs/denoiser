@@ -23,6 +23,7 @@ const denoiser = await Denoiser.create({
 this package hands it ours through a `navigator.gpu.requestAdapter` shim
 (`shareDeviceWithKernels`) — needed for zero-copy IO, not meant for production.
 Never call kernels' `disposeSharedKernelRuntime()` while it runs on a shared
-device: it destroys that device. Status and benchmarks:
+device: it destroys that device. kernels keeps one page-global runtime, so all
+`KernelsRuntime`s on a page share one device (the first one's). Status and benchmarks:
 [docs/specs/runtimes.md](../../docs/specs/runtimes.md); demo:
 [examples/kernels-smoke](../../examples/kernels-smoke).

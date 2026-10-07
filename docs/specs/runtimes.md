@@ -134,7 +134,20 @@ runtime, same calls, spheres 512², warm median of 10:
    copy of the core); types via rollup-plugin-dts. `@huggingface/kernels` is an
    optional peer dependency. One publish, one version; the release workflow only
    needed the build order (`--topological-dev`).
-4. Bench + gallery + regression parametric over runtimes.
+4. ~~Bench + regression parametric over runtimes~~ ✓ — `examples/bench` takes
+   `?runtime=ort|kernels` (selector too) for the table, `__denoiseOnce` and
+   `__regression(precision, runtime)`. Kernels is deterministic run-to-run (16
+   cases). Bench, synthetic noise, warm median:
+
+   | | 512² | 1280×720 | 1920×1080 |
+   |---|---|---|---|
+   | fp32 ORT → kernels | 17.9 → 17.0 ms | 60.0 → 57.5 ms | 168.9 → 129.6 ms (1.30×) |
+   | fp16 ORT → kernels | 15.9 → 13.7 ms | 50.4 → 44.2 ms | 110.9 → 94.5 ms (1.17×) |
+
+   `DenoiseStats.runMs` isn't comparable across runtimes: kernels' run() only
+   submits (its GPU time lands in `resolveMs`); ORT's awaits completion. Compare
+   totals. **Gallery: blocked on hosting `.tza` weights** — only `.onnx` is on the
+   CDN, and jsDelivr serves this repo's LFS pointers, not the blobs.
 5. OIDN 3 on the winning runtime; add `createStream()` (temporal state, `reset()`)
    and `motion`/`depth` inputs once its inputs are public.
 6. WebNN runtime; hand-written WGSL runtime (fusion, single encoder per frame),
