@@ -11,8 +11,11 @@
 //           WHOLE frame denoised by our OIDN network (`denoiseTextures`, hdr,
 //           optional albedo+normal aux) on a cadence (every N frames).
 //
-// Device rule (onnxruntime #26107): the denoiser owns the GPUDevice; three.js
-// borrows it. Denoiser.create() FIRST, then new WebGPURenderer({ device }).
+// Device rule: one GPUDevice for both. createStack() (examples/_shared/stack.ts)
+// picks the order by runtime: ORT creates the device (denoiser first, three borrows
+// it — onnxruntime #26107); wgsl/webnn/kernels adopt the renderer's. Select with
+// ?runtime=auto|ort|wgsl|webnn|kernels (default auto). The right side is a `denoise()` TSL node from
+// `denoiser/three` running on a cadence (`every`).
 import * as THREE from 'three/webgpu';
 import {
   pass, mrt, output, diffuseColor, normalView, materialMetalness, materialRoughness,
@@ -22,7 +25,8 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { temporalReproject } from 'three/addons/tsl/display/TemporalReprojectNode.js';
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Denoiser } from 'denoiser';
+import { denoise } from 'denoiser/three';
+import { createStack, gpuTex } from '../../_shared/stack';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
 
 const RES = 512;
@@ -33,33 +37,6 @@ const log = (m: string) => { statusEl.textContent = m; console.log('[realtime-co
 
 const params = new URLSearchParams(location.search);
 const headless = params.has('headless'); // skip on-canvas WebGPU contexts (they stall headless)
-
-// Patch requestDevice to request the adapter's MAX limits/features BEFORE any
-// device is created — ORT (which makes the shared device) otherwise requests a
-// minimal one and three's heavier pipelines fail validation. (onnxruntime #26107.)
-function patchWebGPUForMaxLimits() {
-  const gpu = navigator.gpu as GPU;
-  const origRequestAdapter = gpu.requestAdapter.bind(gpu);
-  gpu.requestAdapter = async (opts?: GPURequestAdapterOptions) => {
-    const adapter = await origRequestAdapter(opts);
-    if (!adapter) return adapter;
-    const origRequestDevice = adapter.requestDevice.bind(adapter);
-    adapter.requestDevice = (desc: GPUDeviceDescriptor = {}) => {
-      const requiredLimits: Record<string, number> = {};
-      const proto = Object.getPrototypeOf(adapter.limits);
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const v = (adapter.limits as unknown as Record<string, unknown>)[name];
-        if (typeof v === 'number') requiredLimits[name] = v;
-      }
-      return origRequestDevice({
-        ...desc,
-        requiredFeatures: [...adapter.features] as GPUFeatureName[],
-        requiredLimits: { ...requiredLimits, ...(desc.requiredLimits ?? {}) },
-      });
-    };
-    return adapter;
-  };
-}
 
 // Procedural equirect environment (gradient sky + warm sun): IBL for the metals
 // AND SSR's env fallback for rays that leave the screen — this is what makes the
@@ -162,19 +139,17 @@ function buildScene(): { scene: THREE.Scene; camera: THREE.PerspectiveCamera; en
 
 async function main() {
   if (!(await ensureWebGPU())) return;
-  patchWebGPUForMaxLimits();
 
-  // 1) Denoiser first: ORT owns the GPUDevice we then share with three.js.
-  const denoiser = await Denoiser.create({ precision: 'fp16' });
-  const device = denoiser.device;
-  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
-  log(`denoiser ready — sharing GPUDevice with three.js`);
-
-  // 2) three.js WebGPURenderer on the SAME device. Offscreen canvas at RES; the
-  // SSR/temporalReproject/recurrentDenoise nodes self-size to the drawing buffer.
+  // One GPUDevice for three.js + the denoiser (order depends on ?runtime=, see stack.ts).
+  // Offscreen canvas at RES; the SSR/temporalReproject/recurrentDenoise nodes self-size
+  // to the drawing buffer.
   const glCanvas = document.createElement('canvas');
-  const renderer = new THREE.WebGPURenderer({ canvas: glCanvas, antialias: false, device });
-  await renderer.init();
+  const { renderer, denoiser, device, runtimeName } = await createStack({
+    precision: 'fp16',
+    renderer: { canvas: glCanvas, antialias: false },
+  });
+  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
+  log(`denoiser ready (${denoiser.runtime.name}) — sharing GPUDevice with three.js`);
   renderer.setSize(RES, RES, false);
 
   const { scene, camera, envTex } = buildScene();
@@ -273,8 +248,7 @@ async function main() {
   const tmSsrQuad = new THREE.QuadMesh(tmSsrMat);
   const ssrDbgRT = new THREE.RenderTarget(RES, RES, { depthBuffer: false });
 
-  const backendGet = (o: unknown): GPUTexture | undefined =>
-    (renderer.backend as unknown as { get: (o: unknown) => { texture?: GPUTexture } }).get(o)?.texture;
+  const backendGet = (t: THREE.Texture): GPUTexture | undefined => gpuTex(renderer, t);
 
   function renderToRT(rt: THREE.RenderTarget | null, quad: THREE.QuadMesh) {
     renderer.setRenderTarget(rt);
@@ -320,31 +294,37 @@ async function main() {
   controls.autoRotate = motionBox.checked;
 
   // --- our denoise (cadence) ---
-  let ourBusy = false;
-  let ourMs = 0;
-  let hasDenoised = false;
-  let lastOut: GPUTexture | undefined;
+  // A `denoise()` node over the raw linear-HDR composite. It denoises into its own
+  // texture on request() and keeps showing its input until the first result lands;
+  // we bake ACES+sRGB into the result (display-ready bytes) and present it with a
+  // raw quad write, so three's own tone mapping stays out of it. The loop request()s
+  // it every `cadence()` frames; rendering the quad is what drives the node.
+  const rightDisplayRT = new THREE.RenderTarget(RES, RES, { depthBuffer: false }); // rgba8unorm display (right, denoised)
+  const albedoTexNode = texture(gbuffer.textures[0]);
+  const normalTexNode = texture(gbuffer.textures[1]);
+  const oursNode = denoise(texture(rawLinearRT.texture), {
+    denoiser,
+    hdr: true,
+    transfer: 'aces-srgb',  // display-ready bytes
+    // inputFlipY/auxInputFlipY default false: rasterized quad target + G-buffer are top-down
+    onError: (e) => log('our denoise error: ' + (e as Error).message),
+  });
+  const oursMat = new THREE.NodeMaterial();
+  oursMat.fragmentNode = vec4(oursNode.rgb, 1);
+  const oursQuad = new THREE.QuadMesh(oursMat);
+  function requestOurs() {
+    if (auxBox.checked) { renderAuxGBuffer(); oursNode.setAux(albedoTexNode, normalTexNode); } else oursNode.setAux();
+    oursNode.request();
+  }
+  /** Force a run now and return the rgba8 display texture holding the result. */
   async function runOurDenoise(): Promise<GPUTexture | undefined> {
-    const color = backendGet(rawLinearRT.texture);
-    if (!color) throw new Error('raw color texture unavailable');
-    let albedo: GPUTexture | undefined;
-    let normal: GPUTexture | undefined;
-    if (auxBox.checked) {
-      renderAuxGBuffer();
-      albedo = backendGet(gbuffer.textures[0]);
-      normal = backendGet(gbuffer.textures[1]);
-    }
-    const t0 = performance.now();
-    const outTex = await denoiser.denoiseTextures({
-      color, albedo, normal,
-      hdr: true,
-      inputFlipY: false,      // rasterized quad target -> top-down
-      auxInputFlipY: false,   // rasterized G-buffer   -> top-down
-      transfer: 'aces-srgb',  // display-ready bytes
-    });
-    ourMs = performance.now() - t0;
-    if (outTex) { hasDenoised = true; lastOut = outTex; if (!headless) blit(outTex, rightCtx); }
-    return outTex;
+    await oursNode.settled();
+    requestOurs();
+    renderToRT(rightDisplayRT, oursQuad);   // the render's updateBefore starts the run
+    await oursNode.settled();
+    renderToRT(rightDisplayRT, oursQuad);   // draw the fresh result
+    await device.queue.onSubmittedWorkDone();
+    return oursNode.denoised ? backendGet(rightDisplayRT.texture) : undefined;
   }
 
   // --- approximate PSNR vs a cheap converged reference ---
@@ -453,7 +433,7 @@ async function main() {
       (Number.isFinite(psnrLeft) ? `PSNR vs converged: <b>${psnrLeft.toFixed(1)} dB</b>` : `temporal · every frame`);
     hudRight.innerHTML =
       `<b>our OIDN full-frame</b>${denoiser.modelName ? ` · <b>${denoiser.modelName}</b>` : ''}\n` +
-      `denoise: <b>${ourMs ? ourMs.toFixed(1) + ' ms' : '—'}</b>  cadence: every ${cad} frames\n` +
+      `denoise: <b>${oursNode.lastMs ? oursNode.lastMs.toFixed(1) + ' ms' : '—'}</b>  cadence: every ${cad} frames\n` +
       (Number.isFinite(psnrRight) ? `PSNR vs converged: <b>${psnrRight.toFixed(1)} dB</b>` : `cadence-based · lags in motion`);
   }
 
@@ -463,15 +443,14 @@ async function main() {
     await renderFrame();
     if (!headless) blit(backendGet(leftDisplayRT.texture)!, leftCtx);
 
-    // our denoise on cadence (skip if a run is still in flight)
-    if (!ourBusy && frameId % cadence() === 0) {
-      ourBusy = true;
-      runOurDenoise()
-        .catch((e) => log('our denoise error: ' + (e as Error).message))
-        .finally(() => { ourBusy = false; });
+    // our denoise on cadence (skipped while a run is still in flight)
+    if (frameId % cadence() === 0 && !oursNode.busy) requestOurs();
+    renderToRT(rightDisplayRT, oursQuad); // drives the node (starts a queued run, draws the latest result)
+    if (!headless) {
+      // right side shows the raw (tonemapped) frame until the first OIDN result lands
+      if (oursNode.denoised) blit(backendGet(rightDisplayRT.texture)!, rightCtx);
+      else { renderToRT(rawDisplayRT, tmRawQuad); blit(backendGet(rawDisplayRT.texture)!, rightCtx); }
     }
-    // right side shows the raw (tonemapped) frame until the first OIDN result lands
-    if (!hasDenoised && !headless) { renderToRT(rawDisplayRT, tmRawQuad); blit(backendGet(rawDisplayRT.texture)!, rightCtx); }
 
     updateHud();
     requestAnimationFrame(loop);
@@ -496,7 +475,7 @@ async function main() {
     (window as unknown as Record<string, unknown>).__pauseLoop = false; // the paused loop resumes itself
     return {
       modelName: denoiser.modelName ?? null,
-      ourMs, leftMs,
+      ourMs: oursNode.lastMs, leftMs,
       left: { nonBlack: nonBlack(leftB), localVar: localVar(leftB) },
       right: { nonBlack: nonBlack(rightB), localVar: localVar(rightB) },
       raw: { nonBlack: nonBlack(rawB), localVar: localVar(rawB) },

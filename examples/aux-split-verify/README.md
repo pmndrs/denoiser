@@ -26,7 +26,7 @@ the bug.
 ```sh
 # 1. build the split artifacts (needs the onnx venv; models are gitignored)
 python3 build_split.py                 # -> public/models/{full,tail}.onnx, enc0.bin
-# 2. dev server (imports DenoiseEngine from ../../packages/denoiser/src)
+# 2. dev server (imports DenoiseEngine from ../../packages/denoiser-ort/src)
 yarn dev                               # open the printed URL in a WebGPU browser
 ```
 

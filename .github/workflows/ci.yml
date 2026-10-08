@@ -31,9 +31,12 @@ jobs:
       # fetches that ref fresh from GitHub each run (no local cache hit for it).
       - name: Install
         run: yarn install --immutable
-      # The shipping package: `build` runs `tsc` (typecheck) then rollup.
-      - name: Build denoiser
-        run: yarn workspace denoiser build
+      # The shipping package + the workspace packages it bundles (core, ort), and
+      # the experimental kernels runtime. Each `build` runs `tsc` (typecheck) then
+      # rollup; --topological-dev orders core -> ort -> denoiser (the preset lists
+      # them as devDependencies because it bundles them).
+      - name: Build library packages
+        run: yarn build:lib
       # Explicit `tsc --noEmit` per workspace that has a tsconfig. Skipped:
       # `packages/denoiser-react` (still on the old v1 API, pending port/drop
       # per STATUS.md) and `examples/ldraw-eiffel` / `examples/three-pathtracer-webgpu`
@@ -42,7 +45,7 @@ jobs:
       - name: Typecheck workspaces
         run: |
           set -e
-          for ws in packages/denoiser examples/bench examples/denoiser-package-test examples/webgpu-ort-smoke; do
+          for ws in packages/denoiser-core packages/denoiser-ort packages/denoiser-kernels packages/denoiser examples/bench examples/denoiser-package-test examples/webgpu-ort-smoke examples/kernels-smoke; do
             echo "::group::tsc --noEmit ($ws)"
             (cd "$ws" && ../../node_modules/.bin/tsc --noEmit -p tsconfig.json)
             echo "::endgroup::"

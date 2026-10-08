@@ -14,8 +14,8 @@ import { LDrawConditionalLineMaterial } from 'three/addons/materials/LDrawCondit
 import { LDrawUtils } from 'three/addons/utils/LDrawUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
-import { Denoiser } from 'denoiser';
 import { installGalleryCapture } from '../../_shared/gallery-capture';
+import { createStack, gpuTex } from '../../_shared/stack';
 import { ensureWebGPU, demoFooter, pathtracerNote } from '../../_shared/chrome';
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
@@ -121,57 +121,30 @@ async function loadEiffel(scene: THREE.Scene) {
   log(`Eiffel Tower loaded + merged in ${(performance.now() - t0).toFixed(0)} ms`);
 }
 
-// Request the adapter's MAX limits/features BEFORE any device exists: ORT
-// creates the shared device and would otherwise request a minimal one that
-// fails the path tracer's compute pipeline validation (see the other example).
-function patchWebGPUForMaxLimits() {
-  const gpu = navigator.gpu as GPU;
-  const origRequestAdapter = gpu.requestAdapter.bind(gpu);
-  gpu.requestAdapter = async (opts?: GPURequestAdapterOptions) => {
-    const adapter = await origRequestAdapter(opts);
-    if (!adapter) return adapter;
-    const origRequestDevice = adapter.requestDevice.bind(adapter);
-    adapter.requestDevice = (desc: GPUDeviceDescriptor = {}) => {
-      const requiredLimits: Record<string, number> = {};
-      const proto = Object.getPrototypeOf(adapter.limits);
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const v = (adapter.limits as unknown as Record<string, unknown>)[name];
-        if (typeof v === 'number') requiredLimits[name] = v;
-      }
-      return origRequestDevice({
-        ...desc,
-        requiredFeatures: [...adapter.features] as GPUFeatureName[],
-        requiredLimits: { ...requiredLimits, ...(desc.requiredLimits ?? {}) },
-      });
-    };
-    return adapter;
-  };
-}
-
 async function main() {
   if (!(await ensureWebGPU())) return;
-  patchWebGPUForMaxLimits();
-
-  // 1) Denoiser first, so ORT owns the GPUDevice we then share with three.js.
-  // Dev serves converted models from /models (vite middleware); prod falls back to the CDN default.
-  const denoiser = await Denoiser.create({ weightsUrl: import.meta.env.DEV ? '/models' : undefined });
-  const device = denoiser.device;
-  log('denoiser ready; sharing its GPUDevice with three.js');
+  // 1+2) One GPUDevice for the denoiser and three.js. ?runtime=auto|ort|wgsl|webnn|kernels (default auto)
+  // picks the network runtime; createStack() orders device creation accordingly
+  // (ORT: denoiser first, three borrows it; others: three first, runtime adopts it).
+  // Dev serves converted ORT models from /models (vite middleware); prod falls back to the CDN default.
+  const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+  const { renderer, denoiser, device } = await createStack({
+    renderer: { canvas, antialias: true },
+    weightsUrl: import.meta.env.DEV ? '/models' : undefined,
+    // three's official Inspector (r180+): render-target viewer, node parameters,
+    // profiler. Opt-in via ?inspector — it overlays its own UI.
+    beforeInit: async (r) => {
+      if (new URLSearchParams(location.search).has('inspector')) {
+        const { Inspector } = await import('three/addons/inspector/Inspector.js');
+        r.inspector = new Inspector();
+        log('three.js Inspector attached');
+      }
+    },
+  });
+  log(`denoiser ready (${denoiser.runtime.name}); sharing its GPUDevice with three.js`);
   device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
   device.addEventListener('uncapturederror', (e) =>
     log(`UNCAPTURED GPU ERROR: ${(e as GPUUncapturedErrorEvent).error.message}`));
-
-  // 2) three.js WebGPURenderer on the SAME device.
-  const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, device });
-  // three's official Inspector (r180+): render-target viewer, node parameters,
-  // profiler. Opt-in via ?inspector — it overlays its own UI.
-  if (new URLSearchParams(location.search).has('inspector')) {
-    const { Inspector } = await import('three/addons/inspector/Inspector.js');
-    renderer.inspector = new Inspector();
-    log('three.js Inspector attached');
-  }
-  await renderer.init();
   renderer.setSize(RES, RES, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
@@ -201,9 +174,7 @@ async function main() {
 
   // Live GPUTexture of the tracer's accumulation (refetched — it can be
   // replaced on reset) and of three-owned render targets.
-  const backendGet = (o: unknown) => (renderer.backend as unknown as {
-    get: (o: unknown) => { texture?: GPUTexture };
-  }).get(o)?.texture;
+  const backendGet = (t: THREE.Texture) => gpuTex(renderer, t);
   const getTracerTexture = (): GPUTexture | undefined => {
     const target = pathTracer._pathTracer.outputTarget;
     const threeTexture = target.isTexture ? target : target.textures?.[0];

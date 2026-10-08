@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { createReadStream, createWriteStream, existsSync, statSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { serveTzas } from '../_shared/vite-tzas';
 
 const modelsDir = fileURLToPath(new URL('../../packages/denoiser/models', import.meta.url));
 // Split-graph workaround artifacts (<name>.tail.onnx / <name>.enc0.bin), served
@@ -19,11 +20,26 @@ export default defineConfig({
   // Exactly one three instance: the pathtracer (served as source) and our
   // `three/webgpu` import must resolve to the same copy, or material nodes from
   // one instance are unrecognized by the other (-> "bsdfSample of null").
-  // Use the worktree's denoiser SOURCE (not the built dist) so local engine edits
+  // Use the denoiser packages' SOURCE (not the built dist) so local engine edits
   // — e.g. the aux split-graph workaround — are picked up without a rebuild.
   resolve: {
     dedupe: ['three', 'three-mesh-bvh'],
-    alias: { denoiser: fileURLToPath(new URL('../../packages/denoiser/src/index.ts', import.meta.url)) },
+    alias: {
+      // Subpaths first: aliases match by prefix, in order ('denoiser' would swallow 'denoiser/three').
+      'denoiser/three': fileURLToPath(new URL('../../packages/denoiser-three/src/index.ts', import.meta.url)),
+      'denoiser/wgsl': fileURLToPath(new URL('../../packages/denoiser-wgsl/src/index.ts', import.meta.url)),
+      'denoiser/webnn': fileURLToPath(new URL('../../packages/denoiser-webnn/src/index.ts', import.meta.url)),
+      'denoiser/kernels': fileURLToPath(new URL('../../packages/denoiser-kernels/src/index.ts', import.meta.url)),
+      'denoiser/auto': fileURLToPath(new URL('../../packages/denoiser/src/auto.ts', import.meta.url)),
+      'denoiser/ort': fileURLToPath(new URL('../../packages/denoiser-ort/src/index.ts', import.meta.url)),
+      denoiser: fileURLToPath(new URL('../../packages/denoiser/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-core': fileURLToPath(new URL('../../packages/denoiser-core/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-ort': fileURLToPath(new URL('../../packages/denoiser-ort/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-wgsl': fileURLToPath(new URL('../../packages/denoiser-wgsl/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-webnn': fileURLToPath(new URL('../../packages/denoiser-webnn/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-three': fileURLToPath(new URL('../../packages/denoiser-three/src/index.ts', import.meta.url)),
+      '@pmndrs/denoiser-ffx': fileURLToPath(new URL('../../packages/denoiser-ffx/src/index.ts', import.meta.url)),
+    },
   },
   optimizeDeps: {
     // Serve three + the pathtracer + mesh-bvh as source (not pre-bundled): keeps a
@@ -39,6 +55,7 @@ export default defineConfig({
     esbuildOptions: { target: 'esnext' },
   },
   plugins: [
+    serveTzas(),
     {
       // Debug: accept raw binary dumps from the page (POST /dump/<name>) and
       // write them under ./dumps — used by the native-OIDN reference harness

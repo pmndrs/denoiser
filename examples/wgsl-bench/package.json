@@ -1,0 +1,21 @@
+{
+  "name": "wgsl-bench",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The Denoiser facade on onnxruntime-web, @huggingface/kernels and the hand-written WGSL runtime: parity + warm timings.",
+  "scripts": {
+    "dev": "vite --port 5190 --strictPort",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pmndrs/denoiser-kernels": "workspace:*",
+    "@pmndrs/denoiser-wgsl": "workspace:*",
+    "denoiser": "workspace:*",
+    "onnxruntime-web": "^1.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OIDN on HF kernels — smoke test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
+      h1 { font-size: 1.2rem; }
+      .row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+      .controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
+      figure { margin: 0; }
+      canvas { border: 1px solid #4a5568; width: 256px; height: 256px; }
+      figcaption { font-size: 0.85rem; margin-top: 0.4rem; color: #a0aec0; }
+      button, select { padding: 0.4rem 0.8rem; }
+      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; min-height: 4rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>OIDN U-Net on @huggingface/kernels vs onnxruntime-web</h1>
+    <p>Same TZA weights, same 512² input (gallery <code>spheres</code>, 4 spp). Kernels runs the
+      network op by op (FusedConv / MaxPool / Resize / Concat); ORT runs the converted <code>.onnx</code>.
+      <a href="./facade.html">Full Denoiser facade on the kernels runtime →</a></p>
+    <div class="controls">
+      <label>model <select data-param="model"><option>rt_ldr_small</option><option>rt_ldr</option></select></label>
+      <label>precision <select data-param="precision"><option>fp32</option><option>fp16</option></select></label>
+      <label>device <select data-param="shared">
+        <option value="0">separate (kernels default)</option>
+        <option value="1">shared with ORT (workaround)</option>
+      </select></label>
+      <button id="bench" disabled>Benchmark ×20</button>
+    </div>
+    <div class="row">
+      <figure><canvas id="noisy"></canvas><figcaption>noisy input</figcaption></figure>
+      <figure><canvas id="ort"></canvas><figcaption>ORT</figcaption></figure>
+      <figure><canvas id="kernels"></canvas><figcaption>kernels</figcaption></figure>
+      <figure><canvas id="diff"></canvas><figcaption>|kernels − ORT| × 50</figcaption></figure>
+      <figure><canvas id="reference"></canvas><figcaption>reference</figcaption></figure>
+    </div>
+    <pre id="status"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

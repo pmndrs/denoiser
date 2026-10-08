@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WGSL runtime bench</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
+      h1 { font-size: 1.2rem; }
+      .row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; margin-bottom: 1rem; }
+      figure { margin: 0; }
+      canvas { border: 1px solid #4a5568; width: 256px; height: 256px; }
+      figcaption { font-size: 0.85rem; margin-top: 0.4rem; color: #a0aec0; }
+      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; min-height: 4rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1><code>Denoiser</code> on ORT vs <code>@huggingface/kernels</code> vs hand-written WGSL</h1>
+    <p>
+      <code>?mode=facade</code> (default): same facade calls on each runtime, parity vs ORT + warm medians.
+      <code>?mode=net</code>: the network alone (<code>binding.run()</code> + queue drain), per-layer GPU timings with <code>&amp;profile=1</code>.
+      Common params: <code>precision=fp32|fp16</code>, <code>warm=N</code>, <code>runtimes=ort,kernels,wgsl</code>.
+    </p>
+    <div class="row" id="images"></div>
+    <pre id="status"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

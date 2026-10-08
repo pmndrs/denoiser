@@ -2,7 +2,12 @@
 // Deterministic seeded noise images, cold + warm timings, per-stage stats from
 // Denoiser.lastStats, PSNR parity between precisions. Results land in #results
 // (table) and #json (machine-readable, window.__benchResults).
-import { Denoiser } from 'denoiser';
+import { Denoiser, type NetworkRuntime } from 'denoiser';
+import { KernelsRuntime } from 'denoiser/kernels';
+import { WgslRuntime } from 'denoiser/wgsl';
+import { OrtRuntime } from 'denoiser/ort';
+import { AutoRuntime } from 'denoiser/auto';
+import { runRegression } from './regression';
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
 // production builds omit the override so the denoiser falls back to its shipped CDN default.
@@ -13,6 +18,17 @@ const only = params.get('only');
 const batchParam = params.get('batch') ? Number(params.get('batch')) : undefined;
 const captureParam = params.get('capture') === '1';
 const maxRunPixelsParam = params.get('maxRunPixels') ? Number(params.get('maxRunPixels')) : undefined;
+
+// ?runtime=ort|kernels|wgsl|auto (or the selector). Every runtime is explicit so a
+// run is reproducible regardless of the package default (AutoRuntime).
+// ORT reads .onnx from WEIGHTS_URL; the others read .tza weights from /tzas in dev.
+type RuntimeName = 'ort' | 'kernels' | 'wgsl' | 'auto';
+const TZA_URL = import.meta.env.DEV ? '/tzas' : undefined;
+const makeRuntime = (name: RuntimeName): NetworkRuntime =>
+  name === 'kernels' ? new KernelsRuntime({ tzaUrl: TZA_URL })
+    : name === 'wgsl' ? new WgslRuntime({ tzaUrl: TZA_URL })
+      : name === 'auto' ? new AutoRuntime({ tzaUrl: TZA_URL })
+        : new OrtRuntime({ weightsUrl: WEIGHTS_URL, graphCapture: captureParam });
 const SCENARIOS = [
   { label: '512x512', w: 512, h: 512 },
   { label: '1280x720', w: 1280, h: 720 },
@@ -27,6 +43,8 @@ const noisyCanvas = document.querySelector<HTMLCanvasElement>('#noisy')!;
 const cleanCanvas = document.querySelector<HTMLCanvasElement>('#clean')!;
 const precisionSel = document.querySelector<HTMLSelectElement>('#precision')!;
 const qualitySel = document.querySelector<HTMLSelectElement>('#quality')!;
+const runtimeSel = document.querySelector<HTMLSelectElement>('#runtime')!;
+if (['kernels', 'wgsl', 'auto'].includes(params.get('runtime') ?? '')) runtimeSel.value = params.get('runtime')!;
 const runAllBtn = document.querySelector<HTMLButtonElement>('#runAll')!;
 
 const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
@@ -90,7 +108,7 @@ function psnr(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
 const median = (xs: number[]) => [...xs].sort((p, q) => p - q)[Math.floor(xs.length / 2)];
 
 interface Result {
-  scenario: string; precision: string; quality: string; tiles: number;
+  scenario: string; runtime: string; precision: string; quality: string; tiles: number;
   buildMs: number; coldMs: number; warmMs: number;
   uploadMs: number; encodeMs: number; runMs: number; resolveMs: number;
   psnrVsFp32: number | null;
@@ -104,7 +122,7 @@ function render(res: Result) {
   results.push(res);
   const tr = document.createElement('tr');
   const f = (x: number | null) => (x == null ? '—' : x === Infinity ? 'inf' : x.toFixed(1));
-  tr.innerHTML = `<td>${res.scenario} ${res.precision} ${res.quality}</td><td>${res.tiles}</td>` +
+  tr.innerHTML = `<td>${res.scenario} ${res.runtime} ${res.precision} ${res.quality}</td><td>${res.tiles}</td>` +
     [res.buildMs, res.coldMs, res.warmMs, res.uploadMs, res.encodeMs, res.runMs, res.resolveMs, res.psnrVsFp32]
       .map((x) => `<td>${f(x)}</td>`).join('');
   tbody.appendChild(tr);
@@ -114,12 +132,14 @@ function render(res: Result) {
 async function benchScenario(w: number, h: number, label: string): Promise<Result> {
   const precision = precisionSel.value as 'fp32' | 'fp16';
   const quality = qualitySel.value as 'fast' | 'balanced';
-  log(`--- ${label} (${precision}, ${quality}) ---`);
+  const runtime = runtimeSel.value as RuntimeName;
+  log(`--- ${label} (${runtime}, ${precision}, ${quality}) ---`);
 
   const tb = performance.now();
   const denoiser = await Denoiser.create({
-    precision, quality, weightsUrl: WEIGHTS_URL,
-    batch: batchParam, graphCapture: captureParam, maxRunPixels: maxRunPixelsParam,
+    runtime: makeRuntime(runtime),
+    precision, quality,
+    batch: batchParam, maxRunPixels: maxRunPixelsParam,
   });
   const buildMs = performance.now() - tb;
 
@@ -145,14 +165,14 @@ async function benchScenario(w: number, h: number, label: string): Promise<Resul
   cleanCanvas.width = w; cleanCanvas.height = h;
   cleanCanvas.getContext('2d')!.putImageData(out, 0, 0);
 
-  const key = `${label}|${quality}`;
+  const key = `${label}|${runtime}|${quality}`;
   let psnrVsFp32: number | null = null;
   if (precision === 'fp32') fp32Outputs.set(key, out.data);
   else if (fp32Outputs.has(key)) psnrVsFp32 = psnr(fp32Outputs.get(key)!, out.data);
 
   const tiles = denoiser.stats!.tiles;
   const res: Result = {
-    scenario: label, precision, quality, tiles,
+    scenario: label, runtime, precision, quality, tiles,
     buildMs, coldMs, warmMs: median(warm),
     uploadMs: median(stages.uploadMs), encodeMs: median(stages.encodeMs),
     runMs: median(stages.runMs), resolveMs: median(stages.resolveMs),
@@ -181,11 +201,12 @@ async function runAll() {
 // Ad-hoc single run for automated verification (returns pixels + stage stats).
 (window as unknown as Record<string, unknown>).__denoiseOnce = async (
   w: number, h: number,
-  opts: { precision?: 'fp32' | 'fp16'; batch?: number; quality?: 'fast' | 'balanced' } = {},
+  opts: { precision?: 'fp32' | 'fp16'; batch?: number; quality?: 'fast' | 'balanced'; runtime?: RuntimeName } = {},
 ) => {
   const dn = await Denoiser.create({
+    runtime: makeRuntime(opts.runtime ?? 'ort'),
     precision: opts.precision ?? 'fp32', batch: opts.batch,
-    quality: opts.quality ?? 'fast', weightsUrl: WEIGHTS_URL,
+    quality: opts.quality ?? 'fast',
   });
   const out = (await dn.denoise(makeNoisy(w, h)))!;
   const stats = dn.stats;
@@ -193,6 +214,9 @@ async function runAll() {
   return { data: out.data, stats };
 };
 (window as unknown as Record<string, unknown>).__psnr = psnr;
+(window as unknown as Record<string, unknown>).__regression = (
+  precision: 'fp32' | 'fp16' = 'fp32', runtime: RuntimeName = 'ort',
+) => runRegression(precision, () => makeRuntime(runtime));
 
 async function main() {
   if (!('gpu' in navigator)) { log('ERROR: WebGPU not available.'); return; }

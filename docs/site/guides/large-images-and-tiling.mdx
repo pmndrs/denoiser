@@ -48,7 +48,7 @@ back to tiling if either is exceeded.
 
 The U-Net's decoder concat levels are the widest point in the graph — up to
 **~96 channels** at full resolution (a conservative upper bound the engine
-uses, `WORST_FULLRES_CHANNELS` in `ort/engine.ts`, covering every model
+uses, `WORST_FULLRES_CHANNELS` in `packages/denoiser-core/src/engine.ts`, covering every model
 variant's decoder concat). A run's worst single intermediate tensor is
 roughly:
 
@@ -68,12 +68,12 @@ worst tensor bytes ≈ (padded W) × (padded H) × ~96 channels × bytes-per-ele
 That's *one* intermediate tensor's worst case, used to gate whether a
 geometry is even attempted — actual peak device memory during a run is
 higher once you add the input/output NCHW buffers, the accumulate/weight
-buffers, the model's own weights, and ORT's session overhead. For a whole-frame
+buffers, the model's own weights, and the runtime's session overhead. For a whole-frame
 1080p fp16 run, expect **peak GPU memory in the neighborhood of ~1GB**. This
 is also why the denoiser requests the adapter's *max* limits/features when it
 creates the device (see [Custom engines](./custom-engines#the-device-contract))
-— ORT's default minimal-device request caps storage buffers far below what a
-whole-frame run needs.
+— a default WebGPU device (and the minimal device ORT requests) caps storage buffers
+far below what a whole-frame run needs.
 
 Before attempting a geometry, the engine checks the worst-tensor estimate
 against `min(device.limits.maxBufferSize, device.limits.maxStorageBufferBindingSize)`
@@ -102,10 +102,11 @@ the denoiser more or less on its own. Turn it down when:
 
 ## Session-per-geometry caching
 
-Each distinct `(tileW, tileH, batch)` geometry gets its own ONNX
-`InferenceSession` plus dedicated GPU IO buffers (the session holds a GPU
-copy of the model weights pinned to those dims via
-`freeDimensionOverrides`) — building one is not free. The engine keeps a tiny
+Each distinct `(tileW, tileH, batch)` geometry gets its own runtime session
+plus dedicated GPU IO buffers — building one is not free. (On the ORT runtime that is
+an ONNX `InferenceSession` holding a GPU copy of the model weights pinned to those
+dims via `freeDimensionOverrides`; WebNN compiles a graph per geometry, which is
+the cold-start cost noted in [Choosing a runtime](./choosing-a-runtime).) The engine keeps a tiny
 LRU of up to **4** geometries so repeated calls at the same size (the common
 case: one output resolution, called every frame) reuse the existing session.
 

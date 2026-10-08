@@ -1,5 +1,9 @@
 # Project status & next actions
 
+> **Stale since 2026-10 — see [ROADMAP.md](ROADMAP.md)** for the current state
+> (runtime split, WGSL/WebNN/kernels runtimes, temporal API + FidelityFX
+> denoisers, eval harness). This file is kept for the July history.
+
 _Last updated: 2026-07-07 (branch `main`; `perf-v2`/`feat-v2` fully merged)._
 
 The living "where are we" doc. History lives in [`MIGRATION_PROGRESS.md`](MIGRATION_PROGRESS.md)

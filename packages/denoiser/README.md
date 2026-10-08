@@ -1,16 +1,56 @@
 # denoiser
 
-**AI denoising in the browser — [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn) running fully on WebGPU via [onnxruntime-web](https://onnxruntime.ai/).**
+**AI denoising in the browser — [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn) running fully on WebGPU.**
 
-Denoiser runs OIDN's pre-trained U-Nets (converted to ONNX) on the WebGPU execution
-provider. All pre/post-processing — normalization, layout, tiling, overlap blending,
+Denoiser runs OIDN's pre-trained U-Nets on the GPU. The default runtime
+(`AutoRuntime`) uses WebNN fp16 for base/large models when WebNN is available and a
+hand-written WGSL runtime otherwise; both read the upstream OIDN `.tza` weights.
+All pre/post-processing — normalization, layout, tiling, overlap blending,
 color transforms — is WGSL compute on the same `GPUDevice`, so the only CPU↔GPU
 round-trip is the one you ask for. Feed it images or `GPUTexture`s; get back
-`ImageData`, floats, or a texture.
+`ImageData`, floats, or a texture. Everything is validated on Apple GPUs only.
 
 ```sh
-npm install denoiser onnxruntime-web
+npm install denoiser
+# optional: only for the opt-in ORT runtime (`denoiser/ort`)
+npm install onnxruntime-web
 ```
+
+`onnxruntime-web`, `three` (>= r185, for `denoiser/three`) and
+`@huggingface/kernels` (for `denoiser/kernels`) are optional peer dependencies.
+
+### Breaking changes (alpha)
+
+**`denoiser` now defaults to `AutoRuntime`; ORT moved to `denoiser/ort`.**
+
+- The root entry no longer re-exports `denoiser/ort` (`OrtRuntime`, `OrtSession`,
+  `DenoiseEngine`, `Models`) and never loads onnxruntime-web, which is now an
+  **optional** peer dependency (install it only to use `denoiser/ort`).
+- The ORT-only `Denoiser.create` options `weightsUrl`, `wasmPaths`, `graphCapture` and
+  `splitAux` are gone from the root. They are `OrtRuntime` options now.
+- New root options: `tzaUrl` (base URL of the OIDN `.tza` weights) and `device` (run
+  on an existing `GPUDevice`, such as a three.js renderer's).
+- Why: per the evals (`docs/status/eval-2026-10-07.md`,
+  `docs/status/eval-2026-10-08-quiet.md`), ORT computes the `*_alb`, `*_alb_nrm` and
+  `*_large` models wrong, while WGSL and WebNN match native OIDN and are faster.
+
+```ts
+// before
+const denoiser = await Denoiser.create({ weightsUrl: '/models', splitAux: true, precision: 'fp16' });
+// after, same behaviour (opt in to ORT explicitly; `npm i onnxruntime-web`)
+import { OrtRuntime } from 'denoiser/ort';
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models', splitAux: true }),
+  precision: 'fp16',
+});
+// after, recommended: the default runtime, with .tza weights
+const denoiser = await Denoiser.create({ precision: 'fp16', tzaUrl: '/tzas' });
+```
+
+If you shared the device with three.js by creating the denoiser first, that still works
+with ORT. With the default runtime, create the renderer first and pass
+`device: renderer.backend.device` (see below).
+
 
 ## Quick start (image in, ImageData out)
 
@@ -29,10 +69,13 @@ no CPU pixels anywhere. Execution is stateless — everything about a run is in
 the call:
 
 ```ts
-const denoiser = await Denoiser.create({ precision: 'fp16' });
-
-// ORT creates the GPUDevice — share it with three.js (see Device sharing below)
-const renderer = new THREE.WebGPURenderer({ device: denoiser.device });
+// renderer first, then the denoiser on the renderer's device (see Device sharing below)
+const renderer = new THREE.WebGPURenderer({ canvas });
+await renderer.init();
+const denoiser = await Denoiser.create({
+  precision: 'fp16',
+  device: renderer.backend.device,
+});
 
 const result = await denoiser.denoiseTextures({
   color: tracerGpuTexture,     // float, linear HDR
@@ -45,9 +88,10 @@ const result = await denoiser.denoiseTextures({
 // ...render the texture like any other three.js texture
 ```
 
-At 512×512 this runs in ~14–20 ms warm on an M-series laptop — fast enough to
-denoise progressively **while a path tracer accumulates**. See
-`examples/three-pathtracer-webgpu` (live-denoise checkbox) for the full loop.
+This is fast enough to denoise progressively **while a path tracer accumulates**.
+See `examples/three-pathtracer-webgpu` (live-denoise checkbox) for the full loop, and
+the [three.js & TSL guide](../../docs/site/guides/three-and-tsl.mdx) for the
+`denoise()`, `ffxShadows()` and `ffxReflections()` nodes in `denoiser/three`.
 
 ### Aux inputs (albedo + normal)
 
@@ -75,48 +119,63 @@ Coming from the 0.x TFJS API: [`docs/guides/migrating-from-v1.md`](../../docs/gu
 ## How it runs fast
 
 - **Whole-frame inference**: images up to ~1080p (configurable) run through the
-  U-Net in ONE `session.run` — no tiling, no overlap redundancy, no seams. The
-  ONNX models export with named dynamic dims pinned per session.
+  U-Net in ONE network run — no tiling, no overlap redundancy, no seams.
 - **Adaptive tiling**: bigger images fall back to 1024/512/256 tiles (batched
   per run, sigmoid overlap blending) based on a pixel budget and the device's
   buffer limits.
 - **fp16 end-to-end**: `Denoiser.create({ precision: 'fp16' })` uses fp16 models,
   tensors, and WGSL IO (needs the `shader-f16` feature; falls back to fp32).
-  ~15% faster, PSNR vs fp32 ≈ 53dB (visually identical).
+  On the ORT runtime that measured ~15% faster, PSNR vs fp32 ≈ 53dB (visually
+  identical). WebNN is used for fp16 only.
 - Everything between input and output stays on the GPU.
 
-Measured warm (M-series Mac, Chrome, `fast` quality): 512² **13.7 ms**,
-720p **45 ms**, 1080p **104 ms** (fp16). `balanced` is meaningfully slower;
+Per-runtime speed and quality (1080p, Apple M5 Pro, Chrome 154) are in
+`docs/status/eval-2026-10-08-quiet.md` and summarized in the
+[runtime guide](../../docs/site/guides/choosing-a-runtime.mdx). The older figures
+(512² 13.7 ms, 720p 45 ms, 1080p 104 ms, fp16) were measured on the ORT runtime,
+which is no longer the default. `balanced` is meaningfully slower than `fast`;
 benchmark with `examples/bench` for your sizes.
 
 ## Device sharing & lifetime — READ THIS if you pass `denoiser.device` around
 
-onnxruntime-web **creates and owns the `GPUDevice`** (it ignores an injected
-one — [onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)).
-To share a device with three.js, build the denoiser FIRST and hand
-`denoiser.device` to `WebGPURenderer`.
+With the default runtime you can either hand it your device or take its device:
 
-Two lifetime rules follow from ORT's ownership:
+```ts
+// renderer first (clean flow): the denoiser adopts the renderer's device
+const denoiser = await Denoiser.create({ device: renderer.backend.device });
+// or: createDenoiserForRenderer(renderer, { runtime }) from 'denoiser/three'
 
-1. **`destroyDevice()` destroys the shared device.** When the last ORT session
-   is released, ORT destroys its device — three.js, canvas contexts, and every
+// denoiser first: the renderer adopts the denoiser's device
+const renderer = new THREE.WebGPURenderer({ device: denoiser.device });
+```
+
+Without `device`, the runtime creates one with the adapter's **max limits +
+features**, enough for whole-frame U-Net intermediates and a path tracer's pipelines.
+If you pass your own device, request high limits when you create it.
+
+The exception is the opt-in ORT runtime (`denoiser/ort`): onnxruntime-web **creates
+and owns the `GPUDevice`** (it ignores an injected one —
+[onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)). With ORT
+build the denoiser FIRST and hand `denoiser.device` to `WebGPURenderer`.
+`createDenoiserForRenderer` throws for ORT.
+
+Lifetime rules:
+
+1. **With ORT, `destroyDevice()` destroys the shared device.** When the last ORT
+   session is released, ORT destroys its device — three.js, canvas contexts, and every
    resource on it die with it (`GPUDevice.lost`, reason `'destroyed'`).
    `dispose()` is the safe between-workloads cleanup: it frees buffers and
-   extra sessions but retains one so the device survives.
+   extra sessions but retains one so the device survives. `AutoRuntime` never
+   destroys a device you pass in.
 2. Model switches are safe: `Denoiser` overlaps the new engine's creation with
    the old one's disposal precisely so the session count never hits zero
    mid-swap. Don't "optimize" that ordering away.
-
-The denoiser also patches the device request (scoped, restored immediately) so
-the device gets the adapter's **max limits + features** — ORT alone requests a
-minimal device that can't hold whole-frame U-Net intermediates or a path
-tracer's pipelines.
 
 ## API sketch (v2 — stateless per call)
 
 | | |
 |---|---|
-| `await Denoiser.create(opts?)` | `precision`, `quality`, `weightsUrl`, `wasmPaths`, `maxRunPixels`, `batch`, `graphCapture`, `splitAux` |
+| `await Denoiser.create(opts?)` | `precision`, `quality`, `tzaUrl`, `device`, `maxRunPixels`, `batch`, `runtime` (default `AutoRuntime`) |
 | `denoise(imageLike, opts?)` | → `ImageData`; opts: `albedo`, `normal`, `srgb`, `flipY`, `onProgress` |
 | `denoiseToFloat(imageLike, opts?)` | → normalized `Float32Array` |
 | `denoiseTextures(opts)` | → `GPUTexture`; opts: `color`, `albedo`, `normal`, `hdr`, `inputScale`, `inputFlipY`, `auxInputFlipY`, `output`, `transfer`, `outputFlipY` |
@@ -130,15 +189,42 @@ Orientation: WebGPU render targets read bottom-up — set `inputFlipY`. If your
 aux planes come from a raster pass their convention can differ from a
 compute-written color texture; `auxInputFlipY` handles that independently.
 
-`graphCapture` is opt-in and off by default: it measured no gain (the workload
-is GPU-bound) and onnxruntime-web 1.27 captured sessions crash after roughly
-150–250 cumulative replays regardless of GPU syncs — unusable for live loops
-(standalone reproduction: the `ort-webgpu-graphcapture-repro` repo).
+The ORT-only options (`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) are
+`OrtRuntime` options (`import { OrtRuntime } from 'denoiser/ort'`). `graphCapture` is
+opt-in and off by default: it measured no gain (the workload is GPU-bound) and
+onnxruntime-web 1.27 captured sessions crash after roughly 150–250 cumulative
+replays regardless of GPU syncs — unusable for live loops (standalone reproduction:
+the `ort-webgpu-graphcapture-repro` repo).
 
 ## Models / weights
 
-The denoiser loads one converted `.onnx` model per configuration (quality ×
-hdr × aux), fetched individually — a page never downloads the full set:
+Which weights are fetched depends on the runtime.
+
+**Default runtime (`AutoRuntime`, `denoiser/wgsl`, `denoiser/webnn`, `denoiser/kernels`):**
+the upstream OIDN `.tza` files, one per configuration (quality × hdr × aux), fetched
+individually — a page never downloads the full set. From this repo's `tzas/`:
+`*_small` ~0.6 MB, base ~1.8 MB, `*_large` up to ~7.7 MB (one set for both
+precisions).
+
+Point `tzaUrl` at wherever the files live — it's just static hosting:
+
+```ts
+const denoiser = await Denoiser.create({ tzaUrl: '/tzas' });
+```
+
+- **Production: host them yourself.** Copy the `.tza` files into your app's static
+  assets (or your own CDN) and pin `tzaUrl`. Don't build a product on someone else's
+  default URL.
+- **Default:** `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas`
+  (`DEFAULT_TZA_URL`), sha256-identical to RenderKit/oidn-weights, served by
+  jsDelivr's GitHub endpoint.
+
+**ORT runtime (`denoiser/ort`):** converted `.onnx` models, from `weightsUrl`:
+
+```ts
+import { OrtRuntime } from 'denoiser/ort';
+const denoiser = await Denoiser.create({ runtime: new OrtRuntime({ weightsUrl: '/models' }) });
+```
 
 | variant | fp16 | fp32 |
 |---|---|---|
@@ -146,49 +232,38 @@ hdr × aux), fetched individually — a page never downloads the full set:
 | base (balanced) | ~1.8 MB | ~3.6 MB |
 | `*_large` (high) | ~7.3 MB | ~14.7 MB |
 
-Full set (all RT + lightmap variants, both precisions): 46 files, ~144 MB
+Full `.onnx` set (all RT + lightmap variants, both precisions): 46 files, ~144 MB
 (96 MB fp32 + 48 MB fp16).
 
-### Hosting them
-
-Point `weightsUrl` at wherever the files live — it's just static hosting:
-
-```ts
-const denoiser = await Denoiser.create({ weightsUrl: '/models' });
-```
-
-- **Production: host them yourself.** Copy the `models/` dir into your app's
-  static assets (or your own CDN) and pin `weightsUrl`. Don't build a product
-  on someone else's default URL.
+- **Production: host them yourself.** Copy the `models/` dir into your app's static
+  assets and pin `weightsUrl`.
 - **Default scheme: plain git + jsDelivr's GitHub endpoint.** The models are
   committed as ordinary git blobs (NOT LFS — jsDelivr can't resolve LFS
-  pointers) in a weights branch/repo and served version-pinned from
+  pointers) and served version-pinned from
   `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v2/models/<file>.onnx`.
   Verified: `access-control-allow-origin: *`, range requests, multi-provider
-  CDN. Per-file cap is 20–50 MB depending on report — our largest file is
-  14.7 MB, under even the stricter figure. `models-v2` is `models-v1` plus the
-  `*.tail.onnx`/`*.enc0.bin` split-aux artifacts that the default-on
-  `splitAux` option fetches for the 9-channel aux models; self-hosters should
-  mirror `models-v2` (or set `splitAux: false`).
-- **GitHub Pages** also works (verified CORS `*`, Fastly-fronted; the 144 MB
-  set fits the 1 GB site limit) if you'd rather publish a branch than rely on
-  jsDelivr.
-- **What does NOT work — verified, so you don't re-litigate it:**
-  - **GitHub Releases assets**: no `access-control-allow-origin` on the
-    download path (`release-assets.githubusercontent.com`), even on GET with
-    an `Origin` — browser `fetch()` fails CORS. Fine for CLIs, useless as a
-    web default.
-  - **Models inside the npm package**: every `npm install` pulls the full
-    144 MB, and jsDelivr enforces a ~50 MB **total package** limit
-    ([jsdelivr#18294](https://github.com/jsdelivr/jsdelivr/issues/18294)) —
-    it would refuse the package outright. A dedicated models npm package hits
-    the same cap (whitelist-only).
-  - **`raw.githubusercontent.com`**: CORS is fine, but `cache-control:
-    max-age=300` and GitHub discourages hotlinking — dev fallback only.
-- **Not an option: OIDN's own repos.** Upstream publishes `.tza` (their own
-  format, via git-LFS) — no ONNX exists upstream, and the runtime deliberately
-  has no TZA parser. OIDN's repos are the *source* for the offline converter
-  only: regenerate any time with `tools/onnx-convert` (Python, no PyTorch).
+  CDN. `models-v2` is `models-v1` plus the `*.tail.onnx`/`*.enc0.bin` split-aux
+  artifacts that the default-on `splitAux` option fetches for the 9-channel aux
+  models; self-hosters should mirror `models-v2` (or set `splitAux: false`).
+- ORT computes the `*_alb`, `*_alb_nrm` and `*_large` models wrong (see the evals);
+  prefer the default runtime.
+
+**Hosting dead ends (verified, so you don't re-litigate it):**
+
+- **GitHub Releases assets**: no `access-control-allow-origin` on the download
+  path (`release-assets.githubusercontent.com`), even on GET with an `Origin` —
+  browser `fetch()` fails CORS. Fine for CLIs, useless as a web default.
+- **Models inside the npm package**: every `npm install` would pull the full
+  144 MB, and jsDelivr enforces a ~50 MB **total package** limit
+  ([jsdelivr#18294](https://github.com/jsdelivr/jsdelivr/issues/18294)) — it would
+  refuse the package outright.
+- **`raw.githubusercontent.com`**: CORS is fine, but `cache-control:
+  max-age=300` and GitHub discourages hotlinking — dev fallback only.
+- GitHub Pages also works (verified CORS `*`) if you'd rather publish a branch than
+  rely on jsDelivr.
+
+The `.onnx` models are produced from the `.tza` weights offline by
+`tools/onnx-convert` (Python, no PyTorch); only the ORT runtime needs them.
 
 ## License
 

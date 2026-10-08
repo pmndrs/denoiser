@@ -5,6 +5,8 @@ import path from 'node:path';
 
 // Serve the (gitignored, CDN-hosted-in-prod) converted models at /models/* for local dev.
 const modelsDir = fileURLToPath(new URL('../../packages/denoiser/models', import.meta.url));
+// .tza weights for the experimental kernels runtime (?runtime=kernels) at /tzas/*.
+const tzasDir = fileURLToPath(new URL('../../packages/denoiser/tzas', import.meta.url));
 
 export default defineConfig({
   // Relative base so the built bundle works under any subpath (GitHub Pages
@@ -16,12 +18,14 @@ export default defineConfig({
     {
       name: 'serve-models',
       configureServer(server) {
-        server.middlewares.use('/models', (req, res, next) => {
-          const file = path.join(modelsDir, decodeURIComponent((req.url ?? '').split('?')[0]));
-          if (!existsSync(file) || !statSync(file).isFile()) return next();
-          res.setHeader('Content-Type', 'application/octet-stream');
-          createReadStream(file).pipe(res);
-        });
+        for (const [prefix, dir] of [['/models', modelsDir], ['/tzas', tzasDir]] as const) {
+          server.middlewares.use(prefix, (req, res, next) => {
+            const file = path.join(dir, decodeURIComponent((req.url ?? '').split('?')[0]));
+            if (!existsSync(file) || !statSync(file).isFile()) return next();
+            res.setHeader('Content-Type', 'application/octet-stream');
+            createReadStream(file).pipe(res);
+          });
+        }
       },
     },
   ],

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebNN runtime bench</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
+      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; min-height: 4rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>OIDN U-Net on WebNN vs hand-written WGSL (network only)</h1>
+    <p>Needs Chrome with <code>--enable-features=WebMachineLearningNeuralNetwork</code>. Params:
+      <code>model</code>, <code>precision=fp32|fp16</code>, <code>sizes=512x512,1920x1088</code>,
+      <code>devs=gpu,npu,webgpu,wgsl</code>, <code>warm</code>, <code>layout=nchw|nhwc</code>.</p>
+    <pre id="status"></pre>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

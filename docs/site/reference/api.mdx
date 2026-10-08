@@ -17,7 +17,9 @@ import { Denoiser } from 'denoiser';
 Construction is **async-only** — the constructor is private. `Denoiser.create()`
 loads the default (color-only) model and creates the shared `GPUDevice`
 before resolving, so `denoiser.device` is available immediately after
-`await`.
+`await`. The default runtime is [`AutoRuntime`](#network-runtimes-experimental): WebNN
+fp16 for base/large models when WebNN is available, the hand-written WGSL
+runtime otherwise. It never loads onnxruntime-web.
 
 ### `Denoiser.create(options?)`
 
@@ -31,18 +33,17 @@ static async create(options?: DenoiserCreateOptions): Promise<Denoiser>
 |---|---|---|---|
 | `precision` | `'fp32' \| 'fp16'` | `'fp32'` | fp16 models + tensors + WGSL IO when the device's `shader-f16` feature is available. `Denoiser.create` auto-falls-back to fp32 (with a console warning) if session creation fails under fp16 |
 | `quality` | `Quality` (`'fast' \| 'balanced' \| 'high'`) | `'fast'` | model family: fast = `*_small`, balanced = base, high = `*_large` where that size exists for the variant. Mutable after creation via `denoiser.quality` |
-| `weightsUrl` | `string` | jsDelivr: `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v2/models` | base URL the `.onnx` model files are fetched from |
-| `wasmPaths` | `string` | jsDelivr: `https://cdn.jsdelivr.net/npm/onnxruntime-web@1.27.0/dist/` | where onnxruntime-web loads its wasm assets from |
+| `tzaUrl` | `string` | jsDelivr: `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas` | base URL the OIDN `.tza` weight files are fetched from by the default runtime. Ignored when `runtime` is passed |
+| `device` | `GPUDevice` | a max-limits device the runtime creates | run the default runtime on this existing device, for example a three.js renderer's (`renderer.backend.device`). Ignored when `runtime` is passed. See [The GPUDevice](../concepts/the-gpudevice) |
 | `maxRunPixels` | `number` | `2048 * 1152` (2 359 296) | per-run pixel budget (padded W×H); above it the engine tiles instead of running whole-frame. See [Large images & tiling](../guides/large-images-and-tiling) |
 | `batch` | `number` | `8` | max tiles batched into one `session.run` in tiled mode |
-| `graphCapture` | `boolean` | `false` | opt-in ORT WebGPU graph capture. Leave off — measured no gain, and onnxruntime-web 1.27 crashes captured sessions after ~150–250 cumulative replays |
-| `splitAux` | `boolean` | `true` | works around an onnxruntime-web WebGPU bug on the 9-channel `cleanAux` models by running the first conv in WGSL; fetches `<model>.tail.onnx` + `<model>.enc0.bin` next to the model. Falls back to the plain (unfixed) model with a one-time console warning if those artifacts aren't hosted. No effect on 3/6-channel models |
+| `runtime` | `NetworkRuntime` | `AutoRuntime` (built from `tzaUrl` and `device`) | what executes the network — see [Network runtimes](#network-runtimes-experimental) and [Choosing a runtime](../guides/choosing-a-runtime). When passed, `tzaUrl` / `device` are ignored (configure the runtime itself). The ORT-only options (`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) are no longer `Denoiser.create` options; they belong to `new OrtRuntime({...})` from `denoiser/ort` |
 
 ### Properties
 
 | member | type | notes |
 |---|---|---|
-| `device` | `GPUDevice` | the shared device onnxruntime-web created. Share it with your renderer — build your own pipelines on it, don't create your own device. See [Custom engines](../guides/custom-engines) |
+| `device` | `GPUDevice` | the shared device: the `device` option if you passed one, otherwise one the runtime created. Share it with your renderer — build your own pipelines on it, don't create your own device. See [Custom engines](../guides/custom-engines) |
 | `stats` | `DenoiseStats \| undefined` (getter) | per-stage wall-clock timings from the most recently *completed* run; `undefined` before the first call. See [`DenoiseStats`](#denoisestats) below |
 | `modelName` | `string \| undefined` (getter) | the model file the last call actually ran (e.g. `rt_hdr_calb_cnrm`); `undefined` before the first call. Changes automatically when different inputs (hdr/aux) select a different variant |
 | `quality` | `Quality` (getter/setter) | current quality tier; assign to switch — the next call rebuilds the engine for the new model if needed |
@@ -177,7 +178,7 @@ most recently completed run:
 | `batchSize` | `number` | tiles per batch actually used |
 | `uploadMs` | `number` | input upload + accumulate/weight buffer clear |
 | `encodeMs` | `number` | WGSL extract/accumulate encode + submit (CPU-side) |
-| `runMs` | `number` | sum of awaited `session.run()` time |
+| `runMs` | `number` | sum of awaited network-run time (`NetworkBinding.run()`). Runtimes submit GPU work asynchronously (ORT and HF kernels both return in ~1 ms), so this is mostly CPU encode/submit time; the network's GPU time lands in `resolveMs`, where the readback waits for the queue. Use `totalMs` to compare runtimes |
 | `resolveMs` | `number` | resolve pass + readback/map |
 | `totalMs` | `number` | wall clock for the whole call |
 
@@ -212,27 +213,27 @@ each thrown/warned message and how to fix the underlying cause.
 
 ## Advanced / lower-level exports
 
-These are exported from the package (`import { ... } from 'denoiser'`) but
+These are exported from the package (`import { ... } from 'denoiser/ort'`, no longer from the root entry) but
 sit below `Denoiser` — most integrations never need them directly. Documented
 here for completeness; treat their shapes as more likely to change than the
 `Denoiser` surface above.
 
 ### `Models`
 
-Singleton `.onnx` model loader/cache `Denoiser` uses internally.
+From `denoiser/ort` (no longer exported from the root `denoiser` entry; needs the optional `onnxruntime-web` peer dependency). Singleton `.onnx` model loader/cache the ORT runtime uses internally.
 
 | member | type | meaning |
 |---|---|---|
 | `Models.getInstance()` | `static (): Models` | the singleton instance |
 | `path` | `string \| undefined` | subdirectory under the site root, used only when `url` is unset |
-| `url` | `string` | remote base URL for models (default: the jsDelivr `models-v2` URL — same default as `DenoiserCreateOptions.weightsUrl`) |
-| `precision` | `'fp32' \| 'fp16'` | default `'fp32'`; `Denoiser.create({ precision })` sets this |
+| `url` | `string` | remote base URL for models (default: the jsDelivr `models-v2` URL — same default as `OrtRuntimeOptions.weightsUrl`) |
+| `precision` | `'fp32' \| 'fp16'` | default `'fp32'`; `OrtRuntime` sets it from the precision of each model it loads |
 | `get(name, overrideUrl?)` | `(string, string?) => Promise<Uint8Array>` | fetch (and cache) a model's raw bytes |
 | `has(name)` | `(string) => boolean` | whether a model is already cached for the current precision |
 
 ### `DenoiseEngine`
 
-The WebGPU/ONNX inference core `Denoiser` wraps (session management,
+From `denoiser/ort`. The WebGPU/ONNX inference core of the ORT runtime (session management,
 tiling/geometry planning, WGSL pre/post). `Denoiser` covers everything most
 integrations need — reach for `DenoiseEngine` directly only if you're
 bypassing the high-level model-selection logic.
@@ -258,6 +259,168 @@ bypassing the high-level model-selection logic.
 and `TextureDenoiseOptions` (`DenoiseOptions` + `inputFlipY?` + `auxInputFlipY?`
 + `toTexture?` + `outputTexture?`) are the lower-level shapes
 `DenoiseTexturesOptions` maps onto.
+
+### Network runtimes (experimental)
+
+`Denoiser` and `TiledEngine` do all tiling, transfer functions and WGSL
+pre/post themselves; a **`NetworkRuntime`** only executes the U-Net. The
+default is `AutoRuntime` (WebNN fp16 for base/large models when available,
+hand-written WGSL otherwise; never ORT). Other runtimes (ORT, HF kernels,
+WebNN, WGSL) plug in through the same interface:
+
+```ts
+import { Denoiser } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort'; // needs `npm i onnxruntime-web`
+
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models' }), // or any NetworkRuntime
+});
+```
+
+| type | role |
+|---|---|
+| `NetworkRuntime` | `load(model: NetworkModel, hints?) => Promise<NetworkSession>` — fetches and opens a model by OIDN name (`{ name, channels, precision }`). The first load may create the `GPUDevice` |
+| `NetworkSession` | `device` (the engine runs its WGSL here too), optional `fixedGeometry`, `bind(geometry) => Promise<NetworkBinding>`, `release()` |
+| `NetworkBinding` | `input` / `output` `GPUBuffer`s (NCHW `[B, C, H, W]` / `[B, 3, H, W]` in model precision) and `run()`: the engine writes `input`, awaits `run()`, reads `output` |
+| `TiledEngine.load(runtime, model, options?)` | the runtime-agnostic engine `Denoiser` uses (same members as `DenoiseEngine` below, minus the ORT-specific ones) |
+| `OrtRuntime` / `OrtSession` | the onnxruntime-web implementation, from `denoiser/ort`; `OrtRuntimeOptions` = `{ weightsUrl?, wasmPaths?, graphCapture?, splitAux? }` |
+
+Entry points (one package, shared chunks, a single copy of the core):
+
+| import | contents |
+|---|---|
+| `denoiser` | `Denoiser` defaulting to `AutoRuntime` (options `tzaUrl`, `device`), plus everything in `denoiser/core` and `AutoRuntime`. Never loads onnxruntime-web |
+| `denoiser/core` | runtime-agnostic `Denoiser` (requires `runtime`), `TiledEngine`, the runtime and temporal types, `parseTZA` / `halfToFloat` / `DEFAULT_TZA_URL` |
+| `denoiser/ort` | `OrtRuntime`, `OrtSession`, `Models`, `DenoiseEngine`. Needs the optional peer dependency `onnxruntime-web`. Wrong on the `*_alb`, `*_alb_nrm` and `*_large` models, see [Choosing a runtime](../guides/choosing-a-runtime) |
+| `denoiser/kernels` | **experimental** `KernelsRuntime` on `@huggingface/kernels` (optional peer dependency, install it to use this entry) |
+| `denoiser/wgsl` | **experimental** `WgslRuntime`: the U-Net in hand-written WGSL, no dependencies. Validated on Apple GPUs only |
+| `denoiser/auto` | `AutoRuntime` (also exported from `denoiser`): picks WebNN (fp16 base/large, when available) or WGSL per model, on one shared GPUDevice. See [Choosing a runtime](../guides/choosing-a-runtime) |
+| `denoiser/webnn` | **experimental** `WebnnRuntime`: the U-Net via `MLGraphBuilder` (WebNN). Needs Chrome with `--enable-features=WebMachineLearningNeuralNetwork` |
+| `denoiser/ffx` | `FfxShadowDenoiser` and `FfxReflectionDenoiser`, the real-time `TemporalDenoiser`s (WGSL port of AMD FidelityFX Denoiser v1.1.4). No dependencies |
+| `denoiser/three` | three.js (`WebGPURenderer`) helpers and TSL nodes: `getDevice`, `getGPUTexture`, `CameraHistory`, `createDenoiserForRenderer`, `DenoiseNode`, `TemporalDenoiseNode` and more. `three` >= r185 is an optional peer dependency. See [three.js & TSL](../guides/three-and-tsl) |
+
+The classes from `denoiser` and `denoiser/core` are the same. The interface is
+new in this release and may change, so pin your version if you implement it. See
+[Choosing a runtime](../guides/choosing-a-runtime) for measured speed and quality.
+
+### Runtime options
+
+All runtimes except ORT read the upstream OIDN `.tza` weights. `AutoRuntime` (the default) delegates to `WebnnRuntime` and `WgslRuntime`.
+
+| runtime | options |
+|---|---|
+| `AutoRuntime` | `{ tzaUrl?, device?, webnn?: 'gpu' \| 'npu' \| false }`. `webnn` defaults to `'gpu'`; `false` disables WebNN. `lastChoice` reports the runtime that served the last load; `choose(model)` reports which one a model would use |
+| `OrtRuntime` | `{ weightsUrl?, wasmPaths?, graphCapture?, splitAux? }`. `weightsUrl` is the base URL of the `.onnx` models (default: jsDelivr `models-v2`); `wasmPaths` is where onnxruntime-web loads its wasm (default: jsDelivr, `onnxruntime-web@1.27.0`); `graphCapture` (default `false`) is opt-in ORT WebGPU graph capture, leave off since onnxruntime-web 1.27 crashes captured sessions after about 150-250 cumulative replays; `splitAux` (default `true`) works around an onnxruntime-web WebGPU bug on the 9-channel `cleanAux` models by running the first conv in WGSL, fetching `<model>.tail.onnx` + `<model>.enc0.bin` next to the model, and falls back to the plain model with a one-time console warning if those are not hosted |
+| `KernelsRuntime` | `{ tzaUrl?, device?, zeroCopy? }`. `zeroCopy` (default `true`) binds the engine straight to kernels-owned IO tensors |
+| `WgslRuntime` | `{ tzaUrl?, device?, profile?, tiling?, subgroupMatrix?, mmaTiling? }`. `subgroupMatrix` (`'auto'` by default) uses the 8x8 subgroup-matrix conv when the device has `chromium-experimental-subgroup-matrix`, for fp32 only; `profile` records per-layer GPU timings (diagnostics, needs `timestamp-query`); `tiling` and `mmaTiling` are tuning overrides |
+| `WebnnRuntime` | `{ tzaUrl?, deviceType?, device?, interop?, layout? }`. `deviceType` is `'gpu'` (default), `'npu'` or `'cpu'`; `interop` is `'auto'` by default (WebNN to WebGPU tensor export for fp16 only); `layout` is `'nchw'` (default) or `'nhwc'`. `WebnnRuntime.isAvailable()` reports whether `navigator.ml` and `MLGraphBuilder` exist. `lastBuildMs` holds the graph build time of the most recent bind |
+
+`tzaUrl` defaults to `DEFAULT_TZA_URL`. `device` makes the runtime adopt your
+`GPUDevice`; without it, the runtime creates one with the adapter's maximum
+limits and features. `OrtRuntime` cannot adopt a device: it creates its own.
+
+### `parseTZA(buf)` / `DEFAULT_TZA_URL`
+
+```ts
+import { parseTZA, DEFAULT_TZA_URL } from 'denoiser/core';
+
+const buf = await (await fetch(`${DEFAULT_TZA_URL}/rt_hdr_small.tza`)).arrayBuffer();
+const tensors = parseTZA(buf); // TensorMap = Map<string, { data: Float32Array; shape: number[] }>
+```
+
+| export | meaning |
+|---|---|
+| `DEFAULT_TZA_URL` | base URL of the upstream OIDN `.tza` weights (sha256-identical to RenderKit/oidn-weights), on jsDelivr: `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas` |
+| `parseTZA(buf: ArrayBuffer)` | parses an OIDN `.tza` blob into a `TensorMap`. fp16 tensors are widened to `Float32Array`; conv weights stay OIHW. Throws `Invalid or corrupted weights blob` on a bad magic number and on an unsupported major version |
+| `halfToFloat(h: number)` | IEEE half (as a 16-bit integer) to number |
+| `TensorMap`, `WeightTensor` | `Map<string, WeightTensor>`; `WeightTensor` = `{ data: Float32Array; shape: number[] }` |
+
+These exist for runtimes that read OIDN weights directly. You only need them if
+you write your own `NetworkRuntime`.
+
+## Temporal (real-time) denoising
+
+Exported from `denoiser` and `denoiser/core`; the FidelityFX implementations come
+from `denoiser/ffx`. See [Real-time (temporal) denoising](../guides/realtime-temporal-denoising)
+for the frame contract, conventions and measured results.
+
+### `TemporalDenoiser<Inputs>`
+
+```ts
+interface TemporalDenoiser<Inputs extends object = object> {
+  readonly name: string;
+  readonly device: GPUDevice;
+  configure(config: TemporalConfig): void;
+  dispatch(inputs: Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture;
+  resetHistory(): void;
+  readonly gpuTimings?: ReadonlyMap<string, number>;
+  dispose(): void;
+}
+```
+
+| member | meaning |
+|---|---|
+| `configure({ width, height })` | (re)allocate for a size; drops history. Call before the first `dispatch` |
+| `dispatch(inputs, guides, camera)` | denoise one frame. Synchronous: records and submits its passes on `device.queue`, no awaits, no readback. Call it after the frame's inputs are submitted. The returned texture is owned by the denoiser and is valid until the next `dispatch` / `configure` / `dispose` |
+| `resetHistory()` | drop all history on the next dispatch (camera cut, teleport, scene switch) |
+| `gpuTimings` | per-pass GPU ms when timestamp queries are available (`total` = sum of passes) |
+| `dispose()` | release GPU resources; never destroys the device |
+
+### Frame types
+
+| type | shape |
+|---|---|
+| `TemporalConfig` | `{ width: number; height: number }` |
+| `Mat4` | `Float32Array \| ArrayLike<number>`, column-major 4x4 (three.js `Matrix4.elements`) |
+| `FrameGuides` | `{ depth: GPUTexture; normal: GPUTexture; motion: GPUTexture; roughness?: GPUTexture; albedo?: GPUTexture }`. `depth` is hardware depth or `r32float`; `normal` is world-space in [-1, 1]; `motion` is the NDC delta current minus previous (`rg16float`); `roughness` is perceptual [0, 1] |
+| `FrameCamera` | `{ view: Mat4; projection: Mat4; prevView: Mat4; prevProjection: Mat4; jitter?: readonly [number, number]; near: number; far: number; position?: readonly [number, number, number]; reversedDepth?: boolean }`. `projection` is unjittered; `jitter` is in pixels (default `[0, 0]`); `reversedDepth` defaults to `false` |
+
+### Signal inputs
+
+| type | shape |
+|---|---|
+| `ShadowInputs` | `{ visibility: GPUTexture; hitDistance?: GPUTexture }`. `visibility` in [0, 1], 1 = lit |
+| `SpecularInputs` | `{ radiance: GPUTexture; hitDistance: GPUTexture }`. Linear HDR radiance (`rgba16float`); hit distance `r16float`, 0 = miss |
+| `DiffuseInputs` | `{ radiance: GPUTexture; hitDistance?: GPUTexture }` |
+| `BeautyInputs` | `{ color: GPUTexture; albedo?: GPUTexture; normal?: GPUTexture; hdr?: boolean }` |
+
+`DiffuseInputs` and `BeautyInputs` are defined for future denoisers; nothing
+implements them yet.
+
+### `FfxShadowDenoiser` / `FfxReflectionDenoiser`
+
+```ts
+import { FfxShadowDenoiser, FfxReflectionDenoiser } from 'denoiser/ffx';
+
+new FfxShadowDenoiser(device: GPUDevice, options?: FfxShadowDenoiserOptions);       // TemporalDenoiser<ShadowInputs>,   name 'ffx-shadows'
+new FfxReflectionDenoiser(device: GPUDevice, options?: FfxReflectionDenoiserOptions); // TemporalDenoiser<SpecularInputs>, name 'ffx-reflections'
+```
+
+| `FfxShadowDenoiserOptions` | default | meaning |
+|---|---|---|
+| `depthSimilaritySigma` | `1` | FFX edge-stopping on linear depth, in view units |
+| `visibilityThreshold` | `0.5` | visibility at or above this counts as lit (FFX takes a binary ray-hit mask) |
+| `timestamps` | `true` | per-pass GPU timestamps into `gpuTimings` when supported |
+
+| `FfxReflectionDenoiserOptions` | default | meaning |
+|---|---|---|
+| `temporalStabilityFactor` | `0.7` | history clip box scale; higher is more stable and more ghosting |
+| `roughnessThreshold` | `1` | pixels with linear roughness at or above this pass through untouched; 1 denoises all pixels |
+| `roughnessIsPerceptual` | `true` | `guides.roughness` is perceptual (squared before use); `false` for linear |
+| `missDistance` | `camera.far` | ray length used where `hitDistance <= 0` |
+| `currentFrameStatistics` | `true` | read this frame's 8x8 average radiance and sample count; `false` reproduces FFX SDK v1.1.4 exactly (dark first frame after a reset) |
+| `timestamps` | `true` | per-pass GPU timestamps into `gpuTimings` when supported |
+
+`FfxReflectionDenoiser` requires `guides.roughness`. The shadow `dispatch`
+returns an `rgba16float` texture whose `.r` is the denoised visibility.
+
+### `denoiser/three` helpers
+
+| export | meaning |
+|---|---|
+| `getDevice(renderer)` | the `GPUDevice` of an initialized `WebGPURenderer` |
+| `getGPUTexture(renderer, texture)` | the raw `GPUTexture` behind a three texture (must already be allocated on the GPU) |
+| `CameraHistory` | `update(camera, { unjitteredProjection?, jitter? }) => FrameCamera` keeps the previous frame's matrices; `reset()` forgets them |
 
 ### `determineModel(selector)`
 

@@ -1,0 +1,19 @@
+{
+  "name": "ffx-denoiser",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Test bed for the WGSL FidelityFX denoisers: analytic ray-traced scene, 1-spp signals, converged references, PSNR/flicker/ms.",
+  "scripts": {
+    "dev": "vite --port 5210 --strictPort --host 127.0.0.1",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pmndrs/denoiser-ffx": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.71",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}

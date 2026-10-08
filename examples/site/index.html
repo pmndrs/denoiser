@@ -218,6 +218,31 @@
           </div>
         </a>
 
+        <a class="card" href="./three-temporal/">
+          <img class="shot" src="./shots/three-temporal.png" alt="three.js SSR denoise example split screen: three's recurrentDenoise on the left, AMD FidelityFX reflection denoiser on the right" loading="lazy">
+          <div class="card-body">
+            <p class="card-title">three.js SSR: FidelityFX vs recurrentDenoise <span class="arrow">&#8594;</span></p>
+            <p class="card-desc">
+              three's <code>webgpu_postprocessing_ssr_denoise</code> with the
+              <code>ffxReflections()</code> TSL node swapped in, split-screen against
+              three's own denoiser. Plus stochastic area-light shadows (<code>ffxShadows()</code>)
+              in a second scene (<code>shadows.html</code>).
+            </p>
+          </div>
+        </a>
+
+        <a class="card" href="./ffx-denoiser/">
+          <img class="shot" src="./shots/ffx-denoiser.png" alt="FidelityFX reflection denoiser demo: noisy 1-sample glossy reflections on the left, denoised on the right" loading="lazy">
+          <div class="card-body">
+            <p class="card-title">Real-time shadows &amp; reflections <span class="arrow">&#8594;</span></p>
+            <p class="card-desc">
+              AMD's FidelityFX shadow and reflection denoisers ported to WGSL
+              (<code>denoiser/ffx</code>): 1-sample ray-traced signals denoised every
+              frame vs a converged reference &mdash; ~0.5 / ~1.7&nbsp;ms at 1080p.
+            </p>
+          </div>
+        </a>
+
         <a class="card" href="./upscale-pipeline/">
           <img class="shot" src="./shots/upscale-pipeline.png" alt="Denoise + upscale pipeline demo screenshot: FSR1-upscaled path-traced scene with the per-stage render/denoise/upscale GPU cost bar" loading="lazy">
           <div class="card-body">

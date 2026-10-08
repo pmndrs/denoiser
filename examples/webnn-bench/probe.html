@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>WebNN probe</title></head><body><pre id="status"></pre>
+<script type="module">
+const out = {};
+const st = document.querySelector('#status');
+try {
+  out.ml = !!navigator.ml;
+  out.mlProto = Object.getOwnPropertyNames(Object.getPrototypeOf(navigator.ml));
+  const ctx = await navigator.ml.createContext({ deviceType: 'gpu' });
+  out.ctxProto = Object.getOwnPropertyNames(Object.getPrototypeOf(ctx));
+  const b = new MLGraphBuilder(ctx);
+  out.builderProto = Object.getOwnPropertyNames(Object.getPrototypeOf(b)).sort();
+  const lim = ctx.opSupportLimits();
+  out.limits = { input: lim.input, conv2d: lim.conv2d, resample2d: lim.resample2d, maxPool2d: lim.maxPool2d, preferredInputLayout: lim.preferredInputLayout, maxTensorByteLength: lim.maxTensorByteLength };
+  if (typeof MLTensor !== 'undefined') out.tensorProto = Object.getOwnPropertyNames(MLTensor.prototype);
+  if (typeof MLGraph !== 'undefined') out.graphProto = Object.getOwnPropertyNames(MLGraph.prototype);
+} catch (e) { out.error = String(e.stack ?? e); }
+window.__result = out; st.textContent = JSON.stringify(out, null, 1);
+</script></body></html>

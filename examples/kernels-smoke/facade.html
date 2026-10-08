@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Denoiser on HF kernels — facade test</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
+      h1 { font-size: 1.2rem; }
+      .row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; margin-bottom: 1rem; }
+      figure { margin: 0; }
+      canvas { border: 1px solid #4a5568; width: 256px; height: 256px; }
+      figcaption { font-size: 0.85rem; margin-top: 0.4rem; color: #a0aec0; }
+      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; min-height: 4rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1><code>Denoiser</code> with <code>runtime: new KernelsRuntime()</code> vs the default ORT runtime</h1>
+    <p>Same facade, same calls (<code>denoise</code>, <code>denoise</code> + aux, <code>denoiseTextures</code>) —
+      only the network runtime differs. <a href="./">op-level smoke test</a></p>
+    <div class="row">
+      <figure><canvas id="noisy"></canvas><figcaption>noisy (4 spp)</figcaption></figure>
+      <figure><canvas id="ort"></canvas><figcaption>ORT</figcaption></figure>
+      <figure><canvas id="kernels"></canvas><figcaption>kernels</figcaption></figure>
+      <figure><canvas id="reference"></canvas><figcaption>reference</figcaption></figure>
+    </div>
+    <div class="row">
+      <figure><canvas id="ortAux"></canvas><figcaption>ORT + albedo/normal</figcaption></figure>
+      <figure><canvas id="kernelsAux"></canvas><figcaption>kernels + albedo/normal</figcaption></figure>
+    </div>
+    <pre id="status"></pre>
+    <script type="module" src="/src/facade.ts"></script>
+  </body>
+</html>

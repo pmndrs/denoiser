@@ -16,33 +16,37 @@ zero framework): [webgpu-raw](https://pmndrs.github.io/denoiser/webgpu-raw/).
 
 ## The device contract
 
-onnxruntime-web **creates and owns the `GPUDevice`** it runs on — it ignores
-one you inject ([onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)).
-That fixes the integration order for any engine you write yourself:
+There is exactly one device in play, and everything has to be built on it. With the
+default runtime you have two options:
+
+- **Let the denoiser create it** and build your own pipelines, buffers, and textures
+  on `denoiser.device`:
+
+  ```ts
+  const denoiser = await Denoiser.create({ precision: 'fp16' });
+  const device = denoiser.device; // GPUDevice — build everything on this
+
+  const pipeline = device.createComputePipeline({ /* your toy path tracer */ });
+  ```
+
+- **Hand it yours**, if your engine creates the device first:
+  `Denoiser.create({ device })`. Request the adapter's **max** limits/features when
+  you create it; the U-Net's whole-frame intermediates need buffers far larger than
+  WebGPU's default caps. (When the denoiser creates the device itself it requests
+  the max limits for you.)
 
 > [!IMPORTANT]
-> Create the denoiser **first**. Build your own pipelines, buffers, and
-> textures on `denoiser.device` — don't request your own adapter/device.
-
-```ts
-const denoiser = await Denoiser.create({ precision: 'fp16' });
-const device = denoiser.device; // GPUDevice — build everything on this
-
-const pipeline = device.createComputePipeline({ /* your toy path tracer */ });
-```
-
-This also matters for buffer limits: the first time a device is created, the
-denoiser runs under a scoped patch that requests the adapter's **max**
-limits/features (restored immediately after) — ORT alone requests a minimal
-device that's too small for whole-frame U-Net intermediates. If something
-else creates the device first, you lose that.
+> The opt-in ORT runtime (`denoiser/ort`) is the exception: onnxruntime-web
+> **creates and owns the `GPUDevice`** it runs on and ignores one you inject
+> ([onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)).
+> With ORT, create the denoiser **first** and build on `denoiser.device`.
 
 **Lifetime rules**, same as any consumer of `denoiser.device`:
 
 - `denoiser.dispose()` — frees buffers/extra sessions, **keeps the device**.
   Safe between workloads.
-- `denoiser.destroyDevice()` — releases the last ORT session, which
-  **destroys the shared device** — your pipelines, buffers, and textures on
+- `denoiser.destroyDevice()` — full teardown. With ORT, releasing the last
+  session **destroys the shared device** — your pipelines, buffers, and textures on
   it die too (`GPUDevice.lost`, reason `'destroyed'`). Only call this when
   the whole WebGPU stack is going away.
 
@@ -110,7 +114,8 @@ inject an external one — you end up with **two separate `GPUDevice`s** that
 can't share textures. (Concretely: Babylon.js's `WebGPUEngine` has no option
 to adopt an external device — `initAsync` hard-codes its own adapter/device
 acquisition — and ORT can't adopt Babylon's either, same #26107 constraint
-from the other direction. See the [babylon demo](https://pmndrs.github.io/denoiser/babylon/)
+from the other direction (the default runtime can adopt a device, but Babylon
+has none to give). See the [babylon demo](https://pmndrs.github.io/denoiser/babylon/)
 for the real thing.)
 
 When zero-copy genuinely isn't possible, fall back to the CPU-copy path: read

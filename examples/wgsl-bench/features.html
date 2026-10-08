@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebGPU adapter features</title>
+  </head>
+  <body>
+    <pre id="status"></pre>
+    <script type="module">
+      const results = {};
+      window.__wgslBench = results;
+      const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+      const info = adapter.info ?? {};
+      const limits = {};
+      for (const k in adapter.limits) limits[k] = adapter.limits[k];
+      const text = [
+        `adapter: ${info.vendor} ${info.architecture} ${info.device} ${info.description}`,
+        `subgroup sizes: ${info.subgroupMinSize}..${info.subgroupMaxSize}`,
+        `subgroup matrix configs: ${JSON.stringify((info.subgroupMatrixConfigs ?? []).map((c) => ({ ...Object.fromEntries(Object.keys(Object.getPrototypeOf(c)).map((k) => [k, c[k]])), ...c })))}`,
+        `features: ${[...adapter.features].sort().join(', ')}`,
+        `limits: ${JSON.stringify(limits)}`,
+      ].join('\n');
+      document.querySelector('#status').textContent = text;
+      results.ready = true;
+    </script>
+  </body>
+</html>

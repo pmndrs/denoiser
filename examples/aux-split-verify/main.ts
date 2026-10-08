@@ -10,7 +10,7 @@
 //   (B) normal engine (full model on ORT-WebGPU) != reference (the speckle bug),
 // proving the fix on the real runtime.
 import * as ort from 'onnxruntime-web/webgpu';
-import { DenoiseEngine } from '../../packages/denoiser/src/ort/engine';
+import { DenoiseEngine } from '../../packages/denoiser-ort/src/engine';
 
 const W = 256, H = 256, C = 9, C1 = 32;
 const el = document.getElementById('log')!;

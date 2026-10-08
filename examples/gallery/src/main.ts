@@ -1,4 +1,4 @@
-import { Denoiser } from 'denoiser';
+import { Denoiser, type NetworkRuntime } from 'denoiser';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
 
 // ---- manifest -------------------------------------------------------------
@@ -32,6 +32,46 @@ const noisyCanvas = document.querySelector<HTMLCanvasElement>('#canvas-noisy')!;
 const denoisedCanvas = document.querySelector<HTMLCanvasElement>('#canvas-denoised')!;
 const referenceCanvas = document.querySelector<HTMLCanvasElement>('#canvas-reference')!;
 const statusEl = document.querySelector<HTMLElement>('#status')!;
+const runtimeControlEl = document.querySelector<HTMLElement>('#runtime-control')!;
+const runtimeHintEl = document.querySelector<HTMLElement>('#runtime-hint')!;
+
+// Which network runtime runs the U-Net: ?runtime=auto (default) | ort | kernels | wgsl.
+// Switching reloads (the kernels runtime binds page-global state to a device).
+type RuntimeId = 'auto' | 'ort' | 'kernels' | 'wgsl';
+// Non-default runtimes load on demand; 'auto' is the package default (make() -> undefined).
+const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined> }[] = [
+  { id: 'auto', label: 'Auto', hint: 'default: WebNN for larger models when available, else hand-written WGSL', make: async () => undefined },
+  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU', make: async () => new (await import('denoiser/ort')).OrtRuntime() },
+  {
+    id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op',
+    make: async () => new (await import('denoiser/kernels')).KernelsRuntime(),
+  },
+  {
+    id: 'wgsl', label: 'Hand-written WGSL', hint: 'experimental: fused WGSL, one command encoder per run',
+    make: async () => new (await import('denoiser/wgsl')).WgslRuntime(),
+  },
+];
+const requested = new URLSearchParams(location.search).get('runtime');
+const runtimeId: RuntimeId = RUNTIMES.find((r) => r.id === requested)?.id ?? 'auto';
+const runtime = RUNTIMES.find((r) => r.id === runtimeId)!;
+
+function renderRuntimeControl(): void {
+  for (const r of RUNTIMES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = r.label;
+    btn.setAttribute('aria-pressed', String(r.id === runtimeId));
+    btn.addEventListener('click', () => {
+      if (r.id === runtimeId) return;
+      const url = new URL(location.href);
+      if (r.id === 'auto') url.searchParams.delete('runtime');
+      else url.searchParams.set('runtime', r.id);
+      location.href = url.toString();
+    });
+    runtimeControlEl.appendChild(btn);
+  }
+  runtimeHintEl.textContent = runtime.hint;
+}
 const loadingEl = document.querySelector<HTMLElement>('#loading')!;
 
 const noisyCtx = noisyCanvas.getContext('2d')!;
@@ -135,9 +175,10 @@ async function runDenoise(): Promise<void> {
   const channels = useAux ? 9 : 3;
   const stats = denoiser.stats;
   const ms = stats?.totalMs.toFixed(1) ?? '?';
-  const splitNote = useAux ? ' (splitAux workaround active)' : '';
+  // The split-graph workaround is ORT-only; kernels runs the 9ch model as-is.
+  const splitNote = useAux && runtimeId === 'ort' ? ' (splitAux workaround active)' : '';
   statusEl.innerHTML =
-    `model <span class="model">${name}</span> · ${channels}ch${splitNote} · ` +
+    `${runtime.label} · model <span class="model">${name}</span> · ${channels}ch${splitNote} · ` +
     `denoised in ${ms} ms · ${scene.width}×${scene.height} · ${spp} spp`;
   loadingEl.textContent = '';
 }
@@ -277,11 +318,12 @@ async function main(): Promise<void> {
   }
 
   loadingEl.textContent = 'fetching model + creating WebGPU device...';
-  denoiser = await Denoiser.create();
+  denoiser = await Denoiser.create({ runtime: await runtime.make() });
 
   selectScene(manifest.scenes[0]);
 }
 
+renderRuntimeControl();
 demoFooter('gallery');
 main().catch((err) => {
   console.error(err);

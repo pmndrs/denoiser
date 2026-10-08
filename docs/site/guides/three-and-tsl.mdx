@@ -1,0 +1,235 @@
+---
+title: three.js & TSL
+description: TSL nodes for the single-image Denoiser (denoise) and the temporal FidelityFX denoisers (ffxShadows, ffxReflections) on three.js WebGPURenderer, plus the device flow and the helpers underneath.
+nav: 28
+---
+
+`denoiser/three` plugs the denoisers into a three.js `WebGPURenderer` post-processing
+graph as TSL nodes. It needs `three` r185 or newer (an optional peer dependency) and
+a renderer that has been initialized with `await renderer.init()`. The nodes follow
+the conventions of `@pmndrs/upscaler`'s `UpscalerNode`, so render, denoise and upscale
+can share one `GPUDevice`.
+
+| export | what it is |
+|---|---|
+| `denoise(color, options)` / `DenoiseNode` | the single-image `Denoiser` as a node: async, on demand |
+| `ffxShadows(visibility, options)` | FidelityFX shadow denoiser as a per-frame node |
+| `ffxReflections(radiance, options)` | FidelityFX reflection denoiser as a per-frame node |
+| `temporalDenoise(create, inputs, guides, camera)` / `TemporalDenoiseNode` | wrap any `TemporalDenoiser` as a node |
+| `createDenoiserForRenderer(renderer, { runtime })` | a `Denoiser` on the renderer's `GPUDevice` |
+| `getDevice`, `getGPUTexture`, `CameraHistory` | the raw handles the nodes are built on |
+| `worldNormalTexture`, `toSignalTexture` | TSL helpers the temporal factories use |
+
+## One GPUDevice: who creates it
+
+The denoiser and the renderer must run on the same `GPUDevice`, or every texture you
+hand over is rejected by WebGPU. With the default runtime (`AutoRuntime`, WebNN or
+WGSL) the clean order is **renderer first**, then adopt its device:
+
+```ts
+import * as THREE from 'three/webgpu';
+import { Denoiser } from 'denoiser';
+
+const renderer = new THREE.WebGPURenderer({ canvas });
+await renderer.init();
+
+const denoiser = await Denoiser.create({
+  device: (renderer.backend as { device: GPUDevice }).device,
+  precision: 'fp16',
+});
+```
+
+`createDenoiserForRenderer` does the same with the device unwrapped for you, and
+accepts any runtime that can adopt a device (it passes the renderer's device to a
+factory):
+
+```ts
+import { createDenoiserForRenderer } from 'denoiser/three';
+import { AutoRuntime } from 'denoiser/auto';
+
+const denoiser = await createDenoiserForRenderer(renderer, {
+  runtime: (device) => new AutoRuntime({ device }),
+  precision: 'fp16',
+});
+```
+
+`WgslRuntime`, `WebnnRuntime`, `KernelsRuntime` and `AutoRuntime` can adopt a device.
+**`OrtRuntime` cannot**: it always creates its own, so with ORT the order is
+reversed, denoiser first, then `new WebGPURenderer({ device: denoiser.device })`.
+`createDenoiserForRenderer` throws a pointed error if the runtime ended up on a
+different device. For heavy pipelines (path tracers) request a high-limits device
+first; `patchWebGPUForMaxLimits()` in `examples/_shared/stack.ts` shows how, and the
+same file implements the whole flow behind a `?runtime=` selector.
+
+## Single images: `denoise()`
+
+The denoise is async GPU work (it awaits the network), so the node is not per frame.
+It keeps showing its input until a result lands in its own `rgba16float` texture, then
+swaps to it. That fits stills, converged path-tracer frames and progressive
+refinement.
+
+```ts
+import { denoise } from 'denoiser/three';
+import { texture } from 'three/tsl';
+
+const node = denoise(texture(rawLinearRT.texture), {
+  denoiser,                  // a ready Denoiser, or `runtime: (device) => ...` to build one lazily
+  hdr: true,                 // linear HDR input (default); false = LDR in [0, 1]
+  albedo, normal,            // optional aux texture nodes (normal in [-1, 1]) -> guided models
+  when: () => pathTracer.samples >= 64, // or `every: 30`, or call node.request()
+});
+post.outputNode = node;      // shows the input until node.denoised
+// camera moved / accumulation restarted:
+node.invalidate();
+```
+
+How a run gets started, during the next render that includes the node:
+
+| control | meaning |
+|---|---|
+| `request()` | run on the next frame (coalesces with a queued request) |
+| `every: N` | auto-request every N rendered frames while idle |
+| `when: () => boolean` | auto-request while it returns true and the current view has no result |
+| `invalidate()` | the input changed: stop showing the old result, drop an in-flight one when it lands |
+| `settled()` | resolves when the run in flight is done; `request()`, render once, then `await settled()` |
+| `setAux(albedo?, normal?)` | swap the aux inputs; nothing for color-only |
+| `onDenoised(gpuTexture, ms)` | fires per fresh result |
+
+Orientation and color follow the
+[render-target guide](./three-js-render-targets): `inputFlipY` is `false` by default
+(rasterized targets are top-down) and should be `true` for compute-written targets
+such as a path tracer's output. `transfer: 'linear'` (default) writes unclamped
+linear HDR so three's own tone mapping still applies; `'aces-srgb'` and `'srgb'` bake
+the display transform in, so present them with a raw write (a `QuadMesh`
+`fragmentNode`), as
+[`examples/realtime-compare`](https://github.com/pmndrs/denoiser/blob/main/examples/realtime-compare/src/main.ts)
+does.
+
+## Real-time: `ffxShadows` and `ffxReflections`
+
+These wrap the [FidelityFX denoisers](./realtime-temporal-denoising) as nodes. They
+convert three's conventions into what the denoisers want: normals become world-space
+and signed, `velocity` is used as is, depth is read straight from the scene pass's
+hardware depth texture, and signals that are not already textures are rendered into
+half-float textures first.
+
+```ts
+import { pass, mrt, output, vec4, normalView, materialRoughness, packNormalToRGB, velocity } from 'three/tsl';
+import { ffxShadows, ffxReflections } from 'denoiser/three';
+
+const scenePass = pass(scene, camera);
+scenePass.setMRT(mrt({
+  output,
+  normal: vec4(packNormalToRGB(normalView), materialRoughness), // packed view normal + roughness
+  velocity,
+}));
+const depth = scenePass.getTextureNode('depth');
+const nTex = scenePass.getTextureNode('normal');
+const velTex = scenePass.getTextureNode('velocity');
+
+// visibility: your 1-spp stochastic shadow ray, 1 = lit (a float or texture node)
+const shadow = ffxShadows(visibility, {
+  camera, depth, velocity: velTex,
+  normal: nTex, normalSpace: 'view', normalEncoding: 'packed',
+});
+// ... use shadow.r in the composite
+
+// radiance: three's ssr() node; its alpha is the ray length (hit distance)
+const refl = ffxReflections(ssrNode, {
+  camera, depth, velocity: velTex,
+  roughness: nTex.a,
+  normal: nTex, normalSpace: 'view', normalEncoding: 'packed',
+});
+// ... use refl.rgb in the composite
+```
+
+Notes:
+
+- `ffxShadows` returns the denoised visibility in `.r`. FFX shadows are a binary
+  one-ray denoiser, so fractional visibility is thresholded at 0.5.
+- `ffxReflections` takes `hitDistance` from `radiance.a` unless you pass one, and
+  sanitizes NaN, negative and overflowing radiance first (`sanitize`, default true).
+  Pixels without a reflection must be 0.
+- `resolutionScale` must match the scene pass's `setResolutionScale` (for example
+  `1 / ratio` when rendering low-res for the upscaler).
+- Call `.resetHistory()` on the returned node at camera cuts, teleports and scene
+  switches. Set `node.enabled = false` to skip the denoiser; history is dropped and
+  re-enabling starts fresh.
+- `node.outputTexture` is a stable three texture (resized in place), so consumers that
+  keep a reference can use it, for example feeding the denoised reflection back to
+  three's SSR as history: `ssrNode.setHistory(refl.outputTexture, velocityTexture)`.
+- `options.denoiser` takes the FFX options (`FfxShadowDenoiserOptions`,
+  `FfxReflectionDenoiserOptions`); `options.node` takes `ignoreViewOffset`,
+  `unjitteredProjection` and `onDispatch`.
+
+For another `TemporalDenoiser`, build the node yourself:
+
+```ts
+import { temporalDenoise } from 'denoiser/three';
+import { FfxShadowDenoiser } from 'denoiser/ffx';
+
+const n = temporalDenoise(
+  (device) => new FfxShadowDenoiser(device),
+  { visibility },                        // inputs, keyed like the denoiser's Inputs
+  { depth, normal, motion },             // guides: world-space signed normals
+  camera,
+);
+```
+
+> [!IMPORTANT]
+> Temporal nodes advance in three's `FRAME` node updates, which three only runs inside
+> `renderer.setAnimationLoop`. Driving frames with a hand-rolled
+> `requestAnimationFrame` loop and `pipeline.render()` will not step them. The
+> examples use `setAnimationLoop` even for headless stepping.
+
+### With FSR3 jitter
+
+The temporal nodes read the camera's projection without any view offset, so sub-pixel
+jitter from `@pmndrs/upscaler` (FSR3) is stripped before reprojection, and you pass
+the matching `resolutionScale`. The shadows demo builds exactly this chain: scene
+pass at half resolution, denoise, composite, `upscale(...)`.
+
+> [!WARNING]
+> **Known issue.** With FSR3 jitter enabled, the temporal denoisers currently show much
+> higher residual flicker than without jitter. This is an open issue and is being
+> investigated. If you need a stable result today, run the denoisers without the
+> upscaler's jitter. No measured numbers for this case are published yet.
+
+## Examples
+
+- [`examples/three-temporal`](https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src):
+  `shadows.ts` (stochastic area-light shadows plus glossy SSR, `ffxShadows` and
+  `ffxReflections`, optional FSR3) and `ssr.ts` (a port of three's
+  `webgpu_postprocessing_ssr_denoise` example with `ffxReflections` side by side
+  against three's own denoiser).
+- [`examples/realtime-compare`](https://github.com/pmndrs/denoiser/blob/main/examples/realtime-compare/src/main.ts):
+  a `denoise()` node on a cadence next to three's denoiser.
+- [`examples/_shared/stack.ts`](https://github.com/pmndrs/denoiser/blob/main/examples/_shared/stack.ts):
+  the renderer/denoiser bootstrap for every runtime, selected with `?runtime=`.
+
+## Helpers underneath
+
+| export | purpose |
+|---|---|
+| `getDevice(renderer)` | the `GPUDevice` owned by an initialized `WebGPURenderer`; throws if the renderer is not initialized or not backed by WebGPU |
+| `getGPUTexture(renderer, texture)` | the raw `GPUTexture` behind a three texture; it must already exist on the GPU (rendered to, or passed through `renderer.initTexture()`) |
+| `CameraHistory` | builds the [`FrameCamera`](./realtime-temporal-denoising#guides-and-camera) a temporal denoiser needs from a three camera and keeps the previous frame's matrices |
+
+```ts
+import { getDevice, CameraHistory } from 'denoiser/three';
+import { FfxShadowDenoiser } from 'denoiser/ffx';
+
+const shadows = new FfxShadowDenoiser(getDevice(renderer));
+shadows.configure({ width, height });
+const history = new CameraHistory();
+
+// per frame, after the camera has moved:
+const cam = history.update(threeCamera, { unjitteredProjection, jitter });
+// then: shadows.dispatch(inputs, guides, cam)
+```
+
+Call `CameraHistory.update()` once per frame, after the camera has moved and before
+`dispatch()`. `reset()` stops reprojecting from the old pose after a cut.
+
+For the zero-copy path with plain render targets and no nodes, see
+[three.js render targets in / out](./three-js-render-targets).

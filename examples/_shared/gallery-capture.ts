@@ -37,7 +37,7 @@ export interface GalleryCaptureDeps {
   /** Live GPUTexture of the tracer's accumulation (refetched — can be replaced on reset). */
   getTracerTexture: () => GPUTexture | undefined;
   /** three RenderTarget texture -> its backing GPUTexture. */
-  backendGet: (o: unknown) => GPUTexture | undefined;
+  backendGet: (o: any) => GPUTexture | undefined;
   res: number;
   sceneId: string;
   title: string;

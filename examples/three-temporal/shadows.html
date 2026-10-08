@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - three.js temporal nodes</title>
+    <style>
+      :root { color-scheme: dark; --bg: #0b0e14; --panel: #141922; --border: #232b3a; --text: #e6edf3; --muted: #9aa7b8; --accent: #90cdf4; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
+      .wrap { max-width: 1020px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      p.tag { color: var(--muted); margin: 0 0 1rem; max-width: 56rem; font-size: .95rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 8px; display: block; }
+      .controls { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; margin: 1rem 0; align-items: center; }
+      .group { display: flex; align-items: center; gap: .5rem; }
+      .group > span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+      .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+      button { background: var(--panel); color: var(--text); border: 0; padding: .4rem .8rem; font: inherit; cursor: pointer; }
+      .seg button + button { border-left: 1px solid var(--border); }
+      button[aria-pressed="true"] { background: #243247; color: var(--accent); }
+      button.solo { border: 1px solid var(--border); border-radius: 8px; }
+      pre#status { color: var(--muted); font-size: .8rem; white-space: pre-wrap; margin: .5rem 0 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>three.js temporal denoise nodes</h1>
+      <p class="tag">
+        A 1-sample stochastic area-light shadow and stochastic glossy SSR, each denoised every
+        frame by a <code>denoiser/three</code> node (<code>ffxShadows</code>, <code>ffxReflections</code>)
+        while the camera moves. Optionally rendered at half resolution and upscaled with FSR3.
+      </p>
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="controls">
+        <div class="group"><span>shadows</span>
+          <div class="seg" id="seg-shadow"><button data-v="noisy" aria-pressed="false">noisy</button><button data-v="denoised" aria-pressed="true">denoised</button></div></div>
+        <div class="group"><span>reflections</span>
+          <div class="seg" id="seg-refl"><button data-v="noisy" aria-pressed="false">noisy</button><button data-v="denoised" aria-pressed="true">denoised</button></div></div>
+        <div class="group"><span>camera</span>
+          <div class="seg" id="seg-motion"><button data-v="on" aria-pressed="true">moving</button><button data-v="off" aria-pressed="false">paused</button></div></div>
+        <div class="group"><span>FSR3 upscale (2x)</span>
+          <div class="seg" id="seg-up"><button data-v="on" aria-pressed="false">on</button><button data-v="off" aria-pressed="true">off</button></div></div>
+        <button class="solo" id="cut">camera cut (resetHistory)</button>
+      </div>
+      <pre id="status">starting...</pre>
+    </div>
+    <script type="module" src="./src/shadows.ts"></script>
+  </body>
+</html>

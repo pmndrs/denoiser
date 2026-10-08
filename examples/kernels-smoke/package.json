@@ -1,0 +1,21 @@
+{
+  "name": "kernels-smoke",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "OIDN U-Net run op-by-op on @huggingface/kernels (WebGPU), checked against onnxruntime-web on the same input.",
+  "scripts": {
+    "dev": "vite --port 5185",
+    "build": "vite build",
+    "preview": "vite preview --port 5185"
+  },
+  "dependencies": {
+    "@huggingface/kernels": "0.0.1-preview.3",
+    "denoiser": "workspace:*",
+    "onnxruntime-web": "^1.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}

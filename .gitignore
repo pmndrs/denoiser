@@ -45,3 +45,6 @@ __pycache__/
 
 # Native-compare harness dumps (raw GPU frame dumps)
 examples/*/dumps/
+
+# eval harness outputs (inputs, native outputs, reports)
+tools/eval/out/

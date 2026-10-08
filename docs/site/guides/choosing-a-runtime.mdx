@@ -1,0 +1,271 @@
+---
+title: Choosing a runtime
+description: AutoRuntime (the default), hand-written WGSL, WebNN, Hugging Face kernels and ORT all run the same OIDN weights. What each one is, how fast and how correct it is on a quiet GPU, which flags it needs, and how to select it.
+nav: 26
+---
+
+`Denoiser` splits the work in two. The **engine** owns everything that doesn't
+depend on how the network is executed: tiling and overlap blending, the sRGB /
+OIDN PU transfer and autoexposure, aux-input encoding, resolve and texture IO.
+A **`NetworkRuntime`** only runs the U-Net, taking an NCHW buffer and producing
+an NCHW buffer on the shared `GPUDevice`. The same OIDN weights run on every
+runtime; only the executor changes, so you pick one by passing it to
+`Denoiser.create({ runtime })`. When you pass none, `Denoiser` uses
+[`AutoRuntime`](#automatic-autoruntime-the-default).
+
+> [!WARNING]
+> Everything on this page was measured on **Apple GPUs only** (an M5 Pro, Chrome
+> 154). The WGSL runtime in particular was tuned on that one GPU. Validate on
+> your target hardware before relying on any runtime. The WGSL, WebNN and kernels
+> runtimes are **experimental**.
+
+## At a glance
+
+| runtime | import | what it is | status |
+|---|---|---|---|
+| Automatic | `denoiser` (default) or `denoiser/auto` | picks WebNN fp16 (base/large, when available) or WGSL per model, on one shared device | default; never picks ORT |
+| ONNX Runtime | `denoiser/ort` (opt-in) | onnxruntime-web, WebGPU execution provider, `.onnx` models. Needs the optional peer dependency `onnxruntime-web` | wrong on some models (see below); no longer the default |
+| HF kernels | `denoiser/kernels` | `@huggingface/kernels` (optional peer dependency): FusedConv / MaxPool / Resize / Concat, 28 calls per frame | experimental; needs a device-sharing shim today |
+| Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one command encoder; no dependencies | experimental; fastest with no flags |
+| WebNN | `denoiser/webnn` | the graph built with `MLGraphBuilder`, run by the browser's ML backend (CoreML in Chrome on macOS) | experimental; Chrome flag required |
+
+The auto, kernels, WGSL and WebNN runtimes read the upstream OIDN `.tza` weights
+(fetched from jsDelivr, `models-v3`, by default, or from `{ tzaUrl }`). ORT
+reads the converted `.onnx` files. See [Models & weights](../getting-started/models-and-weights).
+
+## Speed and quality
+
+Mean over models, 1080p, `denoiseTextures` to a texture, warm median, Apple M5
+Pro with an idle GPU, headless Chrome 154. Multiples are against native OIDN on
+Metal. Source: `docs/status/eval-2026-10-08-quiet.md`.
+
+| 1080p | small | base | large |
+|---|---|---|---|
+| native OIDN, Metal | 14.3 ms | 24.8 ms | 54.2 ms |
+| ORT fp16 | 101 ms (7.1x) | 210 ms (8.5x) | runs base instead (see below) |
+| kernels fp16 | 79 ms (5.5x) | 163 ms (6.5x) | 440 ms (8.1x) |
+| WGSL fp16 | 33.6 ms (2.4x) | 67.0 ms (2.7x) | 167 ms (3.1x) |
+| WGSL fp32 (subgroup matrix, experimental) | 39.5 ms (2.8x) | 76.3 ms (3.1x) | 186 ms (3.4x) |
+| **WebNN fp16 (gpu)** | **31.5 ms (2.2x)** | **40.1 ms (1.6x)** | **65.4 ms (1.2x)** |
+| WebNN fp16 (npu, Neural Engine) | 33.1 ms (2.3x) | 43.6 ms (1.8x) | 78.9 ms (1.5x) |
+| WebNN fp32 (gpu) | 49.6 ms (3.5x) | 74.7 ms (3.0x) | 159 ms (2.9x) |
+
+| 512x512 | small | base | large |
+|---|---|---|---|
+| native OIDN, Metal | 2.7 ms | 4.0 ms | 7.8 ms |
+| WGSL fp16 | **4.6 ms** | 8.7 ms | 21.0 ms |
+| WebNN fp16 (gpu) | 6.4 ms | **7.3 ms** | **10.8 ms** |
+
+- **WebNN fp16 is the fastest web runtime for base and large models** at 1080p:
+  1.7x WGSL fp16 on base and 2.5x on large, and 1.2-1.6x from native Metal. On
+  small models at 1080p the two are within about 7% (31.5 vs 33.6 ms), and at
+  512x512 WGSL fp16 is as fast or faster on small models; WebNN is ahead on base
+  and large.
+- **WGSL fp16 is the fastest runtime that needs no browser flag.** Loading a
+  model takes roughly 10-90 ms (the large model about 90 ms), against about
+  0.7 s for ORT's first-ever load and 0.8-1.0 s per model for kernels.
+- Every GPU runtime beats native OIDN **CPU** (189 / 331 / 739 ms for small /
+  base / large at 1080p).
+- WebNN's Neural Engine path is close to its GPU path and leaves the GPU free for
+  your renderer.
+
+**Quality** is measured against native OIDN on the CPU (the reference
+implementation, same weights), as PSNR and maximum 8-bit difference:
+
+| runtime | result |
+|---|---|
+| kernels, WGSL, WebNN | match native on every model: fp32 70-84 dB, within 1 LSB; fp16 62-78 dB, within 1-2 LSB (WebNN on the Neural Engine within 2 LSB) |
+| ORT | **wrong** on the 6-channel `*_alb` and 9-channel `*_alb_nrm` models: 32-40 dB, up to 120 LSB, costing up to 4.8 dB against the converged reference |
+| ORT, large topology | **wrong**: now falls back to the base model with a one-time console warning |
+
+One case, `eiffel/rt_ldr_calb_cnrm`, is 5 LSB from native on **every** runtime
+identically (70.1 dB). That is a shared pre/post difference, not a runtime
+problem, and it is still open.
+
+> [!NOTE]
+> ORT-WebGPU's first Conv miscomputes inputs with more than three channels. The
+> `splitAux` workaround covers the clean-aux (`*_calb_cnrm`) models only, so the
+> `*_alb` and `*_alb_nrm` variants stay wrong, and the facade reaches `*_alb`
+> whenever you pass albedo without a normal. ORT-WebGPU also miscomputes the
+> large topology. If you ask for the large model on ORT, you get the base model's
+> result and a warning, not an error. Use another runtime for these cases.
+
+## Which one should I use?
+
+- **Nothing to configure:** `Denoiser.create()` uses `AutoRuntime` (below). It
+  runs WebNN fp16 for base/large models when WebNN is available and WGSL
+  otherwise, on one shared GPUDevice. It never picks ORT, so you get correct
+  output on every model.
+- **Only if you must stay on ORT:** `OrtRuntime` from `denoiser/ort`, with
+  `onnxruntime-web` installed. Expect the wrong results listed above on the
+  `*_alb`, `*_alb_nrm` and `*_large` models; color-only and clean-aux
+  (`albedo` + `normal`, with `splitAux`) at `fast` or `balanced` are the cases it
+  gets right.
+- **Best result without browser flags:** `WgslRuntime`. Correct on every model,
+  several times faster than ORT, fastest at small models and at 512x512.
+- **Best result on Chrome with flags enabled (macOS, Apple silicon):**
+  `WebnnRuntime` with `precision: 'fp16'`, especially for base and large models
+  at 1080p.
+- **Keep the GPU's compute free for your renderer:** `WebnnRuntime` with
+  `deviceType: 'npu'` and the extra Chrome feature (below).
+- **Evaluating Hugging Face kernels:** `KernelsRuntime`. It is correct and faster
+  than ORT, but slower than WGSL, and it needs a device-sharing shim (below).
+
+## Selecting a runtime
+
+All runtimes plug into the same `Denoiser`. Import the runtime from its subpath
+entry and pass it as `runtime`. The facade, the options and the output are
+unchanged.
+
+### ORT (opt-in)
+
+```sh
+npm install onnxruntime-web   # optional peer dependency of denoiser
+```
+
+```ts
+import { Denoiser } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
+
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models' }), // { weightsUrl?, wasmPaths?, graphCapture?, splitAux? }
+  precision: 'fp16',
+});
+```
+
+The root `denoiser` entry never loads onnxruntime-web. The ORT options
+(`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) are `OrtRuntime` options,
+not `Denoiser.create` options. ORT creates its own `GPUDevice` and cannot adopt
+one you pass, so with three.js create the denoiser first (see
+[three.js render targets](./three-js-render-targets)).
+
+### Hand-written WGSL
+
+```ts
+import { Denoiser } from 'denoiser';
+import { WgslRuntime } from 'denoiser/wgsl';
+
+const denoiser = await Denoiser.create({
+  runtime: new WgslRuntime(), // or { tzaUrl: '/tzas' } to self-host the weights
+  precision: 'fp16',          // 'fp32' | 'fp16'
+});
+```
+
+No runtime dependencies. fp32 uses the portable vec4 conv kernel. On devices with
+Chrome's `chromium-experimental-subgroup-matrix` feature (today only behind
+`--enable-unsafe-webgpu`) fp32 uses an 8x8 subgroup-matrix kernel that is faster
+(the 39.5 / 76.3 / 186 ms row above); everyone else gets the portable kernel. For
+fp16 the portable kernel with f16 sums is used because it is faster than the
+matrix path (forcing the matrix path at fp16 was about 20% slower on base).
+
+### WebNN
+
+```ts
+import { Denoiser } from 'denoiser';
+import { WebnnRuntime } from 'denoiser/webnn';
+
+if (!WebnnRuntime.isAvailable()) {
+  // navigator.ml / MLGraphBuilder missing: fall back to WgslRuntime
+}
+
+const denoiser = await Denoiser.create({
+  runtime: new WebnnRuntime({ deviceType: 'gpu' }), // 'gpu' (default) | 'npu' | 'cpu'
+  precision: 'fp16',
+});
+```
+
+Launch Chrome with:
+
+```sh
+--enable-features=WebMachineLearningNeuralNetwork
+# and, to reach the Apple Neural Engine with deviceType: 'npu':
+--enable-features=WebMachineLearningNeuralNetwork,WebNNCoreMLExplicitGPUOrNPU
+```
+
+Caveats worth knowing before you ship anything on it:
+
+- **`'npu'` is `'gpu'` unless the second feature is on.** Without
+  `WebNNCoreMLExplicitGPUOrNPU`, Chrome maps `'npu'` to CoreML's "all compute
+  units", which picks the GPU (bit-identical outputs and timings). fp32 graphs on
+  the explicit `'npu'` fall back to the CPU, so use fp16 there.
+- **Cold-cache compile cost.** Each new run geometry builds a new graph. With a
+  warm CoreML on-disk cache this is 0.4-1.2 s per geometry on the GPU and
+  1.0-2.7 s on the Neural Engine. The very first build on a machine takes 5-7 s.
+  The speed table above was measured with a warm cache. WGSL has no per-geometry
+  cost. Keep your output size stable.
+- **Interop is fp16 only.** fp16 uses WebNN to WebGPU tensor export; fp32 goes
+  through the host. Chrome also refuses to export very large tensors (the limit
+  is a 2D surface: the product of all dimensions but the last at most 16384, and
+  the last dimension at most 16384), and the runtime checks this up front and uses
+  the host path for those geometries. In the measurements here, the interop path
+  was not measurably cheaper than the host round trip.
+- **`navigator.ml.createContext(gpuDevice)` runs on the CPU** on this backend, so
+  the runtime does not use it.
+- Chrome 154 stable and 157 Canary behaved identically.
+
+### Hugging Face kernels
+
+```ts
+import { Denoiser } from 'denoiser';
+import { KernelsRuntime } from 'denoiser/kernels';
+
+const denoiser = await Denoiser.create({
+  runtime: new KernelsRuntime(), // weights from jsDelivr, or { tzaUrl: '/tzas' }
+});
+```
+
+`@huggingface/kernels` is an optional peer dependency. Install it to use this
+entry. Today (`0.0.1-preview.3`) it always creates its own `GPUDevice`, so the
+runtime hands it yours through a `navigator.gpu.requestAdapter` shim
+(`shareDeviceWithKernels`). That is needed for zero-copy IO and is not meant for
+production use. Never call kernels' `disposeSharedKernelRuntime()` while it
+runs on a shared device, because it destroys that device. kernels keeps one
+page-global runtime, so all `KernelsRuntime`s on a page share one device (the
+first one's). The first load costs about 0.8-1.8 s per model (kernel fetch and
+compile).
+
+### Automatic (`AutoRuntime`, the default)
+
+```ts
+import { Denoiser } from 'denoiser';
+
+// the default: same as `runtime: new AutoRuntime({ tzaUrl, device })`
+const denoiser = await Denoiser.create({
+  precision: 'fp16',
+  tzaUrl: '/tzas', // optional: self-host the .tza weights
+  device,          // optional: run on an existing GPUDevice, e.g. a three.js renderer's
+});
+
+// explicit, with the WebNN control:
+import { AutoRuntime } from 'denoiser/auto'; // also exported from 'denoiser'
+const same = await Denoiser.create({
+  runtime: new AutoRuntime({ webnn: 'gpu' }), // { tzaUrl?, device?, webnn?: 'gpu' | 'npu' | false }
+  precision: 'fp16',
+});
+```
+
+Per model it chooses WebNN (fp16, base/large models, when `navigator.ml` can
+create a context) or the hand-written WGSL runtime (everything else, including
+all fp32). Both run on one GPUDevice — pass a three.js renderer's device as
+`device` to share it — so `denoiser.device` stays the same when the model
+changes. `runtime.lastChoice` reports what served the last load. Set
+`webnn: false` when first-call latency matters more than steady-state speed:
+WebNN compiles per image size (0.4–2.7 s each on a cold CoreML cache).
+
+## Which device are you on?
+
+ORT creates the `GPUDevice` it runs on and ignores one you inject. The other
+runtimes (including the default `AutoRuntime`) create a device with the adapter's
+maximum limits and features, or adopt the `device` you pass, either as the
+`Denoiser.create({ device })` option or in the runtime's own options. Either way, build your own
+pipelines on **`denoiser.device`**, as described in
+[The GPUDevice](../concepts/the-gpudevice) and
+[Custom engines & raw WebGPU](./custom-engines).
+
+## Reproducing the numbers
+
+The harness is `tools/eval` (native OIDN, the reference) plus `examples/eval`
+(the web runtimes). It runs 25 scene/model cases, with every input rounded to
+fp16 so each setup sees the same data. See `tools/eval/README.md`. The full
+tables, including cold-start times, are in `docs/status/eval-2026-10-08-quiet.md`
+and `docs/status/eval-2026-10-07.md` in the repository.

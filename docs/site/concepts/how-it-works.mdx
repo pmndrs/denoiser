@@ -1,28 +1,36 @@
 ---
 title: How it works
-description: OIDN U-Net to ONNX to WebGPU — and why the pre/post pipeline is WGSL, not JS.
+description: OIDN U-Net on WebGPU via WGSL or WebNN (ORT optional) — and why the pre/post pipeline is WGSL, not JS.
 nav: 10
 ---
 
 ## From OIDN weights to a WebGPU model
 
 OIDN publishes its trained U-Net weights as `.tza` files — its own format, loaded
-by upstream's native (C++/ISPC) runtime. There is no ONNX export upstream and no
-PyTorch anywhere in this pipeline. Instead, [`tools/onnx-convert`](https://github.com/pmndrs/denoiser/tree/main/tools/onnx-convert)
-reads the `.tza` weights directly and emits standard ONNX graphs (opset 17) offline,
-once, ahead of time — the browser never touches OIDN's original format.
+by upstream's native (C++/ISPC) runtime. The default runtimes read those `.tza`
+files directly in the browser (`parseTZA`), so what runs is OIDN's own weights, with
+no conversion step. There is no ONNX export upstream and no PyTorch anywhere in this
+pipeline.
 
-The exported graphs use **named dynamic dimensions** (`batch`, `height`, `width`),
-so one `.onnx` file per weight set covers any input size; the engine pins concrete
-values per session with `freeDimensionOverrides` at creation time rather than
-needing a differently-shaped export for every resolution.
+## Inference: a `NetworkRuntime` per model
 
-## Inference: onnxruntime-web on the WebGPU EP
+The engine does everything except execute the U-Net; a **`NetworkRuntime`** does
+that. The default, `AutoRuntime`, picks per model:
 
-At runtime, the ONNX model runs through
-[onnxruntime-web](https://onnxruntime.ai/)'s **WebGPU execution provider** — the
-native (C++, not JS) EP bundle. Every op in the U-Net graph — convolutions,
-max-pools, concatenations, resizes — executes as a WebGPU compute dispatch.
+- **WebNN** (fp16, base and large models, when the browser exposes it): the U-Net is
+  built with `MLGraphBuilder` and run by the browser's ML backend (CoreML in Chrome
+  on macOS).
+- **Hand-written WGSL** (everything else): the U-Net as 16 (standard) or 19 (large) fused convolution
+  compute dispatches in one command encoder, with no dependencies.
+
+See [Choosing a runtime](../guides/choosing-a-runtime.mdx) for measured speed and
+quality. The opt-in `denoiser/ort` runtime instead runs standard ONNX graphs
+(opset 17, converted offline from the `.tza` weights by
+[`tools/onnx-convert`](https://github.com/pmndrs/denoiser/tree/main/tools/onnx-convert))
+through [onnxruntime-web](https://onnxruntime.ai/)'s WebGPU execution provider. Its
+graphs use **named dynamic dimensions** (`batch`, `height`, `width`), so one `.onnx`
+file per weight set covers any input size; the runtime pins concrete values per
+session with `freeDimensionOverrides`.
 
 ## Everything around the model is WGSL, not JavaScript
 
@@ -50,7 +58,7 @@ comfortably in a single dispatch. The engine picks between two plans per image:
 
 - **Whole-frame (preferred).** Pad width/height up to a multiple of 16 (four
   max-pool levels in the network require it), then run the **entire image through
-  the U-Net in one `session.run`** — batch 1, zero overlap, no seams, no wasted
+  the U-Net in one network run** — batch 1, zero overlap, no seams, no wasted
   inference. This is the default for images up to `maxRunPixels` (2048×1152 by
   default — roughly 1080p), and needs the device's max buffer limits raised, which
   the library does itself (see [The GPUDevice](./the-gpudevice.mdx)).

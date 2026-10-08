@@ -17,6 +17,11 @@
     ],
     "license": "MIT",
     "homepage": "https://github.com/pmndrs/denoiser",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pmndrs/denoiser.git",
+        "directory": "packages/denoiser"
+    },
     "bugs": {
         "url": "https://github.com/pmndrs/denoiser/issues"
     },
@@ -28,6 +33,74 @@
             "types": "./dist/index.d.ts",
             "import": "./dist/index.mjs",
             "require": "./dist/index.cjs"
+        },
+        "./core": {
+            "types": "./dist/core.d.ts",
+            "import": "./dist/core.mjs",
+            "require": "./dist/core.cjs"
+        },
+        "./ort": {
+            "types": "./dist/ort.d.ts",
+            "import": "./dist/ort.mjs",
+            "require": "./dist/ort.cjs"
+        },
+        "./kernels": {
+            "types": "./dist/kernels.d.ts",
+            "import": "./dist/kernels.mjs",
+            "require": "./dist/kernels.cjs"
+        },
+        "./wgsl": {
+            "types": "./dist/wgsl.d.ts",
+            "import": "./dist/wgsl.mjs",
+            "require": "./dist/wgsl.cjs"
+        },
+        "./ffx": {
+            "types": "./dist/ffx.d.ts",
+            "import": "./dist/ffx.mjs",
+            "require": "./dist/ffx.cjs"
+        },
+        "./webnn": {
+            "types": "./dist/webnn.d.ts",
+            "import": "./dist/webnn.mjs",
+            "require": "./dist/webnn.cjs"
+        },
+        "./three": {
+            "types": "./dist/three.d.ts",
+            "import": "./dist/three.mjs",
+            "require": "./dist/three.cjs"
+        },
+        "./auto": {
+            "types": "./dist/auto.d.ts",
+            "import": "./dist/auto.mjs",
+            "require": "./dist/auto.cjs"
+        }
+    },
+    "typesVersions": {
+        "*": {
+            "core": [
+                "./dist/core.d.ts"
+            ],
+            "ort": [
+                "./dist/ort.d.ts"
+            ],
+            "kernels": [
+                "./dist/kernels.d.ts"
+            ],
+            "wgsl": [
+                "./dist/wgsl.d.ts"
+            ],
+            "ffx": [
+                "./dist/ffx.d.ts"
+            ],
+            "webnn": [
+                "./dist/webnn.d.ts"
+            ],
+            "three": [
+                "./dist/three.d.ts"
+            ],
+            "auto": [
+                "./dist/auto.d.ts"
+            ]
         }
     },
     "files": [
@@ -37,24 +110,49 @@
     ],
     "scripts": {
         "test": "vitest run --coverage",
-        "build": "tsc && rollup --config rollup.config.mjs",
+        "build": "rm -rf dist && tsc && rollup --config rollup.config.mjs",
         "format": "prettier --write ."
     },
+    "peerDependencies": {
+        "@huggingface/kernels": "0.0.1-preview.3",
+        "onnxruntime-web": "^1.27.0",
+        "three": ">=0.185.0"
+    },
+    "peerDependenciesMeta": {
+        "@huggingface/kernels": {
+            "optional": true
+        },
+        "onnxruntime-web": {
+            "optional": true
+        },
+        "three": {
+            "optional": true
+        }
+    },
     "devDependencies": {
+        "@huggingface/kernels": "0.0.1-preview.3",
+        "@pmndrs/denoiser-core": "workspace:*",
+        "@pmndrs/denoiser-ffx": "workspace:*",
+        "@pmndrs/denoiser-kernels": "workspace:*",
+        "@pmndrs/denoiser-ort": "workspace:*",
+        "@pmndrs/denoiser-three": "workspace:*",
+        "@pmndrs/denoiser-webnn": "workspace:*",
+        "@pmndrs/denoiser-wgsl": "workspace:*",
         "@rollup/plugin-commonjs": "^29.0.3",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
+        "@types/three": "^0.185.4",
         "@typescript-eslint/eslint-plugin": "^8.63.0",
         "@typescript-eslint/parser": "^8.63.0",
         "@webgpu/types": "^0.1.71",
         "eslint": "^10.6.0",
+        "onnxruntime-web": "^1.27.0",
         "prettier": "^3.9.5",
         "rollup": "^4.62.2",
         "rollup-plugin-copy": "^3.5.0",
+        "rollup-plugin-dts": "^6.5.1",
+        "three": "^0.185.0",
         "tslib": "^2.8.1",
         "typescript": "^5.9.3"
-    },
-    "dependencies": {
-        "onnxruntime-web": "^1.27.0"
     }
 }

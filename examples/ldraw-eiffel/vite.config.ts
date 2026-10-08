@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { serveTzas } from '../_shared/vite-tzas';
 
 const modelsDir = fileURLToPath(new URL('../../packages/denoiser/models', import.meta.url));
 
@@ -31,6 +32,7 @@ export default defineConfig({
     esbuildOptions: { target: 'esnext' },
   },
   plugins: [
+    serveTzas(),
     {
       // ONNX weights for the denoiser, served from the workspace package.
       name: 'serve-models',

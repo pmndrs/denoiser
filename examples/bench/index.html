@@ -21,6 +21,9 @@
       <label>precision
         <select id="precision"><option value="fp32" selected>fp32</option><option value="fp16">fp16</option></select>
       </label>
+      <label>runtime
+        <select id="runtime"><option value="ort" selected>ORT (onnxruntime-web)</option><option value="kernels">HF kernels (experimental)</option><option value="wgsl">hand-written WGSL (experimental)</option><option value="auto">auto (package default)</option></select>
+      </label>
       <label>quality
         <select id="quality"><option value="fast" selected>fast (small)</option><option value="balanced">balanced</option></select>
       </label>
