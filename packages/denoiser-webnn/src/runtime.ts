@@ -55,7 +55,7 @@ export class WebnnRuntime implements NetworkRuntime {
     return !!getML() && typeof (globalThis as { MLGraphBuilder?: unknown }).MLGraphBuilder === 'function';
   }
 
-  async load(model: NetworkModel, hints?: { geometry?: NetworkGeometry }): Promise<NetworkSession> {
+  async load(model: NetworkModel, _hints?: { geometry?: NetworkGeometry }): Promise<NetworkSession> {
     const ml = getML();
     if (!ml) throw new Error('WebnnRuntime: WebNN unavailable (navigator.ml); Chrome needs --enable-features=WebMachineLearningNeuralNetwork');
     this.device ??= this.opts.device ? Promise.resolve(this.opts.device) : requestMaxDevice();
@@ -77,8 +77,6 @@ export class WebnnRuntime implements NetworkRuntime {
     }
     const interop = want !== false && canExport && f16;
     const session = new WebnnSession(device, ctx, weights, model, interop, this.opts.layout ?? 'nchw', (ms) => { this.lastBuildMs = ms; });
-    // the engine binds this geometry right away — start compiling it now
-    if (hints?.geometry) session.prepare(hints.geometry);
     return session;
   }
 

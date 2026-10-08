@@ -137,14 +137,22 @@ export class TiledEngine {
     return e;
   }
 
-  /** The first geometry bound is the tiled fallback — load it eagerly. */
+  /**
+   * Load the network. The tiled-fallback geometry goes to the runtime as a hint
+   * (ORT creates its device + first session from it), but is only BOUND eagerly
+   * when the runtime can run nothing else (fixedGeometry). Otherwise bindings are
+   * created on first use for the geometry an image actually needs — most images
+   * run whole-frame, and some runtimes compile per geometry (WebNN: 0.4–2.7 s).
+   */
   protected async attach(load: (first: NetworkGeometry) => Promise<NetworkSession>) {
     const first = { batch: this.batch, tileW: this.tile, tileH: this.tile };
     this.session = await load(first);
     this.device = this.session.device;
     const fixed = this.session.fixedGeometry;
-    if (fixed) this.batch = fixed.batch;
-    await this.ensureBinding(fixed ? { ...fixed, overlap: this.overlap } : { ...first, overlap: this.overlap });
+    if (fixed) {
+      this.batch = fixed.batch;
+      await this.ensureBinding({ ...fixed, overlap: this.overlap });
+    }
     this.ops = new GpuImageOps(this.device, this.batch, this.precision === 'fp16');
   }
 
