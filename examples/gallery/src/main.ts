@@ -198,7 +198,7 @@ function renderScenePicker(): void {
     const btn = document.createElement('button');
     btn.className = 'scene-card';
     btn.setAttribute('aria-pressed', String(s.id === scene.id));
-    btn.innerHTML = `<p class="t">${escapeHtml(s.title)}</p><p class="d">${s.width}×${s.height} · spp: ${s.spp.join(', ')}</p>`;
+    btn.innerHTML = `<p class="t">${escapeHtml(s.title)}</p><p class="d">pre-rendered · ${s.width}×${s.height} · spp: ${s.spp.join(', ')}</p>`;
     btn.addEventListener('click', () => selectScene(s));
     scenesEl.appendChild(btn);
   }
@@ -213,7 +213,7 @@ function selectScene(s: SceneManifest): void {
   auxOn = hasAux;
   auxHintEl.textContent = hasAux ? 'color + albedo + normal, cleanAux model' : 'this scene has no aux buffers';
   refBtnEl.disabled = !s.reference;
-  refBtnEl.textContent = s.reference ? 'hold to peek converged frame' : 'no reference for this scene';
+  refBtnEl.textContent = s.reference ? 'hold to peek converged reference' : 'no reference for this scene';
 
   renderScenePicker();
   renderSppControl();
@@ -309,7 +309,7 @@ function escapeHtml(s: string): string {
 async function main(): Promise<void> {
   if (!(await ensureWebGPU())) return;
 
-  loadingEl.textContent = 'loading scene manifest...';
+  loadingEl.textContent = 'loading pre-rendered scenes...';
   const res = await fetch('./scenes/manifest.json');
   manifest = (await res.json()) as Manifest;
   if (!manifest.scenes.length) {

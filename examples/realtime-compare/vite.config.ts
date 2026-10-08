@@ -11,7 +11,7 @@ export default defineConfig({
   base: './',
   server: { fs: { allow: ['../..'] } },
   plugins: [serveTzas()],
-  // three r185 addons use top-level await -> need an esnext target.
+  // three addons use top-level await -> need an esnext target.
   esbuild: { target: 'esnext' },
   build: { target: 'esnext' },
   resolve: {

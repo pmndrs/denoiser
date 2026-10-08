@@ -3,10 +3,11 @@
 // the plain raster render; let the camera rest and the WebGPU path tracer
 // accumulates, then the denoiser resolves the noise-free frame on top.
 //
-// Same shared-GPUDevice setup as examples/three-pathtracer-webgpu: ORT (the
-// denoiser) creates the device first, three.js borrows it (onnxruntime #26107).
+// Same shared-GPUDevice setup as examples/three-pathtracer-webgpu (createStack):
+// with ORT the denoiser creates the device first and three.js borrows it
+// (onnxruntime #26107); the other runtimes adopt the renderer's device.
 import * as THREE from 'three/webgpu';
-import { mrt, diffuseColor, normalView, texture as textureNode, uv, vec2, vec4 } from 'three/tsl';
+import { mrt, diffuseColor, normalView, texture as textureNode, vec4 } from 'three/tsl';
 import CameraControls from 'camera-controls';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { LDrawLoader } from 'three/addons/loaders/LDrawLoader.js';
@@ -15,24 +16,34 @@ import { LDrawUtils } from 'three/addons/utils/LDrawUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
 import { installGalleryCapture } from '../../_shared/gallery-capture';
-import { createStack, gpuTex } from '../../_shared/stack';
+import { createStack, gpuTex, mountRuntimePicker } from '../../_shared/stack';
+import { sampleCounter } from '../../_shared/pathtracer';
 import { ensureWebGPU, demoFooter, pathtracerNote } from '../../_shared/chrome';
+
+/** vite.config.ts `define`: packages/denoiser/models exists locally (dev only). */
+declare const __LOCAL_ONNX_MODELS__: boolean;
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const modeLabel = document.querySelector<HTMLSpanElement>('#mode')!;
-const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
+// The rAF loop keeps a trailing `samples: …` line (trimmed, no newline) — start each
+// log entry on its own line so the loop's rewrite of that line can't swallow it.
+const log = (m: string) => {
+  const t = status.textContent ?? '';
+  status.textContent = t + (t && !t.endsWith('\n') ? '\n' : '') + m + '\n';
+  console.log(m);
+};
 
-// The upstream WebGPUPathTracer branch wedges on setSize/renderScale — the
-// tracer must stay at its initial 512 resolution (see three-pathtracer-webgpu).
+// Everything (canvas, tracer target, G-buffer, overlay) stays at 512 so the
+// zero-copy texture paths are size-matched; the tracer follows the canvas size.
 const RES = 512;
 
 async function buildScene(): Promise<{ scene: THREE.Scene; camera: THREE.PerspectiveCamera }> {
   const scene = new THREE.Scene();
 
-  // Soft overcast sky: near-uniform luminance. HDRIs with small intense
-  // lights (studio lamps, sun disks) stay salt-and-pepper noisy in this
-  // WebGPU tracer branch even at high sample counts — concentrated-source
-  // sampling isn't there yet — and that speckle survives the denoiser.
+  // Soft overcast sky: near-uniform luminance. Chosen when the early WebGPU
+  // tracer left HDRIs with small intense lights (studio lamps, sun disks)
+  // salt-and-pepper noisy even at high sample counts, and that speckle
+  // survived the denoiser; kept so the gallery captures stay comparable.
   // BASE_URL keeps assets resolving under the deployed subpath (/denoiser/ldraw-eiffel/); it is "/" in dev.
   const env = await new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}assets/kloppenheim_06_puresky_1k.hdr`);
   env.mapping = THREE.EquirectangularReflectionMapping;
@@ -50,10 +61,10 @@ async function buildScene(): Promise<{ scene: THREE.Scene; camera: THREE.Perspec
   table.position.y = -0.25;
   scene.add(table);
 
-  // Gelatinous cube. Two looks, one material: `transmission` gives the raster
-  // preview real glassiness; the traced side of the WebGPU branch has no
-  // refraction yet, so `transparent`+`opacity` drives its stochastic
-  // pass-through there instead.
+  // Gelatinous cube: `transmission` gives the raster preview real glassiness
+  // (and is traced as refraction by three-gpu-pathtracer 0.0.27+);
+  // `transparent`+`opacity` additionally drives the tracer's stochastic
+  // pass-through, keeping the cube light enough to see the tower behind it.
   const gel = new THREE.Mesh(
     new THREE.BoxGeometry(1.3, 1.3, 1.3),
     new THREE.MeshPhysicalMaterial({
@@ -80,7 +91,7 @@ async function loadEiffel(scene: THREE.Scene) {
   const t0 = performance.now();
   const loader = new LDrawLoader();
   loader.smoothNormals = true;
-  // r185 requires the renderer-appropriate conditional-line material to be
+  // three r185+ (r186 here) requires the renderer-appropriate conditional-line material to be
   // injected (node material for WebGPU). The lines get stripped below anyway.
   loader.setConditionalLineMaterial(LDrawConditionalLineMaterial);
   // Packed MPD (tools/pack-ldraw.mjs): every part + LDConfig colors inlined,
@@ -104,7 +115,8 @@ async function loadEiffel(scene: THREE.Scene) {
   // Scale to ~3.6 units tall, centered, base resting on the table (y=0).
   let tris = 0;
   let meshCount = 0;
-  model.traverse((c: THREE.Mesh) => {
+  model.traverse((o: THREE.Object3D) => {
+    const c = o as THREE.Mesh;
     if (c.isMesh) { meshCount++; tris += (c.geometry.index?.count ?? c.geometry.attributes.position.count) / 3; }
   });
   log(`merged model: ${meshCount} mesh(es), ${tris.toFixed(0)} tris`);
@@ -123,14 +135,16 @@ async function loadEiffel(scene: THREE.Scene) {
 
 async function main() {
   if (!(await ensureWebGPU())) return;
-  // 1+2) One GPUDevice for the denoiser and three.js. ?runtime=auto|ort|wgsl|webnn|kernels (default auto)
-  // picks the network runtime; createStack() orders device creation accordingly
+  // 1+2) One GPUDevice for the denoiser and three.js. ?runtime=auto|ort|wgsl|webnn|kernels (default auto;
+  // the on-page picker reloads with it) picks the network runtime; createStack() orders device creation accordingly
   // (ORT: denoiser first, three borrows it; others: three first, runtime adopts it).
-  // Dev serves converted ORT models from /models (vite middleware); prod falls back to the CDN default.
+  // Dev serves converted ORT models from /models (vite middleware) when present locally; otherwise (and in prod) the CDN default.
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+  // Runtime picker first, so a runtime that fails to initialize can still be switched away from.
+  const picker = mountRuntimePicker(document.querySelector<HTMLElement>('#runtimePicker'));
   const { renderer, denoiser, device } = await createStack({
     renderer: { canvas, antialias: true },
-    weightsUrl: import.meta.env.DEV ? '/models' : undefined,
+    weightsUrl: import.meta.env.DEV && __LOCAL_ONNX_MODELS__ ? '/models' : undefined,
     // three's official Inspector (r180+): render-target viewer, node parameters,
     // profiler. Opt-in via ?inspector — it overlays its own UI.
     beforeInit: async (r) => {
@@ -140,7 +154,8 @@ async function main() {
         log('three.js Inspector attached');
       }
     },
-  });
+  }).catch((e) => { picker.failed((e as Error).message); throw e; });
+  picker.attach(denoiser);
   log(`denoiser ready (${denoiser.runtime.name}); sharing its GPUDevice with three.js`);
   device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
   device.addEventListener('uncapturederror', (e) =>
@@ -152,14 +167,15 @@ async function main() {
   const { scene, camera } = await buildScene();
   await loadEiffel(scene);
 
-  // 4) Path tracer (megakernel; full-res noisy frames from sample 1).
+  // 4) Path tracer (default wavefront backend; full-res noisy frames from sample 1).
   const t0 = performance.now();
   const pathTracer = new WebGPUPathTracer(renderer);
-  pathTracer.useMegakernel(true);
   pathTracer.dynamicLowRes = false;
   pathTracer.renderDelay = 0;
   pathTracer.setScene(scene, camera);
   log(`path tracer BVH built in ${(performance.now() - t0).toFixed(0)} ms`);
+  // Per-pixel sample count (async GPU measurement, polled once per frame).
+  const samples = sampleCounter(pathTracer);
 
   // 5) camera-controls: raster preview while the camera moves, trace at rest.
   // camera-controls is fully typed but `three` here isn't (repo status quo) — cast.
@@ -175,11 +191,9 @@ async function main() {
   // Live GPUTexture of the tracer's accumulation (refetched — it can be
   // replaced on reset) and of three-owned render targets.
   const backendGet = (t: THREE.Texture) => gpuTex(renderer, t);
-  const getTracerTexture = (): GPUTexture | undefined => {
-    const target = pathTracer._pathTracer.outputTarget;
-    const threeTexture = target.isTexture ? target : target.textures?.[0];
-    return backendGet(threeTexture);
-  };
+  // (pathTracer.target: rgba32float StorageTexture, ping-ponged per sample.)
+  const getTracerTexture = (): GPUTexture | undefined =>
+    pathTracer.target ? backendGet(pathTracer.target) : undefined;
 
   // Denoised overlay canvas (webgpu context, plain texture copy). ?headless=1
   // skips it — a second getContext('webgpu')+configure stalls headless Chrome
@@ -224,7 +238,8 @@ async function main() {
   let gbufferRendered = false;
   function forceOpaque(): Array<() => void> {
     const restore: Array<() => void> = [];
-    scene.traverse((c: THREE.Mesh) => {
+    scene.traverse((o: THREE.Object3D) => {
+      const c = o as THREE.Mesh;
       const mats: THREE.Material[] = c.isMesh
         ? (Array.isArray(c.material) ? c.material : [c.material])
         : [];
@@ -271,6 +286,8 @@ async function main() {
   // UI knobs.
   const maxSamplesInput = document.querySelector<HTMLInputElement>('#maxSamples')!;
   const maxSamples = () => Math.max(1, parseInt(maxSamplesInput.value, 10) || 32);
+  // The tracer caps accumulation itself: every pixel stops at exactly maxSamples.
+  pathTracer.maxSamples = maxSamples();
   const progressiveCheckbox = document.querySelector<HTMLInputElement>('#progressive')!;
   const qualitySel = document.querySelector<HTMLSelectElement>('#quality')!;
   denoiser.quality = qualitySel.value as 'fast' | 'balanced'; // honor the HTML default
@@ -290,19 +307,22 @@ async function main() {
   });
   auxCheckbox.addEventListener('change', () => { gbufferRendered = false; invalidateDenoise(); });
   auxOpaqueCheckbox.addEventListener('change', () => { gbufferRendered = false; invalidateDenoise(); });
-  maxSamplesInput.addEventListener('change', () => { pathTracer.reset(); invalidateDenoise(); });
+  maxSamplesInput.addEventListener('change', () => {
+    pathTracer.maxSamples = maxSamples();
+    pathTracer.reset();
+    samples.reset();
+    invalidateDenoise();
+  });
 
   // --- input debug views: put the network's actual inputs on the overlay ---
-  // color is shown WITH the flip the engine applies (inputFlipY) and the aux
-  // as-is (auxInputFlipY: false), i.e. exactly as the network pairs them — a
-  // wrong flip flag shows up here as color/aux vertical mismatch.
+  // color and aux are shown as-is (inputFlipY / auxInputFlipY: false — the
+  // tracer's compute target and the raster G-buffer are both top-down), i.e.
+  // exactly as the network pairs them — a wrong flip flag shows up here as
+  // color/aux vertical mismatch.
   const viewSel = document.querySelector<HTMLSelectElement>('#viewMode')!;
   const debugRT = new THREE.RenderTarget(RES, RES); // rgba8unorm
   const debugQuad = new THREE.QuadMesh(new THREE.NodeMaterial());
-  const getTracerThreeTexture = () => {
-    const target = pathTracer._pathTracer.outputTarget;
-    return target.isTexture ? target : target.textures?.[0];
-  };
+  const getTracerThreeTexture = () => pathTracer.target;
   let debugKey = '';
   function renderDebugView(view: string) {
     if (view !== 'color' && !gbufferRendered) renderGBuffer();
@@ -311,9 +331,7 @@ async function main() {
     if (!src) return;
     const key = `${view}:${src.uuid}`;
     if (key !== debugKey) {
-      const t = view === 'color'
-        ? textureNode(src, vec2(uv().x, uv().y.oneMinus())) // engine's inputFlipY
-        : textureNode(src);
+      const t = textureNode(src);
       // Display transforms only: color = linear HDR -> Reinhard + gamma;
       // albedo = linear [0,1] -> gamma; normal = [-1,1] -> [0,1] RAW (no
       // gamma) so wrong ranges read as washed-out gray or hard clipping.
@@ -337,7 +355,7 @@ async function main() {
     if (viewSel.value === 'result') invalidateDenoise(); // fresh denoise re-blits the overlay
   });
 
-  async function runDenoise(samples: number) {
+  async function runDenoise(sampleCount: number) {
     const colorTex = getTracerTexture();
     if (!colorTex || colorTex.width !== RES) return; // tracer target not ready
     let albedo: GPUTexture | undefined;
@@ -349,13 +367,13 @@ async function main() {
       if (!albedo || !normal) throw new Error('aux: G-buffer textures unavailable');
     }
     const t = performance.now();
-    // Linear-HDR tracer input (bottom-up), raster aux already top-down,
+    // Linear-HDR tracer input and raster aux, both top-down (no flips),
     // display-encoded (ACES+sRGB) output to match the raster preview.
     const out = await denoiser.denoiseTextures({
       color: colorTex,
       albedo, normal,
       hdr: true,
-      inputFlipY: true,
+      inputFlipY: false,
       auxInputFlipY: false,
       transfer: 'aces-srgb',
     });
@@ -365,7 +383,8 @@ async function main() {
       overlayCanvas.style.opacity = '1';
     }
     denoiseMs = performance.now() - t;
-    denoisedAtSample = samples;
+    denoisedAtSample = sampleCount;
+    picker.denoised(denoiseMs);
   }
 
   // 6) The mode loop: camera moving → raster preview; at rest → accumulate
@@ -373,10 +392,10 @@ async function main() {
   type Mode = 'preview' | 'trace';
   let mode: Mode = 'preview';
   let cameraDirty = false; // only reset the tracer when the camera actually moved
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer(); // THREE.Clock is deprecated since r186
 
   (window as unknown as Record<string, unknown>).__app =
-    { pathTracer, renderer, denoiser, scene, camera, controls, albedoRT, normalRT, backendGet, renderGBuffer };
+    { pathTracer, renderer, denoiser, scene, camera, controls, albedoRT, normalRT, backendGet, renderGBuffer, samples, picker };
 
   // Gallery-asset capture (Phase B B1.3): spp ladder + reference + albedo/normal
   // AOVs for the gallery demo (tools/capture-gallery, or ?capture=1 headed button).
@@ -399,7 +418,8 @@ async function main() {
     }
   };
   const loopBody = () => {
-    const updated = controls.update(clock.getDelta());
+    timer.update();
+    const updated = controls.update(timer.getDelta());
     const moving = updated || userActive;
 
     if (moving) {
@@ -415,11 +435,14 @@ async function main() {
         mode = 'trace';
         if (cameraDirty) {
           pathTracer.updateCamera(); // resets accumulation for the settled view
+          samples.reset();
           cameraDirty = false;
         }
       }
-      const s = Math.floor(pathTracer.samples ?? 0);
-      if (s < maxSamples()) pathTracer.renderSample();
+      // accumulates (until pathTracer.maxSamples) and presents the raw image
+      pathTracer.renderSample();
+      samples.poll();
+      const s = samples.value;
       const shouldDenoise = progressiveCheckbox.checked
         ? s > 0 && s !== denoisedAtSample
         : s >= maxSamples() && denoisedAtSample !== s;
@@ -437,7 +460,7 @@ async function main() {
       overlayCanvas.style.opacity = '1';
     }
 
-    const s = Math.floor(pathTracer.samples ?? 0);
+    const s = samples.value;
     modeLabel.textContent = viewSel.value !== 'result'
       ? `input: ${viewSel.value}`
       : mode === 'preview'
@@ -445,8 +468,8 @@ async function main() {
         : s < maxSamples()
           ? `path tracing ${s}/${maxSamples()}`
           : denoisedAtSample >= 0 ? 'denoised' : 'denoising…';
-    status.textContent = status.textContent!.replace(/samples:.*$/m, '').trimEnd() +
-      `\nsamples: ${s} / ${maxSamples()}` +
+    status.textContent = status.textContent!.replace(/\n?samples:.*$/m, '').trimEnd() +
+      `\nsamples: ${s} / ${maxSamples()} | runtime: ${picker.label()}` +
       (denoiseMs ? ` | denoise: ${denoiseMs.toFixed(1)} ms` : '');
   };
   loop();

@@ -15,10 +15,11 @@ three.js, no build tricks — the page shows the exact source next to the result
 Start here. Walkthrough: [Quick start](../getting-started/quick-start.mdx).
 
 ### [Gallery](https://pmndrs.github.io/denoiser/gallery/)
-The flagship quality demo. Real path-traced scenes at 1–16 samples per pixel: drag
-the before/after divider, step the noise ladder, toggle albedo+normal guidance live
-on the same frame. Runs real in-browser inference on precomputed inputs, so it shows
-genuine speed without needing a live path tracer.
+The flagship quality demo. Pre-rendered path-traced scenes at 1–16 samples per pixel
+(plus aux buffers and a converged reference), denoised live in the browser: drag the
+before/after divider (there is no camera to orbit), step the noise ladder, toggle
+albedo+normal guidance on the same frame. For an interactive scene, use the
+[three.js path tracer demo](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/).
 
 ### [Aux inputs](https://pmndrs.github.io/denoiser/aux-inputs/)
 What the network actually sees. Shows color, albedo, and normal exactly as fed to
@@ -33,15 +34,14 @@ no three.js, no Babylon, no bundler magic — feeding `denoiseTextures` on the s
 `GPUDevice`. The reference for integrating a custom engine that isn't three.js.
 
 ### [three.js path tracer](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/)
-three r185 `WebGPUPathTracer` and this library sharing one `GPUDevice`: progressive
+three r186 `WebGPUPathTracer` and this library sharing one `GPUDevice`: progressive
 path tracing, denoised live while it accumulates, CPU-copy and zero-copy paths
 side by side. See [The GPUDevice](../concepts/the-gpudevice.mdx) for how the shared
 device works.
 
 > [!NOTE]
-> The pathtracer dependency (`three-gpu-pathtracer`'s `webgpu-pathtracer` branch) is
-> unreleased upstream and pinned to a commit SHA for this demo — expect it to move
-> to a proper release eventually.
+> The WebGPU path tracer is early-stage upstream work in `three-gpu-pathtracer`
+> (main, 0.0.27), pinned to a commit SHA for this demo — expect rough edges.
 
 ### [LDraw Eiffel Tower](https://pmndrs.github.io/denoiser/ldraw-eiffel/)
 A LEGO Eiffel Tower on a table: fast raster preview while you orbit, path-trace +

@@ -1,14 +1,25 @@
 {
     "name": "denoiser",
-    "description": "OIDN denoiser for the web, running fully on WebGPU via onnxruntime-web",
+    "description": "WebGPU denoising for the web: Intel OIDN networks for path-traced frames on interchangeable runtimes (WGSL, WebNN, ONNX Runtime), real-time FidelityFX shadow and reflection denoisers, and three.js TSL nodes",
     "keywords": [
-        "OIDN",
         "denoise",
         "denoiser",
-        "unet",
+        "denoising",
+        "OIDN",
+        "open-image-denoise",
         "webgpu",
+        "wgsl",
+        "webnn",
         "onnx",
-        "onnxruntime"
+        "onnxruntime",
+        "path-tracing",
+        "ray-tracing",
+        "real-time",
+        "temporal",
+        "fidelityfx",
+        "threejs",
+        "tsl",
+        "unet"
     ],
     "version": "2.0.0",
     "author": "Dennis Smolek",
@@ -141,7 +152,7 @@
         "@rollup/plugin-commonjs": "^29.0.3",
         "@rollup/plugin-node-resolve": "^16.0.3",
         "@rollup/plugin-typescript": "^12.3.0",
-        "@types/three": "^0.185.4",
+        "@types/three": "^0.186.0",
         "@typescript-eslint/eslint-plugin": "^8.63.0",
         "@typescript-eslint/parser": "^8.63.0",
         "@webgpu/types": "^0.1.71",
@@ -151,7 +162,7 @@
         "rollup": "^4.62.2",
         "rollup-plugin-copy": "^3.5.0",
         "rollup-plugin-dts": "^6.5.1",
-        "three": "^0.185.0",
+        "three": "^0.186.1",
         "tslib": "^2.8.1",
         "typescript": "^5.9.3"
     }

@@ -1,19 +1,32 @@
 ![title-card-resized](https://github.com/DennisSmolek/Denoiser/assets/1397052/ffe87fd5-00e6-464e-b8a2-ba80402b9d2f)
 
-## AI Denoising that runs in the browser.
+## WebGPU denoising for the web.
 
-#### Based on [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn) and powered by WebGPU (WGSL / WebNN)
+#### Path-traced frames with [Intel OIDN](https://github.com/RenderKit/oidn)'s networks, real-time shadows and reflections with AMD FidelityFX, and three.js nodes, all on one `GPUDevice`
 
-Denoiser runs OIDN's pre-trained U-Nets fully on the GPU, with all
-pre/post-processing (normalization, tiling, overlap blending, color transforms) as
-WGSL compute on the same `GPUDevice`. The default runtime (`AutoRuntime`) uses WebNN
-fp16 for base/large models when WebNN is available and a hand-written WGSL runtime
-otherwise; both read the upstream OIDN `.tza` weights. Images up to ~1080p denoise in
-a single model run — fast enough to denoise progressively while a path tracer
-accumulates. Per-runtime speed and quality are in the
-[runtime guide](docs/site/guides/choosing-a-runtime.mdx); everything is validated on
-Apple GPUs only. [onnxruntime-web](https://onnxruntime.ai/) is an opt-in runtime
-(`denoiser/ort`, optional peer dependency).
+Denoiser is a WebGPU denoising library for the web, in three parts:
+
+1. **Single-image and progressive denoising** of path-traced frames with Intel OIDN's
+   pre-trained networks, matching native OIDN output. The network runs on an
+   interchangeable runtime (hand-written WGSL, WebNN, Hugging Face kernels, or
+   onnxruntime-web); `AutoRuntime` is the default and picks WebNN fp16 for base/large
+   models when available, WGSL otherwise. All pre/post-processing (normalization,
+   tiling, overlap blending, color transforms) is WGSL compute on the same
+   `GPUDevice`. Images up to ~1080p denoise in a single model run, fast enough to
+   denoise progressively while a path tracer accumulates. Per-runtime speed and
+   quality are in the [runtime guide](docs/site/guides/choosing-a-runtime.mdx).
+2. **Real-time temporal denoisers** for raster and hybrid pipelines, behind a
+   `TemporalDenoiser` API: AMD's FidelityFX shadow and reflection denoisers ported
+   to WGSL (`denoiser/ffx`). An OIDN 3 temporal model is planned. See the
+   [real-time guide](docs/site/guides/realtime-temporal-denoising.mdx).
+3. **three.js `WebGPURenderer` / TSL nodes** (`denoise()`, `ffxShadows()`,
+   `ffxReflections()`) that share the renderer's `GPUDevice` and compose with
+   [@pmndrs/upscaler](https://github.com/pmndrs/upscaler) (FSR3). See the
+   [three.js & TSL guide](docs/site/guides/three-and-tsl.mdx).
+
+Everything is validated on Apple GPUs only so far.
+[onnxruntime-web](https://onnxruntime.ai/) is an opt-in runtime (`denoiser/ort`,
+optional peer dependency).
 
 > **v2 note:** the library was rewritten from TensorFlow.js (abandoned) to
 > WebGPU, with a new **stateless per-call API** (clean break).
@@ -59,7 +72,7 @@ const out = await denoiser.denoiseTextures({
   color: tracerGpuTexture,   // float, linear HDR
   albedo, normal,            // optional MRT G-buffer -> guided model auto-selected
   hdr: true,
-  inputFlipY: true,          // render targets are bottom-up
+  // inputFlipY: true,       // only for bottom-up sources (e.g. some WebGL readbacks)
   output: myStorageTexture,  // optional: resolve into a texture three.js samples
 });
 ```
@@ -72,7 +85,7 @@ const out = await denoiser.denoiseTextures({
 
 ### Examples (`/examples`)
 
-- `three-pathtracer-webgpu` — three r185 `WebGPUPathTracer` → denoiser on one
+- `three-pathtracer-webgpu` — three.js `WebGPUPathTracer` → denoiser on one
   shared device: CPU vs zero-copy paths, live progressive denoising, MRT
   G-buffer aux.
 - `bench` — the performance harness (sizes × precision × quality, PSNR parity).

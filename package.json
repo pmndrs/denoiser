@@ -1,7 +1,7 @@
 {
   "name": "denoiser-root",
   "version": "1.0.0",
-  "description": "Open Image Denoise using Tensorflow.js",
+  "description": "Monorepo for denoiser: WebGPU denoising for the web (OIDN networks, FidelityFX real-time denoisers, three.js nodes)",
   "repository": "https://github.com/DennisSmolek/Denoiser.git",
   "author": "Dennis Smolek <dennis@smolek.dev>",
   "license": "MIT",

@@ -39,13 +39,12 @@ jobs:
         run: yarn build:lib
       # Explicit `tsc --noEmit` per workspace that has a tsconfig. Skipped:
       # `packages/denoiser-react` (still on the old v1 API, pending port/drop
-      # per STATUS.md) and `examples/ldraw-eiffel` / `examples/three-pathtracer-webgpu`
-      # (fail to typecheck headlessly against `three/webgpu`'s current .d.ts —
-      # pre-existing, unrelated to this change; re-check on three.js bumps).
+      # per STATUS.md). The two path tracer demos typecheck since three r186 +
+      # three-gpu-pathtracer 0.0.27 (which ships its own .d.ts).
       - name: Typecheck workspaces
         run: |
           set -e
-          for ws in packages/denoiser-core packages/denoiser-ort packages/denoiser-kernels packages/denoiser examples/bench examples/denoiser-package-test examples/webgpu-ort-smoke examples/kernels-smoke; do
+          for ws in packages/denoiser-core packages/denoiser-ort packages/denoiser-kernels packages/denoiser examples/bench examples/denoiser-package-test examples/webgpu-ort-smoke examples/kernels-smoke examples/ldraw-eiffel examples/three-pathtracer-webgpu; do
             echo "::group::tsc --noEmit ($ws)"
             (cd "$ws" && ../../node_modules/.bin/tsc --noEmit -p tsconfig.json)
             echo "::endgroup::"

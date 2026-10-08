@@ -1,5 +1,6 @@
-// Phase 2 — three r185 WebGPUPathTracer + the WebGPU denoiser on ONE shared
-// GPUDevice. ?runtime=auto|ort|wgsl|webnn|kernels (default auto) picks the network runtime; createStack()
+// Phase 2 — three r186 WebGPUPathTracer + the WebGPU denoiser on ONE shared
+// GPUDevice. ?runtime=auto|ort|wgsl|webnn|kernels (default auto; the on-page picker
+// reloads with it) picks the network runtime; createStack()
 // (examples/_shared/stack.ts) orders device creation per runtime: ORT creates the device
 // and three borrows it (onnxruntime issue #26107), the others adopt the renderer's.
 //
@@ -13,16 +14,27 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
 import { GradientEquirectTexture } from 'three-gpu-pathtracer/src/textures/GradientEquirectTexture.js';
 import { vec4 } from 'three/tsl';
-import { createStack, gpuTex } from '../../_shared/stack';
+import { createStack, gpuTex, mountRuntimePicker } from '../../_shared/stack';
+import { accumulateTo, sampleCounter } from '../../_shared/pathtracer';
 import { installGalleryCapture } from '../../_shared/gallery-capture';
 import { ensureWebGPU, demoFooter, pathtracerNote } from '../../_shared/chrome';
 
+/** vite.config.ts `define`: packages/denoiser/models exists locally (dev only). */
+declare const __LOCAL_ONNX_MODELS__: boolean;
+
 const status = document.querySelector<HTMLPreElement>('#status')!;
-const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
+// The rAF loop keeps a trailing `samples: …` line (trimmed, no newline) — start each
+// log entry on its own line so the loop's rewrite of that line can't swallow it.
+const log = (m: string) => {
+  const t = status.textContent ?? '';
+  status.textContent = t + (t && !t.endsWith('\n') ? '\n' : '') + m + '\n';
+  console.log(m);
+};
 
 function buildScene(): { scene: THREE.Scene; camera: THREE.PerspectiveCamera } {
   const scene = new THREE.Scene();
-  // Light via environment (the WebGPU path tracer doesn't support analytic lights yet).
+  // Lit by the environment only (the tracer supports analytic lights now, but an
+  // env-only scene keeps the noise profile the gallery captures were made with).
   // GradientEquirectTexture (from the pathtracer) is configured for compute sampling,
   // unlike a raw DataTexture which trips three's compute sampler codegen.
   const env = new GradientEquirectTexture();
@@ -52,7 +64,7 @@ function buildScene(): { scene: THREE.Scene; camera: THREE.PerspectiveCamera } {
     scene.add(m);
   });
 
-  // No analytic lights — the WebGPU path tracer lights via scene.environment (above).
+  // No analytic lights — lit via scene.environment (above).
   return { scene, camera };
 }
 
@@ -71,19 +83,22 @@ async function main() {
   const headless = appParams.has('headless');
   // FSR mode (?fsr=1) keeps the render/denoise at 512 and FSR1-upscales 2x to a
   // 1024 output — i.e. rendering 25% of the display pixels. (Rendering at a
-  // reduced size instead is blocked upstream: this unreleased WebGPUPathTracer
-  // branch wedges on setSize/renderScale and hangs renderSample at non-512
-  // sizes, so the tracer must stay at its initial resolution.)
+  // reduced size via the tracer's renderScale/setSize would also work now, but
+  // this demo keeps every target at 512 so the zero-copy paths stay size-matched.)
   const fsrMode = new URLSearchParams(location.search).has('fsr');
   const RES = 512;
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-  // Dev serves converted models (+ split-graph artifacts) from /models (vite middleware);
-  // prod omits the override so the denoiser falls back to its shipped CDN default (models-v2).
+  // Dev serves converted models (+ split-graph artifacts) from /models (vite middleware) when
+  // packages/denoiser/models exists locally; otherwise (and in prod) the override is omitted
+  // so the denoiser falls back to its shipped CDN default (models-v2).
+  // Runtime picker first, so a runtime that fails to initialize can still be switched away from.
+  const picker = mountRuntimePicker(document.querySelector<HTMLElement>('#runtimePicker'));
   const { renderer, denoiser, device } = await createStack({
     renderer: { canvas, antialias: true },
-    weightsUrl: import.meta.env.DEV ? '/models' : undefined,
+    weightsUrl: import.meta.env.DEV && __LOCAL_ONNX_MODELS__ ? '/models' : undefined,
     splitAux,
-  });
+  }).catch((e) => { picker.failed((e as Error).message); throw e; });
+  picker.attach(denoiser);
   log(`denoiser ready (${denoiser.runtime.name}, splitAux: ${splitAux}); sharing GPUDevice with three.js: ${device ? 'yes' : 'no'}`);
   device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
   device.addEventListener('uncapturederror', (e) =>
@@ -92,16 +107,15 @@ async function main() {
 
   const { scene, camera } = buildScene();
 
-  // 3) WebGPU path tracer.
-  // useMegakernel() (re)creates the internal tracer AND wires the material into it
-  // (the constructor's default tracer has no material -> "bsdfSample of null").
+  // 3) WebGPU path tracer (three-gpu-pathtracer 0.0.27+, default wavefront backend).
   const pathTracer = new WebGPUPathTracer(renderer);
-  pathTracer.useMegakernel(true);
   // Show the full-res noisy frame immediately (skip the low-res/fade transition) so a
   // low sample count is actually noisy — that's the point of the denoise pass.
   pathTracer.dynamicLowRes = false;
   pathTracer.renderDelay = 0;
   pathTracer.setScene(scene, camera);
+  // Per-pixel sample count (async GPU measurement, polled once per frame).
+  const samples = sampleCounter(pathTracer);
   log('path tracer initialized; accumulating samples...');
 
   // Orbit the camera and watch the denoiser keep up — camera changes reset the
@@ -122,15 +136,19 @@ async function main() {
   // hundreds of samples otherwise). Editable live; changing it restarts accumulation.
   const maxSamplesInput = document.querySelector<HTMLInputElement>('#maxSamples')!;
   const maxSamples = () => Math.max(1, parseInt(maxSamplesInput.value, 10) || 6);
-  maxSamplesInput.addEventListener('change', () => { pathTracer.reset(); onAccumulationRestart(); });
+  // The tracer caps accumulation itself: every pixel stops at exactly maxSamples.
+  pathTracer.maxSamples = maxSamples();
+  maxSamplesInput.addEventListener('change', () => {
+    pathTracer.maxSamples = maxSamples();
+    pathTracer.reset();
+    onAccumulationRestart();
+  });
 
-  // The path tracer's live GPUTexture (float, linear HDR). Fetched fresh each use —
-  // the tracer can replace its output target on reset/resize.
-  const getTracerTexture = (): GPUTexture | undefined => {
-    const target = pathTracer._pathTracer.outputTarget;
-    const threeTexture = target.isTexture ? target : target.textures?.[0];
-    return gpuTex(renderer, threeTexture);
-  };
+  // The path tracer's live GPUTexture (rgba32float StorageTexture, linear HDR).
+  // Fetched fresh each use — the tracer ping-pongs two output targets per sample
+  // and replaces them on resize.
+  const getTracerTexture = (): GPUTexture | undefined =>
+    pathTracer.target ? gpuTex(renderer, pathTracer.target) : undefined;
 
   // Progressive live denoise: the denoiser resolves straight into a three-owned
   // StorageTexture (caller-owned render target — no engine copy, no readback),
@@ -198,6 +216,7 @@ async function main() {
   let lastRestart = 0;
   function onAccumulationRestart() {
     lastRestart = performance.now();
+    samples.reset();
     denoiser.abort(); // in-flight result is for the old view — drop it
     overlayCanvas.style.opacity = '0';
   }
@@ -242,16 +261,20 @@ async function main() {
   const fsrCheckbox = document.querySelector<HTMLInputElement>('#fsr')!;
   fsrCheckbox.checked = fsrMode;
   fsrCheckbox.addEventListener('change', () => {
-    location.search = fsrCheckbox.checked ? '?fsr=1' : '';
+    const url = new URL(location.href); // keep ?runtime= etc.
+    if (fsrCheckbox.checked) url.searchParams.set('fsr', '1');
+    else url.searchParams.delete('fsr');
+    location.href = url.toString();
   });
   let renderFsr: (() => void) | undefined;
   if (fsrMode) {
     const OUT = 1024;
     const fsrNode = fsr1(texture(denoisedTex), 0.2);
     // FSR1Node auto-sizes its output to the renderer's drawing buffer (256 here);
-    // pin it to the display resolution instead.
-    const origSetSize = fsrNode.setSize.bind(fsrNode);
-    fsrNode.setSize = () => origSetSize(OUT, OUT);
+    // pin it to the display resolution instead. (setSize is untyped in @types/three.)
+    const sized = fsrNode as unknown as { setSize(w: number, h: number): void };
+    const origSetSize = sized.setSize.bind(fsrNode);
+    sized.setSize = () => origSetSize(OUT, OUT);
     const fsrTarget = new THREE.RenderTarget(OUT, OUT, { depthBuffer: false }); // rgba8unorm
     const fsrQuad = new THREE.QuadMesh(new THREE.NodeMaterial());
     (fsrQuad.material as THREE.NodeMaterial).fragmentNode = fsrNode; // raw write, no transforms
@@ -281,13 +304,13 @@ async function main() {
       if (!albedo || !normal) throw new Error('aux: G-buffer textures unavailable');
     }
     // stateless per-call config (v2): linear-HDR tracer input, display-encoded
-    // (ACES+sRGB) output, top-down (the tracer target is bottom-up, the raster
-    // G-buffer already top-down).
+    // (ACES+sRGB) output, top-down (the tracer's compute target and the raster
+    // G-buffer are both top-down — no flips; the pre-0.0.27 tracer was bottom-up).
     const outTex = await denoiser.denoiseTextures({
       color: tracerTex,
       albedo, normal,
       hdr: true,
-      inputFlipY: true,
+      inputFlipY: false,
       auxInputFlipY: false,
       transfer: 'aces-srgb',
       // FSR mode resolves into the three-owned texture feeding the fsr1() node;
@@ -300,7 +323,7 @@ async function main() {
     overlayCanvas.style.opacity = '1'; // fresh result for the current view
   }
 
-  (window as unknown as Record<string, unknown>).__app = { pathTracer, renderer, denoiser, scene, camera, gbuffer, backendGet, renderGBuffer };
+  (window as unknown as Record<string, unknown>).__app = { pathTracer, renderer, denoiser, scene, camera, gbuffer, backendGet, renderGBuffer, samples, picker };
 
   // Native-OIDN reference harness: dump the exact float inputs to ./dumps via the
   // dev server, for tools/oidn-native-compare (raw GPU reads, no conversions).
@@ -331,7 +354,7 @@ async function main() {
     const tracerTex = getTracerTexture()!;
     if (!denoisedGpuTex) throw new Error('denoised RT unavailable');
     const common = {
-      color: tracerTex, hdr: true, inputFlipY: true, auxInputFlipY: false,
+      color: tracerTex, hdr: true, inputFlipY: false, auxInputFlipY: false,
       transfer: 'linear' as const, output: denoisedGpuTex,
     };
     await denoiser.denoiseTextures(common); // color-only (hdr model)
@@ -347,21 +370,23 @@ async function main() {
 
   const loop = () => {
     if ((window as unknown as Record<string, unknown>).__capturing) { requestAnimationFrame(loop); return; }
-    const s = Math.floor(pathTracer.samples ?? 0);
-    if (s < maxSamples()) pathTracer.renderSample();
+    // renderSample() accumulates (until pathTracer.maxSamples) and presents the raw image.
+    pathTracer.renderSample();
+    samples.poll();
+    const s = samples.value;
     const settled = performance.now() - lastRestart > settleMs();
     if (liveCheckbox.checked && !denoisingBusy && s !== lastDenoisedSample && settled && s > 0) {
       denoisingBusy = true;
       const t0 = performance.now();
       runLiveDenoise()
-        .then(() => { liveMs = performance.now() - t0; lastDenoisedSample = s; })
+        .then(() => { liveMs = performance.now() - t0; lastDenoisedSample = s; picker.denoised(liveMs); })
         .catch((e) => { log('live denoise ERROR: ' + (e as Error).message); liveCheckbox.checked = false; })
         .finally(() => { denoisingBusy = false; });
     }
     // presentation happens inside runLiveDenoise (blit / FSR onto the overlay);
     // the main canvas always shows the raw accumulation for the compare slider.
-    status.textContent = status.textContent!.replace(/samples:.*$/m, '').trimEnd() +
-      `\nsamples: ${s} / ${maxSamples()}` +
+    status.textContent = status.textContent!.replace(/\n?samples:.*$/m, '').trimEnd() +
+      `\nsamples: ${s} / ${maxSamples()} | runtime: ${picker.label()}` +
       (liveCheckbox.checked && liveMs ? ` | live denoise: ${liveMs.toFixed(1)} ms` : '');
     requestAnimationFrame(loop);
   };
@@ -373,14 +398,15 @@ async function main() {
   const outCanvas = document.querySelector<HTMLCanvasElement>('#out')!;
   btn.disabled = false;
   btn.addEventListener('click', async () => {
-    log(`denoising (CPU path) at ${Math.floor(pathTracer.samples ?? 0)} samples...`);
+    log(`denoising (CPU path) at ${samples.value} samples...`);
     // Read the path tracer's linear-HDR float output target (drawImage on a WebGPU
     // canvas yields black), then tonemap (ACES) + sRGB-encode to match the display.
-    const target = pathTracer._pathTracer.outputTarget;
+    const target = pathTracer.target;
+    if (!target) return;
     const w = target.width as number;
     const h = target.height as number;
     const t0 = performance.now();
-    const stub = { textures: [target] };
+    const stub = { textures: [target] } as unknown as THREE.RenderTarget;
     const linear = (await renderer.readRenderTargetPixelsAsync(stub, 0, 0, w, h)) as Float32Array;
 
     const rgba = new Uint8ClampedArray(w * h * 4);
@@ -397,14 +423,16 @@ async function main() {
     }
     const img = new ImageData(rgba, w, h);
 
-    // tonemapped+sRGB LDR bytes -> the ldr model; flip because the readback
-    // rows arrive bottom-up
-    const result = await denoiser.denoise(img, { flipY: true });
+    // tonemapped+sRGB LDR bytes -> the ldr model (the readback rows are
+    // already top-down: the tracer writes its target from a compute kernel)
+    const result = await denoiser.denoise(img, { flipY: false });
     if (result) {
       outCanvas.width = w; outCanvas.height = h;
       outCanvas.getContext('2d')!.putImageData(result, 0, 0);
     }
-    log(`CPU path: denoised in ${(performance.now() - t0).toFixed(1)} ms (${w}×${h}, incl. readback+tonemap)`);
+    const ms = performance.now() - t0;
+    picker.denoised(ms);
+    log(`CPU path: denoised in ${ms.toFixed(1)} ms (${w}×${h}, incl. readback+tonemap; ${picker.label()})`);
   });
 
   // 5) Zero-copy GPU path (one-shot): hand the path tracer's float StorageTexture
@@ -413,7 +441,7 @@ async function main() {
   const btnGpu = document.querySelector<HTMLButtonElement>('#denoiseGpu')!;
   btnGpu.disabled = false;
   btnGpu.addEventListener('click', async () => {
-    log(`denoising (zero-copy GPU path) at ${Math.floor(pathTracer.samples ?? 0)} samples...`);
+    log(`denoising (zero-copy GPU path) at ${samples.value} samples...`);
     const gpuTexture = getTracerTexture();
     if (!gpuTexture) { log('ERROR: could not resolve the render target’s GPUTexture'); return; }
 
@@ -421,12 +449,14 @@ async function main() {
     const outTex = await denoiser.denoiseTextures({
       color: gpuTexture,
       hdr: true, // real linear-HDR floats -> hdr model
-      inputFlipY: true, // WebGPU render targets read bottom-up
+      inputFlipY: false, // the tracer's compute target is top-down
       transfer: 'aces-srgb', // display-ready
     });
     if (!outTex) return;
     blitToOverlay(outTex);
-    log(`GPU path: denoised in ${(performance.now() - t0).toFixed(1)} ms (${outTex.width}×${outTex.height}, zero-copy)`);
+    const ms = performance.now() - t0;
+    picker.denoised(ms);
+    log(`GPU path: denoised in ${ms.toFixed(1)} ms (${outTex.width}×${outTex.height}, zero-copy; ${picker.label()})`);
   });
 
   // 6) Deterministic headless capture for the split-vs-baseline aux comparison.
@@ -448,15 +478,24 @@ async function main() {
   (window as unknown as Record<string, unknown>).__captureAux = async (targetSamples?: number) => {
     const target = targetSamples ?? maxSamples();
     auxCheckbox.checked = true;
-    let guard = 0;
-    while (Math.floor(pathTracer.samples ?? 0) < target && guard++ < 3000) pathTracer.renderSample();
+    const w0 = window as unknown as Record<string, unknown>;
+    w0.__capturing = true; // pause the rAF loop while we accumulate
+    try {
+      return await captureAuxPaused(target);
+    } finally {
+      pathTracer.maxSamples = maxSamples();
+      w0.__capturing = false;
+    }
+  };
+  async function captureAuxPaused(target: number) {
+    const reached = await accumulateTo(pathTracer, device, target);
     renderGBuffer();
     const color = getTracerTexture();
     const albedo = backendGet(gbuffer.textures[0]);
     const normal = backendGet(gbuffer.textures[1]);
     if (!color || !albedo || !normal) throw new Error('capture: textures unavailable');
     const outTex = await denoiser.denoiseTextures({
-      color, albedo, normal, hdr: true, inputFlipY: true, auxInputFlipY: false, transfer: 'aces-srgb',
+      color, albedo, normal, hdr: true, inputFlipY: false, auxInputFlipY: false, transfer: 'aces-srgb',
     });
     if (!outTex) throw new Error('capture: denoise returned nothing');
     const w = outTex.width, h = outTex.height, rowBytes = w * 4;
@@ -481,11 +520,11 @@ async function main() {
       }
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     cv.getContext('2d')!.putImageData(new ImageData(bytes, w, h), 0, 0);
-    const result = { splitAux, samples: Math.floor(pathTracer.samples ?? 0), w, h, noise: acc / n, dataUrl: cv.toDataURL('image/png') };
+    const result = { splitAux, runtime: picker.label(), samples: reached, w, h, noise: acc / n, dataUrl: cv.toDataURL('image/png') };
     (window as unknown as Record<string, unknown>).__capture = result;
     log(`capture: splitAux=${splitAux} samples=${result.samples} noise=${result.noise.toFixed(2)}`);
     return result;
-  };
+  }
 }
 
 demoFooter('three-pathtracer-webgpu');

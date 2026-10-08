@@ -26,6 +26,8 @@
       Drag to orbit — path tracing and the denoiser kick in automatically once the camera
       comes to rest.
     </p>
+    <!-- denoiser runtime picker (examples/_shared/chrome.ts runtimePicker; reloads with ?runtime=) -->
+    <div id="runtimePicker"></div>
     <label>max samples <input id="maxSamples" type="number" value="32" min="1" max="500" style="width:5rem"></label>
     <label>quality <select id="quality"><option value="fast">fast (small)</option><option value="balanced" selected>balanced</option></select></label>
     <label><input id="aux" type="checkbox" checked> G-buffer aux (albedo+normal)</label>
@@ -50,7 +52,7 @@
     </p>
     <p style="max-width: 60ch; color: #a0aec0;">
       The <em>view</em> selector shows the denoiser's inputs exactly as the network sees them
-      (color with its flip applied; normals mapped [-1,1]&nbsp;→&nbsp;display). Append
+      (color and aux as-is, both top-down; normals mapped [-1,1]&nbsp;→&nbsp;display). Append
       <code>?inspector</code> to the URL for the three.js Inspector (render targets, params, profiler).
     </p>
     <pre id="status"></pre>

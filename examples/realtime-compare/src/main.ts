@@ -1,11 +1,11 @@
 // realtime-compare (Phase B2 demo #7): honest positioning of our OIDN full-frame
-// denoiser vs three.js r185's temporal screen-space `recurrentDenoise()`.
+// denoiser vs three.js's temporal screen-space `recurrentDenoise()`.
 //
 // The fair fight (per docs/status/phase-b-plan.md #7): recurrentDenoise() is a
 // SCREEN-SPACE-EFFECT denoiser, not a beauty-pass denoiser. So we build a noisy
 // stochastic-SSR effect and denoise it BOTH ways on ONE shared GPUDevice:
 //   LEFT  — SSRNode -> temporalReproject -> recurrentDenoise (mode:'specular'),
-//           the canonical r185 pipeline (webgpu_postprocessing_ssr_denoise.html).
+//           the canonical three.js pipeline (webgpu_postprocessing_ssr_denoise.html).
 //           Temporal, runs every frame, tracks motion, needs history.
 //   RIGHT — the SAME raw noisy SSR composited into the beauty frame, then the
 //           WHOLE frame denoised by our OIDN network (`denoiseTextures`, hdr,
@@ -161,7 +161,7 @@ async function main() {
   controls.autoRotateSpeed = 1.6;
   controls.update();
 
-  // 3) Canonical r185 SSR-denoise graph (webgpu_postprocessing_ssr_denoise.html).
+  // 3) Canonical three.js SSR-denoise graph (webgpu_postprocessing_ssr_denoise.html).
   const scenePass = pass(scene, camera);
   scenePass.setMRT(mrt({
     output,

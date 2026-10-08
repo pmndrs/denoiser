@@ -49,7 +49,7 @@ export interface DenoiseTexturesOptions {
   hdr?: boolean;
   /** Manual HDR input scale (overrides autoexposure). */
   inputScale?: number;
-  /** Color texture rows are bottom-up (WebGPU render targets) — flip reads. */
+  /** Color texture rows are bottom-up (e.g. older three-gpu-pathtracer output) — flip reads. Default false. */
   inputFlipY?: boolean;
   /** Aux flip when their vertical convention differs from color. Default: inputFlipY. */
   auxInputFlipY?: boolean;

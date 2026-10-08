@@ -103,9 +103,9 @@ fn show(c: vec4f) -> vec3f {
 }
 
 @fragment fn fs(@builtin(position) fc: vec4f) -> @location(0) vec4f {
-  let pw = v.canvas.x / 3.0;
-  let panel = min(u32(fc.x / pw), 2u);
-  let lx = (fc.x - f32(panel) * pw) / pw;
+  // one canvas per panel (HTML labels sit below each); v._p.y = panel index 0..2
+  let panel = min(u32(v._p.y), 2u);
+  let lx = fc.x / v.canvas.x;
   let ly = fc.y / v.canvas.y;
   let p = vec2u(vec2f(lx, ly) * v.tex);
   var c: vec4f;
@@ -117,8 +117,6 @@ fn show(c: vec4f) -> vec3f {
   if (panel == 0u) { c = textureLoad(t0, p, 0); }
   else if (panel == 1u) { c = textureLoad(t1, p, 0); }
   else { c = textureLoad(t2, p, 0); }
-  // thin separators
-  if (abs(fc.x - pw) < 1.0 || abs(fc.x - 2.0 * pw) < 1.0) { return vec4f(1.0, 0.8, 0.2, 1.0); }
   return vec4f(show(c), 1.0);
 }
 `;

@@ -1,5 +1,5 @@
 // A port of three.js's official example webgpu_postprocessing_ssr_denoise.html
-// (r185) with the FidelityFX reflection denoiser swapped in, side by side:
+// (r186) with the FidelityFX reflection denoiser swapped in, side by side:
 //
 //   left  (A)  three's own   ssr -> temporalReproject -> recurrentDenoise   (unchanged from the example)
 //   right (B)  denoiser/three  ssr -> ffxReflections(radiance = ssr.rgb, hitDistance = ssr.a)
@@ -10,7 +10,7 @@
 //   - no TRAA / sharpen at the end (they'd hide the denoisers' own difference);
 //   - no Inspector GUI (a handful of HTML controls instead);
 //   - fixed 960x540 canvas;
-//   - assets are loaded from raw.githubusercontent.com at the r185 tag (the GLB
+//   - assets are loaded from raw.githubusercontent.com at the r186 tag (the GLB
 //     is >20MB-class for jsDelivr's CDN limits and 403s there).
 import * as THREE from 'three/webgpu';
 import {
@@ -29,7 +29,7 @@ import { ffxReflections, getGPUTexture } from 'denoiser/three';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for this much shader plumbing
 
-const ASSETS = 'https://raw.githubusercontent.com/mrdoob/three.js/r185/examples/';
+const ASSETS = 'https://raw.githubusercontent.com/mrdoob/three.js/r186/examples/';
 const W = 960, H = 540;
 const q = new URLSearchParams(location.search);
 const manual = q.has('manual');
@@ -83,7 +83,7 @@ async function main() {
   });
   device.lost.then((i) => log(`DEVICE LOST: ${i.reason} ${i.message}`));
 
-  log('loading dungeon_warkarma.glb + quarry_01_1k.hdr from raw.githubusercontent.com (r185) ...');
+  log('loading dungeon_warkarma.glb + quarry_01_1k.hdr from raw.githubusercontent.com (r186) ...');
   const [gltf, hdrTexture] = await Promise.all([
     new GLTFLoader().loadAsync(ASSETS + 'models/gltf/dungeon_warkarma.glb'),
     new HDRLoader().loadAsync(ASSETS + 'textures/equirectangular/quarry_01_1k.hdr'),
