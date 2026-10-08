@@ -129,12 +129,14 @@ async function main() {
     device.queue.submit([enc.finish()]);
     return cam;
   };
-  const step = (frame: number, withRef: boolean, forceReset = false) => {
+  // `seed` = noise seed; defaults to `frame` (view mode passes a free-running counter so the
+  // 1-spp signal keeps re-rolling while the camera is paused)
+  const step = (frame: number, withRef: boolean, forceReset = false, seed = frame) => {
     // view mode: slowed path (jump cut at VIEW_CUT displayed frames); other modes: scripted frame == path frame
     const view = mode === 'view';
     const pf = view ? viewPathFrame(frame) : frame;
     const prev = view ? (frame === 0 || frame === VIEW_CUT ? pf : viewPathFrame(frame - 1)) : Math.max(frame - 1, 0);
-    const cam = renderScene(frame, withRef, pf, view && paused ? pf : prev);
+    const cam = renderScene(seed, withRef, pf, view && paused ? pf : prev);
     if (frame === 0 || frame === (view ? VIEW_CUT : CUT) || NO_HISTORY || forceReset) denoiser.resetHistory();
     return denoiser.dispatch(inputs as never, guides, cam);
   };
@@ -291,6 +293,7 @@ async function main() {
     out.ready = true;
   } else {
     let f = 0;
+    let seed = 0; // noise seed, advances every displayed frame (also while paused)
     const pauseBtn = document.querySelector<HTMLButtonElement>('#pause');
     const cutBtn = document.querySelector<HTMLButtonElement>('#cut');
     const hint = document.querySelector<HTMLElement>('#pathinfo');
@@ -308,7 +311,7 @@ async function main() {
       // manual cut: jump to the other path; history is reset (the stochastic signal keeps updating while paused)
       const jumped = pendingJump >= 0;
       if (jumped) { f = pendingJump; pendingJump = -1; }
-      const den = step(f, true, jumped);
+      const den = step(f, true, jumped, seed++);
       show(den);
       out.frame = f;
       if (hint) hint.textContent = `path ${f < VIEW_CUT ? 1 : 2}/2 - frame ${f % VIEW_CUT + 1}/${VIEW_CUT}${paused ? ' - camera paused' : ''}`;
