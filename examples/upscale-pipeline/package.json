@@ -10,7 +10,7 @@
     "preview": "vite preview --port 5184"
   },
   "dependencies": {
-    "@pmndrs/upscaler": "0.1.0",
+    "@pmndrs/upscaler": "0.5.0",
     "denoiser": "workspace:*",
     "three": "^0.185.0"
   },

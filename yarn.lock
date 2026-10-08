@@ -428,12 +428,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@pmndrs/upscaler@npm:0.1.0":
-  version: 0.1.0
-  resolution: "@pmndrs/upscaler@npm:0.1.0"
+"@pmndrs/upscaler@npm:0.5.0":
+  version: 0.5.0
+  resolution: "@pmndrs/upscaler@npm:0.5.0"
   peerDependencies:
     three: ">=0.184.0"
-  checksum: 10c0/cadd2721978c068bb5355931d2bc27047005df63e59462ab0502b0ec37b18d2510a194e9b81cc39b9999e8a39b36c97fd7932e8ee31d755f9e498391a20cb388
+  checksum: 10c0/52ab10975454c1e64d6ac413b0613421572c36cc8ed648d4acaaa3cbdc331751e1085efc5452d82f83881c5fd760a448147c7cb1f619bd9639781f18abbb84b8
   languageName: node
   linkType: hard
 
@@ -3399,7 +3399,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "three-temporal@workspace:examples/three-temporal"
   dependencies:
-    "@pmndrs/upscaler": "npm:0.1.0"
+    "@pmndrs/upscaler": "npm:0.5.0"
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
     three: "npm:^0.185.0"
@@ -3522,7 +3522,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "upscale-pipeline@workspace:examples/upscale-pipeline"
   dependencies:
-    "@pmndrs/upscaler": "npm:0.1.0"
+    "@pmndrs/upscaler": "npm:0.5.0"
     denoiser: "workspace:*"
     onnxruntime-web: "npm:^1.27.0"
     three: "npm:^0.185.0"

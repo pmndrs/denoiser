@@ -189,11 +189,16 @@ jitter from `@pmndrs/upscaler` (FSR3) is stripped before reprojection, and you p
 the matching `resolutionScale`. The shadows demo builds exactly this chain: scene
 pass at half resolution, denoise, composite, `upscale(...)`.
 
-> [!WARNING]
-> **Known issue.** With FSR3 jitter enabled, the temporal denoisers currently show much
-> higher residual flicker than without jitter. This is an open issue and is being
-> investigated. If you need a stable result today, run the denoisers without the
-> upscaler's jitter. No measured numbers for this case are published yet.
+> [!NOTE]
+> **Use `@pmndrs/upscaler` 0.5.0 or newer.** The residual flicker seen with FSR3 jitter
+> came from the upscaler, not the denoisers: in the shadows demo (still camera,
+> ratio 2) a perfect, noise-free shadow flickered as much as the FFX-denoised one.
+> 0.5.0 (still-scene convergence fixes) cut the jittered flicker in the shadow region
+> from 0.0132 to 0.0047, level with the perfect shadow (0.0051). The remaining
+> whole-frame shimmer is the upscaler's auto-exposure following the jittered input;
+> a fix (a 1/16-stop adaptation dead-band) is pending in the upscaler repo. The
+> demo's `__t.diag()` / `__t.fsrAblation()` / `__t.fsrHeatmap()` hooks reproduce
+> these measurements.
 
 ## Examples
 
