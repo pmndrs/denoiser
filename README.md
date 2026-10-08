@@ -72,7 +72,7 @@ const out = await denoiser.denoiseTextures({
   color: tracerGpuTexture,   // float, linear HDR
   albedo, normal,            // optional MRT G-buffer -> guided model auto-selected
   hdr: true,
-  inputFlipY: true,          // render targets are bottom-up
+  // inputFlipY: true,       // only for bottom-up sources (e.g. some WebGL readbacks)
   output: myStorageTexture,  // optional: resolve into a texture three.js samples
 });
 ```

@@ -14,7 +14,7 @@ export default defineConfig({
   // serves examples under /denoiser/<name>/).
   base: './',
   server: { fs: { allow: ['../..'] } },
-  // three r185+ / pathtracer source use top-level await -> need an esnext target
+  // three / pathtracer source use top-level await -> need an esnext target
   esbuild: { target: 'esnext' },
   // Dev serves the converted ONNX models from packages/denoiser/models when they
   // exist locally (gitignored, produced by tools/onnx-convert); otherwise the ORT

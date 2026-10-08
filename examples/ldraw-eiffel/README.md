@@ -67,10 +67,9 @@ viewer, node parameters, profiler — `renderer.inspector = new Inspector()`.
 
 ## Notes / upstream quirks
 
-- The tracer stays at 512×512: the unreleased WebGPUPathTracer branch wedges on
-  `setSize`/`renderScale` (same constraint as the other example).
-- Transmission/refraction isn't implemented in the WebGPU tracer yet, so the
-  gel cube uses `transparent` + `opacity` (stochastic alpha) for the traced
-  look and `transmission` for the raster preview.
+- The tracer stays at 512×512: the earlier WebGPUPathTracer branch wedged on
+  `setSize`/`renderScale` (not re-tested on 0.0.27).
+- The gel cube sets both `transparent` + `opacity` and `transmission`; the
+  current tracer (0.0.27) traces `transmission`, so it renders as refractive glass.
 - The LDraw model is merged into a single multi-group mesh
   (`LDrawUtils.mergeObject`) — one BVH build instead of one per brick.

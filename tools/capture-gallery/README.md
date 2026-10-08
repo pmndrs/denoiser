@@ -49,7 +49,7 @@ The page is loaded with `?headless=1` so the examples skip the compare-overlay
 
 ### Known risk: nondeterministic init hang
 
-The upstream WebGPU pathtracer branch sometimes wedges during headless init. The
+The earlier upstream WebGPU pathtracer branch sometimes wedged during headless init (not seen on 0.0.27, but the retries stay). The
 tool retries each scene up to `--attempts` times, killing Chrome + the dev server
 and relaunching between tries, with a hard per-attempt timeout. If a scene still
 never initializes, use the headed fallback.

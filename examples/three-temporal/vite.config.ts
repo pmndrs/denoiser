@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 // not recognised by the other (same rule as upscale-pipeline).
 export default defineConfig({
   base: './',
-  esbuild: { target: 'esnext' }, // three r185 / TSL use top-level await
+  esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: {
     target: 'esnext',
     // two pages: the SSR comparison (index) and the shadows + SSR scene

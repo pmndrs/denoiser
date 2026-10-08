@@ -115,7 +115,7 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 
 | Use case | Works? | Example today | Gap |
 |---|---|---|---|
-| three.js WebGPU path tracing (progressive) | ✅ flagship; zero-copy, shared device | `three-pathtracer-webgpu`, `ldraw-eiffel` | pathtracer dep is an unreleased branch (SHA-pinned) |
+| three.js WebGPU path tracing (progressive) | ✅ flagship; zero-copy, shared device | `three-pathtracer-webgpu`, `ldraw-eiffel` | pathtracer dep is early-stage upstream main (SHA-pinned, 0.0.27) |
 | Real-time shadows / reflections in a raster or hybrid renderer | ✅ `denoiser/ffx` (raw WebGPU) | `examples/ffx-denoiser` | TSL node wrappers in progress; no comparison against three's `recurrentDenoise()` yet |
 | Denoise a static render (image/canvas → image) | ✅ simplest API path | Phase B hello-world / gallery | — |
 | In-pipeline for ANY WebGPU renderer (Babylon, wgpu/WASM, custom) | ✅ engine-agnostic | raw-WebGPU demo | — |

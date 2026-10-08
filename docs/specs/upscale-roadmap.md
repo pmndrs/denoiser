@@ -33,8 +33,8 @@ Notes / constraints hit:
 - `FSR1Node` auto-sizes output to the renderer's drawing buffer; we pin it via
   a `setSize` override and render its node through a `QuadMesh` into an
   rgba8unorm target, then copy to a WebGPU canvas.
-- The unreleased WebGPUPathTracer branch **cannot change resolution after
-  init** (`setSize`/`renderScale` → permanent reset loop; `renderSample` at
+- The earlier WebGPUPathTracer branch **could not change resolution after
+  init** (not re-tested on 0.0.27) (`setSize`/`renderScale` → permanent reset loop; `renderSample` at
   non-initial sizes hangs the GPU hard enough to starve other tabs). So today
   the demo upscales 512→1024 instead of rendering at 256. When the tracer
   branch fixes resizing (or on scenes we control), the same pipeline renders at

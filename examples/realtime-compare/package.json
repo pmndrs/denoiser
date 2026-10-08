@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Honest positioning demo: a noisy screen-space SSR effect denoised two ways — three.js r185 recurrentDenoise() (temporal, every frame) vs our OIDN-class full-frame denoiser (cadence-based), side by side on one shared GPUDevice.",
+  "description": "Honest positioning demo: a noisy screen-space SSR effect denoised two ways — three.js recurrentDenoise() (temporal, every frame) vs our OIDN-class full-frame denoiser (cadence-based), side by side on one shared GPUDevice.",
   "scripts": {
     "dev": "vite --port 5182",
     "build": "vite build",

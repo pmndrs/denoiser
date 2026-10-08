@@ -111,9 +111,9 @@ the rest locked behind hardware matrix units until WebGPU subgroup-matrix).
 - [x] `homepage`/`bugs` → `github.com/pmndrs/denoiser` in both packages.
 - [x] Git-LFS verified on the org repo (tzas served as real content). CI
       runners will still need `git-lfs` installed.
-- [ ] The `webgpu-pathtracer` dependency is a **git branch**
-      (`github:gkjohnson/three-gpu-pathtracer#webgpu-pathtracer`) — pin to a
-      commit SHA before org CI depends on it, and watch for its npm release.
+- [x] The pathtracer dependency is pinned to a commit SHA on upstream main
+      (`three-gpu-pathtracer` 0.0.27, afc7db6); watch for an npm release that
+      ships `WebGPUPathTracer`.
 - [x] CI: `.github/workflows/ci.yml` — build + per-workspace `tsc --noEmit`
       (node job) and converter `verify_parity.py` (CPU, LFS checkout).
       Hardened 2026-07-10; watch the first run for LFS/immutable behavior.

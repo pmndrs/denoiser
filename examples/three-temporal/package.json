@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "three.js r185 + TSL: stochastic area-light shadows and glossy SSR denoised in real time by the FidelityFX temporal denoisers (denoiser/three nodes), optionally upscaled by FSR3.",
+  "description": "three.js r186 + TSL: stochastic area-light shadows and glossy SSR denoised in real time by the FidelityFX temporal denoisers (denoiser/three nodes), optionally upscaled by FSR3.",
   "scripts": {
     "dev": "vite --port 5220 --strictPort --host 127.0.0.1",
     "build": "vite build",

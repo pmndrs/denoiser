@@ -8,7 +8,7 @@ import { serveTzas } from '../_shared/vite-tzas';
 // three/webgpu, the same single-instance rule the pathtracer example documents.
 export default defineConfig({
   base: './',
-  esbuild: { target: 'esnext' }, // three r185 / TSL use top-level await
+  esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: { target: 'esnext' },
   resolve: {
     dedupe: ['three'],

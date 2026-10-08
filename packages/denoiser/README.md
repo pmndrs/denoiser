@@ -91,7 +91,7 @@ const result = await denoiser.denoiseTextures({
   color: tracerGpuTexture,     // float, linear HDR
   albedo, normal,              // optional aux planes -> guided model auto-selected
   hdr: true,                   // OIDN PU transfer + autoexposure applied
-  inputFlipY: true,            // render targets are bottom-up
+  // inputFlipY: true,         // only for bottom-up sources (the tracer's output is top-down)
   output: threeStorageGpuTexture, // optional caller-owned target
   transfer: 'linear',          // or 'srgb' | 'aces-srgb' (display-ready)
 });

@@ -97,7 +97,7 @@ Two caveats, both learned the hard way:
 |---|---|
 | format | float texture (`rgba16float` / `rgba32float`), **linear** values |
 | LDR vs HDR | LDR: values in [0,1], omit `hdr`. HDR: pass `hdr: true` — OIDN's PU transfer + autoexposure are applied around the model (or pin exposure with `inputScale`) |
-| orientation | compute-written targets (path tracer `StorageTexture` output) are **bottom-up** → `inputFlipY: true`. Rasterized targets (an MRT G-buffer pass) are top-down → `auxInputFlipY: false`. If a result is upside down, toggle these first |
+| orientation | three-gpu-pathtracer's `WebGPUPathTracer` output (0.0.27+) and rasterized targets (an MRT G-buffer pass) are both top-down, so the defaults (`inputFlipY` / `auxInputFlipY` false) apply. Older tracer builds and some compute-written targets are **bottom-up** → `inputFlipY: true`. If a result is upside down, toggle these first |
 | size | anything; up to `maxRunPixels` (default 1080p-ish) runs whole-frame in one model pass, larger tiles automatically |
 
 ### Optional but strongly recommended: aux G-buffer (albedo + normal)
@@ -132,8 +132,8 @@ const outTex = await denoiser.denoiseTextures({
   color: colorTex,        // GPUTexture, float, linear
   albedo, normal,         // optional GPUTextures -> guided model
   hdr: true,              // linear-HDR input (path tracer output)
-  inputFlipY: true,       // tracer target is bottom-up
-  auxInputFlipY: false,   // raster G-buffer is already top-down
+  // inputFlipY / auxInputFlipY default to false: three-gpu-pathtracer >= 0.0.27
+  // and raster G-buffers are both top-down. Set true for a bottom-up source.
   transfer: 'linear',     // see output section
   output: myStorageTex,   // optional caller-owned destination
 });

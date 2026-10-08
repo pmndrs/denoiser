@@ -12,8 +12,8 @@
 //
 // No puppeteer: spawns the example's vite dev server + headless Chrome, talks CDP
 // over Node's native WebSocket. Each scene is retried (default 5x) with a hard
-// per-attempt timeout — the pathtracer branch hangs nondeterministically during
-// headless init. If a scene never inits headless, fall back to the ?capture=1
+// per-attempt timeout — the earlier pathtracer branch hung nondeterministically during
+// headless init (kept as a safety net). If a scene never inits headless, fall back to the ?capture=1
 // button in a real browser (see README).
 import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync, existsSync, readFileSync, openSync } from 'node:fs';

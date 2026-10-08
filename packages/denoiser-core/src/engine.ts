@@ -47,7 +47,7 @@ export interface TextureInputs {
 }
 
 export interface TextureDenoiseOptions extends DenoiseOptions {
-  /** Source textures are bottom-up (WebGPU render targets) — flip reads. */
+  /** Source textures are bottom-up (e.g. older three-gpu-pathtracer output) — flip reads. */
   inputFlipY?: boolean;
   /** Aux textures' vertical convention when it differs from color (e.g. raster
    *  G-buffer vs compute-written tracer output). Defaults to inputFlipY. */

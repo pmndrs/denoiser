@@ -91,7 +91,7 @@ async function loadEiffel(scene: THREE.Scene) {
   const t0 = performance.now();
   const loader = new LDrawLoader();
   loader.smoothNormals = true;
-  // three r185+ requires the renderer-appropriate conditional-line material to be
+  // three r185+ (r186 here) requires the renderer-appropriate conditional-line material to be
   // injected (node material for WebGPU). The lines get stripped below anyway.
   loader.setConditionalLineMaterial(LDrawConditionalLineMaterial);
   // Packed MPD (tools/pack-ldraw.mjs): every part + LDConfig colors inlined,

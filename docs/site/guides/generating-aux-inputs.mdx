@@ -76,8 +76,8 @@ and pass them straight through:
 const out = await denoiser.denoiseTextures({
   color, albedo, normal,
   hdr: true,
-  inputFlipY: true,       // tracer output: bottom-up
-  auxInputFlipY: false,   // raster G-buffer: top-down
+  // tracer output (three-gpu-pathtracer >= 0.0.27) and raster G-buffer are both
+  // top-down, so the inputFlipY / auxInputFlipY defaults (false) apply
 });
 ```
 

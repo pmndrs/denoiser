@@ -98,7 +98,7 @@
         <p class="tagline">
           A deliberately noisy screen-space effect (stochastic SSR reflections on the
           floor and metal) denoised two ways, live on one shared WebGPU device.
-          <b>Left</b> uses three.js r185's temporal <code>recurrentDenoise()</code>
+          <b>Left</b> uses three.js's temporal <code>recurrentDenoise()</code>
           screen-space denoiser (runs every frame). <b>Right</b> composites the same raw
           noisy reflections into the beauty frame and denoises the <b>whole frame</b>
           with our OIDN network every few frames. Toggle motion to see where each wins.
@@ -135,7 +135,7 @@
         <div class="left">
           <h3>Left — three.js <code>recurrentDenoise()</code></h3>
           <p>
-            The r185 addon (<code>SSRNode → temporalReproject → recurrentDenoise</code>,
+            The three.js addon (<code>SSRNode → temporalReproject → recurrentDenoise</code>,
             <code>mode:'specular'</code>) is a <b>screen-space-effect</b> denoiser: it filters
             the noisy SSR buffer using the G-buffer (depth / normal / roughness / ray-length)
             and blends across frames. It is cheap and runs <b>every frame</b>, so it tracks
