@@ -10,7 +10,8 @@
 // Common params: precision=fp32|fp16, warm=N, runtimes=ort,kernels,wgsl,
 // tiling=pw,ph,oc4,wgx,wgy (WGSL conv tiling override). Net mode: model=rt_ldr_small,
 // ch=3, sizes=512x512,1920x1088, batch=1.
-import { Denoiser, OrtRuntime, type NetworkRuntime, type NetworkSession } from 'denoiser';
+import { Denoiser, type NetworkRuntime, type NetworkSession } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
 import * as ort from 'onnxruntime-web/webgpu';
 import { KernelsRuntime } from '@pmndrs/denoiser-kernels';
 import { WgslRuntime, type ConvTiling, type TilingOverride } from '@pmndrs/denoiser-wgsl';

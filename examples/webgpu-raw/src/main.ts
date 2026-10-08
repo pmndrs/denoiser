@@ -172,9 +172,8 @@ async function main(): Promise<void> {
     const s = denoiser.stats;
     const model = denoiser.modelName ?? '?';
     const ch = auxOn ? 9 : 3;
-    const splitNote = auxOn ? ' (splitAux)' : '';
     statusEl.innerHTML =
-      `model <span class="model">${model}</span> · ${ch}ch${splitNote} · ` +
+      `model <span class="model">${model}</span> · ${ch}ch · ` +
       `denoised in ${s?.totalMs.toFixed(1) ?? '?'} ms · ${W}×${H} · ${samples} spp`;
     viewBadge.textContent = `denoised · ${s?.totalMs.toFixed(0) ?? '?'}ms`;
   }

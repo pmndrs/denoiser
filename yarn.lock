@@ -1532,9 +1532,12 @@ __metadata:
     typescript: "npm:^5.9.3"
   peerDependencies:
     "@huggingface/kernels": 0.0.1-preview.3
+    onnxruntime-web: ^1.27.0
     three: ">=0.185.0"
   peerDependenciesMeta:
     "@huggingface/kernels":
+      optional: true
+    onnxruntime-web:
       optional: true
     three:
       optional: true

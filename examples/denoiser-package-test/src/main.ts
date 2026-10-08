@@ -41,7 +41,8 @@ async function run(denoiser: Denoiser) {
 async function main() {
   if (!('gpu' in navigator)) { log('ERROR: WebGPU not available.'); return; }
   log('creating Denoiser (loads model + device)...');
-  const denoiser = await Denoiser.create({ quality: 'fast', weightsUrl: '/models' });
+  // the package default (AutoRuntime; .tza weights from the CDN)
+  const denoiser = await Denoiser.create({ quality: 'fast' });
   await run(denoiser);
   log(`shared GPUDevice exposed: ${denoiser.device ? 'yes' : 'no'}`);
   runBtn.disabled = false;

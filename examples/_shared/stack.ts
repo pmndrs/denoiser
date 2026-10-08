@@ -1,22 +1,25 @@
 // Shared three.js + denoiser bootstrap for the three-based examples: one
-// GPUDevice for both, with a `?runtime=ort|wgsl|webnn|kernels` selector.
+// GPUDevice for both, with a `?runtime=auto|ort|wgsl|webnn|kernels` selector
+// (default `auto`, the package default: WebNN fp16 for base/large models when
+// available, WGSL otherwise).
 //
 // Which side creates the device depends on the runtime:
 //   ort                  denoiser FIRST (ORT always creates its own device), then
 //                        new WebGPURenderer({ device: denoiser.device })
-//   wgsl | webnn | kernels   renderer FIRST, then the runtime is handed
+//   auto | wgsl | webnn | kernels   renderer FIRST, then the runtime is handed
 //                        getDevice(renderer) via createDenoiserForRenderer()
 import * as THREE from 'three/webgpu';
-import { Denoiser } from 'denoiser';
+import type { Denoiser } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
 import { createDenoiserForRenderer, getGPUTexture, getDevice } from 'denoiser/three';
 
-export type RuntimeName = 'ort' | 'wgsl' | 'webnn' | 'kernels';
-const RUNTIMES: RuntimeName[] = ['ort', 'wgsl', 'webnn', 'kernels'];
+export type RuntimeName = 'auto' | 'ort' | 'wgsl' | 'webnn' | 'kernels';
+const RUNTIMES: RuntimeName[] = ['auto', 'ort', 'wgsl', 'webnn', 'kernels'];
 
-/** `?runtime=` from the page URL (default 'ort'). */
+/** `?runtime=` from the page URL (default 'auto'). */
 export function runtimeFromUrl(): RuntimeName {
   const r = new URLSearchParams(location.search).get('runtime') as RuntimeName | null;
-  return r && RUNTIMES.includes(r) ? r : 'ort';
+  return r && RUNTIMES.includes(r) ? r : 'auto';
 }
 
 /**
@@ -76,6 +79,7 @@ export interface Stack {
 async function makeRuntime(name: Exclude<RuntimeName, 'ort'>, device: GPUDevice, tzaUrl?: string) {
   // Lazy: only the selected runtime's code (and @huggingface/kernels) gets loaded.
   switch (name) {
+    case 'auto': { const { AutoRuntime } = await import('denoiser/auto'); return new AutoRuntime({ device, tzaUrl }); }
     case 'wgsl': { const { WgslRuntime } = await import('denoiser/wgsl'); return new WgslRuntime({ device, tzaUrl }); }
     case 'webnn': { const { WebnnRuntime } = await import('denoiser/webnn'); return new WebnnRuntime({ device, tzaUrl }); }
     case 'kernels': { const { KernelsRuntime } = await import('denoiser/kernels'); return new KernelsRuntime({ device, tzaUrl }); }
@@ -90,7 +94,11 @@ export async function createStack(opts: StackOptions = {}): Promise<Stack> {
   let renderer: THREE.WebGPURenderer;
   let denoiser: Denoiser;
   if (runtimeName === 'ort') {
-    denoiser = await Denoiser.create({ precision, quality, weightsUrl: opts.weightsUrl, splitAux: opts.splitAux });
+    const { Denoiser } = await import('denoiser');
+    denoiser = await Denoiser.create({
+      runtime: new OrtRuntime({ weightsUrl: opts.weightsUrl, splitAux: opts.splitAux ?? true }),
+      precision, quality,
+    });
     renderer = new THREE.WebGPURenderer({ ...opts.renderer, device: denoiser.device });
     await opts.beforeInit?.(renderer);
     await renderer.init();

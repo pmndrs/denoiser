@@ -115,18 +115,19 @@
     },
     "peerDependencies": {
         "@huggingface/kernels": "0.0.1-preview.3",
+        "onnxruntime-web": "^1.27.0",
         "three": ">=0.185.0"
     },
     "peerDependenciesMeta": {
         "@huggingface/kernels": {
             "optional": true
         },
+        "onnxruntime-web": {
+            "optional": true
+        },
         "three": {
             "optional": true
         }
-    },
-    "dependencies": {
-        "onnxruntime-web": "^1.27.0"
     },
     "devDependencies": {
         "@huggingface/kernels": "0.0.1-preview.3",
@@ -145,6 +146,7 @@
         "@typescript-eslint/parser": "^8.63.0",
         "@webgpu/types": "^0.1.71",
         "eslint": "^10.6.0",
+        "onnxruntime-web": "^1.27.0",
         "prettier": "^3.9.5",
         "rollup": "^4.62.2",
         "rollup-plugin-copy": "^3.5.0",

@@ -1,40 +1,32 @@
-// `denoiser` — the batteries-included preset: @pmndrs/denoiser-core with the
-// onnxruntime-web runtime (@pmndrs/denoiser-ort) as the default. Same 2.x API.
-// The published package bundles both (see rollup.config.mjs); onnxruntime-web
-// stays a regular dependency.
+// `denoiser` — the batteries-included entry: @pmndrs/denoiser-core with
+// AutoRuntime as the default network runtime (WebNN fp16 for base/large models
+// when available, hand-written WGSL otherwise — see ./auto.ts). The ORT runtime
+// lives in `denoiser/ort` (pass `runtime: new OrtRuntime(...)`), so this entry
+// never loads onnxruntime-web.
 import {
   Denoiser as CoreDenoiser,
   type DenoiserCreateOptions as CoreDenoiserCreateOptions,
   type NetworkRuntime,
 } from '@pmndrs/denoiser-core';
-import { OrtRuntime } from '@pmndrs/denoiser-ort';
+import { AutoRuntime } from './auto';
 
 export * from '@pmndrs/denoiser-core';
-export * from '@pmndrs/denoiser-ort';
+export { AutoRuntime } from './auto';
+export type { AutoRuntimeOptions } from './auto';
 
 export interface DenoiserCreateOptions extends CoreDenoiserCreateOptions {
-  /** Where the .onnx models are served (default: jsDelivr CDN). Ignored when `runtime` is passed. */
-  weightsUrl?: string;
-  /** Where ORT loads its wasm assets (default: jsDelivr CDN). Ignored when `runtime` is passed. */
-  wasmPaths?: string;
-  /** Opt-in ORT WebGPU graph capture (unstable in onnxruntime-web 1.27 past ~150 replays). */
-  graphCapture?: boolean;
+  /** Base URL of the OIDN `.tza` weights for the default runtime (default: jsDelivr CDN). Ignored when `runtime` is passed. */
+  tzaUrl?: string;
   /**
-   * Aux split-graph workaround for the onnxruntime-web WebGPU Conv bug that
-   * speckles the 9-channel cleanAux models (the first conv reducing the raw >3ch
-   * input miscomputes — see tools/ort-webgpu-aux-repro). When on, cleanAux models
-   * fetch a re-exported tail (`<name>.tail.onnx`) + enc_conv0 weights
-   * (`<name>.enc0.bin`) alongside the model and run enc_conv0 in WGSL. Verified
-   * to restore native quality. No effect on 3/6-channel models. **Default on** —
-   * falls back to the plain (speckled) model with a warning if the artifacts
-   * aren't hosted next to the weights. Set false to force the plain model.
+   * Run the default runtime on this GPUDevice — e.g. a three.js renderer's
+   * (`renderer.backend.device`), so both share one device. Ignored when `runtime` is passed.
    */
-  splitAux?: boolean;
+  device?: GPUDevice;
 }
 
 /**
- * Browser OIDN denoiser running fully on WebGPU. Defaults to onnxruntime-web;
- * pass `runtime` to run the network on something else.
+ * Browser OIDN denoiser running fully on WebGPU. Defaults to `AutoRuntime`;
+ * pass `runtime` to choose (`denoiser/ort`, `/wgsl`, `/webnn`, `/kernels`).
  *
  * ```ts
  * const denoiser = await Denoiser.create({ precision: 'fp16' });
@@ -48,12 +40,6 @@ export class Denoiser extends CoreDenoiser {
   }
 
   protected static defaultRuntime(opts: DenoiserCreateOptions): NetworkRuntime {
-    return new OrtRuntime({
-      weightsUrl: opts.weightsUrl,
-      wasmPaths: opts.wasmPaths,
-      graphCapture: opts.graphCapture,
-      // default ON so 9ch cleanAux "just works"; falls back if artifacts aren't hosted
-      splitAux: opts.splitAux ?? true,
-    });
+    return new AutoRuntime({ tzaUrl: opts.tzaUrl, device: opts.device });
   }
 }

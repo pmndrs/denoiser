@@ -2,6 +2,7 @@
 // KernelsRuntime. Same inputs, same API calls — only `runtime` differs.
 //   facade.html?precision=fp32|fp16&zeroCopy=0|1
 import { Denoiser } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
 import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import albedoUrl from '../../gallery/public/scenes/spheres/albedo.png?url';
@@ -134,7 +135,7 @@ async function main() {
   log(`Denoiser facade · ${precision} · kernels ${zeroCopy ? 'zero-copy' : 'readback'} IO · spheres 512² · warm = median of ${WARM}`);
 
   let t = performance.now();
-  const ortDn = await Denoiser.create({ precision, weightsUrl: '/models' });
+  const ortDn = await Denoiser.create({ precision, runtime: new OrtRuntime({ weightsUrl: '/models' }) });
   const ort = await exercise('ORT', ortDn, performance.now() - t, noisy, albedo, normal);
   ortDn.destroyDevice();
 

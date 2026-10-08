@@ -5,6 +5,8 @@
 import { Denoiser, type NetworkRuntime } from 'denoiser';
 import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
+import { OrtRuntime } from 'denoiser/ort';
+import { AutoRuntime } from 'denoiser/auto';
 import { runRegression } from './regression';
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
@@ -17,13 +19,16 @@ const batchParam = params.get('batch') ? Number(params.get('batch')) : undefined
 const captureParam = params.get('capture') === '1';
 const maxRunPixelsParam = params.get('maxRunPixels') ? Number(params.get('maxRunPixels')) : undefined;
 
-// ?runtime=ort|kernels|wgsl (or the selector). ORT = the package default (undefined).
-// kernels/wgsl read .tza weights from /tzas (dev middleware, see vite.config.ts).
-type RuntimeName = 'ort' | 'kernels' | 'wgsl';
-const makeRuntime = (name: RuntimeName): NetworkRuntime | undefined =>
-  name === 'kernels' ? new KernelsRuntime({ tzaUrl: '/tzas' })
-    : name === 'wgsl' ? new WgslRuntime({ tzaUrl: '/tzas' })
-      : undefined;
+// ?runtime=ort|kernels|wgsl|auto (or the selector). Every runtime is explicit so a
+// run is reproducible regardless of the package default (AutoRuntime).
+// ORT reads .onnx from WEIGHTS_URL; the others read .tza weights from /tzas in dev.
+type RuntimeName = 'ort' | 'kernels' | 'wgsl' | 'auto';
+const TZA_URL = import.meta.env.DEV ? '/tzas' : undefined;
+const makeRuntime = (name: RuntimeName): NetworkRuntime =>
+  name === 'kernels' ? new KernelsRuntime({ tzaUrl: TZA_URL })
+    : name === 'wgsl' ? new WgslRuntime({ tzaUrl: TZA_URL })
+      : name === 'auto' ? new AutoRuntime({ tzaUrl: TZA_URL })
+        : new OrtRuntime({ weightsUrl: WEIGHTS_URL, graphCapture: captureParam });
 const SCENARIOS = [
   { label: '512x512', w: 512, h: 512 },
   { label: '1280x720', w: 1280, h: 720 },
@@ -39,7 +44,7 @@ const cleanCanvas = document.querySelector<HTMLCanvasElement>('#clean')!;
 const precisionSel = document.querySelector<HTMLSelectElement>('#precision')!;
 const qualitySel = document.querySelector<HTMLSelectElement>('#quality')!;
 const runtimeSel = document.querySelector<HTMLSelectElement>('#runtime')!;
-if (['kernels', 'wgsl'].includes(params.get('runtime') ?? '')) runtimeSel.value = params.get('runtime')!;
+if (['kernels', 'wgsl', 'auto'].includes(params.get('runtime') ?? '')) runtimeSel.value = params.get('runtime')!;
 const runAllBtn = document.querySelector<HTMLButtonElement>('#runAll')!;
 
 const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
@@ -133,8 +138,8 @@ async function benchScenario(w: number, h: number, label: string): Promise<Resul
   const tb = performance.now();
   const denoiser = await Denoiser.create({
     runtime: makeRuntime(runtime),
-    precision, quality, weightsUrl: WEIGHTS_URL,
-    batch: batchParam, graphCapture: captureParam, maxRunPixels: maxRunPixelsParam,
+    precision, quality,
+    batch: batchParam, maxRunPixels: maxRunPixelsParam,
   });
   const buildMs = performance.now() - tb;
 
@@ -201,7 +206,7 @@ async function runAll() {
   const dn = await Denoiser.create({
     runtime: makeRuntime(opts.runtime ?? 'ort'),
     precision: opts.precision ?? 'fp32', batch: opts.batch,
-    quality: opts.quality ?? 'fast', weightsUrl: WEIGHTS_URL,
+    quality: opts.quality ?? 'fast',
   });
   const out = (await dn.denoise(makeNoisy(w, h)))!;
   const stats = dn.stats;
@@ -211,7 +216,7 @@ async function runAll() {
 (window as unknown as Record<string, unknown>).__psnr = psnr;
 (window as unknown as Record<string, unknown>).__regression = (
   precision: 'fp32' | 'fp16' = 'fp32', runtime: RuntimeName = 'ort',
-) => runRegression(WEIGHTS_URL, precision, () => makeRuntime(runtime));
+) => runRegression(precision, () => makeRuntime(runtime));
 
 async function main() {
   if (!('gpu' in navigator)) { log('ERROR: WebGPU not available.'); return; }

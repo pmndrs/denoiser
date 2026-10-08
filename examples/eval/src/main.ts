@@ -9,7 +9,8 @@
 //
 // TiledEngine is used directly (not the Denoiser facade) so every model is
 // reachable — the facade only picks color / +albedo / clean-aux variants.
-import { TiledEngine, OrtRuntime, type NetworkRuntime, type Precision } from 'denoiser';
+import { TiledEngine, type NetworkRuntime, type Precision } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
 import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
 import { WebnnRuntime } from 'denoiser/webnn';

@@ -3,6 +3,7 @@
 // split artifacts from the live CDN and denoise 9ch aux cleanly. Compared to an
 // explicit splitAux:false Denoiser (the plain, speckled path). No local models.
 import { Denoiser } from '../../packages/denoiser/src/index';
+import { OrtRuntime } from '../../packages/denoiser/src/ort';
 
 const W = 256, H = 256;
 const el = document.getElementById('log')!;
@@ -47,14 +48,14 @@ async function main() {
   log('High-level Denoiser, default weightsUrl (jsDelivr @models-v2), 9ch aux.\n');
 
   // (1) shipped default — splitAux on, fetches tail/enc0 from the CDN
-  const d1 = await Denoiser.create({});
+  const d1 = await Denoiser.create({ runtime: new OrtRuntime() }); // ORT harness: splitAux default on
   log(`default Denoiser ready. model resolves to a cleanAux net; splitAux default on.`);
   const wBefore = warnings.length;
   const out1 = await d1.denoise(color, { albedo, normal });
   const usedFallback = warnings.slice(wBefore).some((w) => /splitAux artifacts unavailable/.test(w));
 
   // (2) explicit splitAux:false — plain model on WebGPU (the bug)
-  const d2 = await Denoiser.create({ splitAux: false });
+  const d2 = await Denoiser.create({ runtime: new OrtRuntime({ splitAux: false }) });
   const out2 = await d2.denoise(color, { albedo, normal });
 
   const nSplit = out1 ? noise(out1.data) : NaN;

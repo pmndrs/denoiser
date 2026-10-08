@@ -112,11 +112,11 @@ function psnr(a: ArrayLike<number>, b: ArrayLike<number>): number {
 }
 
 export async function runRegression(
-  weightsUrl: string | undefined, precision: Precision,
+  precision: Precision,
   makeRuntime: () => NetworkRuntime | undefined = () => undefined,
 ): Promise<RegressionCase[]> {
   const out: RegressionCase[] = [];
-  const dn = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', weightsUrl });
+  const dn = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast' });
   const push = (name: string, bytes: Uint8Array | Uint8ClampedArray) =>
     out.push({ name, model: dn.modelName, tiles: dn.stats?.tiles, hash: fnv1a(bytes) });
   try {
@@ -152,7 +152,7 @@ export async function runRegression(
 
     // tiled path: force it with a small per-run pixel budget on a fresh instance
     dn.destroyDevice();
-    const tiled = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', weightsUrl, maxRunPixels: 256 * 256 });
+    const tiled = await Denoiser.create({ runtime: makeRuntime(), precision, quality: 'fast', maxRunPixels: 256 * 256 });
     const r = (await tiled.denoise({ data: toBytes(big), width: 1280, height: 720 }))!;
     out.push({
       name: 'image-1280x720-tiled', model: tiled.modelName, tiles: tiled.stats?.tiles, hash: fnv1a(r.data),

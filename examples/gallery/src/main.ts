@@ -35,12 +35,13 @@ const statusEl = document.querySelector<HTMLElement>('#status')!;
 const runtimeControlEl = document.querySelector<HTMLElement>('#runtime-control')!;
 const runtimeHintEl = document.querySelector<HTMLElement>('#runtime-hint')!;
 
-// Which network runtime runs the U-Net: ?runtime=ort (default) | kernels | wgsl.
+// Which network runtime runs the U-Net: ?runtime=auto (default) | ort | kernels | wgsl.
 // Switching reloads (the kernels runtime binds page-global state to a device).
-type RuntimeId = 'ort' | 'kernels' | 'wgsl';
-// Non-default runtimes load on demand, so ORT visitors don't download them.
+type RuntimeId = 'auto' | 'ort' | 'kernels' | 'wgsl';
+// Non-default runtimes load on demand; 'auto' is the package default (make() -> undefined).
 const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined> }[] = [
-  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU (default)', make: async () => undefined },
+  { id: 'auto', label: 'Auto', hint: 'default: WebNN for larger models when available, else hand-written WGSL', make: async () => undefined },
+  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU', make: async () => new (await import('denoiser/ort')).OrtRuntime() },
   {
     id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op',
     make: async () => new (await import('denoiser/kernels')).KernelsRuntime(),
@@ -51,7 +52,7 @@ const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promis
   },
 ];
 const requested = new URLSearchParams(location.search).get('runtime');
-const runtimeId: RuntimeId = RUNTIMES.find((r) => r.id === requested)?.id ?? 'ort';
+const runtimeId: RuntimeId = RUNTIMES.find((r) => r.id === requested)?.id ?? 'auto';
 const runtime = RUNTIMES.find((r) => r.id === runtimeId)!;
 
 function renderRuntimeControl(): void {
@@ -63,7 +64,7 @@ function renderRuntimeControl(): void {
     btn.addEventListener('click', () => {
       if (r.id === runtimeId) return;
       const url = new URL(location.href);
-      if (r.id === 'ort') url.searchParams.delete('runtime');
+      if (r.id === 'auto') url.searchParams.delete('runtime');
       else url.searchParams.set('runtime', r.id);
       location.href = url.toString();
     });
