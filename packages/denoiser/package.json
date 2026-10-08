@@ -53,6 +53,11 @@
             "types": "./dist/wgsl.d.ts",
             "import": "./dist/wgsl.mjs",
             "require": "./dist/wgsl.cjs"
+        },
+        "./ffx": {
+            "types": "./dist/ffx.d.ts",
+            "import": "./dist/ffx.mjs",
+            "require": "./dist/ffx.cjs"
         }
     },
     "typesVersions": {
@@ -68,6 +73,9 @@
             ],
             "wgsl": [
                 "./dist/wgsl.d.ts"
+            ],
+            "ffx": [
+                "./dist/ffx.d.ts"
             ]
         }
     },
@@ -95,6 +103,7 @@
     "devDependencies": {
         "@huggingface/kernels": "0.0.1-preview.3",
         "@pmndrs/denoiser-core": "workspace:*",
+        "@pmndrs/denoiser-ffx": "workspace:*",
         "@pmndrs/denoiser-kernels": "workspace:*",
         "@pmndrs/denoiser-ort": "workspace:*",
         "@pmndrs/denoiser-wgsl": "workspace:*",
