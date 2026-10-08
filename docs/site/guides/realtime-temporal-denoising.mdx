@@ -1,0 +1,274 @@
+---
+title: Real-time (temporal) denoising
+description: The per-frame TemporalDenoiser API, its frame contract and camera conventions, and the FidelityFX shadow and reflection denoisers ported to WGSL, with measured quality and cost.
+nav: 27
+---
+
+`Denoiser` is a single-image denoiser: async, whole-frame, no history. That is
+right for stills and progressive refinement. A real-time renderer needs a
+per-frame loop that reprojects the previous result with motion vectors,
+accumulates, and handles disocclusion and camera cuts. That is the job of
+**`TemporalDenoiser`**, exported from `denoiser` and `denoiser/core`. The first
+implementations are AMD's FidelityFX shadow and reflection denoisers, ported to
+WGSL and exposed as `denoiser/ffx`.
+
+> [!NOTE]
+> The OIDN RT weights are single-frame models. Running them per frame would
+> flicker, so they are not wired into this API. The interface is
+> source-agnostic, so a neural temporal model (OIDN 3, once upstream ships it)
+> can implement it later.
+
+## The API
+
+```ts
+interface TemporalDenoiser<Inputs extends object = object> {
+  readonly name: string;                 // e.g. 'ffx-shadows'
+  readonly device: GPUDevice;
+  configure({ width, height }): void;    // (re)allocate; drops history
+  dispatch(inputs: Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture;
+  resetHistory(): void;                  // camera cut
+  readonly gpuTimings?: ReadonlyMap<string, number>;
+  dispose(): void;                       // never destroys the device
+}
+```
+
+### Frame contract
+
+- **Synchronous, encode-and-submit.** Call `dispatch()` **after** the frame's
+  inputs have been submitted. It records its passes and submits them on
+  `device.queue` with no awaits and no readback, so anything you submit afterwards
+  sees the result. This is why it fits inside a render loop (the single-image
+  engine has to await).
+- **The returned texture is owned by the denoiser.** It is valid until the next
+  `dispatch()`, `configure()` or `dispose()`. Sample or copy it before then.
+- `configure()` allocates for a size and drops history. Call it before the first
+  dispatch and again on resize.
+- `resetHistory()` drops all history on the next dispatch. Call it on camera cuts,
+  teleports and scene switches.
+- `dispose()` releases the denoiser's GPU resources and never destroys the device.
+- `gpuTimings` holds per-pass GPU times in milliseconds when the device supports
+  `timestamp-query`; `total` is the sum of the passes.
+
+### Guides and camera
+
+Every temporal filter needs the same reprojection inputs, so they are shared.
+All textures are the same size as the signal.
+
+```ts
+interface FrameGuides {
+  depth: GPUTexture;       // hardware depth (depth32float / depth24plus) or r32float
+  normal: GPUTexture;      // world-space unit normals in [-1, 1] (rgba16float / rgba8snorm)
+  motion: GPUTexture;      // NDC delta, current - previous (rg16float)
+  roughness?: GPUTexture;  // perceptual roughness [0, 1] (r8unorm / r16float), specular signals
+  albedo?: GPUTexture;     // surface albedo [0, 1]
+}
+
+interface FrameCamera {
+  view: Mat4;              // column-major 4x4, as three.js Matrix4.elements
+  projection: Mat4;        // WITHOUT jitter
+  prevView: Mat4;
+  prevProjection: Mat4;
+  jitter?: readonly [number, number]; // sub-pixel jitter of this frame, in pixels (default [0, 0])
+  near: number;
+  far: number;
+  position?: readonly [number, number, number]; // world-space camera position
+  reversedDepth?: boolean; // reversed-Z (1 = near), default false
+}
+```
+
+The conventions match [`@pmndrs/upscaler`](https://github.com/pmndrs/upscaler)
+(FSR3), so a chain such as render, denoise, upscale runs on one device with one
+set of guides:
+
+- **Motion** is the NDC delta, current minus previous, which is three.js'
+  `velocity` node.
+- **Projection** is the unjittered projection matrix (the upscaler's
+  `unjitteredProjectionMatrix`), plus the jitter separately.
+- Matrices are column-major.
+- The API is `configure` / `dispatch` / `resetHistory` / `dispose`.
+
+### Signal inputs
+
+Filters are signal-specific because one filter cannot serve them all: shadows
+need penumbra-aware kernels, reflections need roughness-driven lobes and
+hit-distance reprojection, GI needs wide kernels and long history.
+
+| type | fields | used by |
+|---|---|---|
+| `ShadowInputs` | `visibility` (1-spp, [0, 1], 1 = lit), optional `hitDistance` | `FfxShadowDenoiser` |
+| `SpecularInputs` | `radiance` (linear HDR, rgba16float), `hitDistance` (r16float, 0 = miss) | `FfxReflectionDenoiser` |
+| `DiffuseInputs` | `radiance`, optional `hitDistance` | none yet |
+| `BeautyInputs` | `color`, optional `albedo` / `normal`, `hdr` | none yet (reserved for neural temporal models) |
+
+## FidelityFX denoisers (`denoiser/ffx`)
+
+`denoiser/ffx` is a WGSL port of the AMD FidelityFX Denoiser from FidelityFX SDK
+**v1.1.4** (MIT; AMD's notice is kept in every ported file). The constructors take
+a `GPUDevice` and options. Only core WebGPU is required (core storage formats, at
+most four storage textures per stage, so default limits are enough);
+`timestamp-query` is used for `gpuTimings` when present. There are no runtime
+dependencies.
+
+### Shadows
+
+```ts
+import { FfxShadowDenoiser } from 'denoiser/ffx';
+
+const shadows = new FfxShadowDenoiser(device);
+shadows.configure({ width, height });
+
+// every frame, after the frame's inputs are submitted:
+if (cameraCut) shadows.resetHistory();
+const mask = shadows.dispatch(
+  { visibility },                 // r32float / r16float / r8unorm, 1 = lit
+  { depth, normal, motion },      // FrameGuides
+  { view, projection, prevView, prevProjection, near, far },
+);
+// `mask` (rgba16float, .r = denoised visibility) is valid until the next dispatch.
+```
+
+Input requirements:
+
+- `visibility` is one ray or shadow-map sample per pixel. FFX is a **binary**
+  one-ray denoiser, so fractional visibility (PCF and the like) is thresholded:
+  values at or above `visibilityThreshold` (default 0.5) count as lit.
+- `hitDistance` is accepted but unused. FFX shadows do not use blocker distance.
+- Zero-length (sky) normals are guarded against, so they do not turn into NaN
+  filter weights.
+
+Options (`FfxShadowDenoiserOptions`): `depthSimilaritySigma` (default 1),
+`visibilityThreshold` (default 0.5), `timestamps` (default true).
+
+### Reflections
+
+```ts
+import { FfxReflectionDenoiser } from 'denoiser/ffx';
+
+const reflections = new FfxReflectionDenoiser(device);
+reflections.configure({ width, height });
+
+const out = reflections.dispatch(
+  { radiance, hitDistance },             // rgba16float linear HDR, r16float (0 = miss)
+  { depth, normal, motion, roughness },  // roughness is required
+  camera,                                // FrameCamera, including `position` and `far`
+);
+```
+
+Input requirements:
+
+- `guides.roughness` is **required**. It is perceptual roughness by default; set
+  `roughnessIsPerceptual: false` if yours is linear.
+- `hitDistance` of 0 (or less) means a miss; misses use `missDistance`
+  (default `camera.far`).
+- Radiance must be **finite and greater than zero wherever there is a
+  reflection**. The resolve pass treats `r+g+b < 1e-4` as "no reflection" and
+  outputs 0, and a single NaN wipes a 7x7 prefilter footprint.
+- Every pixel is assumed to have been traced. The default `roughnessThreshold` of
+  1 denoises all pixels.
+
+Options (`FfxReflectionDenoiserOptions`): `temporalStabilityFactor` (default 0.7;
+higher is more stable and more ghosting), `roughnessThreshold` (default 1),
+`roughnessIsPerceptual` (default true), `missDistance`, `currentFrameStatistics`
+(default true), `timestamps` (default true).
+
+`currentFrameStatistics` fixes a one-frame-off ping-pong in the v1.1.4 host code
+that blends zeroed history at disocclusions (dark speckles) and outputs a
+near-black first frame after a reset. `false` reproduces the SDK exactly.
+`resetHistory()` also drops the geometry history, which FFX's own reset does not.
+
+### How the guides map onto FFX
+
+| FFX concept | what you pass |
+|---|---|
+| motion vector scale (-0.5, 0.5) | motion as an NDC delta, current minus previous |
+| normals unpack mul/add 1 / 0 | world normals already in [-1, 1] |
+| inverted depth | `camera.reversedDepth` |
+| jitter | ignored: positions are reconstructed from the unjittered projection, and the sub-pixel error is within FFX's tolerances |
+
+### Measured results
+
+A test bed (`examples/ffx-denoiser`) renders an analytic scene with an area light,
+spheres, boxes and a roughness-banded plane, with a scripted 120-frame camera path
+(orbit and dolly, a hard cut at frame 60 that calls `resetHistory()`, then a
+lateral truck). Everything is compared against a 256-spp reference of the same
+estimator at 1920x1080 on an Apple M5 Pro (Chrome 154).
+
+**Shadows**
+
+| | PSNR all | PSNR penumbra | flicker | bias (penumbra) |
+|---|---|---|---|---|
+| noisy 1 spp | 17.63 dB | 7.80 dB | 0.0393 | n/a |
+| FFX shadows, spatial only | 34.07 dB | 24.55 dB | 0.0055 | -0.030 |
+| **FFX shadows** | **34.24 dB** | **25.06 dB** | **0.0029** | -0.042 |
+
+The temporal part halves flicker and adds about 0.5 dB in the penumbrae. With a
+static camera, penumbra PSNR peaks after about 10 frames (25.1 dB) and drifts down
+about 1 dB, because FFX's history is the output of filter pass 0 and the spatial
+blur compounds over frames (slightly softened contact shadows).
+
+**Reflections** (after a Reinhard tonemap)
+
+| | PSNR | flicker | bias |
+|---|---|---|---|
+| noisy 1 spp | 18.05 dB | 0.0845 | n/a |
+| FFX reflections, spatial only | 24.50 dB | 0.0157 | -0.039 |
+| FFX reflections, SDK-exact (`currentFrameStatistics: false`) | 22.17 dB | 0.0174 | -0.050 |
+| **FFX reflections (default)** | **23.46 dB** | **0.0080** | -0.040 |
+
+An honest reading: in this scene FFX reflections halves flicker against its own
+spatial-only result, at the price of about 1 dB PSNR under fast camera motion
+(ghosting on glossy surfaces, conservative disocclusion rejection), and the result
+is biased dark by about 0.04 (tonemapped). That bias is by design: the prefilter and
+resolve both pull toward a luminance-weighted 8x8 average that suppresses
+fireflies, and loosening `temporalStabilityFactor` does not change it. On the first
+frame after a reset the default scores 19.8 dB and the cut frame 30.4 dB, against
+4.8 dB and 10.1 dB for SDK-exact.
+
+**GPU cost, 1080p** (timestamp queries, median of 100, idle GPU, Apple M5 Pro):
+
+| denoiser | GPU time |
+|---|---|
+| shadows | **0.49 ms** |
+| reflections | **1.66 ms** |
+
+Not optimized yet: there are no subgroup paths (wave intrinsics are emulated in
+workgroup memory), and reflection reproject and resolve each build a 9x9
+neighbourhood per pixel from workgroup memory. FFX's SSSR tile classifier is part
+of SSSR, not the denoiser, so it is not in this port.
+
+## Using it with raw WebGPU
+
+The temporal API is engine-agnostic. You need a `GPUDevice`, the signal and the
+guides as `GPUTexture`s in the formats above, and the camera matrices.
+
+```ts
+import { FfxShadowDenoiser, type FrameCamera } from 'denoiser/ffx';
+
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter!.requestDevice({
+  requiredFeatures: adapter!.features.has('timestamp-query') ? ['timestamp-query'] : [],
+});
+
+const shadows = new FfxShadowDenoiser(device);
+shadows.configure({ width: canvas.width, height: canvas.height });
+
+function frame(camera: FrameCamera, cut: boolean) {
+  renderGBufferAndShadowRays(device);   // your pass: writes depth, normal, motion, visibility
+  if (cut) shadows.resetHistory();
+  const mask = shadows.dispatch({ visibility }, { depth, normal, motion }, camera);
+  compositePass(device, mask);          // your pass: sample `mask.r` this frame
+}
+```
+
+Sizes passed to `configure()` must match the signal and guides. Resize by calling
+`configure()` again, which drops history.
+
+## three.js and TSL
+
+{/* PLACEHOLDER: filled in by the denoiser/three work. Do not document the TSL
+    nodes here until they land. */}
+
+> [!NOTE]
+> **Coming soon.** TSL nodes that wrap a `TemporalDenoiser` the way
+> `@pmndrs/upscaler`'s `UpscalerNode` wraps the upscaler are being built as part of
+> the `denoiser/three` entry. See [three.js & TSL](./three-and-tsl).

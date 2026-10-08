@@ -1,0 +1,53 @@
+---
+title: three.js & TSL
+description: TSL nodes for the single-image Denoiser and the temporal denoisers on three.js WebGPURenderer. Coming soon.
+nav: 28
+---
+
+> [!NOTE]
+> **Coming soon.** The `denoiser/three` entry is under construction and its API
+> is not final, so it is not documented here yet. This page is a placeholder for
+> the guides that will follow.
+
+{/* PLACEHOLDER: three.js / TSL guides go here once denoiser/three lands.
+    Planned sections (not specified yet; do not document unreleased API):
+    - a TSL node for the single-image Denoiser with a selectable runtime
+    - TSL nodes for the FidelityFX shadow and reflection denoisers, following
+      the conventions of @pmndrs/upscaler's UpscalerNode
+    - render, denoise, upscale on one device */}
+
+## What exists today
+
+`denoiser/three` currently exports three small helpers
+(`packages/denoiser-three/src/shared/three.ts`). They need `three` r185 or newer
+(an optional peer dependency) and a `WebGPURenderer` that has been initialized
+with `await renderer.init()`.
+
+| export | purpose |
+|---|---|
+| `getDevice(renderer)` | the `GPUDevice` owned by an initialized `WebGPURenderer`; throws if the renderer is not initialized or not backed by WebGPU |
+| `getGPUTexture(renderer, texture)` | the raw `GPUTexture` behind a three texture; it must already exist on the GPU (rendered to, or passed through `renderer.initTexture()`) |
+| `CameraHistory` | builds the [`FrameCamera`](./realtime-temporal-denoising#guides-and-camera) a temporal denoiser needs from a three camera and keeps the previous frame's matrices |
+
+```ts
+import { getDevice, getGPUTexture, CameraHistory } from 'denoiser/three';
+import { FfxShadowDenoiser } from 'denoiser/ffx';
+
+await renderer.init();
+const device = getDevice(renderer);
+const shadows = new FfxShadowDenoiser(device);
+shadows.configure({ width, height });
+
+const history = new CameraHistory();
+
+// per frame, after the camera has moved:
+const camera = history.update(threeCamera, { unjitteredProjection, jitter });
+// then: shadows.dispatch(inputs, guides, camera)
+```
+
+Call `CameraHistory.update()` once per frame, after the camera has moved and
+before `dispatch()`. `reset()` stops reprojecting from the old pose after a cut;
+the denoiser's own `resetHistory()` handles its history.
+
+For the existing zero-copy single-image path with three.js render targets, see
+[three.js render targets in / out](./three-js-render-targets).
