@@ -14,7 +14,7 @@
 //     (The copy is needed because denoisers own their output and may ping-pong
 //     it between frames, which a three texture can't follow.)
 import type { FrameCamera, FrameGuides, TemporalDenoiser } from '@pmndrs/denoiser-core';
-import { passTexture } from 'three/tsl';
+import { nodeObject, passTexture } from 'three/tsl';
 import {
   type Camera, type Matrix4, type Node, type Texture, type WebGPURenderer,
   HalfFloatType, LinearFilter, NoColorSpace, NodeUpdateType, RGBAFormat, StorageTexture, TempNode,
@@ -131,13 +131,21 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     for (const [k, n] of Object.entries(this.guideNodes)) if (n) props[`guide_${k}`] = n;
 
     // Real size is taken from the guide textures on the first frame.
-    if (!this._output) this._allocateOutput(1, 1);
-    this._textureNode ??= passTexture(this as never, this._output as Texture) as unknown as Node;
+    this._textureNode ??= passTexture(this as never, this.outputTexture) as unknown as Node;
     return this._textureNode;
   }
 
-  private _allocateOutput(width: number, height: number) {
-    this._output?.dispose();
+  /**
+   * The denoised result as a three Texture (rgba16float). The instance is stable
+   * for the node's lifetime - it is resized in place - so it can be handed to
+   * consumers that keep a reference, e.g. `ssrNode.setHistory(node.outputTexture, velocity)`.
+   */
+  get outputTexture(): Texture {
+    if (!this._output) this._output = this._makeOutput(1, 1);
+    return this._output;
+  }
+
+  private _makeOutput(width: number, height: number): StorageTexture {
     const out = new StorageTexture(width, height);
     out.name = `${this._denoiser?.name ?? 'temporal-denoise'}-output`;
     out.type = HalfFloatType;
@@ -145,10 +153,13 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     out.colorSpace = NoColorSpace;
     out.minFilter = out.magFilter = LinearFilter;
     out.generateMipmaps = false;
+    return out;
+  }
+
+  private _allocateOutput(width: number, height: number) {
+    const out = this._output ?? (this._output = this._makeOutput(width, height));
+    (out as unknown as { setSize(w: number, h: number): void }).setSize(width, height); // no-op when unchanged; disposes the old GPU texture otherwise
     this._renderer!.initTexture(out);
-    this._output = out;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (this._textureNode) (this._textureNode as any).value = out;
   }
 
   /** Projection for reprojection: camera projection minus any view-offset jitter. */
@@ -227,7 +238,7 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     const result = denoiser.dispatch(inputs as I, guides, cam);
 
     const device = denoiser.device;
-    const dst = getGPUTexture(renderer, this._output as Texture);
+    const dst = getGPUTexture(renderer, this.outputTexture);
     const enc = device.createCommandEncoder({ label: `${denoiser.name} output copy` });
     enc.copyTextureToTexture({ texture: result }, { texture: dst }, { width: w, height: h });
     device.queue.submit([enc.finish()]);
@@ -258,6 +269,12 @@ export function temporalDenoise<I extends object>(
   guides: TemporalGuideNodes,
   camera: Camera,
   options?: TemporalDenoiseNodeOptions,
-): TemporalDenoiseNode<I> {
-  return new TemporalDenoiseNode(create, inputs, guides, camera, options);
+): TemporalDenoiseNodeObject<I> {
+  return denoiseNodeObject(new TemporalDenoiseNode(create, inputs, guides, camera, options));
+}
+
+/** A `TemporalDenoiseNode` as a TSL node object: swizzles (`.r`, `.rgb`), `.mul()`, ... work on it. */
+export type TemporalDenoiseNodeObject<I extends object = object> = TemporalDenoiseNode<I> & Node<'vec4'>;
+export function denoiseNodeObject<I extends object>(node: TemporalDenoiseNode<I>): TemporalDenoiseNodeObject<I> {
+  return nodeObject(node) as unknown as TemporalDenoiseNodeObject<I>;
 }

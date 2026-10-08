@@ -15,7 +15,8 @@ import { FfxReflectionDenoiser, FfxShadowDenoiser } from '@pmndrs/denoiser-ffx';
 import type { FfxReflectionDenoiserOptions, FfxShadowDenoiserOptions } from '@pmndrs/denoiser-ffx';
 import { finite1, finite3, toSignalTexture, worldNormalTexture } from './tsl';
 import type { NormalEncoding, NormalSpace } from './tsl';
-import { TemporalDenoiseNode } from './TemporalDenoiseNode';
+import { TemporalDenoiseNode, denoiseNodeObject } from './TemporalDenoiseNode';
+import type { TemporalDenoiseNodeObject } from './TemporalDenoiseNode';
 import type { TemporalDenoiseNodeOptions, TextureNodeLike } from './TemporalDenoiseNode';
 import type { Camera } from 'three/webgpu';
 import { float, vec4 } from 'three/tsl';
@@ -74,13 +75,13 @@ export interface FfxReflectionsOptions extends FfxGuideOptions {
  * @returns a node whose value is the denoised visibility in .r (rgba16float); use
  *   `.r` / `.x` in the composite. Has `.resetHistory()`.
  */
-export function ffxShadows(visibility: TextureNodeLike, options: FfxShadowsOptions): TemporalDenoiseNode<ShadowInputs> {
+export function ffxShadows(visibility: TextureNodeLike, options: FfxShadowsOptions): TemporalDenoiseNodeObject<ShadowInputs> {
   const scale = options.resolutionScale ?? 1;
   const inputs: { visibility: TextureNodeLike; hitDistance?: TextureNodeLike } = {
     visibility: toSignalTexture(visibility, scale, (n) => vec4(n, 0, 0, 1)),
   };
   if (options.hitDistance) inputs.hitDistance = toSignalTexture(options.hitDistance, scale, (n) => vec4(n, 0, 0, 1));
-  return new TemporalDenoiseNode(
+  return denoiseNodeObject(new TemporalDenoiseNode(
     (device) => new FfxShadowDenoiser(device, options.denoiser),
     inputs,
     {
@@ -90,7 +91,7 @@ export function ffxShadows(visibility: TextureNodeLike, options: FfxShadowsOptio
     },
     options.camera,
     options.node,
-  );
+  ));
 }
 
 /**
@@ -100,7 +101,7 @@ export function ffxShadows(visibility: TextureNodeLike, options: FfxShadowsOptio
  *   `hitDistance` is given. Pixels without a reflection must be 0 (radiance 0 -> output 0).
  * @returns a node whose value is the denoised radiance (rgba16float). Has `.resetHistory()`.
  */
-export function ffxReflections(radiance: TextureNodeLike, options: FfxReflectionsOptions): TemporalDenoiseNode<SpecularInputs> {
+export function ffxReflections(radiance: TextureNodeLike, options: FfxReflectionsOptions): TemporalDenoiseNodeObject<SpecularInputs> {
   const scale = options.resolutionScale ?? 1;
   const sanitize = options.sanitize ?? true;
   const hitSource = options.hitDistance
@@ -113,7 +114,7 @@ export function ffxReflections(radiance: TextureNodeLike, options: FfxReflection
   const rough = options.roughness.isTextureNode
     ? options.roughness
     : toSignalTexture(options.roughness, scale, (n) => vec4(n, 0, 0, 1));
-  return new TemporalDenoiseNode(
+  return denoiseNodeObject(new TemporalDenoiseNode(
     (device) => new FfxReflectionDenoiser(device, options.denoiser),
     { radiance: rad, hitDistance: hit },
     {
@@ -124,5 +125,5 @@ export function ffxReflections(radiance: TextureNodeLike, options: FfxReflection
     },
     options.camera,
     options.node,
-  );
+  ));
 }
