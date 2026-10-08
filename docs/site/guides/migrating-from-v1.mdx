@@ -4,8 +4,7 @@ description: Mapping 0.x (TensorFlow.js) to the 2.x stateless, WebGPU-only API �
 nav: 24
 ---
 
-v2 is a ground-up rewrite: TensorFlow.js and every WebGL path are gone; the
-U-Net runs as ONNX on onnxruntime-web's WebGPU execution provider, and all
+v2 is a ground-up rewrite: TensorFlow.js and every WebGL path are gone; the U-Net runs on a WebGPU runtime (by default WebNN fp16 or hand-written WGSL; ORT is opt-in), and all
 pre/post-processing is WGSL compute on one shared `GPUDevice`. It is a **clean
 break** — the API changed deliberately (see
 [`docs/archive/api-v2-spec.md`](https://github.com/pmndrs/denoiser/blob/main/docs/archive/api-v2-spec.md)
@@ -17,9 +16,9 @@ order; v2 is **stateless per call** — the instance holds identity only
 
 | | v1 | v2 |
 |---|---|---|
-| runtime | TensorFlow.js (WebGL or WebGPU backend) | onnxruntime-web ≥ 1.27 (regular dependency), WebGPU only |
+| runtime | TensorFlow.js (WebGL or WebGPU backend) | WebGPU only: WebNN / hand-written WGSL by default; onnxruntime-web ≥ 1.27 is an optional peer dependency (`denoiser/ort`) |
 | browser | WebGL2 fallback existed | **WebGPU required** (no fallback) |
-| weights | `.tza` files (`/tzas` CDN dir) | converted `.onnx` models (`/models`), fp32 + fp16 |
+| weights | `.tza` files (`/tzas` CDN dir) | the same `.tza` files by default (`tzaUrl`); converted `.onnx` models (`/models`) only for `denoiser/ort` |
 | install | `npm i denoiser` | `npm i denoiser` |
 
 > [!WARNING]
@@ -36,16 +35,11 @@ order; v2 is **stateless per call** — the instance holds identity only
 const denoiser = new Denoiser('webgpu', canvasOrDevice);
 denoiser.onBackendReady(() => { /* ... */ });
 
-// v2 — async factory; ORT creates the device, you share it OUTWARD
-const denoiser = await Denoiser.create({ precision: 'fp16', quality: 'fast' });
-const renderer = new THREE.WebGPURenderer({ device: denoiser.device });
+// v2 — async factory; share the device with your renderer
+const denoiser = await Denoiser.create({ precision: 'fp16', quality: 'fast', device: renderer.backend.device });
 ```
 
-You can no longer hand the denoiser a canvas/device — onnxruntime-web creates
-and owns the `GPUDevice`
-([#26107](https://github.com/microsoft/onnxruntime/issues/26107)).
-Share `denoiser.device` with your renderer instead (create the denoiser
-first).
+You can no longer hand the denoiser a canvas; hand it a `GPUDevice` through the `device` option (with the default runtime), or share `denoiser.device` with your renderer. Only the opt-in ORT runtime keeps the old constraint: onnxruntime-web creates and owns its `GPUDevice` ([#26107](https://github.com/microsoft/onnxruntime/issues/26107)), so with ORT create the denoiser first.
 
 ### Executing
 
@@ -89,7 +83,7 @@ ctx.putImageData(img, 0, 0);
 | `flipOutputY` | `flipY` (`denoise`) / `outputFlipY` (`denoiseTextures`); input orientation via `inputFlipY` / `auxInputFlipY` |
 | `height` / `width` | gone — taken from the input |
 | `useTiling` / `tileSize` / `batchSize` | automatic: whole-frame up to `maxRunPixels` (create option), tiled above it with `batch` tiles per run — see [Large images & tiling](./large-images-and-tiling) |
-| `weightsPath` / `weightsUrl` | `Denoiser.create({ weightsUrl })` — now points at `.onnx` models, not `.tza` |
+| `weightsPath` / `weightsUrl` | `Denoiser.create({ tzaUrl })` — still `.tza` weights (`weightsUrl` now belongs to `OrtRuntime`, and points at `.onnx` models) |
 | `cleanAux` / `dirtyAux` | automatic — rasterized aux is treated as clean when both albedo+normal are present |
 | `debugging` / `stats` | `denoiser.stats` (per-stage timings of the last run) |
 
@@ -101,10 +95,7 @@ missing aux, bad formats). Full signatures in the [API reference](../reference/a
 
 ## Weights hosting
 
-v1 served `.tza` files from a `/tzas` directory or CDN. v2 serves converted
-`.onnx` models (`rt_ldr.onnx`, `rt_hdr_alb_nrm_small.fp16.onnx`, …) the same
-way — default CDN, override with `weightsUrl`. Regenerate models from OIDN
-`.tza` weights any time with
+v1 served `.tza` files from a `/tzas` directory or CDN, and v2's default runtime does too: default CDN (jsDelivr, `models-v3`), override with `tzaUrl`. Only the opt-in ORT runtime serves converted `.onnx` models (`rt_ldr.onnx`, `rt_hdr_alb_nrm_small.fp16.onnx`, …), with `weightsUrl`. Regenerate the ORT models from OIDN `.tza` weights any time with
 [`tools/onnx-convert`](https://github.com/pmndrs/denoiser/blob/main/tools/onnx-convert/README.md)
 (Python, no PyTorch).
 
@@ -117,3 +108,48 @@ way — default CDN, override with `weightsUrl`. Regenerate models from OIDN
   bit-identical to v1.
 - fp16 (`precision: 'fp16'`) measures ≈ 53 dB PSNR vs fp32 — visually
   identical, ~15% faster.
+
+## Breaking changes in 2.x: `AutoRuntime` is the default
+
+During the 2.x alpha the default runtime changed from onnxruntime-web (ORT) to
+`AutoRuntime`, and ORT moved behind an explicit import. If you adopted an earlier
+2.x build, update like this:
+
+```ts
+// before: ORT was the default, configured through Denoiser.create
+const denoiser = await Denoiser.create({
+  precision: 'fp16',
+  weightsUrl: '/models',
+  wasmPaths: '/ort/',
+  splitAux: true,
+});
+
+// after, option 1 (recommended): the default AutoRuntime, OIDN .tza weights
+const denoiser = await Denoiser.create({
+  precision: 'fp16',
+  tzaUrl: '/tzas',          // optional, defaults to the jsDelivr models-v3 CDN
+  device,                   // optional: run on an existing GPUDevice
+});
+
+// after, option 2: keep ORT explicitly (npm i onnxruntime-web)
+import { OrtRuntime } from 'denoiser/ort';
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models', wasmPaths: '/ort/', splitAux: true }),
+  precision: 'fp16',
+});
+```
+
+- The root `denoiser` entry no longer re-exports `OrtRuntime`, `OrtSession`,
+  `DenoiseEngine` or `Models`; import them from `denoiser/ort`.
+- `onnxruntime-web` is now an **optional** peer dependency, installed only for
+  `denoiser/ort`. The root entry never loads it.
+- `weightsUrl`, `wasmPaths`, `graphCapture` and `splitAux` are no longer
+  `Denoiser.create` options; they are `OrtRuntime` options.
+- New `Denoiser.create` options: `tzaUrl` and `device`.
+- The default runtime reads `.tza` weights (as v1 did), not `.onnx`.
+- With the default runtime you no longer have to create the denoiser first to share a
+  device with three.js: create the renderer, then pass its device. Only ORT keeps the
+  "denoiser first" order.
+- Why: ORT computes the `*_alb`, `*_alb_nrm` and `*_large` models wrong, while WGSL
+  and WebNN match native OIDN (see
+  [Choosing a runtime](./choosing-a-runtime)).

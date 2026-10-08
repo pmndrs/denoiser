@@ -8,7 +8,15 @@ All numbers below are warm medians measured on an M-series Mac in Chrome via
 `examples/bench`, quality `fast`, unless noted otherwise. Reproduce them yourself —
 `bench` is a real deployed demo, not a cherry-picked internal harness.
 
-## Measured: whole-frame inference (v2, fp16)
+> [!NOTE]
+> The figures on this page were measured on the **ORT runtime**, which was the default
+> when they were taken. `Denoiser` now defaults to `AutoRuntime` (WebNN or WGSL),
+> which the quiet-GPU eval measured as faster and correct on every model. For current
+> per-runtime numbers at 1080p and 512x512, see
+> [Choosing a runtime](../guides/choosing-a-runtime.mdx#speed-and-quality). The ORT-specific
+> remarks below (graph capture, conv scaling) apply to `denoiser/ort` only.
+
+## Measured: whole-frame inference (v2, fp16, ORT)
 
 | size | time |
 |---|---|
@@ -28,8 +36,8 @@ identical. Images larger than 2560×1440 fall back to the tile ladder automatica
 | 1080p warm | 188 ms (45 tiles) | **104 ms** (whole-frame, fp16) | 1.8× |
 
 v1 ran everything through TFJS's WebGL/WebGPU backends with tiling only (no
-whole-frame path); v2's rewrite onto ONNX + the WebGPU EP plus whole-frame inference
-accounts for the gap. Precision also improved: fp32 was the only usable option in
+whole-frame path); v2's rewrite onto ONNX + the WebGPU EP (the then-default ORT runtime)
+plus whole-frame inference accounts for the gap. Precision also improved: fp32 was the only usable option in
 v1, whereas v2's fp16 path is a further ~15% on top of the numbers above.
 
 ## Zero-copy GPU pipeline
@@ -74,11 +82,13 @@ both tried and are **not** wins here: batching was small and mostly mattered as
 groundwork for whole-frame inference, and graph capture measured zero throughput
 gain (the workload is GPU-bound, not dispatch-bound) while onnxruntime-web 1.27's
 captured sessions crash after roughly 150–250 cumulative replays — unusable for a
-live loop. `graphCapture` ships opt-in and off by default for that reason.
+live loop. The `graphCapture` option of `OrtRuntime` is opt-in and off by default for
+that reason.
 
-## The honest ceiling
+## The honest ceiling (ORT numbers)
 
-Native OIDN on Metal does the same 512² image in **~24.5 ms**, using hardware matrix
+This section predates the WGSL and WebNN runtimes; the current gap to native is in
+[Choosing a runtime](../guides/choosing-a-runtime.mdx#speed-and-quality). Native OIDN on Metal does the same 512² image in **~24.5 ms**, using hardware matrix
 units (`simdgroup_matrix`) that WGSL has no path to today — that's a measured,
 not guessed, ~4× gap (a dedicated kernel-spike investigating a custom WGSL conv path
 came back NO-GO at ≤1.32×, nowhere near enough to justify the complexity). This

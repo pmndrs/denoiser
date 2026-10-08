@@ -7,7 +7,10 @@
   `GPUTexture`, the full parameter reference, output-into-three, live-loop
   pacing, pitfalls.
 - [**Migrating from v1 (TFJS)**](guides/migrating-from-v1.md) — the 0.x → 2.x
-  API mapping, requirement changes, weights hosting.
+  API mapping, requirement changes, weights hosting, and the breaking change that
+  made `AutoRuntime` the default (ORT moved to `denoiser/ort`).
+- [**three.js & TSL**](site/guides/three-and-tsl.mdx) — the `denoise()`,
+  `ffxShadows()` and `ffxReflections()` nodes in `denoiser/three`.
 
 The package README ([`packages/denoiser/README.md`](../packages/denoiser/README.md))
 covers install, quick start, the API sketch, and the device-lifetime rules.

@@ -4,10 +4,16 @@ description: Quality tiers, LDR vs HDR, aux-guided models, precision, and self-h
 nav: 2
 ---
 
-Denoiser loads one converted `.onnx` model per configuration (quality × HDR × aux),
+Denoiser loads one set of OIDN weights per configuration (quality × HDR × aux),
 fetched individually — a page never downloads the full set. Model selection is
 automatic: pick options, and the library resolves the matching OIDN model name for
 you.
+
+Which file format is fetched depends on the runtime. The default runtime
+(`AutoRuntime`, and the `denoiser/wgsl`, `denoiser/webnn` and `denoiser/kernels`
+runtimes) reads the upstream OIDN **`.tza`** weights directly, from `tzaUrl`. Only the
+opt-in `denoiser/ort` runtime uses converted **`.onnx`** models (plus split-graph
+artifacts), from `weightsUrl`. See [Choosing a runtime](../guides/choosing-a-runtime.mdx).
 
 ## Quality tiers
 
@@ -62,8 +68,10 @@ image path expects RGBA8 bytes with `n*0.5+0.5` applied; the texture path takes 
 `precision` (default `'fp32'`) selects the tensor/model element type:
 
 - **`'fp16'`** — needs the device's `shader-f16` feature (falls back to fp32
-  automatically if unavailable). Measured **~15% faster** than fp32, at
-  **53.5–53.6 dB PSNR** vs fp32 output — visually identical.
+  automatically if unavailable). On the ORT runtime it measured **~15% faster** than
+  fp32, at **53.5–53.6 dB PSNR** vs fp32 output — visually identical. The default
+  runtime uses WebNN only for fp16; fp32 always runs on WGSL. See
+  [Choosing a runtime](../guides/choosing-a-runtime.mdx) for per-runtime numbers.
 - **`'fp32'`** — safe default, works everywhere WebGPU does.
 
 ```ts
@@ -72,45 +80,84 @@ const denoiser = await Denoiser.create({ precision: 'fp16' });
 
 ## File sizes
 
+The `.tza` weights are a single set shared by both precisions (stored in fp16; the
+runtime widens them for fp32). Sizes of the files in this repo:
+
+| variant | `.tza` |
+|---|---|
+| `*_small` (`quality: 'fast'`) | ~0.6 MB |
+| base (`quality: 'balanced'`) | ~1.8 MB |
+| `*_large` (`quality: 'high'`) | up to ~7.7 MB |
+
+Only the one file a configuration needs is fetched; nothing is downloaded all at once.
+
+For the ORT runtime's converted `.onnx` models, per precision:
+
 | variant | fp16 | fp32 |
 |---|---|---|
-| `*_small` (`quality: 'fast'`) | ~0.6 MB | ~1.3 MB |
-| base (`quality: 'balanced'`) | ~1.8 MB | ~3.6 MB |
-| `*_large` (`quality: 'high'`) | ~7.3 MB | ~14.7 MB |
+| `*_small` | ~0.6 MB | ~1.3 MB |
+| base | ~1.8 MB | ~3.6 MB |
+| `*_large` | ~7.3 MB | ~14.7 MB |
 
-Full set (every RT + lightmap variant, both precisions): 46 files, ~144 MB total
-(96 MB fp32 + 48 MB fp16) — never downloaded at once; each page only fetches the
-one file its configuration needs.
+Full `.onnx` set (every RT + lightmap variant, both precisions): 46 files, ~144 MB
+total (96 MB fp32 + 48 MB fp16).
 
 ## Hosting them
 
-Point `weightsUrl` at wherever the files live — it's plain static hosting, nothing
+Point `tzaUrl` at wherever the `.tza` files live — it's plain static hosting, nothing
 model-server-specific:
 
 ```ts
-const denoiser = await Denoiser.create({ weightsUrl: '/models' });
+const denoiser = await Denoiser.create({ tzaUrl: '/tzas' });
 ```
 
-**Production: host them yourself.** Copy the `models/` directory into your app's
-static assets (or your own CDN) and pin `weightsUrl`. The default CDN URL is fine
-for demos and prototypes; don't build a product on someone else's default.
+**Production: host them yourself.** Copy the `.tza` files into your app's static
+assets (or your own CDN) and pin `tzaUrl`. The default CDN URL is fine for demos and
+prototypes; don't build a product on someone else's default.
 
 **Default scheme: jsDelivr's GitHub endpoint**, version-pinned:
 
 ```
-https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v2/models/<file>.onnx
+https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v3/tzas/<file>.tza
 ```
 
-The models are committed as ordinary git blobs (not LFS — jsDelivr can't resolve LFS
-pointers) in a dedicated weights repo, served through jsDelivr's multi-provider CDN
-with CORS, range requests, and no per-file limit issue (the largest file, 14.7 MB, is
-well under jsDelivr's cap). GitHub Pages also works if you'd rather publish your own
-branch than depend on jsDelivr.
+The files are sha256-identical to upstream
+[RenderKit/oidn-weights](https://github.com/RenderKit/oidn-weights). They are committed
+as ordinary git blobs (not LFS — jsDelivr can't resolve LFS pointers) in a dedicated
+weights repo, served through jsDelivr's multi-provider CDN with CORS and range
+requests. GitHub Pages also works if you'd rather publish your own branch than depend
+on jsDelivr.
+
+When you pass your own `runtime`, set the URL on the runtime instead:
+`new WgslRuntime({ tzaUrl })`, `new AutoRuntime({ tzaUrl })`.
+
+## ONNX models (`denoiser/ort` only)
+
+The ORT runtime fetches converted `.onnx` models instead. Install the optional peer
+dependency (`npm i onnxruntime-web`) and construct the runtime yourself:
+
+```ts
+import { Denoiser } from 'denoiser';
+import { OrtRuntime } from 'denoiser/ort';
+
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models' }),
+});
+```
+
+> [!WARNING]
+> ORT computes the `*_alb`, `*_alb_nrm` and `*_large` models wrong (see
+> [Choosing a runtime](../guides/choosing-a-runtime.mdx#speed-and-quality)). Prefer the
+> default runtime.
+
+**Default scheme:** `https://cdn.jsdelivr.net/gh/pmndrs/denoiser-weights@models-v2/models/<file>.onnx`.
+Self-hosters should copy the `models/` directory into their static assets and pin
+`weightsUrl`.
 
 ### The `splitAux` artifacts
 
-If you self-host, mirror the **whole** `models-v2` tag, including files named
-`*.tail.onnx` and `*.enc0.bin` sitting next to the regular `.onnx` models. Here's
+If you self-host the ORT models, mirror the **whole** `models-v2` tag, including files
+named `*.tail.onnx` and `*.enc0.bin` sitting next to the regular `.onnx` models. Here's
 why: onnxruntime-web's WebGPU execution provider has a bug where the first
 convolution of a model with more than 3 input channels — exactly the situation for
 the 9-channel aux-guided (`*_calb_cnrm`) models — computes garbage, producing visible
@@ -118,29 +165,31 @@ speckling in the output. It's an upstream defect, not something in this library'
 code; filed and reproduced at
 [DennisSmolek/ort-web-webgpu-conv-bug](https://github.com/DennisSmolek/ort-web-webgpu-conv-bug).
 
-The `splitAux` option (default **on**) works around it: the affected first
+The `OrtRuntime` `splitAux` option (default **on**) works around it: the affected first
 convolution is re-exported into a separate small weights file (`*.enc0.bin`) and run
 in WGSL instead of through ORT, while the rest of the network runs as a `.tail.onnx`
 graph through ORT as normal. This has been verified to restore output to within 1–2
 LSB of native OIDN. It only applies to the 9-channel aux models — 3- and 6-channel
-models are unaffected and never fetch these extra files.
+models are unaffected and never fetch these extra files (and stay wrong on ORT, see
+above).
 
 If you self-host `models-v1` (or otherwise don't have the tail/enc0 files
-available), the library falls back to the plain speckled model with a one-time
+available), the runtime falls back to the plain speckled model with a one-time
 console warning. Set `splitAux: false` to silence the warning and force the plain
-model deliberately — useful if you're waiting on a fixed onnxruntime-web release and
-want to A/B the difference yourself.
+model deliberately.
 
 ### Tag policy
 
 `models-vN` tags are immutable — once published, a tag's contents never change.
 Self-hosters should mirror the exact tag their installed library version expects
-(currently `models-v2`); pin it the same way you'd pin any other dependency version.
+(currently `models-v3` for the `.tza` weights of the default runtime and `models-v2`
+for the ORT `.onnx` models); pin it the same way you'd pin any other dependency
+version.
 
 ### What doesn't work as a host
 
 Two dead ends worth knowing about so you don't re-discover them: GitHub Releases
 assets send no CORS headers on the download path, so browser `fetch()` fails outright
 — fine for CLIs, useless for the web. And bundling models inside the npm package
-itself would balloon every `npm install` by the full ~144 MB and blow past jsDelivr's
-~50 MB total-package limit, so the package would simply be refused.
+itself would balloon every `npm install` and blow past jsDelivr's ~50 MB
+total-package limit, so the package would simply be refused.

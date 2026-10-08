@@ -7,7 +7,7 @@ the `Denoiser` facade, the tiled WebGPU engine (`TiledEngine`), WGSL pre/post
 
 **Internal workspace package — never published.** It ships inside the
 [`denoiser`](../denoiser) package as the `denoiser/core` entry (and under the
-root entry, which adds onnxruntime-web as the default runtime):
+root entry, which adds `AutoRuntime` as the default runtime):
 
 ```ts
 import { Denoiser } from 'denoiser/core';

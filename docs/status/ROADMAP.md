@@ -23,20 +23,22 @@ encoding and texture IO, and delegates only the U-Net to a pluggable
 
 | runtime | entry | state |
 |---|---|---|
-| onnxruntime-web (WebGPU EP) | `denoiser`, `denoiser/ort` | the default; known-wrong on some models (below) |
+| automatic | `denoiser` (default), `denoiser/auto` | `AutoRuntime`: WebNN fp16 for base/large when available, WGSL otherwise; never ORT |
+| onnxruntime-web (WebGPU EP) | `denoiser/ort` | opt-in (optional peer dependency); known-wrong on some models (below) |
 | HF kernels | `denoiser/kernels` | experimental; needs a device-sharing shim |
 | hand-written WGSL | `denoiser/wgsl` | experimental; fastest runtime that needs no flags |
 | WebNN | `denoiser/webnn` | experimental; Chrome flag; fastest on base/large |
 
 Plus the real-time side: the **`TemporalDenoiser`** API (`denoiser/core`) and its
 first implementation, the FidelityFX shadow + reflection denoisers ported to WGSL
-(`denoiser/ffx`), and a three.js entry (`denoiser/three`, currently the shared
-`WebGPURenderer` helpers; TSL nodes in progress). Workspaces other than `denoiser`
+(`denoiser/ffx`), and a three.js entry (`denoiser/three`: the shared
+`WebGPURenderer` helpers plus the `denoise()`, `ffxShadows()` and `ffxReflections()`
+TSL nodes). Workspaces other than `denoiser`
 are internal (private) and ship as its subpath entries.
 
 ### vs v1 (0.0.x, TensorFlow.js)
 
-| | v1 (TFJS) | v2 (ORT-web WebGPU, the default runtime) |
+| | v1 (TFJS) | v2 (the figures below are from the ORT runtime, the default when they were measured) |
 |---|---|---|
 | Engine | TFJS WebGL/WebGPU, runtime graph build from TZA | ONNX on WebGPU EP, offline-converted models |
 | 512² warm | 37.6 ms (9 tiles)* | **13.7 ms** (whole-frame, fp16) — 2.7× |
@@ -154,14 +156,15 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 
 ### 1. Make the runtimes shippable
 
-- **Decide the 2.0 default runtime / auto-selection (open decision).** Today ORT is
-  the default only because it is the one that shipped. The data says WGSL fp16 is
-  the best flag-free default (correct on every model, 3× faster), with WebNN as an
-  opt-in or an auto-selected upgrade where `WebnnRuntime.isAvailable()`, and ORT
-  kept for compatibility. Open questions: ship `denoiser/wgsl` as default in 2.0 or
-  2.1; what an `'auto'` runtime picks per device/model/size (WebNN's per-geometry
-  compile cost of 0.4–2.7 s, 5–7 s on a cold CoreML cache, argues against it for
-  resizable UIs); whether to make the experimental runtimes public API.
+- ~~Decide the 2.0 default runtime / auto-selection~~ — **decided: `AutoRuntime`**
+  (commit 5cb1e9f). `Denoiser.create()` defaults to WebNN fp16 for base/large models
+  when WebNN is available and WGSL otherwise, and never picks ORT. ORT moved to
+  `denoiser/ort` (opt-in; `onnxruntime-web` is an optional peer dependency) and its
+  options (`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) moved from
+  `Denoiser.create` to `OrtRuntime`. New root options: `tzaUrl`, `device`. Still open:
+  `webnn: false` is the escape hatch for WebNN's per-geometry compile cost of 0.4–2.7 s
+  (5–7 s on a cold CoreML cache) in resizable UIs; whether to make the experimental
+  runtimes public API.
 - **Validate on non-Apple GPUs (open decision, blocking the default question).**
   NVIDIA, AMD, Intel, Qualcomm, mobile. WGSL tuning (tiling, f16 sums, subgroup
   size 32), the subgroup-matrix kernel and the WebNN backends on other platforms are
@@ -204,7 +207,7 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 
 - **Publish `denoiser@2.0.0`** (gated on the launch checklist, issue #12:
   docs.pmnd.rs redirect PR + `release.yml` with `NPM_TOKEN`). Decide first what the
-  2.0 surface is (default runtime, which subpath entries are public API, which are
+  2.0 surface is (the default runtime is decided: `AutoRuntime`; which subpath entries are public API, which are
   labelled experimental, `@huggingface/kernels` as an optional peer dependency).
 - **Merge `feat/network-runtimes`** and publish the docs additions. Replace the
   `<DEMO LINK>` placeholders in the outreach docs once demos are public; send the
@@ -227,9 +230,9 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 
 ## Open decisions (summary)
 
-1. **2.0 default runtime** — `AutoRuntime` (`denoiser/auto`: WebNN fp16 for
-   base/large when available, WGSL otherwise, never ORT) exists; open is whether
-   it, WGSL, or ORT is the default of `denoiser`.
+1. ~~**2.0 default runtime**~~ — **decided: `AutoRuntime`** (`denoiser/auto`: WebNN
+   fp16 for base/large when available, WGSL otherwise, never ORT) is the default of
+   `denoiser`; ORT is opt-in via `denoiser/ort`.
 2. **Non-Apple GPU validation** — blocks every speed/quality claim beyond Apple.
 3. **ORT `*_alb` / `*_alb_nrm` and large-topology correctness** — split artifacts,
    a refusal/redirect, or wait for upstream.
