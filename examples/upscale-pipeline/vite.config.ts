@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { serveTzas } from '../_shared/vite-tzas';
 
 // Loads .onnx weights straight from the default CDN (like the gallery), so this
 // builds and runs as a real consumer would. Three + the upscaler are served as
@@ -13,6 +14,7 @@ export default defineConfig({
     dedupe: ['three'],
   },
   server: { fs: { allow: ['../..'] } },
+  plugins: [serveTzas()],
   optimizeDeps: {
     exclude: ['onnxruntime-web', 'three', 'three/webgpu', 'three/tsl', '@pmndrs/upscaler'],
     esbuildOptions: { target: 'esnext' },
