@@ -81,6 +81,7 @@
       .stage .ms { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
       #resline { color: var(--muted); font-size: 0.85rem; margin: 0.75rem 0 0; }
       #resline b { color: var(--text); }
+      .note { color: var(--muted); font-size: 0.82rem; margin: 0 0 0.5rem; max-width: 640px; }
       #status { color: var(--muted); font-size: 0.85rem; min-height: 1.3em; margin: 0.75rem 0 0; }
       #status.err { color: #ff9a9a; }
     </style>
@@ -93,12 +94,29 @@
           Three pmndrs packages on <b>one <code>GPUDevice</code></b>:
           <span class="pkgs">three.js</span> renders a noisy scene at low resolution,
           <span class="pkgs">denoiser</span> cleans it, and
-          <span class="pkgs">@pmndrs/upscaler</span> (AMD FSR) upscales it to full canvas
+          <span class="pkgs">@pmndrs/upscaler</span> (AMD FSR-style) upscales it to full canvas
           resolution — no CPU pixel copies in the chain. Each GPU texture is handed
           straight to the next stage on the device the denoiser created.
-          Upscaling here uses <b>FSR1 (spatial)</b>: the denoiser is a discrete,
-          stills-oriented pass, which composes cleanly with FSR's per-frame stateless
-          spatial path (the temporal path wants per-frame motion vectors — see the note below).
+        </p>
+        <p class="tagline">
+          <b>Temporal (FSR3)</b>, the default, renders every frame under a different
+          sub-pixel camera jitter and accumulates those frames into a display-resolution
+          history, reprojected with depth + motion vectors from the same render. Because
+          each frame samples different points inside a pixel, it reconstructs detail the
+          low-res render never had in any single frame — and it also averages away the
+          frame-to-frame residue the denoiser leaves.
+          <b>Spatial (FSR1)</b> is one frame in, one frame out: edge-adaptive upsampling
+          plus sharpening, no history, so it can only sharpen what is already there.
+        </p>
+        <p class="tagline">
+          What to look for: switch between the two on a still view (drag once to stop the
+          spin). Temporal: thin curves of the knot and the sphere silhouettes stay smooth
+          and steady, specular highlights stop crawling, and the flat floor and background
+          stop "boiling". Spatial: sharp, but the denoiser's frame-to-frame residue shows as a
+          grainy shimmer on every surface, and edges keep their render-resolution stepping.
+          While the knot spins, temporal relies on motion vectors — watch the knot's edges
+          for any trailing. Try <i>Denoise off</i> too: temporal accumulation alone already
+          averages the per-frame noise.
         </p>
       </header>
 
@@ -113,7 +131,8 @@
         <div class="control-group">
           <h2 class="section-label">Upscale</h2>
           <div class="segmented" id="upscale-seg">
-            <button data-v="on" aria-pressed="true">FSR1 spatial</button>
+            <button data-v="temporal" aria-pressed="true">Temporal (FSR3)</button>
+            <button data-v="spatial">Spatial (FSR1)</button>
             <button data-v="off">off (nearest)</button>
           </div>
         </div>
@@ -132,10 +151,13 @@
 
       <section>
         <h2 class="section-label">Per-stage GPU cost</h2>
+        <p class="note">Each stage is timed to GPU completion (submit → <code>onSubmittedWorkDone</code>), so the
+          bars are wall-clock per stage, not pure shader time. On the temporal path the render stage also
+          writes the motion-vector target.</p>
         <div id="stages">
           <div class="stage render"><span class="tag">render</span><span class="bar"><span id="bar-render"></span></span><span class="ms" id="ms-render">– ms</span></div>
           <div class="stage denoise"><span class="tag">denoise</span><span class="bar"><span id="bar-denoise"></span></span><span class="ms" id="ms-denoise">– ms</span></div>
-          <div class="stage upscale"><span class="tag">upscale</span><span class="bar"><span id="bar-upscale"></span></span><span class="ms" id="ms-upscale">– ms</span></div>
+          <div class="stage upscale"><span class="tag" id="tag-upscale">upscale</span><span class="bar"><span id="bar-upscale"></span></span><span class="ms" id="ms-upscale">– ms</span></div>
         </div>
         <p id="resline" style="margin-top:0.6rem">total <b id="ms-total">– ms</b> · <span id="fps">– fps</span></p>
       </section>
