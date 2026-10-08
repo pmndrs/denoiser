@@ -135,12 +135,18 @@ async function main() {
   // ---- graph ------------------------------------------------------------------
   const uShadowMix = uniform(1); // 0 = raw 1-spp visibility, 1 = denoised
   const uReflMix = uniform(1);
+  // diagnostics: 1 = effect off (shadow visibility forced to 1, reflections dropped)
+  const uShadowOff = uniform(0);
+  const uShadowClean = uniform(0); // 1 = converged noise-free shadow (diagnostic reference)
+  const uReflOff = uniform(0);
 
   interface Graph {
     pipeline: THREE.RenderPipeline;
     shadow: TemporalDenoiseNode<never>;
     refl: TemporalDenoiseNode<never>;
     upscaled: boolean;
+    /** The FSR3 node when upscaled (its `.upscaler.settings` are live-tunable). */
+    up?: { upscaler: { settings: Record<string, unknown>; resetHistory(): void } };
   }
 
   function buildGraph(upscaled: boolean): Graph {
@@ -178,14 +184,9 @@ async function main() {
       return uLightPower.mul(N_.dot(L.normalize()).max(0)).div(d2);
     };
 
-    // ---- stochastic visibility: 1 light sample + 1 ray per pixel per frame
-    const visibility = (() => {
-      const uvN = uv();
-      const s = surface(uvN);
-      const px = screenCoordinate.xy.floor();
-      const seed = px.x.add(px.y.mul(1973)).add(uFrame.mul(9277));
-      const r1 = hash(seed), r2 = hash(seed.add(7919));
-      const lp = uLightC.add(vec3(r1.mul(2).sub(1), 0, r2.mul(2).sub(1)).mul(uLightHalf));
+    // ---- visibility toward one point on the square light (lu, lv in [0,1]²)
+    const visTo = (s: { P: N; N: N }, lu: N, lv: N) => {
+      const lp = uLightC.add(vec3(lu.mul(2).sub(1), 0, lv.mul(2).sub(1)).mul(uLightHalf));
       const o = s.P.add(s.N.mul(0.02));
       const toL = lp.sub(o);
       const dist = toL.length();
@@ -199,11 +200,29 @@ async function main() {
         const hit = disc.greaterThan(0).and(t0.greaterThan(0.001)).and(t0.lessThan(dist));
         lit = lit.mul(select(hit, float(0), float(1)));
       }
-      const sky = s.d.greaterThanEqual(0.99999);
-      return select(sky, float(1), lit);
+      return lit;
+    };
+    // stochastic: 1 random light sample + 1 ray per pixel per frame (the signal FFX denoises)
+    const visibility = (() => {
+      const uvN = uv();
+      const s = surface(uvN);
+      const px = screenCoordinate.xy.floor();
+      const seed = px.x.add(px.y.mul(1973)).add(uFrame.mul(9277));
+      return select(s.d.greaterThanEqual(0.99999), float(1), visTo(s, hash(seed), hash(seed.add(7919))));
     })();
     const visRTT = convertToTexture(vec4(visibility, 0, 0, 1));
     visRTT.setResolutionScale(scale);
+    // diagnostics: converged, noise-free visibility (fixed 8x8 grid on the light) —
+    // the ideal input a perfect denoiser would produce
+    const cleanVis = (() => {
+      const uvN = uv();
+      const s = surface(uvN);
+      let acc: N = float(0);
+      for (let j = 0; j < 8; j++) for (let i = 0; i < 8; i++) acc = acc.add(visTo(s, float((i + 0.5) / 8), float((j + 0.5) / 8)));
+      return select(s.d.greaterThanEqual(0.99999), float(1), acc.div(64));
+    })();
+    const cleanRTT = convertToTexture(vec4(cleanVis, 0, 0, 1));
+    cleanRTT.setResolutionScale(scale);
 
     // ---- denoise nodes
     const shadowNode = ffxShadows(visRTT, {
@@ -231,10 +250,10 @@ async function main() {
       const albedo = dTex.sample(uvN);
       const diffuse = albedo.rgb.mul(float(1).sub(albedo.a));
       const sky = s.d.greaterThanEqual(0.99999);
-      const visSel = mix(visRTT.sample(uvN).r, shadowNode.r, uShadowMix);
+      const visSel = mix(mix(mix(visRTT.sample(uvN).r, shadowNode.r, uShadowMix), float(1), uShadowOff), cleanRTT.sample(uvN).r, uShadowClean);
       const direct = diffuse.mul(irradiance(s.P, s.N)).mul(select(sky, float(0), visSel));
       const noisyRefl = ssrNode.rgb;
-      const reflSel = mix(noisyRefl, reflNode.rgb, uReflMix).mul(select(ssrNode.a.greaterThan(0), float(1), float(0)));
+      const reflSel = mix(noisyRefl, reflNode.rgb, uReflMix).mul(select(ssrNode.a.greaterThan(0), float(1), float(0))).mul(float(1).sub(uReflOff));
       return vec4(sceneColor.sample(uvN).rgb.add(direct).add(reflSel), 1);
     })();
     const display = renderOutput(composite, THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace);
@@ -244,10 +263,11 @@ async function main() {
     if (upscaled) {
       const colorRTT = convertToTexture(composite); // FSR3 takes linear HDR and outputs display-referred sRGB
       colorRTT.setResolutionScale(scale);
-      pipeline.outputNode = upscale(colorRTT, depthTex, velTex, camera, { ratio: RATIO, jitter: !q.has('nojitter') }) as THREE.Node;
-    } else {
-      pipeline.outputNode = display;
+      const up = upscale(colorRTT, depthTex, velTex, camera, { ratio: RATIO, jitter: !q.has('nojitter') });
+      pipeline.outputNode = up as THREE.Node;
+      return { pipeline, shadow: shadowNode as never, refl: reflNode as never, upscaled, up: up as never };
     }
+    pipeline.outputNode = display;
     return { pipeline, shadow: shadowNode as never, refl: reflNode as never, upscaled };
   }
 
@@ -307,8 +327,12 @@ async function main() {
       fn(b.dataset.v!);
     }));
   };
-  const setShadow = (v: string) => { uShadowMix.value = v === 'denoised' ? 1 : 0; };
-  const setRefl = (v: string) => { uReflMix.value = v === 'denoised' ? 1 : 0; };
+  const setShadow = (v: string) => {
+    uShadowMix.value = v === 'denoised' ? 1 : 0;
+    uShadowOff.value = v === 'off' ? 1 : 0;
+    uShadowClean.value = v === 'clean' ? 1 : 0;
+  };
+  const setRefl = (v: string) => { uReflMix.value = v === 'denoised' ? 1 : 0; uReflOff.value = v === 'off' ? 1 : 0; };
   const setUpscale = (on: boolean) => {
     if (graph.upscaled === on) return;
     const old = graph;
@@ -425,6 +449,91 @@ async function main() {
       setShadow('denoised'); setRefl('denoised');
       await idle();
       return out;
+    },
+    /**
+     * Flicker diagnosis: static-camera temporal std of luma, averaged over the
+     * shadow / reflection masks taken from the noisy configs, for each of
+     * noisy / denoised / off per effect (off = effect removed entirely, so any
+     * remaining flicker there comes from the rest of the pipeline, e.g. FSR).
+     */
+    async diag(K = 24, warmup = 32, thr = 0.02) {
+      moving = false;
+      const run = async (shadow: string, refl: string) => { setShadow(shadow); setRefl(refl); await frames(warmup); return temporalStd(K); };
+      const mean = (s: Float32Array, m: Uint8Array) => { let a = 0, n = 0; for (let i = 0; i < s.length; i++) if (m[i]) { a += s[i]; n++; } return n ? a / n : 0; };
+      const sNoisy = await run('noisy', 'off');
+      const rNoisy = await run('off', 'noisy');
+      const ms = sNoisy.map((v) => (v > thr ? 1 : 0)) as unknown as Uint8Array;
+      const mr = rNoisy.map((v) => (v > thr / 5 ? 1 : 0)) as unknown as Uint8Array;
+      const cfgs: [string, string][] = [['denoised', 'off'], ['clean', 'off'], ['off', 'off']];
+      const out: Record<string, unknown> = {
+        shadowMaskPx: ms.reduce((a, b) => a + b, 0), reflMaskPx: mr.reduce((a, b) => a + b, 0),
+        'noisy shadow (shadow mask)': mean(sNoisy, ms), 'noisy refl (refl mask)': mean(rNoisy, mr),
+      };
+      for (const [s, r] of cfgs) {
+        const std = await run(s, r);
+        out[`shadow=${s} refl=${r}`] = { shadowMask: mean(std, ms), reflMask: mean(std, mr), all: mean(std, new Uint8Array(W * H).fill(1)) };
+      }
+      setShadow('denoised'); setRefl('denoised');
+      await idle();
+      return out;
+    },
+    /**
+     * FSR3 flicker ablation (needs ?upscale=1): with both effects off and a static
+     * camera, temporal std of the upscaled output for the baseline settings and
+     * each single-knob change. Isolates which FSR stage keeps a static scene moving.
+     */
+    async fsrAblation(K = 24, warmup = 64) {
+      if (!graph.up) return { error: 'not upscaled (?upscale=1)' };
+      moving = false;
+      setShadow('off'); setRefl('off');
+      const settings = graph.up.upscaler.settings;
+      const base = { ...settings };
+      const patches: [string, Record<string, unknown>][] = [
+        ['baseline', {}], ['sharpness=0', { sharpness: 0 }], ['autoExposure=false', { autoExposure: false }],
+        ['maxAccumulation=128', { maxAccumulation: 128 }], ['lockThinFeatures=false', { lockThinFeatures: false }],
+        ['detectShadingChanges=false', { detectShadingChanges: false }],
+        ['all stabilising', { sharpness: 0, autoExposure: false, detectShadingChanges: false }],
+      ];
+      const out: Record<string, unknown> = { base };
+      for (const [name, patch] of patches) {
+        Object.assign(settings, base, patch);
+        graph.up.upscaler.resetHistory(); // fresh FSR history, same view, so each config converges from the same state
+        await frames(warmup);
+        const std = await temporalStd(K);
+        let sum = 0, hot = 0;
+        for (const v of std) { sum += v; if (v > 0.01) hot++; }
+        out[name] = { meanStd: sum / std.length, pxAbove0_01: hot };
+      }
+      Object.assign(settings, base);
+      setShadow('denoised'); setRefl('denoised');
+      await idle();
+      return out;
+    },
+    /** Heat map (PNG data URL) of the static-camera temporal std, effects off: where FSR flickers. */
+    async fsrHeatmap(K = 24, warmup = 64, gain = 20, patch: Record<string, unknown> = {}) {
+      moving = false;
+      setShadow('off'); setRefl('off');
+      const settings = graph.up?.upscaler.settings;
+      const saved = settings ? { ...settings } : undefined;
+      if (settings) Object.assign(settings, patch);
+      graph.up?.upscaler.resetHistory();
+      await frames(warmup);
+      const base = luma(readFrame());
+      const std = await temporalStd(K);
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const ctx = c.getContext('2d')!;
+      const img = ctx.createImageData(W, H);
+      for (let i = 0; i < W * H; i++) {
+        const g = base[i] * 70; // dim scene underneath
+        const hv = Math.min(255, std[i] * gain * 255);
+        img.data.set([Math.min(255, g + hv), g + hv * 0.3, g, 255], i * 4);
+      }
+      ctx.putImageData(img, 0, 0);
+      if (settings && saved) Object.assign(settings, saved);
+      setShadow('denoised'); setRefl('denoised');
+      await idle();
+      return c.toDataURL('image/png');
     },
     async finiteCheck() {
       return { shadows: await nonFinite(graph.shadow), reflections: await nonFinite(graph.refl) };
