@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser — gallery</title>
+    <title>denoiser — before/after gallery</title>
     <style>
       :root {
         color-scheme: dark;
@@ -29,6 +29,7 @@
       h1 { font-size: 1.9rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
       h1 .name { color: var(--accent); }
       .tagline { color: var(--muted); font-size: 1.02rem; margin: 0 0 2rem; max-width: 42rem; }
+      .tagline a { color: var(--accent); }
 
       h2.section-label {
         font-size: 0.78rem;
@@ -194,11 +195,15 @@
   <body>
     <div class="wrap">
       <header>
-        <h1><span class="name">denoiser</span> gallery</h1>
+        <h1><span class="name">denoiser</span> before/after gallery</h1>
         <p class="tagline">
-          Before/after comparison across sample counts and aux inputs, denoised live in the
-          browser over WebGPU. Drag the divider — the right side is real-time
-          <code>denoiser.denoise()</code> output, not a canned image.
+          These scenes are <strong>pre-rendered</strong> path-traced frames: a ladder of
+          sample counts per pixel, albedo and normal aux buffers, and a converged
+          reference, all saved ahead of time. The denoising is not: the right side is
+          live <code>denoiser.denoise()</code> output, computed in your browser on WebGPU.
+          Dragging on the image moves the before/after slider (there is no camera to
+          orbit). For an interactive scene, try the
+          <a href="../three-pathtracer-webgpu/">live path tracer demo</a>.
         </p>
       </header>
 
@@ -229,7 +234,7 @@
         </div>
         <div class="control-group">
           <h2 class="section-label" style="margin-bottom:0.3rem">Reference</h2>
-          <button class="ref-btn" id="ref-btn" disabled>hold to peek converged frame</button>
+          <button class="ref-btn" id="ref-btn" disabled>hold to peek converged reference</button>
         </div>
       </section>
 

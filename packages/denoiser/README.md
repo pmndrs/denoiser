@@ -1,14 +1,24 @@
 # denoiser
 
-**AI denoising in the browser — [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn) running fully on WebGPU.**
+**WebGPU denoising for the web: OIDN for path-traced frames, FidelityFX for real-time shadows and reflections, three.js nodes for both.**
 
-Denoiser runs OIDN's pre-trained U-Nets on the GPU. The default runtime
-(`AutoRuntime`) uses WebNN fp16 for base/large models when WebNN is available and a
-hand-written WGSL runtime otherwise; both read the upstream OIDN `.tza` weights.
-All pre/post-processing — normalization, layout, tiling, overlap blending,
-color transforms — is WGSL compute on the same `GPUDevice`, so the only CPU↔GPU
-round-trip is the one you ask for. Feed it images or `GPUTexture`s; get back
-`ImageData`, floats, or a texture. Everything is validated on Apple GPUs only.
+- **Single-image / progressive denoising** of path-traced frames with
+  [Intel OIDN](https://github.com/RenderKit/oidn)'s pre-trained networks, matching
+  native OIDN output. The network runs on an interchangeable runtime (hand-written
+  WGSL, WebNN, Hugging Face kernels, onnxruntime-web); the default `AutoRuntime`
+  uses WebNN fp16 for base/large models when WebNN is available and WGSL otherwise,
+  and all of them read the upstream OIDN `.tza` weights. All pre/post-processing
+  (normalization, layout, tiling, overlap blending, color transforms) is WGSL
+  compute on the same `GPUDevice`, so the only CPU↔GPU round-trip is the one you ask
+  for. Feed it images or `GPUTexture`s; get back `ImageData`, floats, or a texture.
+- **Real-time temporal denoising** for raster and hybrid pipelines behind a
+  `TemporalDenoiser` API: AMD FidelityFX shadow and reflection denoisers ported to
+  WGSL (`denoiser/ffx`). OIDN 3 temporal is planned.
+- **three.js `WebGPURenderer` / TSL nodes** (`denoiser/three`: `denoise()`,
+  `ffxShadows()`, `ffxReflections()`) that share the renderer's `GPUDevice` and
+  compose with `@pmndrs/upscaler` (FSR3).
+
+Everything is validated on Apple GPUs only so far.
 
 ```sh
 npm install denoiser

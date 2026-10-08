@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser — OIDN denoising in the browser, full WebGPU</title>
+    <title>denoiser — WebGPU denoising for the web</title>
     <meta
       name="description"
-      content="Intel Open Image Denoise, running entirely in the browser on WebGPU. Live demos."
+      content="WebGPU denoising for the web: Intel OIDN networks for path-traced frames on interchangeable runtimes, real-time FidelityFX shadow and reflection denoisers, and three.js WebGPURenderer / TSL nodes. Live demos."
     />
     <style>
       :root {
@@ -115,12 +115,18 @@
   <body>
     <div class="wrap">
       <header>
-        <h1><span class="name">denoiser</span> — OIDN denoising in the browser, full WebGPU</h1>
+        <h1><span class="name">denoiser</span> — WebGPU denoising for the web</h1>
         <p class="tagline">
-          Intel Open Image Denoise (OIDN) U-Nets, running entirely on WebGPU via
-          onnxruntime-web. No native, no server round-trip — the noisy frame goes
-          in, the clean frame comes out, on the GPU. These demos need a WebGPU
-          browser (Chrome/Edge 113+, Safari 26+).
+          A WebGPU denoising library for the web. Path-traced frames are denoised
+          with Intel Open Image Denoise (OIDN) networks, matching native OIDN
+          output, on interchangeable runtimes (hand-written WGSL, WebNN, ONNX
+          Runtime; <code>AutoRuntime</code> by default). Raster and hybrid
+          pipelines get real-time temporal denoisers (AMD FidelityFX shadows and
+          reflections, ported to WGSL). Everything shares one <code>GPUDevice</code>
+          with your renderer, including three.js <code>WebGPURenderer</code> / TSL
+          nodes. No native code, no server round-trip. These demos need a WebGPU
+          browser (Chrome/Edge 113+, Safari 26+) and have been validated on Apple
+          GPUs only so far.
         </p>
         <nav class="toplinks">
           <a href="https://github.com/pmndrs/denoiser">GitHub repo ↗</a>
@@ -145,8 +151,9 @@
           <div class="card-body">
             <p class="card-title">Before / after gallery <span class="arrow">→</span></p>
             <p class="card-desc">
-              Real path-traced scenes at 1–16 samples per pixel: drag the divider,
-              step the noise ladder, toggle albedo+normal guidance live.
+              Pre-rendered path-traced scenes at 1–16 samples per pixel, denoised
+              live in your browser: drag the divider, step the noise ladder, toggle
+              albedo+normal guidance.
             </p>
           </div>
         </a>
@@ -189,8 +196,9 @@
           <div class="card-body">
             <p class="card-title">three.js path tracer <span class="arrow">→</span></p>
             <p class="card-desc">
-              three r185 <code>WebGPUPathTracer</code> and the WebGPU/ONNX denoiser
-              sharing one <code>GPUDevice</code> — progressive path trace, denoised live.
+              three.js <code>WebGPUPathTracer</code> and the denoiser sharing one
+              <code>GPUDevice</code> — an interactive scene, progressively path
+              traced and denoised live.
             </p>
           </div>
         </a>
@@ -212,8 +220,9 @@
             <p class="card-title">Realtime vs OIDN <span class="arrow">&#8594;</span></p>
             <p class="card-desc">
               Noisy SSR denoised two ways: three.js's temporal
-              <code>RecurrentDenoiseNode</code> every frame vs OIDN quality on a
-              cadence &mdash; same device, same noise, honest trade-offs.
+              <code>RecurrentDenoiseNode</code> every frame vs OIDN-quality
+              single-image denoising on a cadence &mdash; same device, same noise,
+              honest trade-offs.
             </p>
           </div>
         </a>
@@ -260,7 +269,7 @@
           <div class="card-body">
             <p class="card-title">Benchmark <span class="arrow">→</span></p>
             <p class="card-desc">
-              The perf harness: cold + warm timings, per-stage stats, and fp16-vs-fp32
+              The perf harness for the runtimes: cold + warm timings, per-stage stats, and fp16-vs-fp32
               PSNR across image sizes. Numbers you can reproduce in your own browser.
             </p>
           </div>
