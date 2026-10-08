@@ -1,26 +1,43 @@
 ---
 title: Introduction
-description: AI denoising for path/ray-traced renders, running entirely in the browser on WebGPU.
+description: WebGPU denoising for the web: OIDN for path-traced frames on interchangeable runtimes, FidelityFX real-time shadow and reflection denoisers, and three.js TSL nodes.
 nav: 0
 ---
 
-Denoiser runs Intel [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn)'s
-pretrained U-Nets fully on the GPU: by default a hand-written WGSL runtime, or WebNN
-when the browser exposes it (the default `AutoRuntime` picks per model), with every
-pre/post-processing step — normalization, tiling, overlap blending, color
-transforms — written as WGSL compute on the same `GPUDevice`. onnxruntime-web is
-available as an opt-in runtime (`denoiser/ort`). There's
-no server round-trip and no native binary: the noisy frame goes in, the clean frame
-comes out, on the GPU that rendered it.
+Denoiser is a WebGPU denoising library for the web. It has three parts:
 
-[**Live gallery demo →**](https://pmndrs.github.io/denoiser/gallery/) — before/after
-slider, sample-count ladder, albedo+normal toggle, real in-browser inference on real
-path-traced scenes.
+- **Single-image and progressive denoising** of path-traced frames with Intel
+  [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn)'s pretrained
+  networks, matching native OIDN output. The network runs on an interchangeable
+  runtime: hand-written WGSL, WebNN, Hugging Face kernels, or onnxruntime-web
+  (`denoiser/ort`, opt-in). The default `AutoRuntime` picks per model: WebNN when
+  the browser exposes it, WGSL otherwise. Every pre/post-processing step
+  (normalization, tiling, overlap blending, color transforms) is WGSL compute on the
+  same `GPUDevice`.
+- **Real-time temporal denoising** for raster and hybrid pipelines behind the
+  `TemporalDenoiser` API, starting with AMD's FidelityFX shadow and reflection
+  denoisers ported to WGSL. See
+  [Real-time (temporal) denoising](../guides/realtime-temporal-denoising.mdx). An
+  OIDN 3 temporal model is planned.
+- **three.js `WebGPURenderer` / TSL nodes** (`denoise()`, `ffxShadows()`,
+  `ffxReflections()`) that share the renderer's `GPUDevice` and compose with
+  `@pmndrs/upscaler` (FSR3). See [three.js & TSL](../guides/three-and-tsl.mdx).
+
+There's no server round-trip and no native binary: the noisy frame goes in, the
+clean frame comes out, on the GPU that rendered it. Everything is validated on Apple
+GPUs only so far.
+
+[**Live gallery demo →**](https://pmndrs.github.io/denoiser/gallery/) — pre-rendered
+path-traced scenes denoised live in your browser: before/after slider, sample-count
+ladder, albedo+normal toggle. For an interactive scene, see the
+[live path tracer demo](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/).
 
 ## When to use it
 
 - **Path-traced / ray-traced renders.** OIDN's weights are trained on Monte Carlo
   render noise — this is its home turf, not a general-purpose image filter.
+- **Real-time shadows and reflections.** Per-frame temporal denoising of 1-sample
+  ray-traced signals in a raster or hybrid renderer, with the FidelityFX denoisers.
 - **Progressive preview.** Denoise every few samples while a path tracer accumulates
   and watch noise disappear well before convergence. See
   [Performance](../concepts/performance.mdx) for pacing patterns.
@@ -36,11 +53,12 @@ path-traced scenes.
 > isn't designed to look right and shouldn't be judged as if it were.
 
 - **Photos / sensor noise** — off-label use, see above.
-- **Per-frame realtime denoising.** This library targets progressive refinement and
-  final frames, not a temporal denoiser that runs every frame on screen-space effects
-  (SSR, SSGI). three.js's `RecurrentDenoiseNode` (r185+) is built for that job, and
-  OIDN doesn't ship temporal weights yet (upstream OIDN 3.x). See the roadmap for
-  where a realtime-denoiser comparison demo fits in.
+- **Per-frame real-time denoising with the OIDN networks.** The OIDN models are
+  single-frame, so running them every frame would flicker. For real-time shadows and
+  reflections use the temporal FidelityFX denoisers (`denoiser/ffx`, see
+  [Real-time (temporal) denoising](../guides/realtime-temporal-denoising.mdx)); OIDN
+  doesn't ship temporal weights yet (upstream OIDN 3.x), and a temporal OIDN model is
+  planned.
 - **Non-WebGPU browsers.** v2 is a WebGPU-only rewrite with no fallback. If you need
   broader coverage, stay on `denoiser@0.0.11` (v1, TensorFlow.js-based — its WebGL2
   fallback covers non-WebGPU browsers) — see
