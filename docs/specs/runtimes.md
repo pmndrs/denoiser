@@ -8,6 +8,8 @@
 > `WgslRuntime` (`denoiser/wgsl`, experimental): 2.5–3x faster than ORT, ~2x
 > faster than kernels through the facade at matching parity (see "Hand-written
 > WGSL runtime"). ORT-WebGPU miscomputes the large models — see that section.
+> 2026-10-08: experimental `WebnnRuntime` (`denoiser/webnn`, Chrome flag only) —
+> see "WebNN runtime".
 
 ## Why
 
@@ -267,6 +269,170 @@ timestamps, `runtimes=cpu,...` for the ORT-wasm reference), `mode=tune` (configs
 round-robin on one device), `sm=0|1` (subgroup-matrix path), `bw.html`,
 `mma.html`, `features.html` (probes).
 
+## WebNN runtime (`packages/denoiser-webnn`, `examples/webnn-bench`)
+
+`WebnnRuntime({ tzaUrl, deviceType: 'gpu' | 'npu' | 'cpu', device?, interop? })`
+(`denoiser/webnn`, experimental, `private`). The graph is built with
+`MLGraphBuilder` from the `.tza` weights by unfolding the WGSL runtime's fused
+op list (`buildGraph`) back into `resample2d` (nearest, scales [2,2]) → `concat`
+→ `conv2d` (NCHW / OIHW, pad 1, bias) → `clamp(0, 6)` → `maxPool2d`. One
+`MLGraph` per geometry (static shapes), compiled in `bind()` (the engine's first
+geometry starts compiling from `load()`'s hint).
+
+**Chrome 154 stable and 157 Canary (identical), M5 Pro, headless,
+`--enable-features=WebMachineLearningNeuralNetwork`.** What the API does on macOS
+(CoreML backend):
+
+- `deviceType: 'gpu'` runs on the GPU. **`'npu'` is the same as `'gpu'` by
+  default** (bit-identical outputs and timings — Chrome maps it to CoreML "all
+  compute units", which picks the GPU). Only with the extra Chrome feature
+  **`WebNNCoreMLExplicitGPUOrNPU`** does `'npu'` reach the **Apple Neural Engine**
+  (fp16 outputs then differ, 2.5–3e-3 vs fp32, and timings change). fp32 graphs
+  on that `'npu'` fall back to the CPU (same outputs and speed as `'cpu'`).
+- `navigator.ml.createContext(gpuDevice)` works but **runs on the CPU** (same
+  outputs as `'cpu'`, 7–8× slower than `'gpu'`: rt_hdr_small 512² ~100–180 ms,
+  1080p ~700 ms). Not usable.
+- Graph layout: `preferredInputLayout` is `nchw`; an NHWC graph (transposes at the
+  ends, OHWI filters) measured the same. NCHW is the default.
+- Correctness (network only, max |Δ| vs WGSL fp32 on the same random input; WGSL
+  fp32 is within ~2e-6 of ORT-wasm CPU): fp32 1.3–2.8e-6; fp16 on 'gpu'
+  0.7–1.3e-3 (closer to fp32 than WGSL fp16's 3.3–4.8e-3 — CoreML seems to
+  compute fp16 graphs at higher internal precision on the GPU); fp16 on the ANE
+  2.5–3.2e-3.
+- **Cold start:** the very first build of a graph on a machine took 5–7 s
+  (`build()` 5.5 s + first dispatch 2.5–4.5 s on 'gpu'); afterwards — even in a
+  fresh browser profile, so it's CoreML's own on-disk cache — 0.4–1.2 s per
+  geometry on 'gpu', 1.0–2.7 s on the ANE ('npu' explicit), plus a first dispatch
+  of 0.1–1.3 s ('gpu'). `createContext` 0–700 ms. Every new run geometry pays
+  this (WGSL: 30–400 ms per model, nothing per geometry).
+
+### Network-only timings
+
+`examples/webnn-bench` (`index.html?model=…&precision=…&devs=gpu,npu,wgsl`),
+batch 1, random input in [0, 1). All runners **interleaved one call per round**,
+warm median (min) of 10. "dispatch" = (8 back-to-back dispatches + one
+readTensor − one readTensor) / 8 for WebNN, `run()` + queue drain for WGSL — the
+network alone; "io" = writeTensor + dispatch + readTensor (host in → host out).
+
+**Caveat — read this first.** The whole session ran with the GPU **75–97 % busy
+with another process** (IOAccelerator "Device Utilization", sampled while our
+harness was idle; it never went quiet). WGSL fp16 measured ~3.5× its quiet
+2026-10-07 numbers (rt_hdr 1080p: 279 vs 78 ms), so the GPU columns are inflated
+and only their **ratios within a run** mean something — and even those assume
+time-slicing hurts both runtimes alike, which isn't guaranteed (WebNN submits one
+CoreML request per run, WGSL one big command buffer; both sync once). The ANE
+column is not GPU-bound and its run-to-run spread is tiny (min ≈ median), so it
+is probably close to its quiet value. A quiet-GPU rerun is needed before quoting
+any GPU number in absolute terms.
+
+fp16, Chrome with `WebNNCoreMLExplicitGPUOrNPU` ('npu' = ANE), ms:
+
+| model | size | WGSL fp16 | WebNN gpu | WebNN npu (ANE) | gpu / ANE io | WGSL ÷ gpu / ÷ ANE | WGSL fp16 quiet (10-07) | native Metal |
+|---|---|---|---|---|---|---|---|---|
+| rt_hdr_small | 512² | 22.6 (17.1) | 23.8 (18.3) | **6.6** (6.5) | 24.8 / 8.4 | 0.95× / 3.4× | ~5–6 | 2.8 |
+| rt_hdr_small | 1920×1088 | 171 (113) | 135 (129) | **49.9** (49.6) | 151 / 62 | 1.27× / 3.4× | ~38 | 14 |
+| rt_hdr | 512² | 38.8 (37.1) | 31.0 (26.4) | **11.4** (11.4) | 35 / 14 | 1.25× / 3.4× | ~10 | 4 |
+| rt_hdr | 1920×1088 | 279 (254) | 169 (159) | **82.0** (80.7) | 196 / 101 | 1.66× / 3.4× | ~78 | 25 |
+| rt_hdr_calb_cnrm (9ch) | 512² | 41.1 (36.3) | 31.4 (29.5) | **10.8** (10.7) | 37 / 14 | 1.31× / 3.8× | ~10 | 4 |
+| rt_hdr_calb_cnrm (9ch) | 1920×1088 | 297 (266) | 181 (170) | **84.6** (84.1) | 217 / 107 | 1.64× / 3.5× | ~78 | 25 |
+| rt_hdr_calb_cnrm_large | 512² | 96.1 (87.8) | 49.8 (46.0) | **22.1** (21.9) | 51 / 25 | 1.93× / 4.4× | ~25 | 7.8 |
+| rt_hdr_calb_cnrm_large | 1920×1088 | 718 (697) | 309 (279) | **196** (191) | 386 / 220 | 2.32× / 3.7× | ~201 | 54 |
+
+fp32 and fp16, default Chrome mapping ('npu' ran on the GPU, so only 'gpu' shown):
+
+| model | size | WGSL fp32 | WebNN gpu fp32 | WGSL fp16 | WebNN gpu fp16 |
+|---|---|---|---|---|---|
+| rt_hdr_small | 512² | 17.5 | 19.3 (0.90×) | 19.2 | 24.5 (0.78×) |
+| rt_hdr_small | 1920×1088 | 134 | 115 (1.16×) | 131 | 136 (0.97×) |
+| rt_hdr | 512² | 38.6 | 42.5 (0.91×) | 33.2 | 27.7 (1.20×) |
+| rt_hdr | 1920×1088 | 257 | 263 (0.98×) | 247 | 178 (1.39×) |
+| rt_hdr_calb_cnrm | 512² | 38.8 | 43.0 (0.90×) | 35.6 | 29.2 (1.22×) |
+| rt_hdr_calb_cnrm | 1920×1088 | 273 | 284 (0.96×) | 263 | 192 (1.37×) |
+| rt_hdr_calb_cnrm_large | 512² | 83.8 | 85.1 (0.99×) | 81.3 | 45.1 (1.80×) |
+| rt_hdr_calb_cnrm_large | 1920×1088 | 625 | 594 (1.05×) | 632 | 329 (1.92×) |
+
+(× = WGSL ÷ WebNN; > 1 means WebNN is faster.) WGSL fp32 here is the
+subgroup-matrix kernel (`--enable-unsafe-webgpu`).
+
+Reading:
+
+- **fp32: WebNN on the GPU ≈ WGSL** (0.9–1.16×). No win.
+- **fp16 on the GPU: WebNN wins on the bigger models** — 1.2–1.4× on base, 1.8–2.3×
+  on large, ~1× on small — under contention. If those ratios held on a quiet
+  GPU, WebNN gpu fp16 would be roughly ~47 ms (base) / ~87–105 ms (large) at
+  1080p vs WGSL's 78 / 201: closer to native Metal (25 / 54) but still ~2× off.
+  Unverified.
+- **ANE (flag-only): 50 / 82 / 85 / 196 ms at 1080p**, 6.6 / 11.4 / 10.8 / 22 ms
+  at 512² for small / base / 9ch / large. That is about **the same as quiet WGSL
+  fp16** (38 / 78 / ~78 / 201) — not faster — but it leaves the GPU free for
+  the renderer, which matters for a path tracer sharing the GPU. Behind a
+  non-default Chrome feature, so no user gets it today.
+
+### IO with the engine (WebNN ↔ WebGPU interop)
+
+`createExportableTensor(desc, device)` + `exportToGPU(tensor)` work on 'gpu',
+'npu' and GPUDevice contexts — **float16 only** ("Invalid operand data type:
+float32"/"int32"). Each export returns a **new** `GPUBuffer`
+(`STORAGE | COPY_SRC | COPY_DST`) holding the tensor's data; WebNN refuses to
+dispatch with a tensor while it's exported ("Input tensor has been exported to
+WebGPU") until that buffer is `destroy()`ed; data survives round trips. One
+export + destroy costs 0.36–0.54 ms. Chrome also refuses large exportable
+tensors: probed, the limit is (product of all dims but the last) ≤ 16384 and
+last dim ≤ 16384 — a 2D surface — so [1, 9, 1088, 1920] (37.6 MB) and
+[1, 1, 8192, 4096] export fine while [8, 9, 256, 256] (the engine's eager tile
+batch for 9-channel models) and [1, 9, 2048, 1024] are "Tensor size is too
+large". The runtime checks that up front and uses the host path for such
+geometries. Once, a fresh context reported "Context is lost" on creating an
+[8, 3, 256, 256] exportable right after other contexts were destroyed (not
+seen in the engine/eval runs).
+
+Because the engine's `binding.input/output` must be fixed buffers, the runtime
+keeps its own WebGPU IO buffers and per `run()`: exports the input tensor,
+GPU-copies `binding.input` into it, destroys it, dispatches, exports the output,
+GPU-copies it to `binding.output`, destroys it. fp32 (no export) and geometries
+Chrome won't export take the **host path**: copy + map `binding.input`,
+`writeTensor`, dispatch, `readTensor`, `queue.writeBuffer(binding.output)`.
+
+Cost through the runtime (`devs=rt-<gpu|npu>-<interop|host>`, rt_hdr fp16, run()
++ queue drain, vs raw dispatch + readTensor in the same run, contended GPU):
+'npu' 512² 13.1 → 27.8 (interop) / 16.6 (host); 1080p 108 → 121 / 125; 'gpu'
+512² 32 → 47 / 35; 1080p ~250–325 for all three (noise > difference). So the
+interop path works and stays on the GPU, but **isn't measurably cheaper than the
+host round trip** here — the export/fence handoffs cost about what the copies
+save, and under GPU contention the GPU-side copies queue behind other work.
+
+### Through the engine (`examples/eval`, `webnn` / `webnn-npu`)
+
+Full eval (25 cases, [docs/status/eval-2026-10-08-webnn.md](../status/eval-2026-10-08-webnn.md),
+same contended GPU, WGSL fp16 run in the same session for scale):
+
+- **Correctness gate passed:** webnn fp32 ≤ 1 LSB vs native CPU on every case
+  (72–84 dB), webnn fp16 ≤ 1 LSB (71–78 dB — closer than WGSL fp16's 62–68),
+  webnn-npu (ANE) fp16 ≤ 2 LSB (62–67 dB). The one exception,
+  eiffel/rt_ldr_calb_cnrm at 5 LSB, is 5 LSB on every runtime (open issue from
+  the 10-07 eval). PSNR vs the converged reference matches native (ANE ~0.2 dB
+  lower on spheres).
+- **Speed @1080p (contended):** webnn fp16 vs WGSL fp16 ≈ 1.0–1.2× on small
+  (149–181 vs 159–206 ms, one outlier 74), 1.4–1.9× on base (175–210 vs 258–378),
+  2.8× on large (317 vs 890). webnn fp32 is ≈ WGSL fp16 or slower (host IO
+  path). webnn-npu 85–137 ms on most cases with outliers to 255 ms (the engine's
+  pre/post + interop copies still run on the busy GPU).
+- At 512² WebNN is not faster than WGSL fp16 except large; the ANE has outliers
+  (19–73 ms).
+- Load: webnn ~0.4–0.9 s per model (two graphs: the engine's eager 256²×8 tile
+  geometry + the first run geometry), webnn-npu 1.2–2.7 s, WGSL 30–430 ms.
+
+### Verdict
+
+WebNN does reach Apple's ML hardware, and on fp16 base/large models the GPU path
+looked 1.4–2.3× faster than WGSL fp16 in this (contended) session — but it is
+**not near native OIDN-on-Metal**, it's behind a Chrome flag
+(`WebMachineLearningNeuralNetwork`), the ANE needs a second non-default flag,
+fp32 gains nothing, the WebGPU interop is fp16-only and no cheaper than a host
+copy, and every new geometry costs ~0.5–2.5 s of CoreML compile. Keep it as an
+experimental runtime; re-measure on a quiet GPU before deciding anything, and
+watch for Chrome shipping WebNN by default.
+
 ## Plan
 
 1. ~~Runtime seam inside `packages/denoiser`, no public API change~~ ✓
@@ -299,7 +465,8 @@ round-robin on one device), `sm=0|1` (subgroup-matrix path), `bw.html`,
    tiles under a smaller budget).
 5. OIDN 3 on the winning runtime; add `createStream()` (temporal state, `reset()`)
    and `motion`/`depth` inputs once its inputs are public.
-6. WebNN runtime; ~~hand-written WGSL runtime (fusion, single encoder per frame),
+6. ~~WebNN runtime~~ — experimental `WebnnRuntime` (`denoiser/webnn`) on
+   `feat/webnn-runtime` (see "WebNN runtime"); ~~hand-written WGSL runtime (fusion, single encoder per frame),
    using kernels as the correctness/perf baseline~~ — first cut on
    `feat/wgsl-runtime` (above).
 

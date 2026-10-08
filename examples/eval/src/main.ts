@@ -12,6 +12,7 @@
 import { TiledEngine, OrtRuntime, type NetworkRuntime, type Precision } from 'denoiser';
 import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
+import { WebnnRuntime } from 'denoiser/webnn';
 
 interface PlanItem {
   scene: string; model: string; channels: number; hdr: boolean;
@@ -40,6 +41,10 @@ function makeRuntime(): NetworkRuntime {
     case 'wgsl': return new WgslRuntime({ tzaUrl: '/tzas' });
     // the kernel everyone gets today (no experimental subgroup-matrix feature)
     case 'wgsl-portable': return new WgslRuntime({ tzaUrl: '/tzas', subgroupMatrix: false });
+    // WebNN (Chrome: CoreML on macOS); webnn-npu = Neural Engine when Chrome runs
+    // with WebNNCoreMLExplicitGPUOrNPU (run.mjs enables it), else same as gpu
+    case 'webnn': return new WebnnRuntime({ tzaUrl: '/tzas', deviceType: 'gpu' });
+    case 'webnn-npu': return new WebnnRuntime({ tzaUrl: '/tzas', deviceType: 'npu' });
     default: throw new Error(`unknown runtime ${runtimeName}`);
   }
 }

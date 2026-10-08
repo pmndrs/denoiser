@@ -58,6 +58,11 @@
             "types": "./dist/ffx.d.ts",
             "import": "./dist/ffx.mjs",
             "require": "./dist/ffx.cjs"
+        },
+        "./webnn": {
+            "types": "./dist/webnn.d.ts",
+            "import": "./dist/webnn.mjs",
+            "require": "./dist/webnn.cjs"
         }
     },
     "typesVersions": {
@@ -76,6 +81,9 @@
             ],
             "ffx": [
                 "./dist/ffx.d.ts"
+            ],
+            "webnn": [
+                "./dist/webnn.d.ts"
             ]
         }
     },
@@ -106,6 +114,7 @@
         "@pmndrs/denoiser-ffx": "workspace:*",
         "@pmndrs/denoiser-kernels": "workspace:*",
         "@pmndrs/denoiser-ort": "workspace:*",
+        "@pmndrs/denoiser-webnn": "workspace:*",
         "@pmndrs/denoiser-wgsl": "workspace:*",
         "@rollup/plugin-commonjs": "^29.0.3",
         "@rollup/plugin-node-resolve": "^16.0.3",

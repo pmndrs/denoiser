@@ -9,7 +9,9 @@
 //
 // Headless Chrome runs with --enable-unsafe-webgpu, which exposes the
 // experimental subgroup-matrix feature: `wgsl` fp32 uses it, `wgsl-portable`
-// is the kernel normal users get.
+// is the kernel normal users get. WebNN (`webnn`, `webnn-npu`) needs
+// --enable-features=WebMachineLearningNeuralNetwork, which every run passes.
+// EVAL_URL overrides the dev server URL.
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -17,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const BASE = 'http://localhost:5196/';
+const BASE = process.env.EVAL_URL ?? 'http://localhost:5196/';
 const OUT = fileURLToPath(new URL('../../tools/eval/out/', import.meta.url));
 const COMBOS = process.argv.slice(2).length ? process.argv.slice(2) : [
   'ort:fp32', 'ort:fp16', 'kernels:fp32', 'kernels:fp16', 'wgsl:fp32', 'wgsl-portable:fp32', 'wgsl:fp16',
@@ -29,7 +31,9 @@ async function runCombo(runtime, precision) {
   const q = new URLSearchParams({ runtime, precision, ...(process.env.ONLY ? { only: process.env.ONLY } : {}) });
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
-    '--enable-features=Vulkan', `--remote-debugging-port=${port}`,
+    // WebNN is behind a flag (Chrome 154); the explicit mapping makes 'npu' the Neural Engine
+    '--enable-features=Vulkan,WebMachineLearningNeuralNetwork,WebNNCoreMLExplicitGPUOrNPU',
+    `--remote-debugging-port=${port}`,
     `--user-data-dir=${path.join(os.tmpdir(), `denoiser-eval-${Date.now()}`)}`,
     `${BASE}?${q}`,
   ], { stdio: 'ignore' });
