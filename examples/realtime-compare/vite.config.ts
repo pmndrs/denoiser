@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { serveTzas } from '../_shared/vite-tzas';
 
 // Loads the .onnx weights straight from the default CDN (like a real consumer);
 // no models middleware. Mirrors the three-based examples for the single-three
@@ -9,6 +10,7 @@ export default defineConfig({
   // serves this at /denoiser/realtime-compare/).
   base: './',
   server: { fs: { allow: ['../..'] } },
+  plugins: [serveTzas()],
   // three r185 addons use top-level await -> need an esnext target.
   esbuild: { target: 'esnext' },
   build: { target: 'esnext' },

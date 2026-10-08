@@ -8,7 +8,7 @@
 // GPU work and whose `setup` returns a pass-texture node over the output texture.
 import { TempNode, NodeUpdateType, StorageTexture, HalfFloatType, LinearFilter, LinearSRGBColorSpace, NoColorSpace } from 'three/webgpu';
 import { nodeObject, convertToTexture, passTexture, uniform, mix } from 'three/tsl';
-import type { NodeBuilder, NodeFrame, Texture, WebGPURenderer } from 'three/webgpu';
+import type { Node, NodeBuilder, NodeFrame, Texture, WebGPURenderer } from 'three/webgpu';
 import type { Denoiser, DenoiserCreateOptions, NetworkRuntime, OutputTransfer } from '@pmndrs/denoiser-core';
 import { getGPUTexture } from '../shared/three';
 import { createDenoiserForRenderer } from './createDenoiser';
@@ -84,12 +84,20 @@ export class DenoiseNode extends TempNode {
   private _frames = 0;
   private _hasResult = false;
   private _lastMs = 0;
+  private _idle: Promise<void> = Promise.resolve();
+
+  /** Auto-request every N rendered frames (0/undefined = off). Live: change any time. */
+  every: number | undefined;
+  /** Auto-request while this returns true and the current view has no result. Live. */
+  when: (() => boolean) | undefined;
 
   constructor(colorNode: TextureNodeLike, options: DenoiseNodeOptions = {}) {
     super('vec4');
     this.updateBeforeType = NodeUpdateType.FRAME;
     this._color = colorNode;
-    this._options = options;
+    this._options = { ...options };
+    this.every = options.every;
+    this.when = options.when;
     if (options.denoiser) this._denoiser = Promise.resolve(options.denoiser);
   }
 
@@ -103,6 +111,20 @@ export class DenoiseNode extends TempNode {
   get texture(): Texture | null { return this._out; }
   /** The Denoiser in use (set once the node has been built or a denoiser was passed). */
   get denoiserPromise(): Promise<Denoiser> | null { return this._denoiser; }
+
+  /** Swap the aux inputs (e.g. a UI toggle). Pass nothing for color-only. Takes effect on the next run. */
+  setAux(albedo?: TextureNodeLike, normal?: TextureNodeLike): this {
+    this._options.albedo = albedo ? convertToTexture(albedo) : undefined;
+    this._options.normal = normal ? convertToTexture(normal) : undefined;
+    return this;
+  }
+
+  /**
+   * Resolves when the run currently in flight has finished (immediately if none).
+   * Runs start inside a render that includes this node, so `request()`, render once,
+   * then `await settled()`.
+   */
+  settled(): Promise<void> { return this._idle; }
 
   /** Run a denoise on the next frame (coalesces with an already queued request). */
   request(): this { this._pending = true; return this; }
@@ -137,15 +159,17 @@ export class DenoiseNode extends TempNode {
     this._frames++;
     const o = this._options;
     if (!this._pending && !this._busy) {
-      if (o.every && this._frames % o.every === 0) this._pending = true;
-      else if (o.when && !this._hasResult && o.when()) this._pending = true;
+      if (this.every && this._frames % this.every === 0) this._pending = true;
+      else if (this.when && !this._hasResult && this.when()) this._pending = true;
     }
     if (!this._pending || this._busy) return;
     this._busy = true;
     this._pending = false;
     const generation = this._generation;
     const t0 = performance.now();
-    this._run(renderer, generation)
+    const run = this._run(renderer, generation);
+    this._idle = run.then(() => undefined, () => undefined);
+    run
       .then((tex) => {
         if (!tex || generation !== this._generation) return; // stale: its view is gone
         this._lastMs = performance.now() - t0;
@@ -239,9 +263,9 @@ export class DenoiseNode extends TempNode {
  * Create a {@link DenoiseNode}. Non-texture inputs (arbitrary TSL expressions) are
  * rendered to a texture first, like three's own display nodes do.
  */
-export const denoise = (color: TextureNodeLike, options: DenoiseNodeOptions = {}) =>
+export const denoise = (color: TextureNodeLike, options: DenoiseNodeOptions = {}): DenoiseNode & Node<'vec4'> =>
   nodeObject(new DenoiseNode(convertToTexture(color), {
     ...options,
     albedo: options.albedo ? convertToTexture(options.albedo) : undefined,
     normal: options.normal ? convertToTexture(options.normal) : undefined,
-  }));
+  })) as unknown as DenoiseNode & Node<'vec4'>;
