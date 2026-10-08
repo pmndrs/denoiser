@@ -24,7 +24,7 @@ runtime; only the executor changes, so you pick one by passing it to
 |---|---|---|---|
 | ONNX Runtime | `denoiser` (default) or `denoiser/ort` | onnxruntime-web, WebGPU execution provider, `.onnx` models | shipping default; wrong on some models (see below) |
 | HF kernels | `denoiser/kernels` | `@huggingface/kernels` (optional peer dependency): FusedConv / MaxPool / Resize / Concat, 28 calls per frame | experimental; needs a device-sharing shim today |
-| Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one compute pass; no dependencies | experimental; fastest with no flags |
+| Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one command encoder; no dependencies | experimental; fastest with no flags |
 | WebNN | `denoiser/webnn` | the graph built with `MLGraphBuilder`, run by the browser's ML backend (CoreML in Chrome on macOS) | experimental; Chrome flag required |
 
 The kernels, WGSL and WebNN runtimes read the upstream OIDN `.tza` weights
@@ -90,6 +90,9 @@ problem, and it is still open.
 
 ## Which one should I use?
 
+- **Let the library pick:** `AutoRuntime` from `denoiser/auto` (below) runs
+  WebNN fp16 for base/large models when WebNN is available and WGSL otherwise,
+  on one shared GPUDevice. It never picks ORT.
 - **The default, nothing to configure:** keep ORT if you only denoise color or
   clean aux (`albedo` + `normal`) at `fast` or `balanced` quality and don't need
   the speed. It has the longest track record in this repo.
@@ -208,6 +211,26 @@ runs on a shared device, because it destroys that device. kernels keeps one
 page-global runtime, so all `KernelsRuntime`s on a page share one device (the
 first one's). The first load costs about 0.8-1.8 s per model (kernel fetch and
 compile).
+
+### Automatic (`AutoRuntime`)
+
+```ts
+import { Denoiser } from 'denoiser';
+import { AutoRuntime } from 'denoiser/auto';
+
+const denoiser = await Denoiser.create({
+  runtime: new AutoRuntime(), // { tzaUrl?, device?, webnn?: 'gpu' | 'npu' | false }
+  precision: 'fp16',
+});
+```
+
+Per model it chooses WebNN (fp16, base/large models, when `navigator.ml` can
+create a context) or the hand-written WGSL runtime (everything else, including
+all fp32). Both run on one GPUDevice — pass a three.js renderer's device as
+`device` to share it — so `denoiser.device` stays the same when the model
+changes. `runtime.lastChoice` reports what served the last load. Set
+`webnn: false` when first-call latency matters more than steady-state speed:
+WebNN compiles per image size (0.4–2.7 s each on a cold CoreML cache).
 
 ## Which device are you on?
 

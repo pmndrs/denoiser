@@ -135,7 +135,7 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
   `denoiser` package.
 - **HF kernels runtime** (experimental, zero-copy IO via kernels-allocated
   tensors) — ~1.2–1.35× faster than ORT, correct on all aux models.
-- **Hand-written WGSL runtime** (experimental) — fused U-Net in one compute pass;
+- **Hand-written WGSL runtime** (experimental) — fused U-Net in one command encoder per run;
   2.5–3× faster than ORT through the facade, correct on every model, 10–90 ms model
   load.
 - **WebNN runtime** (experimental) — `MLGraphBuilder` graph from the `.tza`
@@ -227,8 +227,9 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 
 ## Open decisions (summary)
 
-1. **2.0 default runtime and auto-selection** — WGSL vs ORT as default; whether and
-   how `'auto'` exists; whether WebNN can be auto-selected.
+1. **2.0 default runtime** — `AutoRuntime` (`denoiser/auto`: WebNN fp16 for
+   base/large when available, WGSL otherwise, never ORT) exists; open is whether
+   it, WGSL, or ORT is the default of `denoiser`.
 2. **Non-Apple GPU validation** — blocks every speed/quality claim beyond Apple.
 3. **ORT `*_alb` / `*_alb_nrm` and large-topology correctness** — split artifacts,
    a refusal/redirect, or wait for upstream.

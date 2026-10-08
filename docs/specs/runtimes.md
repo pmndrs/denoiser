@@ -424,6 +424,11 @@ same contended GPU, WGSL fp16 run in the same session for scale):
 
 ### Verdict
 
+> **Superseded by the quiet-GPU rerun** ([eval-2026-10-08-quiet](../status/eval-2026-10-08-quiet.md)):
+> WebNN fp16 (gpu) is 1.6× / 1.2× native Metal on base / large at 1080p
+> (40 / 65 ms) — the fastest web runtime there; `denoiser/auto` picks it for
+> those models. The flag, compile-cost and interop caveats below still apply.
+
 WebNN does reach Apple's ML hardware, and on fp16 base/large models the GPU path
 looked 1.4–2.3× faster than WGSL fp16 in this (contended) session — but it is
 **not near native OIDN-on-Metal**, it's behind a Chrome flag
