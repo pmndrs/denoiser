@@ -18,6 +18,8 @@
 // own THREE + TSL nodes so there's exactly one three instance (the pathtracer needs
 // this — see each example's vite.config.ts dedupe note).
 
+import { accumulateTo } from './pathtracer';
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export interface GalleryCaptureDeps {
@@ -81,7 +83,7 @@ function half2float(h: number): number {
   return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
 }
 
-function bytesToDataUrl(bytes: Uint8ClampedArray, w: number, h: number): string {
+function bytesToDataUrl(bytes: Uint8ClampedArray<ArrayBuffer>, w: number, h: number): string {
   const cv = document.createElement('canvas');
   cv.width = w;
   cv.height = h;
@@ -171,10 +173,11 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
     return out.buffer;
   }
 
-  // Noisy color: read the tracer's linear-HDR float target, ACES-tonemap + sRGB
-  // encode (Narkowicz ACES ~ three's ACESFilmicToneMapping), flip bottom-up ->
-  // top-down. This is the exact display transform the demo's CPU-path button uses.
-  async function captureColorBytes(): Promise<Uint8ClampedArray> {
+  // Noisy color: read the tracer's linear-HDR float target (top-down rows — it is
+  // written by a compute kernel), ACES-tonemap + sRGB encode (Narkowicz ACES ~
+  // three's ACESFilmicToneMapping). This is the exact display transform the
+  // demo's CPU-path button uses.
+  async function captureColorBytes(): Promise<Uint8ClampedArray<ArrayBuffer>> {
     const tex = getTracerTexture();
     if (!tex) throw new Error('capture: tracer texture unavailable');
     const is32 = tex.format.includes('32float');
@@ -185,9 +188,8 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
     const src = is32 ? new Float32Array(raw) : new Uint16Array(raw);
     const rgba = new Uint8ClampedArray(w * h * 4);
     for (let y = 0; y < h; y++) {
-      const srcY = h - 1 - y; // tracer target is bottom-up
       for (let x = 0; x < w; x++) {
-        const si = (srcY * w + x) * 4;
+        const si = (y * w + x) * 4;
         const di = (y * w + x) * 4;
         for (let c = 0; c < 3; c++) {
           let v = is32 ? src[si + c] : half2float(src[si + c]);
@@ -263,7 +265,7 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
     }
   }
 
-  async function encodeAOV(kind: 'albedo' | 'normal'): Promise<Uint8ClampedArray> {
+  async function encodeAOV(kind: 'albedo' | 'normal'): Promise<Uint8ClampedArray<ArrayBuffer>> {
     const srcTex = kind === 'albedo' ? albedoRT.texture : normalRT.texture;
     const t = textureNode(srcTex);
     // albedo: linear [0,1] passed through (clamped) -> raw bytes = the [0,1] the
@@ -285,26 +287,17 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
     return new Uint8ClampedArray(raw);
   }
 
-  async function accumulateTo(target: number, maxMs = 120000) {
-    // Guard on both a generous call count and a wall-clock budget: renderSample
-    // can advance `samples` by <1 per call in some tracer configs, so a tight
-    // call cap would stop short of the target (the budget is the real backstop).
-    const t0 = performance.now();
-    let guard = 0;
-    const hardCap = target * 50 + 1000;
-    while (Math.floor(pathTracer.samples ?? 0) < target && guard++ < hardCap) {
-      pathTracer.renderSample();
-      if (guard % 8 === 0) {
-        await device.queue.onSubmittedWorkDone();
-        if (performance.now() - t0 > maxMs) break;
-      }
-    }
+  // Exact spp: the tracer's own maxSamples caps every pixel at the target.
+  let reached = 0;
+  async function accumulate(target: number) {
+    reached = await accumulateTo(pathTracer, device, target);
     await device.queue.onSubmittedWorkDone();
   }
 
   (window as any).__captureGallery = async (opts?: { referenceSpp?: number }): Promise<GalleryCaptureResult> => {
     const refSpp = opts?.referenceSpp ?? referenceSpp;
     (window as any).__capturing = true; // pause the example's own rAF loop
+    const prevMaxSamples = pathTracer.maxSamples;
     try {
       log(`[capture] ${sceneId}: starting spp ladder ${sppLadder.join('/')} + ref ${refSpp}`);
       pathTracer.reset();
@@ -314,18 +307,18 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
       const stats: Record<string, ImageStats> = {};
 
       for (const spp of sppLadder) {
-        await accumulateTo(spp);
+        await accumulate(spp);
         const bytes = await captureColorBytes();
         color[String(spp)] = bytesToDataUrl(bytes, RES, RES);
         stats[`color${spp}`] = computeStats(bytes, RES, RES);
-        log(`[capture] ${sceneId}: spp${spp} at ${Math.floor(pathTracer.samples)} samples, var=${stats[`color${spp}`].localVariance.toFixed(1)}`);
+        log(`[capture] ${sceneId}: spp${spp} at ${reached} samples, var=${stats[`color${spp}`].localVariance.toFixed(1)}`);
       }
 
-      await accumulateTo(refSpp);
+      await accumulate(refSpp);
       const refBytes = await captureColorBytes();
       const reference = bytesToDataUrl(refBytes, RES, RES);
       stats.reference = computeStats(refBytes, RES, RES);
-      log(`[capture] ${sceneId}: reference at ${Math.floor(pathTracer.samples)} samples, var=${stats.reference.localVariance.toFixed(1)}`);
+      log(`[capture] ${sceneId}: reference at ${reached} samples, var=${stats.reference.localVariance.toFixed(1)}`);
 
       renderAOVs();
       const albedoBytes = await encodeAOV('albedo');
@@ -342,7 +335,7 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
         width: RES,
         height: RES,
         spp: sppLadder.slice(),
-        referenceSpp: Math.floor(pathTracer.samples),
+        referenceSpp: reached,
         color,
         reference,
         albedo,
@@ -353,6 +346,7 @@ export function installGalleryCapture(deps: GalleryCaptureDeps): void {
       log(`[capture] ${sceneId}: DONE`);
       return result;
     } finally {
+      pathTracer.maxSamples = prevMaxSamples;
       (window as any).__capturing = false;
     }
   };

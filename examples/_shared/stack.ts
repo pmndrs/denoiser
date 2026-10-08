@@ -12,6 +12,7 @@ import * as THREE from 'three/webgpu';
 import type { Denoiser } from 'denoiser';
 import { OrtRuntime } from 'denoiser/ort';
 import { createDenoiserForRenderer, getGPUTexture, getDevice } from 'denoiser/three';
+import { runtimePicker, type RuntimeOption } from './chrome';
 
 export type RuntimeName = 'auto' | 'ort' | 'wgsl' | 'webnn' | 'kernels';
 const RUNTIMES: RuntimeName[] = ['auto', 'ort', 'wgsl', 'webnn', 'kernels'];
@@ -84,6 +85,56 @@ async function makeRuntime(name: Exclude<RuntimeName, 'ort'>, device: GPUDevice,
     case 'webnn': { const { WebnnRuntime } = await import('denoiser/webnn'); return new WebnnRuntime({ device, tzaUrl }); }
     case 'kernels': { const { KernelsRuntime } = await import('denoiser/kernels'); return new KernelsRuntime({ device, tzaUrl }); }
   }
+}
+
+/** The picker's entries (gallery-style labels), in display order. */
+export function runtimeOptions(): (RuntimeOption & { id: RuntimeName })[] {
+  const hasWebnn = typeof navigator !== 'undefined' && 'ml' in navigator;
+  return [
+    { id: 'auto', label: 'Auto', hint: 'package default: WebNN fp16 for base/large models when available, WGSL otherwise' },
+    { id: 'wgsl', label: 'WGSL', hint: 'hand-written fused WGSL, one command encoder per run' },
+    { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU EP (creates the GPUDevice; three borrows it)' },
+    {
+      id: 'webnn', label: 'WebNN', hint: 'WebNN graph (GPU)',
+      unavailable: hasWebnn ? undefined
+        : 'WebNN is not exposed in this browser (Chrome: enable chrome://flags/#web-machine-learning-neural-network)',
+    },
+    { id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op' },
+  ];
+}
+
+/**
+ * Mount the `?runtime=` picker (reloads the page on switch — see chrome.ts
+ * runtimePicker). Mount it BEFORE createStack() so a runtime that fails to
+ * initialize can still be switched away from; then `attach(denoiser)` and call
+ * `denoised(ms)` after each denoise. The readout shows the active runtime
+ * (auto shows what it resolved to) and the last denoise time.
+ */
+export function mountRuntimePicker(mount?: HTMLElement | null, runtimeName: RuntimeName = runtimeFromUrl()) {
+  const picker = runtimePicker({
+    mount: mount ?? undefined, options: runtimeOptions(), active: runtimeName, defaultId: 'auto',
+  });
+  let denoiser: Denoiser | undefined;
+  let lastMs: number | undefined;
+  let failed: string | undefined;
+  const label = () => (denoiser ? describeRuntime(denoiser) : runtimeName);
+  const render = () => picker.setReadout(failed ? `${runtimeName}: ${failed}`
+    : !denoiser ? `${runtimeName}: initializing…`
+      : `active: ${label()}` + (lastMs === undefined ? ' · no denoise yet' : ` · last denoise ${lastMs.toFixed(1)} ms`));
+  render();
+  return {
+    /** Human label of the active runtime, e.g. `auto → wgsl`. */
+    label,
+    attach(d: Denoiser) { denoiser = d; render(); },
+    denoised(ms: number) { lastMs = ms; render(); },
+    failed(message: string) { failed = message; render(); },
+  };
+}
+
+/** `ort`, `wgsl`, ... or `auto → <resolved>` once AutoRuntime has loaded a model. */
+export function describeRuntime(denoiser: Denoiser): string {
+  const rt = denoiser.runtime as { name: string; lastChoice?: string };
+  return rt.lastChoice ? `${rt.name} → ${rt.lastChoice}` : rt.name;
 }
 
 /** Create the shared renderer + denoiser for the selected runtime (see the file header). */

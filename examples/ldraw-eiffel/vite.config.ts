@@ -11,8 +11,12 @@ export default defineConfig({
   // serves examples under /denoiser/<name>/).
   base: './',
   server: { fs: { allow: ['../..'] } },
-  // three r185 / pathtracer source use top-level await -> need an esnext target
+  // three r185+ / pathtracer source use top-level await -> need an esnext target
   esbuild: { target: 'esnext' },
+  // Dev serves the converted ONNX models from packages/denoiser/models when they
+  // exist locally (gitignored, produced by tools/onnx-convert); otherwise the ORT
+  // runtime falls back to its CDN default, like production.
+  define: { __LOCAL_ONNX_MODELS__: JSON.stringify(existsSync(modelsDir)) },
   build: { target: 'esnext' },
   // Exactly one three instance: the pathtracer (served as source) and our
   // `three/webgpu` import must resolve to the same copy, or material nodes from
