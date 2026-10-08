@@ -122,7 +122,7 @@ class WebnnSession implements NetworkSession {
   async bind(geometry: NetworkGeometry): Promise<NetworkBinding> {
     const built = await this.prepare(geometry);
     let binding: InteropBinding | ReadbackBinding | undefined;
-    if (this.interop) {
+    if (this.interop && exportable(built.inShape) && exportable(built.outShape)) {
       // Chrome/CoreML refuses exportable tensors past some size ("Tensor size is
       // too large" for e.g. [8, 9, 256, 256] fp16 while [1, 3, 1088, 1920] works):
       // those geometries take the host path.
@@ -141,6 +141,14 @@ class WebnnSession implements NetworkSession {
     this.graphs.clear();
   }
 }
+
+/**
+ * Chrome (macOS) backs exportable tensors with a 2D surface of
+ * (product of all dims but the last) x (last dim), each at most 16384 — probed:
+ * [1,1,16384,16] ok, [1,1,16385,16] / [8,9,256,256] / [1,9,2048,1024] "Tensor size is too large".
+ */
+const exportable = (shape: number[]) =>
+  shape[shape.length - 1] <= 16384 && shape.slice(0, -1).reduce((a, b) => a * b, 1) <= 16384;
 
 // a function so importing this module doesn't touch WebGPU globals
 const IO_USAGE = () => GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
