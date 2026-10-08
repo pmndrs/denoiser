@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const BASE = process.env.WGSL_BENCH_URL ?? 'http://localhost:5190/';
 const TIMEOUT = Number(process.env.WGSL_BENCH_TIMEOUT ?? 600_000);
 const QUIET = process.env.QUIET === '1';
