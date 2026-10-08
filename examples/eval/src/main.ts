@@ -13,6 +13,7 @@ import { TiledEngine, OrtRuntime, type NetworkRuntime, type Precision } from 'de
 import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
 import { WebnnRuntime } from 'denoiser/webnn';
+import { AutoRuntime } from 'denoiser/auto';
 
 interface PlanItem {
   scene: string; model: string; channels: number; hdr: boolean;
@@ -45,6 +46,7 @@ function makeRuntime(): NetworkRuntime {
     // with WebNNCoreMLExplicitGPUOrNPU (run.mjs enables it), else same as gpu
     case 'webnn': return new WebnnRuntime({ tzaUrl: '/tzas', deviceType: 'gpu' });
     case 'webnn-npu': return new WebnnRuntime({ tzaUrl: '/tzas', deviceType: 'npu' });
+    case 'auto': return new AutoRuntime({ tzaUrl: '/tzas' });
     default: throw new Error(`unknown runtime ${runtimeName}`);
   }
 }
@@ -147,6 +149,7 @@ async function main() {
     .filter((p) => !only || only.test(`${p.scene}/${p.model}`));
   log(`${runtimeName} · ${precision} · ${plan.length} cases · warm = median of ${WARM}`);
   const runtime = makeRuntime();
+  let firstDevice: GPUDevice | undefined;
   let prev: TiledEngine | undefined;
 
   for (const item of plan) {
@@ -161,6 +164,10 @@ async function main() {
       prev?.destroy();
       prev = engine;
       const dev = engine.device;
+      // AutoRuntime: which runtime served this model, and is the device stable across switches
+      if (runtime instanceof AutoRuntime) r.choice = runtime.lastChoice;
+      firstDevice ??= dev;
+      r.sameDevice = dev === firstDevice;
 
       const inputs = async (size: '512' | '1080') => {
         const files = item.inputs[size];

@@ -5,7 +5,7 @@ import { dts } from 'rollup-plugin-dts';
 import path from 'node:path';
 
 // One package, several entry points: `denoiser` (core + ORT preset),
-// `denoiser/core`, `denoiser/ort`, `denoiser/kernels`, `denoiser/wgsl`, `denoiser/ffx`, `denoiser/webnn`, `denoiser/three`. The internal workspace
+// `denoiser/core`, `denoiser/ort`, `denoiser/kernels`, `denoiser/wgsl`, `denoiser/ffx`, `denoiser/webnn`, `denoiser/three`, `denoiser/auto`. The internal workspace
 // packages (@pmndrs/denoiser-*) are BUNDLED — never published — and built in one
 // pass so the entries share chunks (one copy of Denoiser/TiledEngine, so
 // `denoiser` and `denoiser/core` classes are the same). Runtime libraries stay
@@ -19,6 +19,7 @@ const input = {
     ffx: './src/ffx.ts',
     webnn: './src/webnn.ts',
     three: './src/three.ts',
+    auto: './src/auto.ts',
 };
 const external = [
     'onnxruntime-web',

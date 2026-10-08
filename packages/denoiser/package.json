@@ -68,6 +68,11 @@
             "types": "./dist/three.d.ts",
             "import": "./dist/three.mjs",
             "require": "./dist/three.cjs"
+        },
+        "./auto": {
+            "types": "./dist/auto.d.ts",
+            "import": "./dist/auto.mjs",
+            "require": "./dist/auto.cjs"
         }
     },
     "typesVersions": {
@@ -92,6 +97,9 @@
             ],
             "three": [
                 "./dist/three.d.ts"
+            ],
+            "auto": [
+                "./dist/auto.d.ts"
             ]
         }
     },
