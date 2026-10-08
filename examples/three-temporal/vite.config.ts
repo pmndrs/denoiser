@@ -6,7 +6,11 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: './',
   esbuild: { target: 'esnext' }, // three r185 / TSL use top-level await
-  build: { target: 'esnext' },
+  build: {
+    target: 'esnext',
+    // two pages: the SSR comparison (index) and the shadows + SSR scene
+    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html' } },
+  },
   resolve: { dedupe: ['three'] },
   server: { fs: { allow: ['../..'] } },
   optimizeDeps: {

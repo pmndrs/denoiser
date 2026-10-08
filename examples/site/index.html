@@ -218,6 +218,19 @@
           </div>
         </a>
 
+        <a class="card" href="./three-temporal/">
+          <img class="shot" src="./shots/three-temporal.png" alt="three.js SSR denoise example split screen: three's recurrentDenoise on the left, AMD FidelityFX reflection denoiser on the right" loading="lazy">
+          <div class="card-body">
+            <p class="card-title">three.js SSR: FidelityFX vs recurrentDenoise <span class="arrow">&#8594;</span></p>
+            <p class="card-desc">
+              three's <code>webgpu_postprocessing_ssr_denoise</code> with the
+              <code>ffxReflections()</code> TSL node swapped in, split-screen against
+              three's own denoiser. Plus stochastic area-light shadows (<code>ffxShadows()</code>)
+              in a second scene (<code>shadows.html</code>).
+            </p>
+          </div>
+        </a>
+
         <a class="card" href="./ffx-denoiser/">
           <img class="shot" src="./shots/ffx-denoiser.png" alt="FidelityFX reflection denoiser demo: noisy 1-sample glossy reflections on the left, denoised on the right" loading="lazy">
           <div class="card-body">
