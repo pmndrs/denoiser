@@ -2,14 +2,16 @@
 files for the native oidnDenoise CLI.
 
 Dump filename convention: <name>.<gpuFormat>.<size>  (raw RGBA rows, no padding)
-  color  — the path tracer's linear-HDR output (BOTTOM-UP rows)
+  color  — the path tracer's linear-HDR output (TOP-DOWN rows since
+           three-gpu-pathtracer 0.0.27; older dumps were BOTTOM-UP)
   albedo — raster G-buffer base color, [0,1]      (TOP-DOWN rows)
   normal — raster G-buffer view normals, [-1,1]   (TOP-DOWN rows)
 
-PFM is written bottom-up (negative scale = little-endian), so the tracer's rows
-pass through as-is and the G-buffer rows get flipped.
+PFM is written bottom-up (negative scale = little-endian); write_pfm flips the
+top-down rows. Pass --color-bottom-up for dumps made with the older tracer pin.
 
-Usage: python prepare.py [dumps_dir] [out_dir]
+Usage: python prepare.py [--color-bottom-up] [dumps_dir] [out_dir]
+
 """
 import glob
 import os
@@ -17,8 +19,10 @@ import sys
 
 import numpy as np
 
-dumps = sys.argv[1] if len(sys.argv) > 1 else "../../examples/three-pathtracer-webgpu/dumps"
-outdir = sys.argv[2] if len(sys.argv) > 2 else "."
+args = [a for a in sys.argv[1:] if a != "--color-bottom-up"]
+color_bottom_up = "--color-bottom-up" in sys.argv[1:]
+dumps = args[0] if len(args) > 0 else "../../examples/three-pathtracer-webgpu/dumps"
+outdir = args[1] if len(args) > 1 else "."
 
 
 def load(name):
@@ -44,7 +48,9 @@ def write_pfm(path, img_topdown):
     print(f"wrote {path}")
 
 
-color = np.flipud(load("color"))  # bottom-up -> top-down
+color = load("color")             # top-down (tracer 0.0.27+)
+if color_bottom_up:
+    color = np.flipud(color)      # older tracer pin: bottom-up -> top-down
 albedo = load("albedo")           # already top-down
 normal = load("normal")
 

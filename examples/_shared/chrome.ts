@@ -8,11 +8,12 @@
 //   ensureWebGPU(el?)  -> Promise<boolean>   feature-detect + friendly banner on failure
 //   statsOverlay()     -> { frame(ms) }      fixed-corner ms/FPS readout
 //   demoFooter(name)   -> void               small footer (name, source link, back to index)
-//   pathtracerNote()   -> void               dismissible note re: the unreleased pathtracer branch
+//   pathtracerNote()   -> void               dismissible note re: the early-stage WebGPU path tracer
+//   runtimePicker(o)   -> { setReadout(t) }  segmented ?runtime= switcher (reloads) + readout
 
 const REPO_URL = 'https://github.com/pmndrs/denoiser';
 const SUPPORTED_BROWSERS = 'Chrome 113+, Edge 113+, or Safari 26+ (Technology Preview)';
-const PATHTRACER_URL = 'https://github.com/gkjohnson/three-gpu-pathtracer/tree/webgpu-pathtracer';
+const PATHTRACER_URL = 'https://github.com/gkjohnson/three-gpu-pathtracer';
 
 /**
  * Feature-detect WebGPU (navigator.gpu + a real adapter). On failure, injects a
@@ -116,9 +117,9 @@ export function demoFooter(name: string): void {
 
 /**
  * Small dismissible note (call near `demoFooter`, e.g. right after it): the
- * WebGPU path tracer these demos drive is gkjohnson's unreleased
- * `webgpu-pathtracer` branch of three-gpu-pathtracer, SHA-pinned in
- * package.json (not a released version) — links to the branch for context.
+ * WebGPU path tracer these demos drive is three-gpu-pathtracer's early-stage
+ * `WebGPUPathTracer`, SHA-pinned to an upstream main commit in package.json —
+ * links to the repo for context.
  * Dismissal is remembered in localStorage so it doesn't nag on every visit.
  */
 export function pathtracerNote(): void {
@@ -137,15 +138,88 @@ export function pathtracerNote(): void {
     'display:flex', 'gap:0.75rem', 'align-items:flex-start', 'justify-content:space-between',
   ].join(';');
   note.innerHTML = `
-    <span>Path tracing here runs on gkjohnson's unreleased
-      <a href="${PATHTRACER_URL}" target="_blank" rel="noopener" style="color:#90cdf4">three-gpu-pathtracer
-      <code>webgpu-pathtracer</code> branch</a>, pinned to a fixed commit — expect rough edges.</span>
+    <span>Path tracing here runs on the early-stage <code>WebGPUPathTracer</code> from gkjohnson's
+      <a href="${PATHTRACER_URL}" target="_blank" rel="noopener" style="color:#90cdf4">three-gpu-pathtracer</a>,
+      pinned to a fixed commit — expect rough edges.</span>
     <button type="button" aria-label="dismiss" style="flex:none;background:none;border:none;color:#718096;cursor:pointer;font-size:1rem;line-height:1;padding:0 0.2rem">&times;</button>`;
   note.querySelector('button')!.addEventListener('click', () => {
     try { localStorage.setItem(KEY, '1'); } catch { /* ignore */ }
     note.remove();
   });
   document.body.appendChild(note);
+}
+
+export interface RuntimeOption {
+  id: string;
+  label: string;
+  /** Tooltip. */
+  hint?: string;
+  /** When set, the button is disabled and this explains why (tooltip). */
+  unavailable?: string;
+}
+
+/**
+ * Segmented "denoiser runtime" picker, like the gallery's. Picking a runtime
+ * reloads the page with `?runtime=<id>` (other query params kept; the default
+ * id removes the param) — the GPUDevice setup differs per runtime, so a fresh
+ * page is the robust way to switch. Returns a readout setter for the active
+ * runtime / last denoise time.
+ *
+ * @param o.mount   container (defaults to a new <div> appended to <body>)
+ * @param o.options the runtimes, in display order
+ * @param o.active  the id the page is running with
+ * @param o.defaultId the id used when `?runtime=` is absent (removed from the URL)
+ */
+export function runtimePicker(o: {
+  mount?: HTMLElement;
+  options: RuntimeOption[];
+  active: string;
+  defaultId?: string;
+}): { setReadout(text: string): void } {
+  const host = o.mount ?? document.body.appendChild(document.createElement('div'));
+  host.setAttribute('data-denoiser-chrome', 'runtime-picker');
+  host.style.cssText = [
+    'display:flex', 'flex-wrap:wrap', 'align-items:center', 'gap:0.5rem 0.75rem', 'margin:0.75rem 0',
+    'font:0.85rem/1.4 system-ui,-apple-system,sans-serif', 'color:#e2e8f0',
+  ].join(';');
+  const label = document.createElement('span');
+  label.textContent = 'denoiser runtime';
+  label.style.color = '#a0aec0';
+  const seg = document.createElement('div');
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'denoiser runtime');
+  seg.style.cssText = 'display:inline-flex;border:1px solid #4a5568;border-radius:8px;overflow:hidden';
+  o.options.forEach((r, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = r.label;
+    btn.dataset.runtime = r.id;
+    const pressed = r.id === o.active;
+    btn.setAttribute('aria-pressed', String(pressed));
+    btn.title = r.unavailable ?? r.hint ?? '';
+    btn.disabled = !pressed && !!r.unavailable;
+    btn.style.cssText = [
+      'appearance:none', 'border:none', 'margin:0', 'padding:0.35rem 0.8rem', 'font:inherit',
+      `border-right:${i < o.options.length - 1 ? '1px solid #4a5568' : 'none'}`,
+      `background:${pressed ? '#90cdf4' : '#2d3748'}`,
+      `color:${pressed ? '#0b0e14' : btn.disabled ? '#718096' : '#e2e8f0'}`,
+      `font-weight:${pressed ? '600' : '400'}`,
+      `cursor:${pressed || btn.disabled ? 'default' : 'pointer'}`,
+    ].join(';');
+    btn.addEventListener('click', () => {
+      if (pressed || btn.disabled) return;
+      const url = new URL(location.href);
+      if (r.id === o.defaultId) url.searchParams.delete('runtime');
+      else url.searchParams.set('runtime', r.id);
+      location.href = url.toString();
+    });
+    seg.appendChild(btn);
+  });
+  const readout = document.createElement('span');
+  readout.setAttribute('data-denoiser-chrome', 'runtime-readout');
+  readout.style.cssText = 'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#7ee787';
+  host.append(label, seg, readout);
+  return { setReadout(text: string) { readout.textContent = text; } };
 }
 
 function escapeHtml(s: string): string {
