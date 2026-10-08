@@ -60,6 +60,8 @@ export interface StackOptions {
   weightsUrl?: string;
   /** ORT only: the aux split-graph workaround (default on). */
   splitAux?: boolean;
+  /** Called with the renderer after construction and before `init()` (e.g. to attach an Inspector). */
+  beforeInit?: (renderer: THREE.WebGPURenderer) => void | Promise<void>;
   /** tza/WGSL-family runtimes: where the .tza weights are served (undefined = the default CDN). */
   tzaUrl?: string;
 }
@@ -90,9 +92,11 @@ export async function createStack(opts: StackOptions = {}): Promise<Stack> {
   if (runtimeName === 'ort') {
     denoiser = await Denoiser.create({ precision, quality, weightsUrl: opts.weightsUrl, splitAux: opts.splitAux });
     renderer = new THREE.WebGPURenderer({ ...opts.renderer, device: denoiser.device });
+    await opts.beforeInit?.(renderer);
     await renderer.init();
   } else {
     renderer = new THREE.WebGPURenderer(opts.renderer);
+    await opts.beforeInit?.(renderer);
     await renderer.init();
     // dev: the repo's own .tza files (vite-tzas plugin); prod: the runtimes' CDN default
     const tzaUrl = opts.tzaUrl ?? (import.meta.env.DEV ? '/tzas' : undefined);
