@@ -6,6 +6,10 @@ export type {
 export type {
   NetworkRuntime, NetworkSession, NetworkBinding, NetworkModel, NetworkGeometry, Precision,
 } from './runtime';
+export type {
+  TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, Mat4,
+  ShadowInputs, SpecularInputs, DiffuseInputs, BeautyInputs,
+} from './temporal';
 export { determineModel } from './modelName';
 export { parseTZA, halfToFloat, DEFAULT_TZA_URL } from './tza';
 export type { TensorMap, WeightTensor } from './tza';
