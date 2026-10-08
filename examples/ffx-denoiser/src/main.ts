@@ -266,9 +266,9 @@ async function main() {
     }
     const stats = (xs: number[]) => {
       const s = [...xs].sort((a, b) => a - b);
-      return { median: s[Math.floor(s.length / 2)], min: s[0], p90: s[Math.floor(s.length * 0.9)], n: s.length };
+      return { median: s[Math.floor(s.length / 2)], min: s[0], p25: s[Math.floor(s.length * 0.25)], p90: s[Math.floor(s.length * 0.9)], n: s.length };
     };
-    const passes = Object.fromEntries([...perPass].map(([k, v]) => { const st = stats(v); return [k, { median: +st.median.toFixed(4), min: +st.min.toFixed(4) }]; }));
+    const passes = Object.fromEntries([...perPass].map(([k, v]) => { const st = stats(v); return [k, { median: +st.median.toFixed(4), p25: +st.p25.toFixed(4), min: +st.min.toFixed(4) }]; }));
     const results = { signal, width: W, height: H, gpuMs: gpu.length ? stats(gpu) : null, wallMs: stats(wall), passesMs: passes };
     log(JSON.stringify(results, null, 1));
     out.results = results;
