@@ -3392,6 +3392,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"three-temporal@workspace:examples/three-temporal":
+  version: 0.0.0-use.local
+  resolution: "three-temporal@workspace:examples/three-temporal"
+  dependencies:
+    "@pmndrs/upscaler": "npm:0.1.0"
+    "@webgpu/types": "npm:^0.1.71"
+    denoiser: "workspace:*"
+    three: "npm:^0.185.0"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+  languageName: unknown
+  linkType: soft
+
 "three@npm:^0.185.0":
   version: 0.185.0
   resolution: "three@npm:0.185.0"
