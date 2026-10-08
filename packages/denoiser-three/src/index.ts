@@ -3,3 +3,9 @@
 //   temporal/ TSL nodes for TemporalDenoisers (FidelityFX shadows, reflections)
 //   image/    TSL node for the single-image Denoiser (any NetworkRuntime)
 export { getDevice, getGPUTexture, CameraHistory } from './shared/three';
+export { TemporalDenoiseNode, temporalDenoise, resolveTexture } from './temporal/TemporalDenoiseNode';
+export type { TemporalGuideNodes, TemporalDenoiseNodeOptions, TextureNodeLike } from './temporal/TemporalDenoiseNode';
+export { ffxShadows, ffxReflections } from './temporal/ffx';
+export type { FfxGuideOptions, FfxShadowsOptions, FfxReflectionsOptions } from './temporal/ffx';
+export { worldNormalTexture, toSignalTexture } from './temporal/tsl';
+export type { NormalSpace, NormalEncoding } from './temporal/tsl';
