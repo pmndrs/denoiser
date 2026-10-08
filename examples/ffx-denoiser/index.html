@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FidelityFX Denoiser (WGSL)</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 16px; background: #111; color: #ddd; font: 13px/1.4 ui-monospace, Menlo, monospace; }
+    nav a { color: #9cf; margin-right: 12px; }
+    canvas { display: block; max-width: 100%; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="?signal=shadows">shadows</a>
+    <a href="?signal=reflections">reflections</a>
+    <a href="?signal=shadows&mode=eval">shadows eval (1080p)</a>
+    <a href="?signal=reflections&mode=eval">reflections eval (1080p)</a>
+    <a href="?signal=shadows&mode=bench">shadows bench</a>
+    <a href="?signal=reflections&mode=bench">reflections bench</a>
+  </nav>
+  <p>FidelityFX Denoiser (AMD, SDK v1.1.4) ported to WGSL. Panels: <b>noisy 1 spp</b> | <b>denoised</b> | <b>reference</b> (many spp). Camera cut at frame 60 (history reset).</p>
+  <canvas id="view"></canvas>
+  <pre id="status"></pre>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

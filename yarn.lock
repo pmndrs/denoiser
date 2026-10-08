@@ -323,6 +323,21 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@pmndrs/denoiser-ffx@workspace:*, @pmndrs/denoiser-ffx@workspace:packages/denoiser-ffx":
+  version: 0.0.0-use.local
+  resolution: "@pmndrs/denoiser-ffx@workspace:packages/denoiser-ffx"
+  dependencies:
+    "@pmndrs/denoiser-core": "workspace:*"
+    "@rollup/plugin-commonjs": "npm:^29.0.3"
+    "@rollup/plugin-node-resolve": "npm:^16.0.3"
+    "@rollup/plugin-typescript": "npm:^12.3.0"
+    "@webgpu/types": "npm:^0.1.71"
+    rollup: "npm:^4.62.2"
+    tslib: "npm:^2.8.1"
+    typescript: "npm:^5.9.3"
+  languageName: unknown
+  linkType: soft
+
 "@pmndrs/denoiser-kernels@workspace:*, @pmndrs/denoiser-kernels@workspace:packages/denoiser-kernels":
   version: 0.0.0-use.local
   resolution: "@pmndrs/denoiser-kernels@workspace:packages/denoiser-kernels"
@@ -1415,6 +1430,7 @@ __metadata:
   dependencies:
     "@huggingface/kernels": "npm:0.0.1-preview.3"
     "@pmndrs/denoiser-core": "workspace:*"
+    "@pmndrs/denoiser-ffx": "workspace:*"
     "@pmndrs/denoiser-kernels": "workspace:*"
     "@pmndrs/denoiser-ort": "workspace:*"
     "@pmndrs/denoiser-wgsl": "workspace:*"
@@ -1689,6 +1705,17 @@ __metadata:
   checksum: 10c0/e345083c4306b3aed6cb8ec551e26c36bab5c511e99ea4576a16750ddc8d3240e63826cc624f5ae17ad4dc82e68a253213b60d556c11bfad064b7607847ed07f
   languageName: node
   linkType: hard
+
+"ffx-denoiser@workspace:examples/ffx-denoiser":
+  version: 0.0.0-use.local
+  resolution: "ffx-denoiser@workspace:examples/ffx-denoiser"
+  dependencies:
+    "@pmndrs/denoiser-ffx": "workspace:*"
+    "@webgpu/types": "npm:^0.1.71"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+  languageName: unknown
+  linkType: soft
 
 "file-entry-cache@npm:^8.0.0":
   version: 8.0.0
