@@ -15,6 +15,7 @@
 // of ORT-wasm CPU on these models, see docs/specs/runtimes.md).
 import { parseTZA, type TensorMap } from '@pmndrs/denoiser-core';
 import { WgslRuntime } from '@pmndrs/denoiser-wgsl';
+import { WebnnRuntime } from '@pmndrs/denoiser-webnn';
 import { buildOidnGraph } from './build';
 import { ml, type MLContext, type MLTensor } from './webnn-types';
 
@@ -113,6 +114,36 @@ async function wgslRunner(device: GPUDevice, w: number, h: number, prec: 'fp32' 
 
 let CH = 3;
 
+/**
+ * `rt-<deviceType>-<interop|host>`: the WebnnRuntime through the NetworkRuntime
+ * contract on our device — input/output are WebGPU buffers, so `run` here includes
+ * the runtime's IO (tensor export + GPU copies, or the host round trip).
+ */
+async function webnnRuntimeRunner(dev: string, device: GPUDevice, w: number, h: number, host: Float32Array): Promise<Runner> {
+  const [, deviceType, io] = dev.split('-');
+  const rt = new WebnnRuntime({ tzaUrl: '/tzas', device, deviceType: deviceType as 'gpu', interop: io === 'interop' ? true : false });
+  const t0 = performance.now();
+  const session = await rt.load({ name: model, channels: CH, precision });
+  const b = await session.bind({ batch: 1, tileW: w, tileH: h });
+  const buildMs = rt.lastBuildMs;
+  const data = (f16 ? new F16(host) : host) as unknown as BufferSource;
+  device.queue.writeBuffer(b.input, 0, data);
+  await b.run();
+  await device.queue.onSubmittedWorkDone();
+  const firstMs = performance.now() - t0;
+  const run = async () => { await b.run(); await device.queue.onSubmittedWorkDone(); };
+  return {
+    name: dev,
+    info: { buildMs, firstDispatchMs: firstMs, interop: (b as unknown as { interop: boolean }).interop },
+    io: async () => { device.queue.writeBuffer(b.input, 0, data); await b.run(); await readGpu(device, b.output, f16); },
+    run,
+    read: async () => { await readGpu(device, b.output, f16); },
+    pipe: async (k) => { for (let i = 0; i < k; i++) await b.run(); await device.queue.onSubmittedWorkDone(); },
+    output: () => readGpu(device, b.output, f16),
+    release: () => { b.release(); session.release(); void rt.destroy(); },
+  };
+}
+
 async function webnnRunner(dev: string, ctx: MLContext, weights: TensorMap, w: number, h: number, host: Float32Array): Promise<Runner> {
   const built = await buildOidnGraph(ctx, weights, { precision, batch: 1, width: w, height: h, layout });
   const input = await ctx.createTensor({ dataType: built.dataType, shape: built.inShape, writable: true });
@@ -149,7 +180,7 @@ async function main() {
 
   const contexts: Record<string, { ctx: MLContext; ms: number }> = {};
   for (const dev of devs) {
-    if (dev === 'wgsl') continue;
+    if (dev === 'wgsl' || dev.startsWith('rt-')) continue;
     const t0 = performance.now();
     try {
       const ctx = await timeout(
@@ -177,6 +208,15 @@ async function main() {
       else { refRunner.release(); runners.push(await wgslRunner(device, w, h, 'fp16', host)); }
     } else refRunner.release();
     for (const dev of devs) {
+      if (dev.startsWith('rt-')) {
+        try {
+          runners.push(await webnnRuntimeRunner(dev, device, w, h, host));
+        } catch (e) {
+          log(`${dev} ${key} FAILED: ${e}`);
+          table[`${key}.${dev}`] = { error: String(e) };
+        }
+        continue;
+      }
       if (dev === 'wgsl' || !contexts[dev]) continue;
       try {
         runners.push(await webnnRunner(dev, contexts[dev].ctx, weights, w, h, host));
@@ -219,8 +259,8 @@ async function main() {
         io: median(s.io), ioMin: min(s.io),
         run: median(s.run), runMin: min(s.run),
         read: readMed,
-        dispatch: (median(s.pipe) - (r.name.startsWith('wgsl') ? 0 : readMed)) / K,
-        dispatchMin: (min(s.pipe) - (r.name.startsWith('wgsl') ? 0 : min(s.read))) / K,
+        dispatch: (median(s.pipe) - (r.name.startsWith('wgsl') || r.name.startsWith('rt-') ? 0 : readMed)) / K,
+        dispatchMin: (min(s.pipe) - (r.name.startsWith('wgsl') || r.name.startsWith('rt-') ? 0 : min(s.read))) / K,
       };
       table[`${key}.${r.name}`] = row;
       const fmt = (x: unknown) => (typeof x === 'number' ? x.toFixed(2) : String(x));

@@ -355,6 +355,22 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@pmndrs/denoiser-webnn@workspace:*, @pmndrs/denoiser-webnn@workspace:packages/denoiser-webnn":
+  version: 0.0.0-use.local
+  resolution: "@pmndrs/denoiser-webnn@workspace:packages/denoiser-webnn"
+  dependencies:
+    "@pmndrs/denoiser-core": "workspace:*"
+    "@pmndrs/denoiser-wgsl": "workspace:*"
+    "@rollup/plugin-commonjs": "npm:^29.0.3"
+    "@rollup/plugin-node-resolve": "npm:^16.0.3"
+    "@rollup/plugin-typescript": "npm:^12.3.0"
+    "@webgpu/types": "npm:^0.1.71"
+    rollup: "npm:^4.62.2"
+    tslib: "npm:^2.8.1"
+    typescript: "npm:^5.9.3"
+  languageName: unknown
+  linkType: soft
+
 "@pmndrs/denoiser-wgsl@workspace:*, @pmndrs/denoiser-wgsl@workspace:packages/denoiser-wgsl":
   version: 0.0.0-use.local
   resolution: "@pmndrs/denoiser-wgsl@workspace:packages/denoiser-wgsl"
@@ -1417,6 +1433,7 @@ __metadata:
     "@pmndrs/denoiser-core": "workspace:*"
     "@pmndrs/denoiser-kernels": "workspace:*"
     "@pmndrs/denoiser-ort": "workspace:*"
+    "@pmndrs/denoiser-webnn": "workspace:*"
     "@pmndrs/denoiser-wgsl": "workspace:*"
     "@rollup/plugin-commonjs": "npm:^29.0.3"
     "@rollup/plugin-node-resolve": "npm:^16.0.3"
@@ -3481,6 +3498,7 @@ __metadata:
   resolution: "webnn-bench@workspace:examples/webnn-bench"
   dependencies:
     "@pmndrs/denoiser-core": "workspace:*"
+    "@pmndrs/denoiser-webnn": "workspace:*"
     "@pmndrs/denoiser-wgsl": "workspace:*"
     denoiser: "workspace:*"
     onnxruntime-web: "npm:^1.27.0"

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@pmndrs/denoiser-core": "workspace:*",
+    "@pmndrs/denoiser-webnn": "workspace:*",
     "@pmndrs/denoiser-wgsl": "workspace:*",
     "denoiser": "workspace:*",
     "onnxruntime-web": "^1.27.0"

@@ -50,7 +50,7 @@ async function run(page) {
   const port = 9600 + Math.floor(Math.random() * 150);
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
-    '--enable-features=WebMachineLearningNeuralNetwork', `--remote-debugging-port=${port}`,
+    `--enable-features=WebMachineLearningNeuralNetwork${process.env.FEATURES ? `,${process.env.FEATURES}` : ''}`, `--remote-debugging-port=${port}`,
     ...(process.env.CHROME_FLAGS ? process.env.CHROME_FLAGS.split(' ') : []),
     `--user-data-dir=${path.join(os.tmpdir(), `webnn-bench-${process.pid}-${Date.now()}`)}`,
     `${BASE}${page}`,
