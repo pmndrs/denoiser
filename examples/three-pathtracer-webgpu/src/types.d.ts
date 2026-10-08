@@ -7,6 +7,10 @@ declare module 'three/webgpu' {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export const WebGPURenderer: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type WebGPURenderer = any; // type position too (examples/_shared/stack.ts names it)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type WebGPURendererParameters = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export const PostProcessing: any;
 }
 

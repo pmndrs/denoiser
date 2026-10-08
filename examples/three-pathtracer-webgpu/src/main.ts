@@ -1,5 +1,7 @@
-// Phase 2 — three r185 WebGPUPathTracer + the WebGPU/ONNX denoiser on ONE shared
-// GPUDevice (ORT creates it; three.js borrows it — onnxruntime issue #26107).
+// Phase 2 — three r185 WebGPUPathTracer + the WebGPU denoiser on ONE shared
+// GPUDevice. ?runtime=ort|wgsl|webnn|kernels picks the network runtime; createStack()
+// (examples/_shared/stack.ts) orders device creation per runtime: ORT creates the device
+// and three borrows it (onnxruntime issue #26107), the others adopt the renderer's.
 //
 // First cut: path-trace a small scene, then denoise the accumulated color via the
 // `denoiser` package. Aux (albedo/normal) G-buffer + zero-copy GPU IO are the next
@@ -11,7 +13,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
 import { GradientEquirectTexture } from 'three-gpu-pathtracer/src/textures/GradientEquirectTexture.js';
 import { vec4 } from 'three/tsl';
-import { Denoiser } from 'denoiser';
+import { createStack, gpuTex } from '../../_shared/stack';
 import { installGalleryCapture } from '../../_shared/gallery-capture';
 import { ensureWebGPU, demoFooter, pathtracerNote } from '../../_shared/chrome';
 
@@ -54,40 +56,10 @@ function buildScene(): { scene: THREE.Scene; camera: THREE.PerspectiveCamera } {
   return { scene, camera };
 }
 
-// Patch requestDevice to request the adapter's MAX limits + all features, BEFORE any
-// device is created. ORT (which creates the shared device first) otherwise requests a
-// minimal device, and the path tracer's heavy compute pipeline then fails validation.
-// (onnxruntime issue #26107 workaround — make the one shared device capable enough.)
-function patchWebGPUForMaxLimits() {
-  const gpu = navigator.gpu as GPU;
-  const origRequestAdapter = gpu.requestAdapter.bind(gpu);
-  gpu.requestAdapter = async (opts?: GPURequestAdapterOptions) => {
-    const adapter = await origRequestAdapter(opts);
-    if (!adapter) return adapter;
-    const origRequestDevice = adapter.requestDevice.bind(adapter);
-    adapter.requestDevice = (desc: GPUDeviceDescriptor = {}) => {
-      const requiredLimits: Record<string, number> = {};
-      const proto = Object.getPrototypeOf(adapter.limits);
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const v = (adapter.limits as unknown as Record<string, unknown>)[name];
-        if (typeof v === 'number') requiredLimits[name] = v;
-      }
-      return origRequestDevice({
-        ...desc,
-        requiredFeatures: [...adapter.features] as GPUFeatureName[],
-        requiredLimits: { ...requiredLimits, ...(desc.requiredLimits ?? {}) },
-      });
-    };
-    return adapter;
-  };
-}
-
 async function main() {
   if (!(await ensureWebGPU())) return;
-  patchWebGPUForMaxLimits();
-
-  // 1) Denoiser first, so ORT owns the GPUDevice we then share with three.js.
-  // splitAux (the aux split-graph workaround, WGSL enc_conv0 + tail) is ON by
+  // 1+2) One GPUDevice for the denoiser and three.js (see the file header).
+  // splitAux (the aux split-graph workaround, WGSL enc_conv0 + tail; ORT only) is ON by
   // default — same as the Denoiser package default — so the 9ch cleanAux path
   // is correct out of the box. Pass ?split=0 to force the plain (buggy) graph
   // and reproduce the ORT-web WebGPU aux bug for comparison.
@@ -97,16 +69,6 @@ async function main() {
   // ('webgpu')+configure that stalls in headless Chrome). __captureAux() reads
   // the denoise output texture directly and doesn't need the overlay.
   const headless = appParams.has('headless');
-  // Dev serves converted models (+ split-graph artifacts) from /models (vite middleware);
-  // prod omits the override so the denoiser falls back to its shipped CDN default (models-v2).
-  const denoiser = await Denoiser.create({ weightsUrl: import.meta.env.DEV ? '/models' : undefined, splitAux });
-  const device = denoiser.device;
-  log(`denoiser ready (splitAux: ${splitAux}); sharing GPUDevice with three.js: ${device ? 'yes' : 'no'}`);
-  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
-  device.addEventListener('uncapturederror', (e) =>
-    log(`UNCAPTURED GPU ERROR: ${(e as GPUUncapturedErrorEvent).error.message}`));
-
-  // 2) three.js WebGPURenderer on the SAME device.
   // FSR mode (?fsr=1) keeps the render/denoise at 512 and FSR1-upscales 2x to a
   // 1024 output — i.e. rendering 25% of the display pixels. (Rendering at a
   // reduced size instead is blocked upstream: this unreleased WebGPUPathTracer
@@ -115,8 +77,17 @@ async function main() {
   const fsrMode = new URLSearchParams(location.search).has('fsr');
   const RES = 512;
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, device });
-  await renderer.init();
+  // Dev serves converted models (+ split-graph artifacts) from /models (vite middleware);
+  // prod omits the override so the denoiser falls back to its shipped CDN default (models-v2).
+  const { renderer, denoiser, device } = await createStack({
+    renderer: { canvas, antialias: true },
+    weightsUrl: import.meta.env.DEV ? '/models' : undefined,
+    splitAux,
+  });
+  log(`denoiser ready (${denoiser.runtime.name}, splitAux: ${splitAux}); sharing GPUDevice with three.js: ${device ? 'yes' : 'no'}`);
+  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
+  device.addEventListener('uncapturederror', (e) =>
+    log(`UNCAPTURED GPU ERROR: ${(e as GPUUncapturedErrorEvent).error.message}`));
   renderer.setSize(RES, RES, false);
 
   const { scene, camera } = buildScene();
@@ -158,9 +129,7 @@ async function main() {
   const getTracerTexture = (): GPUTexture | undefined => {
     const target = pathTracer._pathTracer.outputTarget;
     const threeTexture = target.isTexture ? target : target.textures?.[0];
-    return (renderer.backend as unknown as {
-      get: (o: unknown) => { texture?: GPUTexture };
-    }).get(threeTexture)?.texture;
+    return gpuTex(renderer, threeTexture);
   };
 
   // Progressive live denoise: the denoiser resolves straight into a three-owned
@@ -178,9 +147,7 @@ async function main() {
   denoisedTex.colorSpace = fsrMode ? THREE.NoColorSpace : THREE.LinearSRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   if (!headless) renderer.initTexture(denoisedTex);
-  const denoisedGpuTex = headless ? undefined : (renderer.backend as unknown as {
-    get: (o: unknown) => { texture?: GPUTexture };
-  }).get(denoisedTex)?.texture;
+  const denoisedGpuTex = headless ? undefined : gpuTex(renderer, denoisedTex);
   liveCheckbox.disabled = !denoisedGpuTex;
 
   // The compare overlay canvas: denoised output blitted over the raw path-traced
@@ -265,9 +232,7 @@ async function main() {
     renderer.setMRT(null);
     gbufferRendered = true;
   }
-  const backendGet = (o: unknown) => (renderer.backend as unknown as {
-    get: (o: unknown) => { texture?: GPUTexture };
-  }).get(o)?.texture;
+  const backendGet = (t: THREE.Texture) => gpuTex(renderer, t);
 
   // FSR1 mode (?fsr=1, page reload): path-trace + denoise at HALF resolution and
   // upscale 2x with three's official FSR1 (EASU+RCAS) TSL node into the #outGpu

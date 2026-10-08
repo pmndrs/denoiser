@@ -3,3 +3,5 @@
 //   temporal/ TSL nodes for TemporalDenoisers (FidelityFX shadows, reflections)
 //   image/    TSL node for the single-image Denoiser (any NetworkRuntime)
 export { getDevice, getGPUTexture, CameraHistory } from './shared/three';
+export { DenoiseNode, denoise, createDenoiserForRenderer } from './image';
+export type { DenoiseNodeOptions, CreateDenoiserForRendererOptions } from './image';

@@ -2,11 +2,12 @@
 //
 //   three.js (render @ low res) → denoiser (clean) → @pmndrs/upscaler (FSR1) → canvas
 //
-// All three libraries share the SINGLE GPUDevice that the denoiser (ORT) creates.
+// All three libraries share ONE GPUDevice (createStack(): ORT creates it and three borrows it;
+// wgsl/webnn/kernels adopt the renderer's — pick with ?runtime=ort|wgsl|webnn|kernels).
 // Every stage hands a GPUTexture straight to the next — no CPU readback in the
 // chain. The denoiser writes its result into a three StorageTexture; the upscaler
 // consumes that three texture directly (it resolves the backing GPUTexture via the
-// exact same `renderer.backend.get(tex).texture` handle three itself uses), and its
+// same handle `getGPUTexture()` from denoiser/three returns), and its
 // output is another three texture we present with a fullscreen quad.
 //
 // Composition note: the denoiser is a discrete, stills/cadence-oriented pass, so we
@@ -20,9 +21,9 @@ import {
 } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { Denoiser } from 'denoiser';
 import { Upscaler } from '@pmndrs/upscaler';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { createStack, gpuTex } from '../../_shared/stack';
 
 // ---- resolution --------------------------------------------------------------
 const RW = 640, RH = 360;   // render (denoise) resolution
@@ -32,34 +33,6 @@ const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
 const log = (m: string, err = false) => {
   statusEl.textContent = m; statusEl.classList.toggle('err', err); console.log(m);
 };
-
-// Patch requestDevice to request the adapter's MAX limits + all features BEFORE any
-// device is created. ORT creates the shared device first and otherwise asks for a
-// minimal one; three's renderer and the upscaler's compute passes then share that
-// single device, so it must be capable enough for all three. (onnxruntime #26107.)
-function patchWebGPUForMaxLimits() {
-  const gpu = navigator.gpu as GPU;
-  const origRequestAdapter = gpu.requestAdapter.bind(gpu);
-  gpu.requestAdapter = async (opts?: GPURequestAdapterOptions) => {
-    const adapter = await origRequestAdapter(opts);
-    if (!adapter) return adapter;
-    const origRequestDevice = adapter.requestDevice.bind(adapter);
-    adapter.requestDevice = (desc: GPUDeviceDescriptor = {}) => {
-      const requiredLimits: Record<string, number> = {};
-      const proto = Object.getPrototypeOf(adapter.limits);
-      for (const name of Object.getOwnPropertyNames(proto)) {
-        const v = (adapter.limits as unknown as Record<string, unknown>)[name];
-        if (typeof v === 'number') requiredLimits[name] = v;
-      }
-      return origRequestDevice({
-        ...desc,
-        requiredFeatures: [...adapter.features] as GPUFeatureName[],
-        requiredLimits: { ...requiredLimits, ...(desc.requiredLimits ?? {}) },
-      });
-    };
-    return adapter;
-  };
-}
 
 function buildScene(renderer: THREE.WebGPURenderer) {
   const scene = new THREE.Scene();
@@ -125,28 +98,23 @@ function buildScene(renderer: THREE.WebGPURenderer) {
 
 async function main() {
   if (!(await ensureWebGPU())) return;
-  patchWebGPUForMaxLimits();
-
-  // 1) Denoiser FIRST — ORT creates the GPUDevice the whole pipeline shares.
-  //    Color-only HDR path (no aux) keeps the demo dependency-light and robust;
-  //    the pipeline story is the three-package chain + per-stage cost, not aux.
-  const denoiser = await Denoiser.create({ quality: 'balanced' });
-  const device = denoiser.device;
-  log('denoiser ready — GPUDevice created; three.js + upscaler will share it');
-  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`, true));
-
-  // 2) three.js WebGPURenderer on the SAME device.
+  // 1+2) One GPUDevice for the denoiser, three.js and the upscaler. Color-only HDR path
+  //    (no aux) keeps the demo dependency-light and robust; the pipeline story is the
+  //    three-package chain + per-stage cost, not aux.
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-  const renderer = new THREE.WebGPURenderer({ canvas, device, antialias: false });
-  await renderer.init();
+  const { renderer, denoiser, device } = await createStack({
+    quality: 'balanced',
+    renderer: { canvas, antialias: false },
+  });
+  log(`denoiser ready (${denoiser.runtime.name}) — GPUDevice shared; three.js + upscaler use it too`);
+  device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`, true));
   renderer.setSize(DW, DH, false);
   // The denoiser + upscaler own all colour management (ACES tonemap + sRGB); every
   // quad we draw uses `fragmentNode` (a raw write, no material transforms), so keep
   // the renderer's own output transform identity.
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-  const backendGet = (o: unknown): GPUTexture | undefined =>
-    (renderer.backend as unknown as { get: (o: unknown) => { texture?: GPUTexture } }).get(o)?.texture;
+  const backendGet = (t: THREE.Texture): GPUTexture | undefined => gpuTex(renderer, t);
 
   const { scene, camera, knot } = buildScene(renderer);
   const controls = new OrbitControls(camera, canvas);
