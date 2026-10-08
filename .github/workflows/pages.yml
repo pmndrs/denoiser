@@ -49,7 +49,7 @@ jobs:
       # The shipping package must be built first: the non-aliased examples import
       # its built `denoiser` dist.
       - name: Build denoiser
-        run: yarn workspace denoiser build
+        run: yarn build:lib
       # Build the deployed examples and assemble _site/ (landing page at the
       # root, each example under /<name>/). Same script local verification uses.
       - name: Build + assemble site

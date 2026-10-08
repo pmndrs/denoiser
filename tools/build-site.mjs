@@ -24,7 +24,7 @@ const outDir = path.join(repoRoot, '_site');
 
 // Only these examples deploy. Internal harnesses (webgpu-ort-smoke,
 // denoiser-package-test, aux-split-verify) are intentionally excluded.
-const EXAMPLES = ['hello-world', 'gallery', 'aux-inputs', 'webgpu-raw', 'babylon', 'realtime-compare', 'upscale-pipeline', 'bench', 'ldraw-eiffel', 'three-pathtracer-webgpu'];
+const EXAMPLES = ['hello-world', 'gallery', 'aux-inputs', 'webgpu-raw', 'babylon', 'realtime-compare', 'upscale-pipeline', 'bench', 'ldraw-eiffel', 'three-pathtracer-webgpu', 'ffx-denoiser'];
 
 const noBuild = process.argv.includes('--no-build');
 
