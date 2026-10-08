@@ -233,9 +233,13 @@ fn reflectionSample(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f, xi2: ve
   let tbn = basis(n);
   let Ve = transpose(tbn) * v;
   let H = tbn * sampleGGXVNDF(Ve, alpha, xi);
-  let L = reflect(-v, H);
-  let ndl = dot(n, L);
-  if (ndl <= 0.0) { return vec4f(0.0); }
+  var L = reflect(-v, H);
+  var ndl = dot(n, L);
+  // Fold below-horizon directions back into the hemisphere instead of returning a
+  // 0 sample: FFX's resolve treats radiance ~0 as "no reflection here" (its SSSR
+  // tracer never emits 0 for a valid pixel). Same estimator for the reference.
+  if (ndl <= 0.0) { L = L - 2.0 * ndl * n; ndl = -ndl; }
+  ndl = max(ndl, 1e-4);
   // VNDF estimator weight = G2/G1(V) (white furnace, F = 1: demodulated specular)
   let a2 = alpha * alpha;
   let w = smithG1(ndl, a2);

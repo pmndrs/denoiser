@@ -18,6 +18,11 @@ var<workgroup> r0: array<vec4f, 256>;
 var<workgroup> r1: array<vec4f, 256>;
 var<workgroup> r2: array<vec4f, 256>;
 
+fn bad(c: vec4f) -> f32 {
+  let u = bitcast<vec4u>(c) & vec4u(0x7f800000u);
+  return select(0.0, 1.0, any(u == vec4u(0x7f800000u)));
+}
+
 fn val(c: vec4f) -> vec3f {
   if (m.mode == 0u) { return vec3f(clamp(c.r, 0.0, 1.0)); }
   let x = max(c.rgb, vec3f(0.0));
@@ -32,6 +37,9 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
   var c = vec4f(0.0);
   if (all(id.xy < m.dims)) {
     let d = textureLoad(t_depth, id.xy, 0).r;
+    // non-finite inputs / outputs (NaN / Inf) — counted, never silently scored
+    b.z = bad(textureLoad(t_noisy, id.xy, 0)) + 2.0 * bad(textureLoad(t_ref, id.xy, 0));
+    b.w = bad(textureLoad(t_den, id.xy, 0));
     let recv = d > 0.0 && d < 1.0;
     var en = 0.0;
     var ed = 0.0;
@@ -48,7 +56,7 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
       // (shadows) or any receiver (reflections — every pixel carries signal)
       let rr = textureLoad(t_ref, id.xy, 0).r;
       if (m.mode != 0u || (rr > 0.02 && rr < 0.98)) {
-        c = vec4f(a.x, a.y, 1.0, 0.0);
+        c = vec4f(a.x, a.y, 1.0, ed); // .w: signed error (bias)
       }
       if (m.validPrev != 0u) {
         a.z = abs(en - textureLoad(e_noisy, id.xy).r);
@@ -101,6 +109,11 @@ fn show(c: vec4f) -> vec3f {
   let ly = fc.y / v.canvas.y;
   let p = vec2u(vec2f(lx, ly) * v.tex);
   var c: vec4f;
+  if (v._p.x > 0.0 && panel == 1u) {
+    // error heat map: |tonemap(denoised) - tonemap(reference)| * gain
+    let e = abs(show(textureLoad(t1, p, 0)) - show(textureLoad(t2, p, 0)));
+    return vec4f(e * v._p.x, 1.0);
+  }
   if (panel == 0u) { c = textureLoad(t0, p, 0); }
   else if (panel == 1u) { c = textureLoad(t1, p, 0); }
   else { c = textureLoad(t2, p, 0); }

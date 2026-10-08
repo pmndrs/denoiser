@@ -85,9 +85,12 @@ async function main() {
   if (signal === 'shadows') {
     denoiser = new FFX.FfxShadowDenoiser(device);
   } else {
-    const Ctor = (FFX as unknown as Record<string, new (d: GPUDevice) => TemporalDenoiser<object>>).FfxReflectionDenoiser;
-    if (!Ctor) throw new Error('FfxReflectionDenoiser not implemented yet');
-    denoiser = new Ctor(device);
+    // &stats=current|ffx (see FfxReflectionDenoiserOptions.currentFrameStatistics), &tsf=0.7
+    const stats = q.get('stats');
+    denoiser = new FFX.FfxReflectionDenoiser(device, {
+      ...(stats ? { currentFrameStatistics: stats === 'current' } : {}),
+      ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
+    });
   }
   denoiser.configure({ width: W, height: H });
   const inputs = signal === 'shadows' ? { visibility: noisy, hitDistance: hitDist } : { radiance: noisy, hitDistance: hitDist };
@@ -158,7 +161,9 @@ async function main() {
     return {
       psnrNoisy: psnr(s[0]), psnrDen: psnr(s[1]),
       psnrNoisyPen: psnr(s[8], s[10]), psnrDenPen: psnr(s[9], s[10]), penumbraPixels: s[10],
+      biasDen: s[10] ? s[11] / s[10] : 0, // mean signed (denoised - reference) on the scored pixels
       flickerNoisy: nf ? s[2] / nf : NaN, flickerDen: nf ? s[3] / nf : NaN, pixels: n,
+      nonFiniteInputs: s[6], nonFiniteDenoised: s[7],
     };
   };
 
@@ -175,11 +180,22 @@ async function main() {
     fragment: { module: viewModule, entryPoint: 'fs', targets: [{ format: fmt }] },
   });
   const viewU = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  // debug: replace the middle panel with a denoiser internal (e.g. debug=sampleCount.0&dscale=0.1)
+  const DEBUG = q.get('debug');
+  const DSCALE = Number(q.get('dscale') ?? 1);
+  const internal = (): GPUTexture | undefined => {
+    if (!DEBUG) return undefined;
+    const [field, idx] = DEBUG.split('.');
+    const v = (denoiser as unknown as Record<string, GPUTexture | GPUTexture[]>)[field];
+    return Array.isArray(v) ? v[Number(idx ?? 0)] : v;
+  };
   const show = (den: GPUTexture) => {
+    den = internal() ?? den;
     const b = new ArrayBuffer(32);
     new Float32Array(b).set([canvas.width, canvas.height, W, H]);
     new Uint32Array(b)[4] = signal === 'shadows' ? 0 : 1;
-    new Float32Array(b)[5] = 1;
+    new Float32Array(b)[5] = DEBUG ? DSCALE : 1;
+    new Float32Array(b)[6] = Number(q.get('err') ?? 0); // error heat-map gain for the middle panel
     device.queue.writeBuffer(viewU, 0, b);
     const bg = device.createBindGroup({
       layout: viewPipe.getBindGroupLayout(0),
@@ -205,7 +221,7 @@ async function main() {
     const settled = perFrame.filter((_, f) => !(f < 8 || (f >= CUT && f < CUT + 8)));
     const flick = perFrame.filter((r) => !Number.isNaN(r.flickerDen));
     const summary = {
-      signal, width: W, height: H, frames: FRAMES, refSpp: REFSPP, cut: CUT, noHistory: NO_HISTORY,
+      signal, width: W, height: H, frames: FRAMES, refSpp: REFSPP, cut: CUT, noHistory: NO_HISTORY, query: location.search,
       psnrNoisy: mean(perFrame.map((r) => r.psnrNoisy)),
       psnrDenoised: mean(perFrame.map((r) => r.psnrDen)),
       psnrDenoisedSettled: mean(settled.map((r) => r.psnrDen)),
@@ -214,7 +230,10 @@ async function main() {
       psnrNoisyPenumbra: mean(perFrame.map((r) => r.psnrNoisyPen)),
       psnrDenoisedPenumbra: mean(perFrame.map((r) => r.psnrDenPen)),
       psnrDenoisedPenumbraSettled: mean(settled.map((r) => r.psnrDenPen)),
+      meanBiasDenoised: mean(perFrame.map((r) => r.biasDen)),
       psnrDenoisedAfterCut: perFrame[CUT]?.psnrDen,
+      nonFiniteInputsTotal: perFrame.reduce((a, r) => a + r.nonFiniteInputs, 0),
+      nonFiniteDenoisedTotal: perFrame.reduce((a, r) => a + r.nonFiniteDenoised, 0),
       flickerNoisy: mean(flick.map((r) => r.flickerNoisy)),
       flickerDenoised: mean(flick.map((r) => r.flickerDen)),
       // [psnrNoisy, psnrDen, psnrNoisyPen, psnrDenPen, flickerNoisy, flickerDen]
