@@ -10,7 +10,7 @@
 //   &w=1920&h=1080&frames=120&refspp=256&stopAt=N (view: freeze at frame N)
 import * as FFX from '@pmndrs/denoiser-ffx';
 import type { FrameCamera, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
-import { camState, CUT, FAR, NEAR, mul, invert } from './camera';
+import { camState, CUT, FAR, NEAR, VIEW_CUT, VIEW_FRAMES, viewPathFrame, mul, invert } from './camera';
 import { METRICS_WGSL, VIEW_WGSL } from './eval';
 import { REFLECTION_SCENE_WGSL, SHADOW_SCENE_WGSL } from './scene';
 
@@ -19,13 +19,15 @@ const signal = (q.get('signal') ?? 'shadows') as 'shadows' | 'reflections';
 const mode = q.get('mode') ?? 'view';
 const W = Number(q.get('w') ?? 1920);
 const H = Number(q.get('h') ?? 1080);
-const FRAMES = Number(q.get('frames') ?? 120);
+// view mode runs the slowed-down path (VIEW_FRAMES, see camera.ts); eval/bench keep 120 scripted frames
+const FRAMES = Number(q.get('frames') ?? (mode === 'view' ? VIEW_FRAMES : 120));
 const REFSPP = Number(q.get('refspp') ?? (mode === 'view' ? 64 : 256));
 // baseline: reset history every frame (spatial-only) to see what the temporal part buys
 const NO_HISTORY = q.get('noHistory') === '1';
 // static camera (debug: isolates temporal accumulation from reprojection)
 const STATIC = q.get('static') === '1';
 const STOP_AT = q.has('stopAt') ? Number(q.get('stopAt')) : -1;
+let paused = false; // view mode: camera pause toggle
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const log = (s: string) => { status.textContent += s + '\n'; };
 
@@ -97,9 +99,11 @@ async function main() {
   const guides = { depth, normal, motion, roughness: rough };
 
   const aspect = W / H;
-  const writeScene = (frame: number, spp: number) => {
-    const c = camState(STATIC ? 0 : frame, aspect);
-    const p = camState(STATIC ? 0 : Math.max(frame - 1, 0), aspect);
+  // `frame` = displayed/noise-seed frame; the camera path frame defaults to it (eval/bench),
+  // view mode passes fractional path frames to slow the camera down.
+  const writeScene = (frame: number, spp: number, pathFrame = frame, prevPathFrame = Math.max(frame - 1, 0)) => {
+    const c = camState(STATIC ? 0 : pathFrame, aspect);
+    const p = camState(STATIC ? 0 : prevPathFrame, aspect);
     const vp = mul(c.proj, c.view);
     const pvp = mul(p.proj, p.view);
     const b = new ArrayBuffer(256);
@@ -114,8 +118,8 @@ async function main() {
     };
     return cam;
   };
-  const renderScene = (frame: number, withRef: boolean) => {
-    const cam = writeScene(frame, REFSPP);
+  const renderScene = (frame: number, withRef: boolean, pathFrame?: number, prevPathFrame?: number) => {
+    const cam = writeScene(frame, REFSPP, pathFrame, prevPathFrame);
     const enc = device.createCommandEncoder();
     const pass = enc.beginComputePass();
     pass.setPipeline(noisyPipe); pass.setBindGroup(0, noisyBG);
@@ -125,9 +129,15 @@ async function main() {
     device.queue.submit([enc.finish()]);
     return cam;
   };
-  const step = (frame: number, withRef: boolean) => {
-    const cam = renderScene(frame, withRef);
-    if (frame === 0 || frame === CUT || NO_HISTORY) denoiser.resetHistory();
+  // `seed` = noise seed; defaults to `frame` (view mode passes a free-running counter so the
+  // 1-spp signal keeps re-rolling while the camera is paused)
+  const step = (frame: number, withRef: boolean, forceReset = false, seed = frame) => {
+    // view mode: slowed path (jump cut at VIEW_CUT displayed frames); other modes: scripted frame == path frame
+    const view = mode === 'view';
+    const pf = view ? viewPathFrame(frame) : frame;
+    const prev = view ? (frame === 0 || frame === VIEW_CUT ? pf : viewPathFrame(frame - 1)) : Math.max(frame - 1, 0);
+    const cam = renderScene(seed, withRef, pf, view && paused ? pf : prev);
+    if (frame === 0 || frame === (view ? VIEW_CUT : CUT) || NO_HISTORY || forceReset) denoiser.resetHistory();
     return denoiser.dispatch(inputs as never, guides, cam);
   };
 
@@ -168,18 +178,23 @@ async function main() {
   };
 
   // ---- view
-  const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
-  const panelW = Math.min(640, Math.floor((window.innerWidth - 32) / 3));
-  canvas.width = panelW * 3; canvas.height = Math.round(panelW * H / W);
-  const ctx = canvas.getContext('webgpu')!;
+  // three canvases (one per panel, labels sit below each in the HTML; CSS stacks them on narrow screens)
+  const canvases = [...document.querySelectorAll<HTMLCanvasElement>('canvas.panel')];
+  const panelW = Math.max(200, Math.min(640, Math.round(canvases[0].clientWidth || 640)));
+  const panelH = Math.round(panelW * H / W);
   const fmt = navigator.gpu.getPreferredCanvasFormat();
-  ctx.configure({ device, format: fmt });
+  const ctxs = canvases.map((c) => {
+    c.width = panelW; c.height = panelH;
+    const cx = c.getContext('webgpu')!;
+    cx.configure({ device, format: fmt });
+    return cx;
+  });
   const viewModule = device.createShaderModule({ code: VIEW_WGSL });
   const viewPipe = device.createRenderPipeline({
     layout: 'auto', vertex: { module: viewModule, entryPoint: 'vs' },
     fragment: { module: viewModule, entryPoint: 'fs', targets: [{ format: fmt }] },
   });
-  const viewU = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const viewUs = canvases.map(() => device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
   // debug: replace the middle panel with a denoiser internal (e.g. debug=sampleCount.0&dscale=0.1)
   const DEBUG = q.get('debug');
   const DSCALE = Number(q.get('dscale') ?? 1);
@@ -191,19 +206,22 @@ async function main() {
   };
   const show = (den: GPUTexture) => {
     den = internal() ?? den;
-    const b = new ArrayBuffer(32);
-    new Float32Array(b).set([canvas.width, canvas.height, W, H]);
-    new Uint32Array(b)[4] = signal === 'shadows' ? 0 : 1;
-    new Float32Array(b)[5] = DEBUG ? DSCALE : 1;
-    new Float32Array(b)[6] = Number(q.get('err') ?? 0); // error heat-map gain for the middle panel
-    device.queue.writeBuffer(viewU, 0, b);
-    const bg = device.createBindGroup({
-      layout: viewPipe.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: { buffer: viewU } }, ...[noisy, den, reference].map((t, i) => ({ binding: i + 1, resource: t.createView() }))],
-    });
     const enc = device.createCommandEncoder();
-    const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
-    pass.setPipeline(viewPipe); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+    canvases.forEach((canvas, panel) => {
+      const b = new ArrayBuffer(32);
+      new Float32Array(b).set([canvas.width, canvas.height, W, H]);
+      new Uint32Array(b)[4] = signal === 'shadows' ? 0 : 1;
+      new Float32Array(b)[5] = DEBUG ? DSCALE : 1;
+      new Float32Array(b)[6] = Number(q.get('err') ?? 0); // error heat-map gain for the middle panel
+      new Float32Array(b)[7] = panel; // which of the 3 textures this canvas shows
+      device.queue.writeBuffer(viewUs[panel], 0, b);
+      const bg = device.createBindGroup({
+        layout: viewPipe.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: viewUs[panel] } }, ...[noisy, den, reference].map((t, i) => ({ binding: i + 1, resource: t.createView() }))],
+      });
+      const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctxs[panel].getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+      pass.setPipeline(viewPipe); pass.setBindGroup(0, bg); pass.draw(3); pass.end();
+    });
     device.queue.submit([enc.finish()]);
   };
 
@@ -275,15 +293,34 @@ async function main() {
     out.ready = true;
   } else {
     let f = 0;
+    let seed = 0; // noise seed, advances every displayed frame (also while paused)
+    const pauseBtn = document.querySelector<HTMLButtonElement>('#pause');
+    const cutBtn = document.querySelector<HTMLButtonElement>('#cut');
+    const hint = document.querySelector<HTMLElement>('#pathinfo');
+    let pendingJump = -1; // manual camera cut target (displayed frame), -1 = none
+    pauseBtn?.addEventListener('click', () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? 'Resume camera' : 'Pause camera';
+    });
+    cutBtn?.addEventListener('click', () => { pendingJump = f < VIEW_CUT ? VIEW_CUT : 0; });
+    addEventListener('keydown', (e) => {
+      if (e.code === 'Space') { e.preventDefault(); pauseBtn?.click(); }
+      else if (e.key === 'c' || e.key === 'C') cutBtn?.click();
+    });
     const tick = () => {
-      const den = step(f, true);
+      // manual cut: jump to the other path; history is reset (the stochastic signal keeps updating while paused)
+      const jumped = pendingJump >= 0;
+      if (jumped) { f = pendingJump; pendingJump = -1; }
+      const den = step(f, true, jumped, seed++);
       show(den);
       out.frame = f;
+      if (hint) hint.textContent = `path ${f < VIEW_CUT ? 1 : 2}/2 - frame ${f % VIEW_CUT + 1}/${VIEW_CUT}${paused ? ' - camera paused' : ''}`;
       if (f === STOP_AT) {
         device.queue.onSubmittedWorkDone().then(() => { out.ready = true; });
         return;
       }
-      f = (f + 1) % FRAMES;
+      // paused: camera holds still, noisy signal still re-rolls every frame
+      if (!paused) f = (f + 1) % FRAMES;
       requestAnimationFrame(tick);
     };
     out.ready = STOP_AT < 0;

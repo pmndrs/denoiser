@@ -65,6 +65,17 @@ export function invert(m: Float32Array): Float32Array {
 
 export const CUT = 60;
 
+// Interactive viewing pace (view mode ONLY; eval/bench keep the original 120-frame
+// scripted path above so docs/specs/temporal.md numbers stay reproducible).
+// Each path segment is shown for VIEW_SLOW * CUT frames and the camera advances
+// 1/VIEW_SLOW of a scripted step per displayed frame: half the speed, twice the
+// time on each path before the jump cut.
+export const VIEW_SLOW = 2;
+export const VIEW_CUT = CUT * VIEW_SLOW; // displayed frame at which the jump cut happens
+export const VIEW_FRAMES = 120 * VIEW_SLOW;
+/** displayed (view-mode) frame -> fractional scripted path frame */
+export const viewPathFrame = (f: number) => (f < VIEW_CUT ? f / VIEW_SLOW : CUT + (f - VIEW_CUT) / VIEW_SLOW);
+
 export function cameraAt(frame: number): { eye: V3; target: V3 } {
   if (frame < CUT) {
     const a = 0.35 + frame * 0.009;
