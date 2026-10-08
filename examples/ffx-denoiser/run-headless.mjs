@@ -5,7 +5,7 @@
 //   node run-headless.mjs                                  # eval + bench, shadows
 //   node run-headless.mjs "signal=shadows&mode=eval" "signal=shadows&mode=bench"
 //   node run-headless.mjs --shot=out/shadows-45.png "signal=shadows&stopAt=45&refspp=1024"
-//   BASE=http://127.0.0.1:5211/ CHROME=/path/to/chrome node run-headless.mjs ...
+//   WINDOW=420,1800 (narrow-screen shots)  BASE=http://127.0.0.1:5211/ CHROME=/path/to/chrome node run-headless.mjs ...
 //
 // No puppeteer: CDP over Node's native WebSocket (as examples/kernels-smoke).
 import { spawn } from 'node:child_process';
@@ -60,7 +60,7 @@ async function run(query) {
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
     '--enable-webgpu-developer-features', // unquantized timestamp queries
-    '--window-size=1960,1000', `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
+    `--window-size=${process.env.WINDOW ?? '1960,1000'}`, `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
     `${BASE}?${query}`,
   ], { stdio: 'ignore' });
   let ws;
