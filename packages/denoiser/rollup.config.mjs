@@ -5,11 +5,11 @@ import { dts } from 'rollup-plugin-dts';
 import path from 'node:path';
 
 // One package, several entry points: `denoiser` (core + ORT preset),
-// `denoiser/core`, `denoiser/ort`, `denoiser/kernels`, `denoiser/wgsl`, `denoiser/ffx`, `denoiser/webnn`. The internal workspace
+// `denoiser/core`, `denoiser/ort`, `denoiser/kernels`, `denoiser/wgsl`, `denoiser/ffx`, `denoiser/webnn`, `denoiser/three`. The internal workspace
 // packages (@pmndrs/denoiser-*) are BUNDLED — never published — and built in one
 // pass so the entries share chunks (one copy of Denoiser/TiledEngine, so
 // `denoiser` and `denoiser/core` classes are the same). Runtime libraries stay
-// external: onnxruntime-web (dependency) and @huggingface/kernels (optional peer).
+// external: onnxruntime-web (dependency), @huggingface/kernels and three (optional peers).
 const input = {
     index: './src/index.ts',
     core: './src/core.ts',
@@ -18,11 +18,14 @@ const input = {
     wgsl: './src/wgsl.ts',
     ffx: './src/ffx.ts',
     webnn: './src/webnn.ts',
+    three: './src/three.ts',
 };
 const external = [
     'onnxruntime-web',
     'onnxruntime-web/webgpu',
     '@huggingface/kernels',
+    'three',
+    /^three\//,
 ];
 
 export default [

@@ -1,0 +1,59 @@
+{
+    "name": "@pmndrs/denoiser-three",
+    "description": "three.js (WebGPURenderer / TSL) integration for pmndrs/denoiser: nodes for the image denoiser and the temporal denoisers",
+    "keywords": [
+        "three",
+        "tsl",
+        "webgpu",
+        "denoiser"
+    ],
+    "version": "0.1.0",
+    "private": true,
+    "author": "Dennis Smolek",
+    "license": "MIT",
+    "homepage": "https://github.com/pmndrs/denoiser",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/pmndrs/denoiser.git",
+        "directory": "packages/denoiser-three"
+    },
+    "bugs": {
+        "url": "https://github.com/pmndrs/denoiser/issues"
+    },
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.cjs"
+        }
+    },
+    "scripts": {
+        "build": "rm -rf dist && tsc && rollup --config rollup.config.mjs"
+    },
+    "dependencies": {
+        "@pmndrs/denoiser-core": "workspace:*",
+        "@pmndrs/denoiser-ffx": "workspace:*"
+    },
+    "devDependencies": {
+        "@rollup/plugin-commonjs": "^29.0.3",
+        "@rollup/plugin-node-resolve": "^16.0.3",
+        "@rollup/plugin-typescript": "^12.3.0",
+        "@types/three": "^0.185.4",
+        "@webgpu/types": "^0.1.71",
+        "rollup": "^4.62.2",
+        "three": "^0.185.0",
+        "tslib": "^2.8.1",
+        "typescript": "^5.9.3"
+    },
+    "peerDependencies": {
+        "three": ">=0.185.0"
+    },
+    "files": [
+        "dist/**",
+        "README.md",
+        "LICENSE"
+    ]
+}
