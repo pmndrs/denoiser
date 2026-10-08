@@ -5,9 +5,11 @@ nav: 0
 ---
 
 Denoiser runs Intel [Open Image Denoise (OIDN)](https://github.com/RenderKit/oidn)'s
-pretrained U-Nets fully on the GPU: ONNX models on onnxruntime-web's WebGPU execution
-provider, with every pre/post-processing step — normalization, tiling, overlap
-blending, color transforms — written as WGSL compute on the same `GPUDevice`. There's
+pretrained U-Nets fully on the GPU: by default a hand-written WGSL runtime, or WebNN
+when the browser exposes it (the default `AutoRuntime` picks per model), with every
+pre/post-processing step — normalization, tiling, overlap blending, color
+transforms — written as WGSL compute on the same `GPUDevice`. onnxruntime-web is
+available as an opt-in runtime (`denoiser/ort`). There's
 no server round-trip and no native binary: the noisy frame goes in, the clean frame
 comes out, on the GPU that rendered it.
 

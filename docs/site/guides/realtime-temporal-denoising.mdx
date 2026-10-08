@@ -265,10 +265,8 @@ Sizes passed to `configure()` must match the signal and guides. Resize by callin
 
 ## three.js and TSL
 
-{/* PLACEHOLDER: filled in by the denoiser/three work. Do not document the TSL
-    nodes here until they land. */}
-
-> [!NOTE]
-> **Coming soon.** TSL nodes that wrap a `TemporalDenoiser` the way
-> `@pmndrs/upscaler`'s `UpscalerNode` wraps the upscaler are being built as part of
-> the `denoiser/three` entry. See [three.js & TSL](./three-and-tsl).
+`denoiser/three` wraps a `TemporalDenoiser` as a TSL node the way
+`@pmndrs/upscaler`'s `UpscalerNode` wraps the upscaler: `ffxShadows()`,
+`ffxReflections()` and the generic `temporalDenoise()`. The nodes only advance inside
+`renderer.setAnimationLoop`, and with FSR3 jitter enabled they currently show much
+higher residual flicker (open issue). See [three.js & TSL](./three-and-tsl).

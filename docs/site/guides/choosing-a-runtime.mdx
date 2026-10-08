@@ -1,6 +1,6 @@
 ---
 title: Choosing a runtime
-description: ORT, Hugging Face kernels, hand-written WGSL and WebNN all run the same OIDN weights. What each one is, how fast and how correct it is on a quiet GPU, which flags it needs, and how to select it.
+description: AutoRuntime (the default), hand-written WGSL, WebNN, Hugging Face kernels and ORT all run the same OIDN weights. What each one is, how fast and how correct it is on a quiet GPU, which flags it needs, and how to select it.
 nav: 26
 ---
 
@@ -10,24 +10,26 @@ OIDN PU transfer and autoexposure, aux-input encoding, resolve and texture IO.
 A **`NetworkRuntime`** only runs the U-Net, taking an NCHW buffer and producing
 an NCHW buffer on the shared `GPUDevice`. The same OIDN weights run on every
 runtime; only the executor changes, so you pick one by passing it to
-`Denoiser.create({ runtime })`.
+`Denoiser.create({ runtime })`. When you pass none, `Denoiser` uses
+[`AutoRuntime`](#automatic-autoruntime-the-default).
 
 > [!WARNING]
 > Everything on this page was measured on **Apple GPUs only** (an M5 Pro, Chrome
 > 154). The WGSL runtime in particular was tuned on that one GPU. Validate on
-> your target hardware before relying on a non-default runtime. The runtimes
-> other than ORT are **experimental**.
+> your target hardware before relying on any runtime. The WGSL, WebNN and kernels
+> runtimes are **experimental**.
 
 ## At a glance
 
 | runtime | import | what it is | status |
 |---|---|---|---|
-| ONNX Runtime | `denoiser` (default) or `denoiser/ort` | onnxruntime-web, WebGPU execution provider, `.onnx` models | shipping default; wrong on some models (see below) |
+| Automatic | `denoiser` (default) or `denoiser/auto` | picks WebNN fp16 (base/large, when available) or WGSL per model, on one shared device | default; never picks ORT |
+| ONNX Runtime | `denoiser/ort` (opt-in) | onnxruntime-web, WebGPU execution provider, `.onnx` models. Needs the optional peer dependency `onnxruntime-web` | wrong on some models (see below); no longer the default |
 | HF kernels | `denoiser/kernels` | `@huggingface/kernels` (optional peer dependency): FusedConv / MaxPool / Resize / Concat, 28 calls per frame | experimental; needs a device-sharing shim today |
 | Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one command encoder; no dependencies | experimental; fastest with no flags |
 | WebNN | `denoiser/webnn` | the graph built with `MLGraphBuilder`, run by the browser's ML backend (CoreML in Chrome on macOS) | experimental; Chrome flag required |
 
-The kernels, WGSL and WebNN runtimes read the upstream OIDN `.tza` weights
+The auto, kernels, WGSL and WebNN runtimes read the upstream OIDN `.tza` weights
 (fetched from jsDelivr, `models-v3`, by default, or from `{ tzaUrl }`). ORT
 reads the converted `.onnx` files. See [Models & weights](../getting-started/models-and-weights).
 
@@ -90,12 +92,15 @@ problem, and it is still open.
 
 ## Which one should I use?
 
-- **Let the library pick:** `AutoRuntime` from `denoiser/auto` (below) runs
-  WebNN fp16 for base/large models when WebNN is available and WGSL otherwise,
-  on one shared GPUDevice. It never picks ORT.
-- **The default, nothing to configure:** keep ORT if you only denoise color or
-  clean aux (`albedo` + `normal`) at `fast` or `balanced` quality and don't need
-  the speed. It has the longest track record in this repo.
+- **Nothing to configure:** `Denoiser.create()` uses `AutoRuntime` (below). It
+  runs WebNN fp16 for base/large models when WebNN is available and WGSL
+  otherwise, on one shared GPUDevice. It never picks ORT, so you get correct
+  output on every model.
+- **Only if you must stay on ORT:** `OrtRuntime` from `denoiser/ort`, with
+  `onnxruntime-web` installed. Expect the wrong results listed above on the
+  `*_alb`, `*_alb_nrm` and `*_large` models; color-only and clean-aux
+  (`albedo` + `normal`, with `splitAux`) at `fast` or `balanced` are the cases it
+  gets right.
 - **Best result without browser flags:** `WgslRuntime`. Correct on every model,
   several times faster than ORT, fastest at small models and at 512x512.
 - **Best result on Chrome with flags enabled (macOS, Apple silicon):**
@@ -112,20 +117,27 @@ All runtimes plug into the same `Denoiser`. Import the runtime from its subpath
 entry and pass it as `runtime`. The facade, the options and the output are
 unchanged.
 
-### ORT (default)
+### ORT (opt-in)
+
+```sh
+npm install onnxruntime-web   # optional peer dependency of denoiser
+```
 
 ```ts
 import { Denoiser } from 'denoiser';
-
-const denoiser = await Denoiser.create({ precision: 'fp16' });
-
-// equivalent, explicit:
 import { OrtRuntime } from 'denoiser/ort';
-const same = await Denoiser.create({ runtime: new OrtRuntime({ weightsUrl: '/models' }) });
+
+const denoiser = await Denoiser.create({
+  runtime: new OrtRuntime({ weightsUrl: '/models' }), // { weightsUrl?, wasmPaths?, graphCapture?, splitAux? }
+  precision: 'fp16',
+});
 ```
 
-When you pass `runtime`, `weightsUrl`, `wasmPaths`, `graphCapture` and `splitAux`
-on `Denoiser.create` are ignored. Set them on the `OrtRuntime` instead.
+The root `denoiser` entry never loads onnxruntime-web. The ORT options
+(`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) are `OrtRuntime` options,
+not `Denoiser.create` options. ORT creates its own `GPUDevice` and cannot adopt
+one you pass, so with three.js create the denoiser first (see
+[three.js render targets](./three-js-render-targets)).
 
 ### Hand-written WGSL
 
@@ -212,14 +224,22 @@ page-global runtime, so all `KernelsRuntime`s on a page share one device (the
 first one's). The first load costs about 0.8-1.8 s per model (kernel fetch and
 compile).
 
-### Automatic (`AutoRuntime`)
+### Automatic (`AutoRuntime`, the default)
 
 ```ts
 import { Denoiser } from 'denoiser';
-import { AutoRuntime } from 'denoiser/auto';
 
+// the default: same as `runtime: new AutoRuntime({ tzaUrl, device })`
 const denoiser = await Denoiser.create({
-  runtime: new AutoRuntime(), // { tzaUrl?, device?, webnn?: 'gpu' | 'npu' | false }
+  precision: 'fp16',
+  tzaUrl: '/tzas', // optional: self-host the .tza weights
+  device,          // optional: run on an existing GPUDevice, e.g. a three.js renderer's
+});
+
+// explicit, with the WebNN control:
+import { AutoRuntime } from 'denoiser/auto'; // also exported from 'denoiser'
+const same = await Denoiser.create({
+  runtime: new AutoRuntime({ webnn: 'gpu' }), // { tzaUrl?, device?, webnn?: 'gpu' | 'npu' | false }
   precision: 'fp16',
 });
 ```
@@ -235,8 +255,9 @@ WebNN compiles per image size (0.4–2.7 s each on a cold CoreML cache).
 ## Which device are you on?
 
 ORT creates the `GPUDevice` it runs on and ignores one you inject. The other
-runtimes create a device with the adapter's maximum limits and features, or
-adopt the `device` you pass in their options. Either way, build your own
+runtimes (including the default `AutoRuntime`) create a device with the adapter's
+maximum limits and features, or adopt the `device` you pass, either as the
+`Denoiser.create({ device })` option or in the runtime's own options. Either way, build your own
 pipelines on **`denoiser.device`**, as described in
 [The GPUDevice](../concepts/the-gpudevice) and
 [Custom engines & raw WebGPU](./custom-engines).

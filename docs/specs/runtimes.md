@@ -99,7 +99,7 @@ to HF as a request — draft below.
 
 ### KernelsRuntime through the facade (`examples/kernels-smoke/facade.html`)
 
-`Denoiser.create({ runtime: new KernelsRuntime({ tzaUrl }) })` vs the default ORT
+`Denoiser.create({ runtime: new KernelsRuntime({ tzaUrl }) })` vs the ORT runtime (the default when this was measured)
 runtime, same calls, spheres 512², warm median of 10:
 
 | | `denoise()` | `denoise()` + albedo/normal (9ch) | `denoiseTextures()` |

@@ -12,35 +12,66 @@ working example
 
 Requires three ≥ r185 (`three/webgpu`, the `WebGPURenderer`).
 
-## 0. One GPUDevice, created by the denoiser
+## 0. One GPUDevice, shared with the denoiser
 
-onnxruntime-web creates and owns the `GPUDevice` and ignores an injected one
-([onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)).
-
-> [!IMPORTANT]
-> The order is fixed: **denoiser first, then hand its device to three.js.**
+With the default runtime (`AutoRuntime`: WebNN or hand-written WGSL) the denoiser can
+adopt an existing device, so the clean order is **renderer first, then the denoiser
+on the renderer's device**:
 
 ```ts
 import * as THREE from 'three/webgpu';
 import { Denoiser } from 'denoiser';
 
-const denoiser = await Denoiser.create({ precision: 'fp16' });
-
-const renderer = new THREE.WebGPURenderer({ canvas, device: denoiser.device });
+const renderer = new THREE.WebGPURenderer({ canvas });
 await renderer.init();
+
+const denoiser = await Denoiser.create({
+  device: (renderer.backend as { device: GPUDevice }).device,
+  precision: 'fp16',
+});
 ```
 
-The denoiser requests the adapter's max limits/features (scoped patch, restored
-immediately), so the shared device can hold whole-frame U-Net intermediates and
-your renderer's pipelines.
+Or let `denoiser/three` unwrap the device for you; this works with any runtime that
+can adopt a device (`AutoRuntime`, `WgslRuntime`, `WebnnRuntime`, `KernelsRuntime`):
 
-**Lifetime rules** (consequences of ORT owning the device):
+```ts
+import { createDenoiserForRenderer } from 'denoiser/three';
+import { AutoRuntime } from 'denoiser/auto';
+
+const denoiser = await createDenoiserForRenderer(renderer, {
+  runtime: (device) => new AutoRuntime({ device }),
+  precision: 'fp16',
+});
+```
+
+Without a `device`, the runtime creates one with the adapter's max limits/features,
+so the shared device can hold whole-frame U-Net intermediates. If your renderer
+creates the device, request high limits there too (a path tracer's own buffers
+compete for the same budget); `patchWebGPUForMaxLimits()` in
+`examples/_shared/stack.ts` shows one way.
+
+> [!IMPORTANT]
+> **ORT is the exception.** `OrtRuntime` (`denoiser/ort`, opt-in) always creates its
+> own device and ignores an injected one
+> ([onnxruntime#26107](https://github.com/microsoft/onnxruntime/issues/26107)), and
+> `createDenoiserForRenderer` throws for it. With ORT the order is reversed:
+> **denoiser first, then hand its device to three.js.**
+>
+> ```ts
+> import { OrtRuntime } from 'denoiser/ort';
+> const denoiser = await Denoiser.create({ runtime: new OrtRuntime(), precision: 'fp16' });
+> const renderer = new THREE.WebGPURenderer({ canvas, device: denoiser.device });
+> await renderer.init();
+> ```
+
+**Lifetime rules:**
 
 - `denoiser.dispose()` — safe between workloads: frees buffers and extra model
   sessions, **keeps the device alive**.
-- `denoiser.destroyDevice()` — releasing the last ORT session **destroys the
-  shared device**; your renderer, canvas contexts, and every resource on it die
-  with it. Only call when the whole WebGPU stack is going away.
+- `denoiser.destroyDevice()` — full teardown of the denoiser's sessions. With ORT,
+  releasing the last session **destroys the shared device**; your renderer, canvas
+  contexts, and every resource on it die with it. `AutoRuntime` never destroys a
+  device you passed in. Only call it when the whole WebGPU stack is going away.
 
 ## 1. Getting a render target IN
 
@@ -143,12 +174,11 @@ Returns `GPUTexture` — your `output` if given, else an **engine-owned
 |---|---|---|---|
 | `precision` | `'fp32' \| 'fp16'` | `'fp32'` | fp16 models + tensors + WGSL IO when `shader-f16` is available (auto-falls back). ~15% faster, PSNR ≈ 53 dB vs fp32 |
 | `quality` | `'fast' \| 'balanced' \| 'high'` | `'fast'` | model family: fast = `*_small`, balanced = base, high = `*_large` where available. Mutable later via `denoiser.quality` |
-| `weightsUrl` | `string` | jsDelivr CDN | where the `.onnx` models are served |
-| `wasmPaths` | `string` | jsDelivr CDN | where ORT's wasm assets load from |
+| `tzaUrl` | `string` | jsDelivr CDN (`models-v3`) | where the OIDN `.tza` weights are served (default runtime) |
+| `device` | `GPUDevice` | a max-limits device the runtime creates | run the default runtime on this device, e.g. `renderer.backend.device` |
 | `maxRunPixels` | `number` | `2048*1152` | above this, tile instead of whole-frame |
 | `batch` | `number` | `8` | max tiles per model run in tiled mode |
-| `graphCapture` | `boolean` | `false` | opt-in ORT graph capture — **leave off** (no measured gain; ORT 1.27 crashes after ~150–250 replays) |
-| `splitAux` | `boolean` | `true` | runs the first conv of aux models in WGSL to work around an onnxruntime-web WebGPU bug; fetches `<model>.tail.onnx` + `<model>.enc0.bin`; falls back to the plain model with a one-time warning if artifacts are missing |
+| `runtime` | `NetworkRuntime` | `AutoRuntime` | what executes the network; when passed, `tzaUrl` / `device` are ignored. ORT-only settings (`weightsUrl`, `wasmPaths`, `graphCapture`, `splitAux`) live on `new OrtRuntime({...})` from `denoiser/ort` |
 
 See the [API reference](../reference/api) for the exhaustive, always-current version of this table.
 
@@ -226,9 +256,12 @@ resolve `undefined` so you never present a result for an outdated camera.
   unwrapping? Is the tracer target actually rendered yet (width matches)?
 - Stale/destroyed texture errors after resize/reset → you cached a `GPUTexture`;
   re-resolve via `backendGet` each use.
-- Whole app's WebGPU dies → something called `destroyDevice()` (or released the
-  last ORT session). Use `dispose()` between workloads.
+- Whole app's WebGPU dies → something called `destroyDevice()` (with ORT, releasing
+  the last session destroys the shared device). Use `dispose()` between workloads.
 - Double-image/ghosting in aux mode → G-buffer not re-rendered after camera move.
+
+For the TSL nodes (`denoise()`, `ffxShadows()`, `ffxReflections()`) that wrap this
+flow, see [three.js & TSL](./three-and-tsl).
 
 More failure modes (black output from a device mismatch, CORS, device-lost) are
 covered in [Troubleshooting](./troubleshooting).

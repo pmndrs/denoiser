@@ -10,8 +10,16 @@ nav: 1
 npm install denoiser
 ```
 
-`onnxruntime-web` ships as a regular dependency, so this one package is enough to
-get going.
+This one package is enough to get going: the default runtime has no runtime
+dependencies. `onnxruntime-web` is an **optional** peer dependency, needed only if you
+opt into the ORT runtime (`denoiser/ort`; see
+[Choosing a runtime](../guides/choosing-a-runtime.mdx)).
+
+> [!NOTE]
+> Everything here was validated on Apple GPUs only. The default runtime is
+> `AutoRuntime`: WebNN fp16 for base/large models when WebNN is available (Chrome
+> with a feature flag), the hand-written WGSL runtime otherwise.
+
 
 ## Hello world
 
@@ -38,7 +46,8 @@ async function run(): Promise<Denoiser> {
 
 Three calls do the work:
 
-1. `Denoiser.create()` — creates the WebGPU device, loads the default model.
+1. `Denoiser.create()` — creates the WebGPU device (or adopts the one you pass as
+   `device`), loads the default model.
 2. `denoiser.denoise(imageLike)` — runs it. Accepts an `HTMLImageElement`,
    `HTMLCanvasElement`, `ImageBitmap`, `ImageData`, `HTMLVideoElement`,
    `OffscreenCanvas`, or a raw `{ data, width, height }` object; returns `ImageData`.
@@ -49,18 +58,18 @@ page shows this exact source next to the noisy/denoised comparison.
 
 ## What happens on first run
 
-`Denoiser.create()` fetches the model it needs from the default CDN
-(`weightsUrl`, jsDelivr by default) — nothing ships inside the npm package itself.
-Model files run **0.6–15 MB** depending on quality tier and precision (see
+`Denoiser.create()` fetches the weights it needs from the default CDN
+(`tzaUrl`, jsDelivr by default) — nothing ships inside the npm package itself.
+Weight files run about **0.6–7.7 MB** depending on quality tier (see
 [Models & weights](./models-and-weights.mdx) for the full size table); only the one
 variant your call actually needs is fetched, not the full set. The fetched bytes are
 cached in memory for the life of the page (and by the browser's normal HTTP cache
 across page loads), so only the very first `denoise()` call pays the download.
 
 > [!NOTE]
-> Production apps should host the models themselves rather than rely on the default
+> Production apps should host the weights themselves rather than rely on the default
 > CDN URL — see [Models & weights](./models-and-weights.mdx#hosting-them) for the
-> `weightsUrl` option.
+> `tzaUrl` option.
 
 ## Next
 

@@ -18,8 +18,10 @@ The compare slider under the canvas reveals raw accumulation vs denoised.
 yarn workspace ldraw-eiffel dev   # http://localhost:5177
 ```
 
-Same architecture as `examples/three-pathtracer-webgpu`: the denoiser (ORT)
-creates the GPUDevice, three.js borrows it, and everything — tracing, G-buffer
+Same architecture as `examples/three-pathtracer-webgpu`: one GPUDevice shared by
+three.js and the denoiser (the runtime is selected with `?runtime=`, default `auto`;
+with `ort` the denoiser creates the device and three.js borrows it, otherwise
+three.js creates it and the denoiser adopts it), and everything — tracing, G-buffer
 aux, denoise — stays on that one device with zero CPU readbacks.
 
 ## Assets
