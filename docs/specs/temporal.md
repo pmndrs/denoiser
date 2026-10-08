@@ -1,5 +1,7 @@
 # Temporal (real-time) denoising
 
+> Quiet-GPU timings (2026-10-08, M5 Pro, 1080p): FFX shadows 0.49 ms, reflections 1.66 ms GPU — see docs/status/eval-2026-10-08-quiet.md.
+
 > Status 2026-10-08: interface in `packages/denoiser-core/src/temporal.ts`
 > (exported from `denoiser` / `denoiser/core`). First implementation: the
 > FidelityFX shadow + reflection denoisers ported to WGSL —

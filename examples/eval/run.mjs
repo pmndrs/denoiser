@@ -23,6 +23,7 @@ const BASE = process.env.EVAL_URL ?? 'http://localhost:5196/';
 const OUT = fileURLToPath(new URL('../../tools/eval/out/', import.meta.url));
 const COMBOS = process.argv.slice(2).length ? process.argv.slice(2) : [
   'ort:fp32', 'ort:fp16', 'kernels:fp32', 'kernels:fp16', 'wgsl:fp32', 'wgsl-portable:fp32', 'wgsl:fp16',
+  'webnn:fp32', 'webnn:fp16', 'webnn-npu:fp16',
 ];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
