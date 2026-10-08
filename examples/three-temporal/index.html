@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - three.js SSR: three vs FFX</title>
+    <style>
+      :root { color-scheme: dark; --bg: #0b0e14; --panel: #141922; --border: #232b3a; --text: #e6edf3; --muted: #9aa7b8; --accent: #90cdf4; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
+      .wrap { max-width: 1020px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      p.tag { color: var(--muted); margin: 0 0 1rem; max-width: 58rem; font-size: .95rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      a { color: var(--accent); }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 8px; display: block; }
+      .labels { display: flex; justify-content: space-between; max-width: 960px; color: var(--muted); font-size: .8rem; margin-top: .3rem; }
+      .controls { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; margin: 1rem 0; align-items: center; }
+      .group { display: flex; align-items: center; gap: .5rem; }
+      .group > span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+      .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+      button { background: var(--panel); color: var(--text); border: 0; padding: .4rem .8rem; font: inherit; cursor: pointer; }
+      .seg button + button { border-left: 1px solid var(--border); }
+      button[aria-pressed="true"] { background: #243247; color: var(--accent); }
+      button.solo { border: 1px solid var(--border); border-radius: 8px; }
+      pre#status { color: var(--muted); font-size: .8rem; white-space: pre-wrap; margin: .5rem 0 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>SSR denoising: three.js vs FidelityFX</h1>
+      <p class="tag">
+        Port of three.js's <code>webgpu_postprocessing_ssr_denoise</code> example (dungeon by Warkarma, stochastic SSR by 0beqz).
+        Left: three's <code>temporalReproject</code> + <code>recurrentDenoise</code>. Right: the same SSR through
+        <code>ffxReflections()</code> from <code>denoiser/three</code> (AMD FidelityFX reflection denoiser, WGSL).
+        Each side has its own SSR node; the camera sways. Add <code>?ffxHistory=0</code> to stop feeding FFX's output back into SSR.
+      </p>
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="labels"><span>three: temporalReproject + recurrentDenoise</span><span>FFX reflections (denoiser/three)</span></div>
+      <div class="controls">
+        <div class="group"><span>view</span>
+          <div class="seg" id="seg-view">
+            <button data-v="split" aria-pressed="true">split</button><button data-v="three" aria-pressed="false">three</button>
+            <button data-v="ffx" aria-pressed="false">FFX</button><button data-v="noisy" aria-pressed="false">raw SSR</button></div></div>
+        <div class="group"><span>camera</span>
+          <div class="seg" id="seg-motion"><button data-v="on" aria-pressed="true">swaying</button><button data-v="off" aria-pressed="false">orbit (mouse)</button></div></div>
+        <div class="group"><span>split</span><input id="split" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+        <button class="solo" id="cut">camera cut (resetHistory)</button>
+      </div>
+      <p class="tag"><a href="shadows.html">Stochastic area-light shadows + SSR demo (own scene, optional FSR3)</a></p>
+      <pre id="status">starting...</pre>
+    </div>
+    <script type="module" src="./src/ssr.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "three-temporal",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "three.js r185 + TSL: stochastic area-light shadows and glossy SSR denoised in real time by the FidelityFX temporal denoisers (denoiser/three nodes), optionally upscaled by FSR3.",
+  "scripts": {
+    "dev": "vite --port 5220 --strictPort --host 127.0.0.1",
+    "build": "vite build",
+    "check": "node run-headless.mjs"
+  },
+  "dependencies": {
+    "@pmndrs/upscaler": "0.1.0",
+    "denoiser": "workspace:*",
+    "three": "^0.185.0"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.71",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}
