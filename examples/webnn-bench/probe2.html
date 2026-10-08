@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>WebNN export probe</title></head><body><pre id="status"></pre><script type="module">
+// createExportableTensor signature / dtype / shape probe
+const st = document.querySelector('#status');
+const log = (m) => { st.textContent += m + '\n'; };
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice({ requiredFeatures: adapter.features.has('shader-f16') ? ['shader-f16'] : [] });
+for (const k of ['webgpu', 'gpu']) {
+  const ctx = await (k === 'webgpu' ? navigator.ml.createContext(device) : navigator.ml.createContext({ deviceType: k }));
+  const tries = [
+    ['f16', () => ctx.createExportableTensor({ dataType: 'float16', shape: [1, 2, 2, 2] }, device)],
+    ['f32 readable+writable', () => ctx.createExportableTensor({ dataType: 'float32', shape: [1, 2, 2, 2], readable: true, writable: true }, device)],
+    ['int32', () => ctx.createExportableTensor({ dataType: 'int32', shape: [1, 2, 2, 2] }, device)],
+    ['(device, desc)', () => ctx.createExportableTensor(device, { dataType: 'float32', shape: [1, 2, 2, 2] })],
+    ['f32 [8]', () => ctx.createExportableTensor({ dataType: 'float32', shape: [8] }, device)],
+    ['f32 [1,4,2,2]', () => ctx.createExportableTensor({ dataType: 'float32', shape: [1, 4, 2, 2] }, device)],
+    ['f32 [1,2,2,4]', () => ctx.createExportableTensor({ dataType: 'float32', shape: [1, 2, 2, 4] }, device)],
+    ['f16 [1,2,2,4]', () => ctx.createExportableTensor({ dataType: 'float16', shape: [1, 2, 2, 4] }, device)],
+  ];
+  for (const [n, f] of tries) {
+    try {
+      const t = await f();
+      log(`${k} ${n}: ok ${t.dataType} [${t.shape}] r=${t.readable} w=${t.writable}`);
+      try { const b = await ctx.exportToGPU(t); log(`   export ok size=${b.size} usage=0x${b.usage.toString(16)}`); b.destroy(); } catch (e) { log(`   export FAIL ${e}`); }
+    } catch (e) { log(`${k} ${n}: ${e}`); }
+  }
+  ctx.destroy();
+}
+window.__result = { ready: true };
+</script></body></html>

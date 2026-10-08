@@ -3476,6 +3476,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"webnn-bench@workspace:examples/webnn-bench":
+  version: 0.0.0-use.local
+  resolution: "webnn-bench@workspace:examples/webnn-bench"
+  dependencies:
+    "@pmndrs/denoiser-core": "workspace:*"
+    "@pmndrs/denoiser-wgsl": "workspace:*"
+    denoiser: "workspace:*"
+    onnxruntime-web: "npm:^1.27.0"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+  languageName: unknown
+  linkType: soft
+
 "wgsl-bench@workspace:examples/wgsl-bench":
   version: 0.0.0-use.local
   resolution: "wgsl-bench@workspace:examples/wgsl-bench"

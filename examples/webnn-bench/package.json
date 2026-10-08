@@ -1,0 +1,21 @@
+{
+  "name": "webnn-bench",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The OIDN U-Net on WebNN (MLGraphBuilder from .tza weights) vs the hand-written WGSL runtime: network-only timings + parity.",
+  "scripts": {
+    "dev": "vite --port 5200 --strictPort --host 127.0.0.1",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pmndrs/denoiser-core": "workspace:*",
+    "@pmndrs/denoiser-wgsl": "workspace:*",
+    "denoiser": "workspace:*",
+    "onnxruntime-web": "^1.27.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}
