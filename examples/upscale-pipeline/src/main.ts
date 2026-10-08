@@ -3,7 +3,7 @@
 //   three.js (render @ low res) → denoiser (clean) → @pmndrs/upscaler (FSR1) → canvas
 //
 // All three libraries share ONE GPUDevice (createStack(): ORT creates it and three borrows it;
-// wgsl/webnn/kernels adopt the renderer's — pick with ?runtime=ort|wgsl|webnn|kernels).
+// wgsl/webnn/kernels adopt the renderer's — pick with ?runtime=auto|ort|wgsl|webnn|kernels (default auto)).
 // Every stage hands a GPUTexture straight to the next — no CPU readback in the
 // chain. The denoiser writes its result into a three StorageTexture; the upscaler
 // consumes that three texture directly (it resolves the backing GPUTexture via the

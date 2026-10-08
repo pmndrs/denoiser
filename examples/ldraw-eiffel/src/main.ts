@@ -123,7 +123,7 @@ async function loadEiffel(scene: THREE.Scene) {
 
 async function main() {
   if (!(await ensureWebGPU())) return;
-  // 1+2) One GPUDevice for the denoiser and three.js. ?runtime=ort|wgsl|webnn|kernels
+  // 1+2) One GPUDevice for the denoiser and three.js. ?runtime=auto|ort|wgsl|webnn|kernels (default auto)
   // picks the network runtime; createStack() orders device creation accordingly
   // (ORT: denoiser first, three borrows it; others: three first, runtime adopts it).
   // Dev serves converted ORT models from /models (vite middleware); prod falls back to the CDN default.

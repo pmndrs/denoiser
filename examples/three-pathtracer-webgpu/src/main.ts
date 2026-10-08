@@ -1,5 +1,5 @@
 // Phase 2 — three r185 WebGPUPathTracer + the WebGPU denoiser on ONE shared
-// GPUDevice. ?runtime=ort|wgsl|webnn|kernels picks the network runtime; createStack()
+// GPUDevice. ?runtime=auto|ort|wgsl|webnn|kernels (default auto) picks the network runtime; createStack()
 // (examples/_shared/stack.ts) orders device creation per runtime: ORT creates the device
 // and three borrows it (onnxruntime issue #26107), the others adopt the renderer's.
 //

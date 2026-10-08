@@ -14,7 +14,7 @@
 // Device rule: one GPUDevice for both. createStack() (examples/_shared/stack.ts)
 // picks the order by runtime: ORT creates the device (denoiser first, three borrows
 // it — onnxruntime #26107); wgsl/webnn/kernels adopt the renderer's. Select with
-// ?runtime=ort|wgsl|webnn|kernels. The right side is a `denoise()` TSL node from
+// ?runtime=auto|ort|wgsl|webnn|kernels (default auto). The right side is a `denoise()` TSL node from
 // `denoiser/three` running on a cadence (`every`).
 import * as THREE from 'three/webgpu';
 import {
