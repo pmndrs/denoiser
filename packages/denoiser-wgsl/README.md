@@ -1,4 +1,4 @@
-# @pmndrs/denoiser-wgsl (experimental)
+# @pmndrs/denoiser-wgsl
 
 The OIDN U-Net in hand-written WGSL, as a `NetworkRuntime` for
 [`@pmndrs/denoiser-core`](../denoiser-core): 16 (standard) / 19 (large) fused

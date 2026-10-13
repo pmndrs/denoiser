@@ -16,8 +16,8 @@ runtime; only the executor changes, so you pick one by passing it to
 > [!WARNING]
 > Everything on this page was measured on **Apple GPUs only** (an M5 Pro, Chrome
 > 154). The WGSL runtime in particular was tuned on that one GPU. Validate on
-> your target hardware before relying on any runtime. The WGSL, WebNN and kernels
-> runtimes are **experimental**.
+> your target hardware before relying on any runtime. The WebNN and kernels
+> runtimes are **experimental**; WGSL is the stable, flag-free runtime.
 
 ## At a glance
 
@@ -26,7 +26,7 @@ runtime; only the executor changes, so you pick one by passing it to
 | Automatic | `denoiser` (default) or `denoiser/auto` | picks WebNN fp16 (base/large, when available) or WGSL per model, on one shared device | default; never picks ORT |
 | ONNX Runtime | `denoiser/ort` (opt-in) | onnxruntime-web, WebGPU execution provider, `.onnx` models. Needs the optional peer dependency `onnxruntime-web` | wrong on some models (see below); no longer the default |
 | HF kernels | `denoiser/kernels` | `@huggingface/kernels` (optional peer dependency): FusedConv / MaxPool / Resize / Concat, 28 calls per frame | experimental; needs a device-sharing shim today |
-| Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one command encoder; no dependencies | experimental; fastest with no flags |
+| Hand-written WGSL | `denoiser/wgsl` | the U-Net as 16 (standard) / 19 (large) fused conv dispatches in one command encoder; no dependencies | stable; correct on every model, fastest with no flags (the Auto fallback) |
 | WebNN | `denoiser/webnn` | the graph built with `MLGraphBuilder`, run by the browser's ML backend (CoreML in Chrome on macOS) | experimental; Chrome flag required |
 
 The auto, kernels, WGSL and WebNN runtimes read the upstream OIDN `.tza` weights
@@ -45,7 +45,7 @@ Metal. Source: `docs/status/eval-2026-10-08-quiet.md`.
 | ORT fp16 | 101 ms (7.1x) | 210 ms (8.5x) | runs base instead (see below) |
 | kernels fp16 | 79 ms (5.5x) | 163 ms (6.5x) | 440 ms (8.1x) |
 | WGSL fp16 | 33.6 ms (2.4x) | 67.0 ms (2.7x) | 167 ms (3.1x) |
-| WGSL fp32 (subgroup matrix, experimental) | 39.5 ms (2.8x) | 76.3 ms (3.1x) | 186 ms (3.4x) |
+| WGSL fp32 (subgroup matrix, needs a Chrome feature flag) | 39.5 ms (2.8x) | 76.3 ms (3.1x) | 186 ms (3.4x) |
 | **WebNN fp16 (gpu)** | **31.5 ms (2.2x)** | **40.1 ms (1.6x)** | **65.4 ms (1.2x)** |
 | WebNN fp16 (npu, Neural Engine) | 33.1 ms (2.3x) | 43.6 ms (1.8x) | 78.9 ms (1.5x) |
 | WebNN fp32 (gpu) | 49.6 ms (3.5x) | 74.7 ms (3.0x) | 159 ms (2.9x) |
@@ -261,6 +261,17 @@ maximum limits and features, or adopt the `device` you pass, either as the
 pipelines on **`denoiser.device`**, as described in
 [The GPUDevice](../concepts/the-gpudevice) and
 [Custom engines & raw WebGPU](./custom-engines).
+
+## See it running
+
+These live demos have a runtime picker (it reloads the page with `?runtime=`;
+`auto`, `wgsl`, `webnn`, `ort` and `kernels` are accepted). WebNN is greyed out
+unless the browser exposes it (Chrome flag `WebMachineLearningNeuralNetwork`).
+
+- [Gallery](https://pmndrs.github.io/denoiser/gallery/): pre-rendered scenes, switch runtime and compare, e.g. [`?runtime=wgsl`](https://pmndrs.github.io/denoiser/gallery/?runtime=wgsl)
+- [three.js path tracer](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/): live path tracing, e.g. [`?runtime=ort`](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/?runtime=ort)
+- [LDraw Eiffel Tower](https://pmndrs.github.io/denoiser/ldraw-eiffel/): the Eiffel Tower model path-traced live, e.g. [`?runtime=webnn`](https://pmndrs.github.io/denoiser/ldraw-eiffel/?runtime=webnn)
+- [Benchmark](https://pmndrs.github.io/denoiser/bench/): cold and warm timings per runtime, e.g. [`?runtime=wgsl`](https://pmndrs.github.io/denoiser/bench/?runtime=wgsl)
 
 ## Reproducing the numbers
 

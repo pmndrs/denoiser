@@ -35,31 +35,45 @@ const statusEl = document.querySelector<HTMLElement>('#status')!;
 const runtimeControlEl = document.querySelector<HTMLElement>('#runtime-control')!;
 const runtimeHintEl = document.querySelector<HTMLElement>('#runtime-hint')!;
 
-// Which network runtime runs the U-Net: ?runtime=auto (default) | ort | kernels | wgsl.
+// Which network runtime runs the U-Net: ?runtime=auto (default) | wgsl | webnn | ort | kernels.
 // Switching reloads (the kernels runtime binds page-global state to a device).
-type RuntimeId = 'auto' | 'ort' | 'kernels' | 'wgsl';
+type RuntimeId = 'auto' | 'wgsl' | 'webnn' | 'ort' | 'kernels';
 // Non-default runtimes load on demand; 'auto' is the package default (make() -> undefined).
-const RUNTIMES: { id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined> }[] = [
-  { id: 'auto', label: 'Auto', hint: 'default: WebNN for larger models when available, else hand-written WGSL', make: async () => undefined },
-  { id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU', make: async () => new (await import('denoiser/ort')).OrtRuntime() },
+const RUNTIMES: {
+  id: RuntimeId; label: string; hint: string; make: () => Promise<NetworkRuntime | undefined>;
+}[] = [
+  { id: 'auto', label: 'Auto', hint: 'default: WebNN fp16 for base/large models when available, else hand-written WGSL', make: async () => undefined },
+  {
+    id: 'wgsl', label: 'WGSL', hint: 'hand-written WGSL, fused convs in one command encoder; no flags (the Auto fallback)',
+    make: async () => new (await import('denoiser/wgsl')).WgslRuntime(),
+  },
+  {
+    id: 'webnn', label: 'WebNN', hint: 'WebNN graph on the GPU; needs the Chrome flag WebMachineLearningNeuralNetwork',
+    make: async () => new (await import('denoiser/webnn')).WebnnRuntime(),
+  },
+  {
+    id: 'ort', label: 'ONNX Runtime', hint: 'onnxruntime-web, WebGPU; opt-in, wrong on *_alb / *_alb_nrm models, *_large falls back to base',
+    make: async () => new (await import('denoiser/ort')).OrtRuntime(),
+  },
   {
     id: 'kernels', label: 'HF kernels', hint: 'experimental: @huggingface/kernels, op by op',
     make: async () => new (await import('denoiser/kernels')).KernelsRuntime(),
-  },
-  {
-    id: 'wgsl', label: 'Hand-written WGSL', hint: 'experimental: fused WGSL, one command encoder per run',
-    make: async () => new (await import('denoiser/wgsl')).WgslRuntime(),
   },
 ];
 const requested = new URLSearchParams(location.search).get('runtime');
 const runtimeId: RuntimeId = RUNTIMES.find((r) => r.id === requested)?.id ?? 'auto';
 const runtime = RUNTIMES.find((r) => r.id === runtimeId)!;
 
-function renderRuntimeControl(): void {
+async function renderRuntimeControl(): Promise<void> {
+  const webnnOk = (await import('denoiser/webnn')).WebnnRuntime.isAvailable();
   for (const r of RUNTIMES) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = r.label;
+    if (r.id === 'webnn' && !webnnOk) {
+      btn.disabled = true;
+      btn.title = 'WebNN is not exposed in this browser (Chrome: enable chrome://flags/#web-machine-learning-neural-network)';
+    } else btn.title = r.hint;
     btn.setAttribute('aria-pressed', String(r.id === runtimeId));
     btn.addEventListener('click', () => {
       if (r.id === runtimeId) return;
@@ -71,6 +85,12 @@ function renderRuntimeControl(): void {
     runtimeControlEl.appendChild(btn);
   }
   runtimeHintEl.textContent = runtime.hint;
+}
+
+/** `Auto → wgsl` once AutoRuntime has loaded a model. */
+function runtimeLabel(): string {
+  const choice = (denoiser.runtime as { lastChoice?: string }).lastChoice;
+  return choice ? `${runtime.label} → ${choice}` : runtime.label;
 }
 const loadingEl = document.querySelector<HTMLElement>('#loading')!;
 
@@ -178,7 +198,7 @@ async function runDenoise(): Promise<void> {
   // The split-graph workaround is ORT-only; kernels runs the 9ch model as-is.
   const splitNote = useAux && runtimeId === 'ort' ? ' (splitAux workaround active)' : '';
   statusEl.innerHTML =
-    `${runtime.label} · model <span class="model">${name}</span> · ${channels}ch${splitNote} · ` +
+    `${runtimeLabel()} · model <span class="model">${name}</span> · ${channels}ch${splitNote} · ` +
     `denoised in ${ms} ms · ${scene.width}×${scene.height} · ${spp} spp`;
   loadingEl.textContent = '';
 }
@@ -323,7 +343,7 @@ async function main(): Promise<void> {
   selectScene(manifest.scenes[0]);
 }
 
-renderRuntimeControl();
+void renderRuntimeControl();
 demoFooter('gallery');
 main().catch((err) => {
   console.error(err);

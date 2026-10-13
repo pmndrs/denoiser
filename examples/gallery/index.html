@@ -87,7 +87,8 @@
         border-right: 1px solid var(--border);
       }
       .segmented button:last-child { border-right: none; }
-      .segmented button:hover { background: var(--panel-hover); }
+      .segmented button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .segmented button:hover:not(:disabled) { background: var(--panel-hover); }
       .segmented button[aria-pressed="true"] { background: var(--accent); color: #0b0e14; font-weight: 600; }
 
       .toggle-row { display: flex; align-items: center; gap: 0.5rem; }
