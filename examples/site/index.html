@@ -227,6 +227,20 @@
           </div>
         </a>
 
+        <a class="card" href="./three-temporal/shadows.html">
+          <img class="shot" src="./shots/three-temporal-shadows.png" alt="Split screen of a furnished room: three.js shadow map on the left, one ray per pixel denoised by ffxShadows on the right, with soft shadows that stay sharp where the table and chair legs touch the rug" loading="lazy">
+          <div class="card-body">
+            <p class="card-title">Ray-traced shadows &amp; reflections in a raster app <span class="arrow">&#8594;</span></p>
+            <p class="card-desc">
+              When would you use FFX? A normal three.js scene that traces just two effects at 1 ray per pixel
+              (area-light shadows against the real meshes via three-mesh-bvh, and SSR),
+              denoised every frame by <code>ffxShadows()</code> / <code>ffxReflections()</code>.
+              Compare with three's shadow maps and env maps, a converged reference, and live
+              per-pass GPU cost.
+            </p>
+          </div>
+        </a>
+
         <a class="card" href="./three-temporal/">
           <img class="shot" src="./shots/three-temporal.png" alt="three.js SSR denoise example split screen: three's recurrentDenoise on the left, AMD FidelityFX reflection denoiser on the right" loading="lazy">
           <div class="card-body">
@@ -234,8 +248,7 @@
             <p class="card-desc">
               three's <code>webgpu_postprocessing_ssr_denoise</code> with the
               <code>ffxReflections()</code> TSL node swapped in, split-screen against
-              three's own denoiser. Plus stochastic area-light shadows (<code>ffxShadows()</code>)
-              in a second scene (<code>shadows.html</code>).
+              three's own denoiser.
             </p>
           </div>
         </a>

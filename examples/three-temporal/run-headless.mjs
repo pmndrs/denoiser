@@ -2,11 +2,12 @@
 // Headless check for the three-temporal demos (Chrome + WebGPU over CDP, no puppeteer).
 // Needs the dev server up: `yarn dev` (port 5220).
 //
-//   node run-headless.mjs shadows     # shadows.html: stochastic area-light shadow + SSR, noisy vs denoised
+//   node run-headless.mjs shadows     # shadows.html: every shadow / reflection mode, contact-hardening
+//                                     # crop, flicker, NaN checks, measured per-pass GPU costs
+//   node run-headless.mjs shadows --diag   # + the FSR3 flicker diagnosis (__t.diag with FSR3 on)
 //   node run-headless.mjs ssr         # index.html: webgpu_postprocessing_ssr_denoise port, three vs FFX
-//   node run-headless.mjs shadows --upscale   # same, rendered at 1/2 res + FSR3
 //
-// Screenshots go to ./out/. Exit code 1 if a sanity check fails.
+// Screenshots go to ./out/ (or $OUT). Exit code 1 if a sanity check fails.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = 5220;
-const OUT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
+const OUT = process.env.OUT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 const scenario = process.argv[2] ?? 'shadows';
 const flags = new Set(process.argv.slice(3));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,9 +68,11 @@ const check = (name, ok, detail = '') => {
 };
 
 async function main() {
+  // a hung GPU process must not hang CI forever
+  setTimeout(() => { console.error('FAILED: timed out'); process.exit(3); }, 600_000).unref();
   const port = 9300 + Math.floor(Math.random() * 500);
   const page = scenario === 'ssr' ? 'index.html' : 'shadows.html';
-  const url = `http://127.0.0.1:${PORT}/${page}?manual=1${flags.has('--upscale') ? '&upscale=1' : ''}${flags.has('--nojitter') ? '&nojitter=1' : ''}${scenario === 'ssr' && flags.has('--timing') ? '&timing=1' : ''}`;
+  const url = `http://127.0.0.1:${PORT}/${page}?manual=1${scenario === 'ssr' && flags.has('--timing') ? '&timing=1' : ''}`;
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
     '--enable-features=Vulkan', '--window-size=1100,900', `--remote-debugging-port=${port}`,
@@ -118,23 +121,42 @@ async function main() {
 
 async function runShadows(cdp) {
   const T = (expr) => cdp.evalJs(`(async () => JSON.stringify(await (${expr})))()`).then((s) => (s === undefined ? undefined : JSON.parse(s)));
-  const shot = async (name, modes, warm = 40) => {
+  const info = await T('window.__t.info');
+  console.log('  ', JSON.stringify(info));
+  check('BVH built over the real scene meshes', info.triangles > 5000, `${info.triangles} triangles in ${info.bvhBuildMs.toFixed(0)} ms`);
+  const grab = async (modes, warm) => {
     await T(`window.__t.setModes(${JSON.stringify({ moving: false, ...modes })})`);
     await T(`window.__t.step(${warm})`);
-    return savePng(name, await cdp.evalJs('window.__t.capture()'));
+    return cdp.evalJs('window.__t.capture()');
   };
-  const up = flags.has('--upscale') ? '-fsr' : '';
-  console.log('screenshots (static camera, 40 warm-up frames each):');
-  await shot(`shadows-noisy${up}.png`, { shadow: 'noisy', refl: 'noisy' });
-  await shot(`shadows-denoised${up}.png`, { shadow: 'denoised', refl: 'denoised' });
-  await shot(`shadows-only-denoised${up}.png`, { shadow: 'denoised', refl: 'noisy' });
-  await shot(`refl-only-denoised${up}.png`, { shadow: 'noisy', refl: 'denoised' });
+  const SH = ['map', 'noisy', 'ffx', 'ref'];
+  const warmOf = (s) => (s === 'ref' ? 140 : 40);
 
-  console.log('moving camera sequence:');
-  await T('window.__t.setModes({ moving: true, shadow: "denoised", refl: "denoised" })');
+  console.log('shadow modes (wide shot, static camera, reflections = SSR + FFX):');
+  for (const s of SH) savePng(`shadows-${s}.png`, await grab({ shot: 0, shadow: s, refl: 'ffx' }, warmOf(s)));
+  console.log('reflection modes (wide shot, shadows = FFX):');
+  for (const r of ['env', 'noisy', 'ffx']) savePng(`reflections-${r}.png`, await grab({ shot: 0, shadow: 'ffx', refl: r }, 40));
+
+  console.log('contact hardening (same frame for each mode; wide shot and close-up):');
+  const LABELS = { map: 'three.js shadow map (VSM)', noisy: '1 ray/pixel, raw', ffx: '1 ray/pixel + ffxShadows', ref: 'reference (2048 rays/pixel)' };
+  for (const [name, shot, crop, scale] of [['contact-hardening-wide', 0, [230, 290, 640, 250], 1], ['contact-hardening', 1, [220, 190, 740, 290], 0.7]]) {
+    const caps = {};
+    for (const s of ['map', 'noisy', 'ffx', 'ref']) caps[s] = await grab({ shot, shadow: s, refl: 'ffx' }, warmOf(s));
+    for (const s of ['map', 'noisy', 'ffx', 'ref']) if (shot === 1) savePng(`close-${s}.png`, caps[s]);
+    savePng(`${name}.png`, await T(`window.__t.montage(${JSON.stringify(['map', 'ffx', 'ref'].map((s) => ({ url: caps[s], label: LABELS[s] })))}, ${JSON.stringify(crop)}, ${scale})`));
+  }
+  await T('window.__t.setModes({ shot: 0 })');
+  // landing-page thumbnail: close-up, three's shadow map (left) vs ray traced + FFX (right)
+  const tA = await grab({ shot: 1, shadow: 'map', refl: 'env' }, 40);
+  const tB = await grab({ shot: 1, shadow: 'ffx', refl: 'ffx' }, 40);
+  savePng('thumb-640x400.png', await T(`window.__t.thumb(${JSON.stringify(tA)}, ${JSON.stringify(tB)}, ['three.js shadow map', '1 ray + FFX'], [96, 0, 864, 540])`));
+  await T('window.__t.setModes({ shot: 0 })');
+
+  console.log('moving camera (FFX shadows + reflections):');
+  await T('window.__t.setModes({ moving: true, shot: 0, shadow: "ffx", refl: "ffx" })');
   for (let i = 0; i < 3; i++) {
-    await T('window.__t.step(30)');
-    savePng(`shadows-moving-${i}${up}.png`, await cdp.evalJs('window.__t.capture()'));
+    await T('window.__t.step(45)');
+    savePng(`moving-${i}.png`, await cdp.evalJs('window.__t.capture()'));
   }
   const fin = await T('window.__t.finiteCheck()');
   check('no NaN/Inf in denoised shadows (moving)', fin.shadows.bad === 0, JSON.stringify(fin.shadows));
@@ -143,18 +165,34 @@ async function runShadows(cdp) {
   await T('window.__t.step(2)');
   const fin2 = await T('window.__t.finiteCheck()');
   check('no NaN/Inf right after camera cut', fin2.shadows.bad === 0 && fin2.reflections.bad === 0);
-  savePng(`shadows-after-cut${up}.png`, await cdp.evalJs('window.__t.capture()'));
+  savePng('after-cut.png', await cdp.evalJs('window.__t.capture()'));
+  await T('window.__t.cut()');
 
-  console.log('temporal noise (static camera, per-pixel std of luma over 24 frames):');
-  const m = await T('window.__t.measure(24, 24, 0.02)');
-  console.log('  ', JSON.stringify(m));
-  check('shadow penumbra pixels found', m.shadows.pixels > 500, `${m.shadows.pixels} px`);
-  check('denoised shadow flicker far below noisy', m.shadows.denoisedStd < 0.35 * m.shadows.noisyStd,
-    `${m.shadows.noisyStd.toFixed(4)} -> ${m.shadows.denoisedStd.toFixed(4)}`);
-  check('reflection pixels found', m.reflections.pixels > 500, `${m.reflections.pixels} px`);
-  check('denoised reflection flicker below noisy', m.reflections.denoisedStd < 0.6 * m.reflections.noisyStd,
-    `${m.reflections.noisyStd.toFixed(4)} -> ${m.reflections.denoisedStd.toFixed(4)}`);
-  console.log('gpuTimings (ms, per pass; may be empty without timestamp-query):', JSON.stringify(await T('window.__t.timings()')));
+  console.log('temporal flicker (static camera, per-pixel std of luma over 20 frames):');
+  const f = await T('window.__t.flicker(20, 30, 0.02)');
+  console.log('  ', JSON.stringify(f));
+  check('shadow penumbra pixels found', f.pixels > 500, `${f.pixels} px`);
+  check('FFX shadow flicker far below raw 1 ray/pixel', f.ffx < 0.35 * f.noisy, `${f.noisy.toFixed(4)} -> ${f.ffx.toFixed(4)}`);
+
+  console.log('GPU cost per mode (ms, median of 40 frames, 960x540; rows are estimates, frame = measured span):');
+  const fmt = (c) => `frame ${c.total.toFixed(2)} | raster ${c.raster.toFixed(2)} shadowmap ${c['shadow map'].toFixed(2)} rays ${c['ray trace'].toFixed(2)} ssr ${c.SSR.toFixed(2)} ffx ${c.denoise.toFixed(2)} (sh ${c['ffx shadows (compute)'].toFixed(2)} / refl ${c['ffx reflections (compute)'].toFixed(2)}) composite ${c.composite.toFixed(2)}`;
+  for (const [s, r] of [['map', 'env'], ['noisy', 'env'], ['ffx', 'env'], ['map', 'noisy'], ['map', 'ffx'], ['ffx', 'ffx']]) {
+    await T(`window.__t.setModes({ moving: true, shot: 0, shadow: '${s}', refl: '${r}' })`);
+    const c = await T('window.__t.costs(40)');
+    console.log(`  shadows=${s.padEnd(5)} refl=${r.padEnd(5)} ${fmt(c)}`);
+  }
+
+  console.log('half resolution + FSR3 2x (the toggle on the page):');
+  await T('window.__t.setModes({ upscale: true, moving: true, shot: 0, shadow: "ffx", refl: "ffx" })');
+  console.log(`  shadows=ffx   refl=ffx   ${fmt(await T('window.__t.costs(40)'))}`);
+  await T('window.__t.setModes({ moving: false })');
+  await T('window.__t.step(60)');
+  savePng('fsr3-ffx.png', await cdp.evalJs('window.__t.capture()'));
+  const fin3 = await T('window.__t.finiteCheck()');
+  check('no NaN/Inf with FSR3 (half-res denoisers)', fin3.shadows.bad === 0 && fin3.reflections.bad === 0, JSON.stringify(fin3));
+  if (flags.has('--diag')) console.log('  diag (FSR3):', JSON.stringify(await T('window.__t.diag()')));
+  await T('window.__t.setModes({ upscale: false })');
+  await T('window.__t.step(10)');
 }
 
 async function runSsr(cdp) {

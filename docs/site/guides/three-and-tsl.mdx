@@ -186,27 +186,35 @@ const n = temporalDenoise(
 
 The temporal nodes read the camera's projection without any view offset, so sub-pixel
 jitter from `@pmndrs/upscaler` (FSR3) is stripped before reprojection, and you pass
-the matching `resolutionScale`. The shadows demo builds exactly this chain: scene
-pass at half resolution, denoise, composite, `upscale(...)`.
+the matching `resolutionScale`. The shadows demo builds exactly this chain when you
+pick "half res + FSR3" (or open it with `?upscale=1`): scene pass at half
+resolution, ray trace, denoise, composite, `upscale(...)`, then tone mapping. The
+upscaler stays linear HDR in and out, so tone map and sRGB-encode after it.
 
 > [!NOTE]
 > **Use `@pmndrs/upscaler` 0.5.0 or newer.** The residual flicker seen with FSR3 jitter
 > came from the upscaler, not the denoisers: in the shadows demo (still camera,
 > ratio 2) a perfect, noise-free shadow flickered as much as the FFX-denoised one.
 > 0.5.0 (still-scene convergence fixes) cut the jittered flicker in the shadow region
-> from 0.0132 to 0.0047, level with the perfect shadow (0.0051). The remaining
-> whole-frame shimmer is the upscaler's auto-exposure following the jittered input;
-> a fix (a 1/16-stop adaptation dead-band) is pending in the upscaler repo. The
-> demo's `__t.diag()` / `__t.fsrAblation()` / `__t.fsrHeatmap()` hooks reproduce
-> these measurements.
+> from 0.0132 to 0.0047, level with the perfect shadow (0.0051). Those numbers come
+> from the demo's earlier sphere scene. In the current room scene the FFX shadow
+> measures 0.0041 against 0.0042 for the perfect one. The remaining whole-frame
+> shimmer is the upscaler's auto-exposure following the jittered input; a fix (a
+> 1/16-stop adaptation dead-band) is pending in the upscaler repo. The demo's
+> `__t.diag()` / `__t.fsrAblation()` / `__t.fsrHeatmap()` hooks (with `?upscale=1`)
+> reproduce these measurements.
 
 ## Examples
 
 - [`examples/three-temporal`](https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src):
-  `shadows.ts` (stochastic area-light shadows plus glossy SSR, `ffxShadows` and
-  `ffxReflections`, optional FSR3) and `ssr.ts` (a port of three's
+  `shadows.ts` ([live](https://pmndrs.github.io/denoiser/three-temporal/shadows.html)):
+  when to use the FFX nodes. A furnished room in a raster pipeline with 1-ray-per-pixel
+  area-light shadows, traced against the scene meshes with three-mesh-bvh's WebGPU BVH
+  in a TSL pass, and glossy SSR, through `ffxShadows` and `ffxReflections`. Each one
+  is compared with a three.js shadow map or an env map and with a converged reference,
+  with per-pass GPU timings and optional FSR3. `ssr.ts` is a port of three's
   `webgpu_postprocessing_ssr_denoise` example with `ffxReflections` side by side
-  against three's own denoiser).
+  against three's own denoiser.
 - [`examples/realtime-compare`](https://github.com/pmndrs/denoiser/blob/main/examples/realtime-compare/src/main.ts):
   a `denoise()` node on a cadence next to three's denoiser.
 - [`examples/_shared/stack.ts`](https://github.com/pmndrs/denoiser/blob/main/examples/_shared/stack.ts):

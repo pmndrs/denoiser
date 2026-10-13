@@ -3,47 +3,141 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser - three.js temporal nodes</title>
+    <title>denoiser - ray-traced shadows and reflections in a raster app</title>
     <style>
       :root { color-scheme: dark; --bg: #0b0e14; --panel: #141922; --border: #232b3a; --text: #e6edf3; --muted: #9aa7b8; --accent: #90cdf4; }
       * { box-sizing: border-box; }
       body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
       .wrap { max-width: 1020px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
       h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
-      p.tag { color: var(--muted); margin: 0 0 1rem; max-width: 56rem; font-size: .95rem; }
+      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      p.tag { color: var(--muted); margin: 0 0 1rem; max-width: 60rem; font-size: .95rem; }
+      a { color: var(--accent); }
       code { background: #0006; padding: 0 .3em; border-radius: 4px; }
-      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 8px; display: block; }
-      .controls { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; margin: 1rem 0; align-items: center; }
-      .group { display: flex; align-items: center; gap: .5rem; }
-      .group > span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
-      .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-      button { background: var(--panel); color: var(--text); border: 0; padding: .4rem .8rem; font: inherit; cursor: pointer; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 8px 8px 0 0; display: block; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--panel); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; }
+      .caption span { color: var(--accent); }
+      .controls { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem; margin: 1rem 0; align-items: center; max-width: 960px; }
+      .controls > div { justify-self: start; }
+      .controls > span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+      .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+      button { background: var(--panel); color: var(--text); border: 0; padding: .4rem .8rem; font: inherit; font-size: .9rem; cursor: pointer; }
       .seg button + button { border-left: 1px solid var(--border); }
       button[aria-pressed="true"] { background: #243247; color: var(--accent); }
       button.solo { border: 1px solid var(--border); border-radius: 8px; }
+      input[type="range"] { width: 14rem; max-width: 50vw; }
+      output { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+      .hint { color: var(--muted); font-size: .85rem; }
+      table.cost { border-collapse: collapse; font-size: .85rem; width: 100%; max-width: 640px; }
+      table.cost td { padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--border); }
+      table.cost td.num { text-align: right; font-variant-numeric: tabular-nums; width: 4.5rem; }
+      table.cost td.note { color: var(--muted); }
+      table.cost tr.total td { font-weight: 600; border-bottom: 0; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; margin-top: 1.5rem; }
+      .box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      .box li { margin: .2rem 0; }
+      pre.code { background: #0008; border: 1px solid var(--border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; }
       pre#status { color: var(--muted); font-size: .8rem; white-space: pre-wrap; margin: .5rem 0 0; }
+      nav.links { font-size: .9rem; margin: 1.25rem 0 0; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <h1>three.js temporal denoise nodes</h1>
+      <h1>Ray-traced shadows and reflections in a raster app</h1>
       <p class="tag">
-        A 1-sample stochastic area-light shadow and stochastic glossy SSR, each denoised every
-        frame by a <code>denoiser/three</code> node (<code>ffxShadows</code>, <code>ffxReflections</code>)
-        while the camera moves. Optionally rendered at half resolution and upscaled with FSR3.
+        A normal real-time three.js scene (WebGPU raster, 60 fps) where two effects are ray traced at
+        <b>one ray per pixel</b>: the shadow of a big soft light, and glossy reflections. One ray is
+        far too noisy to look at. <code>ffxShadows()</code> and <code>ffxReflections()</code> from
+        <code>denoiser/three</code> (AMD FidelityFX denoisers, ported to WGSL) clean it up every frame.
+        Compare each one with what three.js gives you without ray tracing.
       </p>
+
       <canvas id="view" width="960" height="540"></canvas>
+      <div class="caption"><span id="cap-shadow">Shadows: ...</span><span id="cap-refl">Reflections: ...</span></div>
+
       <div class="controls">
-        <div class="group"><span>shadows</span>
-          <div class="seg" id="seg-shadow"><button data-v="noisy" aria-pressed="false">noisy</button><button data-v="denoised" aria-pressed="true">denoised</button></div></div>
-        <div class="group"><span>reflections</span>
-          <div class="seg" id="seg-refl"><button data-v="noisy" aria-pressed="false">noisy</button><button data-v="denoised" aria-pressed="true">denoised</button></div></div>
-        <div class="group"><span>camera</span>
-          <div class="seg" id="seg-motion"><button data-v="on" aria-pressed="true">moving</button><button data-v="off" aria-pressed="false">paused</button></div></div>
-        <div class="group"><span>FSR3 upscale (2x)</span>
-          <div class="seg" id="seg-up"><button data-v="on" aria-pressed="false">on</button><button data-v="off" aria-pressed="true">off</button></div></div>
-        <button class="solo" id="cut">camera cut (resetHistory)</button>
+        <span>shadows</span>
+        <div class="seg" id="seg-shadow">
+          <button data-v="map" aria-pressed="false">three.js shadow map</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ffx" aria-pressed="true">1 ray + ffxShadows</button><button data-v="ref" aria-pressed="false">reference</button>
+        </div>
+        <span>light size</span>
+        <div class="row"><input id="light-size" type="range" min="0.03" max="1.0" step="0.01" value="0.3" /><output id="light-size-v"></output>
+          <span class="hint">Look where the table and chair legs touch the floor.</span></div>
+        <span>reflections</span>
+        <div class="seg" id="seg-refl">
+          <button data-v="env" aria-pressed="false">env map only</button><button data-v="noisy" aria-pressed="false">SSR 1 ray, raw</button><button data-v="ffx" aria-pressed="true">SSR + ffxReflections</button>
+        </div>
+        <span>floor gloss</span>
+        <div class="row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output id="roughness-v"></output>
+          <span class="hint">roughness of the floor and table top</span></div>
+        <span>resolution</span>
+        <div class="seg" id="seg-up"><button data-v="off" aria-pressed="true">native</button><button data-v="on" aria-pressed="false">half res + FSR3 2x</button></div>
+        <span>camera</span>
+        <div class="row">
+          <div class="seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
+          <button class="solo" id="cut">camera cut (resetHistory)</button>
+        </div>
       </div>
+
+      <h2>What it costs on your GPU</h2>
+      <table class="cost"><tbody id="cost-body"><tr><td>measuring...</td></tr></tbody></table>
+      <p class="hint" id="cost-note">
+        Measured live from GPU timestamp queries for the modes selected above, at 960x540 (1080p has 4x the pixels).
+        Passes a mode doesn't need aren't run. GPUs overlap passes, so each row is an estimate. The frame time is measured directly.
+      </p>
+
+      <div class="grid">
+        <div class="box">
+          <h2>When to use this</h2>
+          <ul>
+            <li>You ship a real-time raster app (a game, a product configurator, an archviz walkthrough) that has to hold 60 fps while the camera moves.</li>
+            <li>You want one effect raster can't fake well: soft area-light shadows that stay sharp where objects touch the ground and soften with distance, or glossy reflections of the actual scene instead of an env map.</li>
+            <li>So you trace 1 ray per pixel for just that effect, and let the denoiser turn the noise into a clean, stable result every frame.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h2>When to use OIDN instead</h2>
+          <ul>
+            <li>You path trace the whole frame (all lighting, bounces, glass), for example a product render or a viewer that refines when the camera stops.</li>
+            <li>That's <code>Denoiser</code>, the package's main API (OIDN): one whole image, no history needed, tens of milliseconds per denoise. Run it on a still frame or every few frames, not every frame at 60 fps.</li>
+            <li>FFX does the opposite: one effect, every frame, about 0.5 ms (shadows) or 1.7 ms (reflections) at 1080p, using motion vectors and history.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h2>What it costs</h2>
+          <ul>
+            <li>Ray tracing: 1 ray per pixel against the scene's BVH. Here that's <a href="https://github.com/gkjohnson/three-mesh-bvh">three-mesh-bvh</a>'s WebGPU traversal in a full-screen TSL pass, no ray-tracing hardware needed. The table above shows what it costs for this scene.</li>
+            <li>Denoising: FFX shadows about 0.5 ms and FFX reflections about 1.7 ms at 1080p (Apple M-series). The cost depends on resolution, not on the scene.</li>
+            <li>No precomputation or baking. Lights, objects and the camera can all move.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h2>What the denoiser needs from you</h2>
+          <ul>
+            <li>From your G-buffer: depth, normals (view or world, packed is fine), motion vectors (three's <code>velocity</code> in the MRT), and roughness for reflections.</li>
+            <li>An honest 1-ray signal: new random samples every frame, not pre-blurred. For shadows that's 0 or 1 per pixel. For reflections it's the radiance plus the hit distance (three's stochastic SSR gives you both).</li>
+            <li>Call <code>resetHistory()</code> on camera cuts and teleports, or the old frame bleeds into the new one.</li>
+          </ul>
+        </div>
+      </div>
+
+      <pre class="code">// visibility: a TSL node or texture, 1 = lit, 0 = shadowed, 1 ray/pixel
+const shadows = ffxShadows(visibility, {
+  camera, depth: scenePass.getTextureNode('depth'), velocity: scenePass.getTextureNode('velocity'),
+  normal: scenePass.getTextureNode('normal'), normalSpace: 'view', normalEncoding: 'packed',
+});
+const lit = sceneColor.add(albedo.mul(irradiance).mul(shadows.r));
+// on a camera cut:
+shadows.resetHistory();</pre>
+
+      <nav class="links">
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/realtime-temporal-denoising">Guide: real-time (temporal) denoising</a>
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/three-and-tsl">Guide: three.js and TSL nodes</a>
+        <a href="./">three.js SSR example: FFX vs three's denoiser</a>
+        <a href="https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src/shadows.ts">Source</a>
+      </nav>
       <pre id="status">starting...</pre>
     </div>
     <script type="module" src="./src/shadows.ts"></script>

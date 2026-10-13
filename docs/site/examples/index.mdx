@@ -51,3 +51,26 @@ denoise the moment the camera comes to rest. Same pinned-pathtracer caveat as ab
 The performance harness behind the numbers in [Performance](../concepts/performance.mdx):
 cold + warm timings, per-stage stats, and fp16-vs-fp32 PSNR across image sizes —
 reproducible in your own browser, on your own hardware.
+
+## Real-time (temporal) denoising
+
+These use the FidelityFX denoisers (`denoiser/ffx`, `denoiser/three`), not OIDN. See
+[Which denoiser do I need?](../guides/realtime-temporal-denoising.mdx#which-denoiser-do-i-need)
+
+### [Ray-traced shadows and reflections in a raster app](https://pmndrs.github.io/denoiser/three-temporal/shadows.html)
+The "when would I use this?" demo. A furnished room in a normal three.js raster
+pipeline, with two effects ray traced at 1 ray per pixel: area-light shadows,
+traced against the real scene meshes with three-mesh-bvh's WebGPU BVH, and glossy
+SSR. `ffxShadows()` and `ffxReflections()` denoise them every frame. Toggle each
+one against what three.js does without ray tracing (a VSM shadow map, env-map-only
+reflections) and against a converged reference. Use the light-size slider to see
+contact hardening. A live table shows each pass's GPU cost. There's an optional
+half-resolution + FSR3 path.
+
+### [three.js SSR: FidelityFX vs recurrentDenoise](https://pmndrs.github.io/denoiser/three-temporal/)
+three's `webgpu_postprocessing_ssr_denoise` example with `ffxReflections()` swapped
+in, split-screen against three's own temporal denoiser.
+
+### [FidelityFX denoisers, raw WGSL](https://pmndrs.github.io/denoiser/ffx-denoiser/)
+The test bed behind the numbers in [Real-time (temporal) denoising](../guides/realtime-temporal-denoising.mdx#measured-results):
+1-sample shadows and reflections, noisy / denoised / reference panels, no three.js.
