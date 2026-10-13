@@ -18,6 +18,37 @@ WGSL and exposed as `denoiser/ffx`.
 > source-agnostic, so a neural temporal model (OIDN 3, once upstream ships it)
 > can implement it later.
 
+## Which denoiser do I need?
+
+This package has two kinds of denoiser. They solve different problems, so the
+choice depends on what you render, not on quality.
+
+| | `Denoiser` (OIDN) | FFX temporal denoisers |
+|---|---|---|
+| Input | a whole path-traced frame (color, optional albedo and normal) | one ray-traced effect at 1 ray per pixel: shadow visibility, or glossy reflections |
+| Typical app | path tracers, product renders, viewers that refine when the camera stops | real-time raster apps: games, product configurators, archviz walkthroughs |
+| How often | on a still frame, or every few frames | every frame at 60 fps, with motion vectors and history |
+| Cost | tens of ms per denoise | about 0.5 ms (shadows) and 1.7 ms (reflections) at 1080p |
+| You provide | the frame, plus aux buffers if you have them | depth, normals, motion vectors, roughness (reflections); `resetHistory()` on cuts |
+
+**Use FFX** when you ship a raster renderer and want one effect that raster
+defaults can't fake. A shadow map gives hard shadows, or shadows blurred by the same
+amount everywhere. A ray-traced area light gives soft shadows that stay sharp where
+objects touch the ground and widen with distance. An env map reflects the
+environment, not the objects in the room. Glossy ray-traced reflections show the
+actual scene. Tracing 1 ray per pixel for just that effect is affordable. On its
+own it's far too noisy to show, and FFX turns it into a clean, stable signal in
+about 1-2 ms.
+
+**Use OIDN** when the whole image is path traced (all the lighting, bounces and
+glass) and it converges while the camera rests. OIDN denoises one complete frame
+with no history, which takes too long to run every frame at 60 fps.
+
+The [ray-traced shadows and reflections demo](https://pmndrs.github.io/denoiser/three-temporal/shadows.html)
+shows the FFX case in a three.js scene. Each effect toggles against the raster
+default (a VSM shadow map, env-map-only reflections) and a converged reference,
+and a live table shows the per-pass GPU cost.
+
 ## The API
 
 ```ts
