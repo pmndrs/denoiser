@@ -14,7 +14,7 @@ export default defineConfig({
   resolve: { dedupe: ['three'] },
   server: { fs: { allow: ['../..'] } },
   optimizeDeps: {
-    exclude: ['three', 'three/webgpu', 'three/tsl', '@pmndrs/upscaler', 'denoiser'],
+    exclude: ['three', 'three/webgpu', 'three/tsl', '@pmndrs/upscaler', 'denoiser', 'three-mesh-bvh', 'three-mesh-bvh/webgpu'],
     esbuildOptions: { target: 'esnext' },
   },
 });

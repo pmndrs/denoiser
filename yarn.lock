@@ -3403,6 +3403,7 @@ __metadata:
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
     three: "npm:^0.186.1"
+    three-mesh-bvh: "npm:^0.9.16"
     typescript: "npm:^5.9.3"
     vite: "npm:^8.1.4"
   languageName: unknown
