@@ -7,6 +7,7 @@ import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
 import { OrtRuntime } from 'denoiser/ort';
 import { AutoRuntime } from 'denoiser/auto';
+import { WebnnRuntime } from 'denoiser/webnn';
 import { runRegression } from './regression';
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
@@ -19,16 +20,17 @@ const batchParam = params.get('batch') ? Number(params.get('batch')) : undefined
 const captureParam = params.get('capture') === '1';
 const maxRunPixelsParam = params.get('maxRunPixels') ? Number(params.get('maxRunPixels')) : undefined;
 
-// ?runtime=ort|kernels|wgsl|auto (or the selector). Every runtime is explicit so a
+// ?runtime=ort|kernels|wgsl|webnn|auto (or the selector). Every runtime is explicit so a
 // run is reproducible regardless of the package default (AutoRuntime).
 // ORT reads .onnx from WEIGHTS_URL; the others read .tza weights from /tzas in dev.
-type RuntimeName = 'ort' | 'kernels' | 'wgsl' | 'auto';
+type RuntimeName = 'ort' | 'kernels' | 'wgsl' | 'webnn' | 'auto';
 const TZA_URL = import.meta.env.DEV ? '/tzas' : undefined;
 const makeRuntime = (name: RuntimeName): NetworkRuntime =>
   name === 'kernels' ? new KernelsRuntime({ tzaUrl: TZA_URL })
     : name === 'wgsl' ? new WgslRuntime({ tzaUrl: TZA_URL })
-      : name === 'auto' ? new AutoRuntime({ tzaUrl: TZA_URL })
-        : new OrtRuntime({ weightsUrl: WEIGHTS_URL, graphCapture: captureParam });
+      : name === 'webnn' ? new WebnnRuntime({ tzaUrl: TZA_URL })
+        : name === 'auto' ? new AutoRuntime({ tzaUrl: TZA_URL })
+          : new OrtRuntime({ weightsUrl: WEIGHTS_URL, graphCapture: captureParam });
 const SCENARIOS = [
   { label: '512x512', w: 512, h: 512 },
   { label: '1280x720', w: 1280, h: 720 },
@@ -44,7 +46,12 @@ const cleanCanvas = document.querySelector<HTMLCanvasElement>('#clean')!;
 const precisionSel = document.querySelector<HTMLSelectElement>('#precision')!;
 const qualitySel = document.querySelector<HTMLSelectElement>('#quality')!;
 const runtimeSel = document.querySelector<HTMLSelectElement>('#runtime')!;
-if (['kernels', 'wgsl', 'auto'].includes(params.get('runtime') ?? '')) runtimeSel.value = params.get('runtime')!;
+if (!WebnnRuntime.isAvailable()) {
+  const o = runtimeSel.querySelector<HTMLOptionElement>('option[value=webnn]')!;
+  o.disabled = true;
+  o.title = 'WebNN is not exposed in this browser (Chrome flag WebMachineLearningNeuralNetwork)';
+}
+if (['kernels', 'wgsl', 'webnn', 'auto'].includes(params.get('runtime') ?? '') && !runtimeSel.querySelector<HTMLOptionElement>(`option[value=${params.get('runtime')}]`)?.disabled) runtimeSel.value = params.get('runtime')!;
 const runAllBtn = document.querySelector<HTMLButtonElement>('#runAll')!;
 
 const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };
