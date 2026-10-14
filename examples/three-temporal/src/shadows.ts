@@ -260,7 +260,7 @@ async function main() {
   canvas.width = W; canvas.height = H;
   if (!navigator.gpu) { log('WebGPU is not available in this browser.'); return; }
 
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, trackTimestamp: true } as N);
+  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, trackTimestamp: !q.has('notiming') } as N);
   await renderer.init();
   renderer.setPixelRatio(1);
   renderer.setSize(W, H, false);
@@ -269,7 +269,8 @@ async function main() {
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.VSMShadowMap;
-  const hasTimestamps = renderer.hasFeature('timestamp-query');
+  // ?notiming: no GPU timestamp queries, to see what measuring costs
+  const hasTimestamps = renderer.hasFeature('timestamp-query') && !q.has('notiming');
   const device = (renderer.backend as unknown as { device: GPUDevice }).device;
   const gpuErrors: string[] = [];
   device.addEventListener('uncapturederror', (e) => {
@@ -554,10 +555,10 @@ async function main() {
     rb.getMappedRange = ((...a: Parameters<GPUBuffer['getMappedRange']>) => { const r = get(...a); rawTicks = new BigUint64Array(r.slice(0)); return r; }) as GPUBuffer['getMappedRange'];
     return true;
   };
-  interface FrameCost { span: number; cats: Record<Cat, number>; ffxShadows: number; ffxRefl: number }
+  interface FrameCost { span: number; cats: Record<Cat, number>; ffxShadows: number; ffxRefl: number; idle: number }
   const history: FrameCost[] = [];
   let lastPasses: unknown[] = [];
-  let cpuFrameMs = 0, lastT = performance.now();
+  let cpuFrameMs = 0, cpuWorkMs = 0, lastT = performance.now();
   async function sampleCosts() {
     if (!hasTimestamps || !hookPool() || pool.pendingResolve || pool.currentQueryIndex === 0) return;
     const offsets = new Map<string, number>(pool.queryOffsets);
@@ -588,23 +589,26 @@ async function main() {
         cats[uidCat.get(p.uid) ?? 'composite'] += Math.max(0, b - Math.max(prevEnd, a));
         prevEnd = Math.max(prevEnd, b);
       }
-      // FFX's compute passes run between three's passes and land in the slice of the
-      // pass that consumes them (a composite pass): move that time to "denoise".
-      const moved = Math.min(cats.composite, ffxS + ffxR);
-      cats.composite -= moved;
-      history.push({ span: prevEnd, cats, ffxShadows: ffxS, ffxRefl: ffxR });
+      // FFX's compute passes aren't render passes: they run in the gaps between three's
+      // passes. Whatever of the gaps FFX doesn't fill, the GPU sat idle (mostly waiting
+      // for the CPU to encode and submit the next pass).
+      const charged = CATS.reduce((s, c) => s + cats[c], 0);
+      const idle = Math.max(0, prevEnd - charged - ffxS - ffxR);
+      history.push({ span: prevEnd, cats, ffxShadows: ffxS, ffxRefl: ffxR, idle });
       lastPasses = passes.map((p) => [p.uid, uidCat.get(p.uid) ?? '?', +ms(p.a).toFixed(3), +ms(p.b).toFixed(3)]);
     }
     while (history.length > 60) history.shift();
   }
-  const median = (v: number[]) => { if (!v.length) return 0; const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
+  // means, not medians: means add up, so the rows sum to the frame time
+  const mean = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0);
   const costs = () => {
     const out: Record<string, number> = {};
-    for (const c of CATS) out[c] = median(history.map((h) => h.cats[c]));
-    out['ffx shadows (compute)'] = median(history.map((h) => h.ffxShadows));
-    out['ffx reflections (compute)'] = median(history.map((h) => h.ffxRefl));
+    for (const c of CATS) out[c] = mean(history.map((h) => h.cats[c]));
+    out['ffx shadows (compute)'] = mean(history.map((h) => h.ffxShadows));
+    out['ffx reflections (compute)'] = mean(history.map((h) => h.ffxRefl));
     out.denoise += out['ffx shadows (compute)'] + out['ffx reflections (compute)'];
-    out.total = median(history.map((h) => h.span));
+    out.idle = mean(history.map((h) => h.idle));
+    out.total = mean(history.map((h) => h.span));
     out.frames = history.length;
     return out;
   };
@@ -641,10 +645,12 @@ async function main() {
     uFrame.value = frame;
   }
   function renderOne() {
+    const t0 = performance.now();
     animate();
     pipeline.render();
     frame++;
     const now = performance.now();
+    cpuWorkMs += (now - t0 - cpuWorkMs) * 0.1; // JS + command encoding, not GPU
     cpuFrameMs += (now - lastT - cpuFrameMs) * 0.1;
     lastT = now;
     void sampleCosts();
@@ -711,11 +717,12 @@ async function main() {
   lightIn.addEventListener('input', onLight); onLight();
   roughIn.addEventListener('input', onRough); onRough();
   setMoving(moving);
+  spot.shadow.autoUpdate = modes.shadow === 'map'; // the starting mode never goes through setShadow
 
   setInterval(() => {
     updateCaptions();
     if (!hasTimestamps) {
-      costNote.textContent = `GPU timestamp queries are not available in this browser, so there is no per-pass split. CPU frame interval: ${cpuFrameMs.toFixed(1)} ms.`;
+      costNote.textContent = `${q.has('notiming') ? 'GPU timing is off (?notiming)' : 'GPU timestamp queries are not available in this browser'}, so there is no per-pass split. Frame rate: ${(1000 / cpuFrameMs).toFixed(0)} fps (${cpuFrameMs.toFixed(1)} ms between frames), CPU ${cpuWorkMs.toFixed(2)} ms per frame.`;
       return;
     }
     const c = costs();
@@ -726,10 +733,13 @@ async function main() {
       ['shadow rays: BVH vs scene triangles', c['ray trace'], rays ? '1 ray/pixel' : modes.shadow === 'ref' ? (g.refAccum.count.value >= g.refAccum.max ? 'converged, idle' : '16 rays/pixel') : 'off'],
       ['reflection rays: SSR', c.SSR, modes.refl === 'env' ? 'off' : modes.refl === 'ffx' ? '1 ray/pixel, incl. denoiser input prep' : '1 ray/pixel'],
       ['FFX denoisers (compute)', c.denoise, [modes.shadow === 'ffx' ? `shadows ${c['ffx shadows (compute)'].toFixed(2)}` : '', modes.refl === 'ffx' ? `reflections ${c['ffx reflections (compute)'].toFixed(2)}` : ''].filter(Boolean).join(', ') || 'off'],
-      ['composite + tone map', c.composite, g.upscaled ? 'FSR3 runs in compute: counted in the frame time only' : ''],
+      ['composite + tone map', c.composite, g.upscaled ? 'FSR3 runs in compute: counted in idle' : ''],
+      ['GPU idle between passes', c.idle, 'waiting on the CPU to submit the next pass'],
     ];
     costEl.innerHTML = rows.map(([k, v, note]) => `<tr><td>${k}</td><td class="num">${v.toFixed(2)}</td><td class="note">${note}</td></tr>`).join('')
-      + `<tr class="total"><td>GPU frame time</td><td class="num">${c.total.toFixed(2)}</td><td class="note">ms, ${g.upscaled ? `rendered at ${W / RATIO}x${H / RATIO}, FSR3 to ${W}x${H}` : `at ${W}x${H}`}</td></tr>`;
+      + `<tr class="total"><td>GPU frame time</td><td class="num">${c.total.toFixed(2)}</td><td class="note">ms, ${g.upscaled ? `rendered at ${W / RATIO}x${H / RATIO}, FSR3 to ${W}x${H}` : `at ${W}x${H}`}</td></tr>`
+      + `<tr class="total"><td>CPU time per frame</td><td class="num">${cpuWorkMs.toFixed(2)}</td><td class="note">ms of JS + command encoding (three's node updates, ${lastPasses.length} render passes)</td></tr>`
+      + `<tr class="total"><td>frame rate</td><td class="num">${(1000 / cpuFrameMs).toFixed(0)}</td><td class="note">fps (${cpuFrameMs.toFixed(1)} ms between frames, capped by the display refresh)</td></tr>`;
   }, 400);
 
   buildOutput();
