@@ -48,3 +48,6 @@ examples/*/dumps/
 
 # eval harness outputs (inputs, native outputs, reports)
 tools/eval/out/
+
+# yarn: per-machine install cache, rewritten by every install
+.yarn/install-state.gz
