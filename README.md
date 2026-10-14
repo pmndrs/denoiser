@@ -118,7 +118,11 @@ pip install -r requirements.txt
 python convert.py ../../packages/denoiser/tzas/*.tza -o ../../packages/denoiser/models
 python convert.py ../../packages/denoiser/tzas/*.tza -o ../../packages/denoiser/models --fp16
 
-cd examples/three-pathtracer-webgpu && yarn dev
+# every example behind one dev server: landing page at http://localhost:5160/,
+# each example at /<dir>/ (started on first visit, with HMR)
+yarn examples
+yarn examples three-pathtracer   # or just one example on its own port
+yarn examples --list
 ```
 
 ### License
