@@ -9,8 +9,6 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 - **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`. There are no other local branches or worktrees.
 - **Old clone:** `/Users/dex/Documents/GitHub/homefig/Denoiser` is stale, sitting on `feat/network-runtimes`.
   It has no uncommitted or unpushed work. Keep it only until its gitignored data is copied over (see Cleanup).
-- **Never commit** `.yarn/install-state.gz`; it shows as modified after every install. Stage explicit paths.
-- **Commit messages** end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
 ## Local `main` is ahead of GitHub (not pushed)
 
