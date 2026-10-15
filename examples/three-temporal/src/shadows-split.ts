@@ -36,6 +36,7 @@ import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { BVHComputeData } from 'three-mesh-bvh/webgpu';
 import { areaVisibilityFn } from './split/area';
 import { Lightmap, unwrapStatic, markDynamic, lightmapUV } from './split/lightmap';
+import { SurfaceCache } from './split/cache';
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
 
@@ -47,7 +48,8 @@ const q = new URLSearchParams(location.search);
 const manual = q.has('manual'); // headless: the page is stepped by window.__t.step()
 
 // bake / bakeraw: the static/dynamic split (baked lightmap x 1 dynamic ray + FFX); lm: lightmap alone
-type ShadowMode = 'map' | 'noisy' | 'ffx' | 'bake' | 'bakeraw' | 'lm' | 'ref' | 'clean' | 'off'; // clean / off: diagnostics only
+// cache: the same split with a world-space visibility cache instead of the lightmap; cacheonly: its raw lookups
+type ShadowMode = 'map' | 'noisy' | 'ffx' | 'bake' | 'bakeraw' | 'lm' | 'cache' | 'cacheonly' | 'ref' | 'clean' | 'off'; // clean / off: diagnostics only
 type ReflMode = 'env' | 'noisy' | 'ffx' | 'off';
 const SHADOW_LABEL: Record<ShadowMode, string> = {
   map: 'three.js shadow map (VSM, blur follows light size)',
@@ -56,6 +58,8 @@ const SHADOW_LABEL: Record<ShadowMode, string> = {
   bake: 'split: baked lightmap (OIDN) x 1 ray vs moving objects + ffxShadows()',
   bakeraw: 'split: baked lightmap (no OIDN) x 1 ray vs moving objects + ffxShadows()',
   lm: 'diagnostic: baked lightmap alone (OIDN)',
+  cache: 'split: world-space cache x 1 ray vs moving objects + ffxShadows()',
+  cacheonly: 'diagnostic: world-space cache lookups alone (jittered, not denoised)',
   ref: 'reference (16 rays/pixel/frame, accumulated)',
   clean: 'diagnostic: 64 fixed rays/pixel every frame',
   off: 'diagnostic: no shadow',
@@ -311,6 +315,10 @@ async function main() {
   room.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) tris += (m.geometry.index?.count ?? m.geometry.attributes.position.count) / 3; });
   const bvhMs = performance.now() - tBvh;
 
+  // the static half, version 2: world-space cache (split/cache.ts); emptied when the light changes
+  const cache = new SurfaceCache(bvhStatic, 1 << 21, Number(q.get('cachetarget') ?? 512), 0.004, 3,
+    2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
+
   // visibility of the rectangular light, one function per BVH (see split/area.ts)
   const areaVisibility = areaVisibilityFn(bvh);
   const areaVisibilityDyn = areaVisibilityFn(bvhDyn);
@@ -345,6 +353,7 @@ async function main() {
     uLightV.value.copy(LIGHT_V).multiplyScalar(half);
     spot.shadow.radius = 1 + half * 26;
     spot.shadow.needsUpdate = true;
+    cache.clear();
     scheduleBake();
   };
 
@@ -461,6 +470,16 @@ async function main() {
     // one of the two is 1 at every pixel: their product is the dynamic signal FFX denoises
     const splitFFX = ffxShadows(dynRTT.sample(uv()).r.mul(dynRecvRTT.sample(uv()).r), guides);
     const withStatic = (dyn: N) => mix(staticVis.max(0).mul(dyn), dyn, onDynamic);
+    // version 2: the world-space cache instead of the lightmap (static receivers only)
+    const cacheRTT = rtt(vec4((() => {
+      const s = surface(uv());
+      const px = screenCoordinate.xy.floor();
+      const seed = uint(px.x).add(uint(px.y).mul(4099)).mul(uint(1973)).add(uFrame.mul(9277));
+      const eps = s.viewDist.mul(0.002).add(0.004);
+      return cache.fn(s.P, s.N, s.sky.max(onDynamic), s.viewDist, seed, uLightC, uLightU, uLightV, uLightN, eps);
+    })(), 0, 1));
+    // FFX gets the 0/1 sample (.g); the cache-only diagnostic shows the fraction (.r)
+    const cacheFFX = ffxShadows(cacheRTT.sample(uv()).g.mul(dynRTT.sample(uv()).r).mul(dynRecvRTT.sample(uv()).r), guides);
 
     const visibilityOf = (m: ShadowMode): N => {
       switch (m) {
@@ -469,6 +488,8 @@ async function main() {
         case 'ffx': return shadowFFX.r;
         case 'bake': case 'bakeraw': return withStatic(splitFFX.r);
         case 'lm': return withStatic(float(1));
+        case 'cache': return cacheFFX.r;
+        case 'cacheonly': return cacheRTT.sample(uv()).r;
         case 'ref': return (refAccum as N).r;
         case 'clean': return cleanRTT.sample(uv()).r;
         case 'off': return float(1);
@@ -509,9 +530,9 @@ async function main() {
       up = upscale(colorRTT, depthTex, velTex, camera, { ratio: RATIO, jitter: !q.has('nojitter') });
     }
     const dispose = () => {
-      shadowFFX.dispose(); splitFFX.dispose(); reflFFX.dispose(); refAccum.dispose(); up?.dispose?.();
+      shadowFFX.dispose(); splitFFX.dispose(); cacheFFX.dispose(); reflFFX.dispose(); refAccum.dispose(); up?.dispose?.();
     };
-    return { upscaled, scale, scenePass, depthTex, velTex, visRTT, dynRTT, dynRecvRTT, refAccum, cleanRTT, shadowFFX, splitFFX, litOf, litRTT, litRTTs, ssrNode, reflFFX, colorRTT, up, dispose };
+    return { upscaled, scale, scenePass, depthTex, velTex, visRTT, dynRTT, dynRecvRTT, cacheRTT, refAccum, cleanRTT, shadowFFX, splitFFX, cacheFFX, litOf, litRTT, litRTTs, ssrNode, reflFFX, colorRTT, up, dispose };
   }
   let g = buildGraph(q.has('upscale'));
 
@@ -568,9 +589,10 @@ async function main() {
     const prep = (node: N, c: Cat) => { for (const grp of [node.inputNodes, node.guideNodes]) for (const v of Object.values(grp ?? {})) for (const rt of rtsOf(v)) rtCat.set(rt, c); };
     prep(g.shadowFFX, 'denoise');
     prep(g.splitFFX, 'denoise');
+    prep(g.cacheFFX, 'denoise');
     prep(g.reflFFX, 'SSR');
     rtCat.set(g.scenePass.renderTarget, 'raster');
-    for (const rt of [...rtsOf(g.visRTT), ...rtsOf(g.dynRTT), ...rtsOf(g.dynRecvRTT), ...rtsOf(g.cleanRTT), ...g.refAccum.renderTargets]) rtCat.set(rt, 'ray trace');
+    for (const rt of [...rtsOf(g.visRTT), ...rtsOf(g.dynRTT), ...rtsOf(g.dynRecvRTT), ...rtsOf(g.cacheRTT), ...rtsOf(g.cleanRTT), ...g.refAccum.renderTargets]) rtCat.set(rt, 'ray trace');
     for (const n of [...g.litRTTs.values(), g.colorRTT]) for (const rt of rtsOf(n)) rtCat.set(rt, 'composite');
   }
   const uidCat = new Map<string, Cat>();
@@ -619,7 +641,7 @@ async function main() {
     }
     const ffxMs = (node: N) => node.denoiser?.gpuTimings?.get('total') ?? 0;
     const split = modes.shadow === 'bake' || modes.shadow === 'bakeraw';
-    const ffxS = modes.shadow === 'ffx' ? ffxMs(g.shadowFFX) : split ? ffxMs(g.splitFFX) : 0, ffxR = modes.refl === 'ffx' ? ffxMs(g.reflFFX) : 0;
+    const ffxS = modes.shadow === 'ffx' ? ffxMs(g.shadowFFX) : split ? ffxMs(g.splitFFX) : modes.shadow === 'cache' ? ffxMs(g.cacheFFX) : 0, ffxR = modes.refl === 'ffx' ? ffxMs(g.reflFFX) : 0;
     for (const passes of frames.values()) {
       // Apple GPUs (and other tilers) start a pass's vertex work early, so begin
       // timestamps overlap the previous pass. End timestamps are in order: charge
@@ -729,6 +751,7 @@ async function main() {
     modes.shadow = m;
     if (m === 'ffx') g.shadowFFX.resetHistory();
     if (m === 'bake' || m === 'bakeraw') g.splitFFX.resetHistory();
+    if (m === 'cache') g.cacheFFX.resetHistory();
     if (m === 'ref') g.refAccum.count.value = 0;
     spot.shadow.autoUpdate = m === 'map'; // only re-render the shadow map when it is shown
     spot.shadow.needsUpdate = true;
@@ -748,6 +771,7 @@ async function main() {
     shot = 1 - shot;
     g.shadowFFX.resetHistory();
     g.splitFFX.resetHistory();
+    g.cacheFFX.resetHistory();
     g.reflFFX.resetHistory();
   };
   document.querySelectorAll<HTMLButtonElement>('#seg-shadow button').forEach((b) => b.addEventListener('click', () => setShadow(b.dataset.v as ShadowMode)));
@@ -780,9 +804,11 @@ async function main() {
       ['shadow map: render + VSM blur', c['shadow map'], modes.shadow === 'map' ? '' : 'off'],
       ['shadow rays: BVH vs scene triangles', c['ray trace'], rays ? '1 ray/pixel'
         : modes.shadow === 'bake' || modes.shadow === 'bakeraw' ? '1 ray/pixel vs the moving knot (vs everything on the knot itself)'
-        : modes.shadow === 'lm' ? 'none: baked' : modes.shadow === 'ref' ? (g.refAccum.count.value >= g.refAccum.max ? 'converged, idle' : '16 rays/pixel') : 'off'],
+        : modes.shadow === 'lm' ? 'none: baked'
+        : modes.shadow === 'cache' || modes.shadow === 'cacheonly' ? 'cache: 1 ray/pixel until a cell is full, + 1 vs the knot'
+        : modes.shadow === 'ref' ? (g.refAccum.count.value >= g.refAccum.max ? 'converged, idle' : '16 rays/pixel') : 'off'],
       ['reflection rays: SSR', c.SSR, modes.refl === 'env' ? 'off' : modes.refl === 'ffx' ? '1 ray/pixel, incl. denoiser input prep' : '1 ray/pixel'],
-      ['FFX denoisers (compute)', c.denoise, [modes.shadow === 'ffx' || modes.shadow === 'bake' || modes.shadow === 'bakeraw' ? `shadows ${c['ffx shadows (compute)'].toFixed(2)}` : '', modes.refl === 'ffx' ? `reflections ${c['ffx reflections (compute)'].toFixed(2)}` : ''].filter(Boolean).join(', ') || 'off'],
+      ['FFX denoisers (compute)', c.denoise, [['ffx', 'bake', 'bakeraw', 'cache'].includes(modes.shadow) ? `shadows ${c['ffx shadows (compute)'].toFixed(2)}` : '', modes.refl === 'ffx' ? `reflections ${c['ffx reflections (compute)'].toFixed(2)}` : ''].filter(Boolean).join(', ') || 'off'],
       ['composite + tone map', c.composite, g.upscaled ? 'FSR3 runs in compute: counted in idle' : ''],
       ['GPU idle between passes', c.idle, 'waiting on the CPU to submit the next pass'],
     ];
