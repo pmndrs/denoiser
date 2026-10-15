@@ -64,6 +64,8 @@ struct Params {
   temporalStabilityFactor: f32,
   roughnessThreshold: f32,
   missDistance: f32,
+  jitterCur: vec2f,
+  jitterPrev: vec2f,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -241,14 +243,14 @@ fn getLuminanceWeight(v: vec3f) -> f32 {
 
 fn getHitPositionReprojection(did: vec2i, uv: vec2f, reflected_ray_length: f32) -> vec2f {
   let z = loadDepth(did);
-  var view_space_ray = screenSpaceToViewSpace(vec3f(uv, z));
+  var view_space_ray = screenSpaceToViewSpace(vec3f(uv + P.jitterCur, z));
   let surface_depth = length(view_space_ray);
   let ray_length = surface_depth + reflected_ray_length;
   view_space_ray /= surface_depth;
   view_space_ray *= ray_length;
   let world_hit_position = viewSpaceToWorldSpace(vec4f(view_space_ray, 1.0));
   let prev_hit_position = worldSpaceToScreenSpacePrevious(world_hit_position);
-  return prev_hit_position.xy;
+  return prev_hit_position.xy - P.jitterPrev;
 }
 
 fn getDisocclusionFactor(normal: vec3f, history_normal: vec3f, linear_depth: f32, history_linear_depth: f32) -> f32 {
@@ -291,7 +293,7 @@ fn pickReprojection(did: vec2i, gtid: vec2i, screen_size: vec2u, roughness: f32,
   var history_linear_depth: f32;
   {
     let motion_vector = loadMotionVector(did);
-    let surface_reprojection_uv = uv + motion_vector;
+    let surface_reprojection_uv = uv + motion_vector + (P.jitterCur - P.jitterPrev);
     let hit_reprojection_uv = getHitPositionReprojection(did, uv, ray_length);
     let surface_normal = sampleNormalHistory(surface_reprojection_uv);
     let hit_normal = sampleNormalHistory(hit_reprojection_uv);

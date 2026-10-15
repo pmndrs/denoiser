@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FFX denoiser → upscaler chain</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 16px; background: #111; color: #ddd; font: 13px/1.5 ui-monospace, Menlo, monospace; }
+    main { max-width: 1400px; margin: 0 auto; }
+    nav { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+    nav a { color: #9cf; }
+    h1 { font-size: 16px; margin: 12px 0 4px; }
+    h2 { font-size: 14px; margin: 20px 0 6px; color: #fff; }
+    .lead { margin: 0 0 12px; color: #bbb; }
+    .panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    figure { margin: 0; min-width: 0; }
+    canvas { display: block; width: 100%; height: auto; background: #000; border: 1px solid #333; }
+    figcaption { margin-top: 6px; text-align: center; font-size: 14px; color: #fff; }
+    figcaption small { display: block; color: #999; font-size: 12px; }
+    .explain { max-width: 90ch; }
+    .explain p, .explain li { margin: 0 0 8px; }
+    .explain ul { padding-left: 20px; margin: 0 0 8px; }
+    .explain b { color: #fff; font-weight: 600; }
+    pre { white-space: pre-wrap; }
+    @media (max-width: 760px) { body { padding: 12px; } .panels { grid-template-columns: 1fr; gap: 16px; } }
+  </style>
+</head>
+<body>
+<main>
+  <nav>
+    <a href="?sig=shadows&cond=ignore">shadows: denoised</a>
+    <a href="?sig=shadows&cond=noisy">shadows: no denoiser</a>
+    <a href="?sig=reflections&cond=ignore">reflections: denoised</a>
+    <a href="?sig=reflections&cond=noisy">reflections: no denoiser</a>
+    <a href="?sig=shadows&cond=ignore&movers=1&static=1">moving objects</a>
+    <a href="?sig=shadows&cond=ignore&speed=3">fast camera</a>
+    <a href="?sig=shadows&cond=ignore&ujitter=0">upscaler jitter off</a>
+  </nav>
+  <h1>FFX shadow / reflection denoiser → @pmndrs/upscaler</h1>
+  <p class="lead">One ray per pixel, denoised, composed with the colour and temporally upscaled 2× — three packages, one GPUDevice. Compare against a supersampled native render of the same frame.</p>
+
+  <div class="panels">
+    <figure><canvas class="panel"></canvas><figcaption>denoise → upscale<small>what the chain produces</small></figcaption></figure>
+    <figure><canvas class="panel"></canvas><figcaption>error vs native<small>amplified difference (<code>&amp;err=</code> sets the gain)</small></figcaption></figure>
+    <figure><canvas class="panel"></canvas><figcaption>native reference<small>full resolution, 4×4 supersampled</small></figcaption></figure>
+  </div>
+  <p id="pathinfo"></p>
+
+  <section class="explain">
+    <h2>What this shows</h2>
+    <ul>
+      <li>The scene is ray traced analytically at <b>640×360</b> with sub-pixel jitter. Every frame each pixel gets <b>one</b> shadow ray (or one glossy reflection ray), so the raw signal is noisy.</li>
+      <li>The FidelityFX denoiser cleans that signal, the result is composed into the colour, and FSR-style temporal upscaling (<code>@pmndrs/upscaler</code>) reconstructs <b>1280×720</b>.</li>
+      <li><b>Jitter is deliberately not given to the denoiser.</b> Measured here: compensating for it blurs the history (bilinear resampling each frame) and never beats leaving it out; see <code>docs/specs/temporal.md</code>.</li>
+    </ul>
+    <h2>Knobs (URL)</h2>
+    <p><code>sig</code> shadows | reflections · <code>cond</code> oracle | noisy | ignore | compensate | centroid | decoupled · <code>static=1</code> · <code>speed=3</code> · <code>movers=1</code> · <code>ujitter=0</code> · <code>ratio=3</code>. Headless scoring: <code>mode=eval</code>.</p>
+  </section>
+  <pre id="status"></pre>
+</main>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

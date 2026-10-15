@@ -183,7 +183,7 @@ near-black first frame after a reset. `false` reproduces the SDK exactly.
 | motion vector scale (-0.5, 0.5) | motion as an NDC delta, current minus previous |
 | normals unpack mul/add 1 / 0 | world normals already in [-1, 1] |
 | inverted depth | `camera.reversedDepth` |
-| jitter | ignored: positions are reconstructed from the unjittered projection, and the sub-pixel error is within FFX's tolerances |
+| jitter | ignored by default: positions are reconstructed from the unjittered projection. `compensateJitter: true` reprojects with `jitter - prevJitter`, but it never helped (see [With the upscaler](#with-the-upscaler)) |
 
 ### Measured results
 
@@ -235,6 +235,46 @@ Not optimized yet: there are no subgroup paths (wave intrinsics are emulated in
 workgroup memory), and reflection reproject and resolve each build a 9x9
 neighbourhood per pixel from workgroup memory. FFX's SSSR tile classifier is part
 of SSSR, not the denoiser, so it is not in this port.
+
+## With the upscaler
+
+`examples/ffx-upscale-chain` runs `render → denoise → @pmndrs/upscaler` on one `GPUDevice`: a jittered
+640×360 ray-traced render (1 shadow or reflection ray per pixel), the FFX denoiser, a compose pass
+(`colour = ambient + lit × shadow + K × reflection`) and temporal upscaling to 1280×720. Each frame is
+scored against a 4×4-supersampled native render. Scores are PSNR (tonemapped) over the pixels where the
+signal matters: shadow penumbrae (5–12% of the frame) or reflecting surfaces (70–83%), steady-state frames
+only. `noisy` is the raw 1-spp signal straight into the upscaler, `oracle` a converged signal at the
+jittered sample position.
+
+| scenario | shadows: noisy → denoised (oracle) | reflections: noisy → denoised (oracle) |
+|---|---|---|
+| static camera | 39.9 → **41.5** (42.6) | **29.1** ← 22.5 (34.8) |
+| camera path | 37.1 → **37.7** (38.2) | **28.4** ← 27.3 (33.2) |
+| camera path ×3 | 34.1 → **36.9** (37.3) | 29.9 → **30.7** (35.2) |
+| orbiting spheres, static camera | 34.8 → **35.2** (35.7) | **26.9** ← 21.8 (31.6) |
+| camera ×2 + spheres ×2 | 33.3 → **35.1** (35.6) | 31.5 → **32.6** (34.9) |
+| first frames after a history reset | 31.7 → **35.9** (36.3) | 19.0 → **21.8** (32.1) |
+
+- **Shadows:** the denoiser helps everywhere, and the gain grows with motion, up to +2.8 dB with a fast
+  camera, because the upscaler's own accumulation can't average the noise there. After a camera cut it is
+  worth about 4 dB.
+- **Reflections:** it only pays once the camera or objects move fast. In a still view the upscaler
+  accumulating the raw 1-spp signal beats the denoiser by 5–7 dB. The denoised result is smooth but biased
+  dark (mean error −0.039 vs −0.014 undenoised, tonemapped) and visibly hazier, a bias accumulation
+  cannot average away. `temporalStabilityFactor` and `currentFrameStatistics` do not change it. It still wins
+  after resets (+2.5 to +6.8 dB). Practical rule: bypass or blend it down while the view is converged.
+- **Jitter:** leave it out. `compensateJitter` (reproject with `jitter - prevJitter`) was equal to
+  ignoring it, or up to 0.2 dB worse, in every scenario, and so was a variant that treats the history as
+  centred at the pixel centre. Compensating forces a fractional history fetch every frame, and the repeated
+  bilinear resampling blurs more than the sub-pixel offset it fixes. Running the shadow denoiser on a fully
+  unjittered lattice gained nothing either. Feed it the jittered G-buffer as is.
+- **Scope:** one analytic scene, one run per configuration (fixed seeds, differences under ~0.2 dB are
+  noise-level), moving objects are three orbiting spheres. The raw-WebGPU chain does not reproduce the
+  residual flicker the TSL nodes show with jitter (flicker equals the oracle's when static).
+
+Reproduce: `yarn workspace ffx-upscale-chain dev`, then
+`node examples/ffx-denoiser/run-headless.mjs "mode=eval&sig=shadows&cond=ignore&speed=3"` with
+`BASE=http://127.0.0.1:5211/` (`UPSCALER_SRC=<checkout>/src/index.ts` tests unreleased upscaler code).
 
 ## Using it with raw WebGPU
 

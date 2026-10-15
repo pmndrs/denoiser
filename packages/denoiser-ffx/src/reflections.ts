@@ -41,6 +41,8 @@ export interface FfxReflectionDenoiserOptions {
   currentFrameStatistics?: boolean;
   /** Per-pass GPU timestamps into `gpuTimings` when the device supports them. Default true. */
   timestamps?: boolean;
+  /** Reproject with `camera.jitter` / `camera.prevJitter`. Default false (jitter ignored); see FfxShadowDenoiserOptions. */
+  compensateJitter?: boolean;
 }
 
 const PARAMS_SIZE = 256;
@@ -81,6 +83,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       missDistance: options.missDistance,
       currentFrameStatistics: options.currentFrameStatistics ?? true,
       timestamps: options.timestamps ?? true,
+      compensateJitter: options.compensateJitter ?? false,
     };
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -182,6 +185,9 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     f[57] = this.opts.temporalStabilityFactor;
     f[58] = this.opts.roughnessThreshold;
     f[59] = this.opts.missDistance ?? camera.far;
+    const jc = this.opts.compensateJitter ? camera.jitter ?? [0, 0] : [0, 0];
+    const jp = this.opts.compensateJitter ? camera.prevJitter ?? [0, 0] : [0, 0];
+    f[60] = jc[0] / W; f[61] = jc[1] / H; f[62] = jp[0] / W; f[63] = jp[1] / H;
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-reflections' });

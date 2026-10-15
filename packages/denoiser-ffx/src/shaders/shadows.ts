@@ -62,6 +62,7 @@ struct Params {
   invertedDepth: u32,
   visThreshold: f32,
   _pad: f32,
+  jitterDelta: vec2f,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -334,7 +335,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) gid3: v
   writeTileMetaData(gid, gtid, false, false);
 
   let depth = loadDepth(pdid);
-  let velocity = closestVelocity(pdid, depth, gtid, li);
+  let velocity = closestVelocity(pdid, depth, gtid, li) + P.jitterDelta;
   let local_neighborhood = computeLocalNeighborhood(vec2i(did), gtid);
 
   let uv = (vec2f(did) + 0.5) * P.invDims;

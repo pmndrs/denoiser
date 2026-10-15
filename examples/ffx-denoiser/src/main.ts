@@ -26,6 +26,20 @@ const REFSPP = Number(q.get('refspp') ?? (mode === 'view' ? 64 : 256));
 const NO_HISTORY = q.get('noHistory') === '1';
 // static camera (debug: isolates temporal accumulation from reprojection)
 const STATIC = q.get('static') === '1';
+// Sub-pixel camera jitter study (temporal FSR-style Halton jitter on the primary rays):
+//   off         no jitter (baseline)
+//   ignore      jittered render, denoiser told nothing (what a naive chain does)
+//   compensate  jittered render, denoiser reprojects with jitter - prevJitter
+//   flip        like compensate with the wrong sign (control: must be worse than ignore)
+//   centroid    jitter = current phase, prevJitter = 0: history is an average over many phases, so its
+//               centroid sits at the pixel centre, not at the previous frame's phase
+// &jphases=8 (Halton period), &jscale=1 (1 = full +-0.5 px)
+const JITTER = (q.get('jitter') ?? 'off') as 'off' | 'ignore' | 'compensate' | 'flip' | 'centroid';
+const JPHASES = Number(q.get('jphases') ?? 8);
+const JSCALE = Number(q.get('jscale') ?? 1);
+const halton = (i: number, b: number) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
+const jitterAt = (frame: number): [number, number] => JITTER === 'off'
+  ? [0, 0] : [(halton((frame % JPHASES) + 1, 2) - 0.5) * JSCALE, (halton((frame % JPHASES) + 1, 3) - 0.5) * JSCALE];
 const STOP_AT = q.has('stopAt') ? Number(q.get('stopAt')) : -1;
 let paused = false; // view mode: camera pause toggle
 const status = document.querySelector<HTMLPreElement>('#status')!;
@@ -64,6 +78,7 @@ async function main() {
   const noisy = tex(sigFormat, 'noisy');
   const hitDist = tex('r32float', 'hitDistance');
   const reference = tex(sigFormat, 'reference');
+  const referenceU = tex(sigFormat, 'referenceUnjittered');
 
   const sceneModule = device.createShaderModule({ code: signal === 'shadows' ? SHADOW_SCENE_WGSL : REFLECTION_SCENE_WGSL });
   const info = await sceneModule.getCompilationInfo();
@@ -71,6 +86,7 @@ async function main() {
   const noisyPipe = device.createComputePipeline({ layout: 'auto', compute: { module: sceneModule, entryPoint: 'noisy' } });
   const refPipe = device.createComputePipeline({ layout: 'auto', compute: { module: sceneModule, entryPoint: 'reference' } });
   const sceneU = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const sceneUU = device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }); // same frame, jitter 0
   const noisyBG = device.createBindGroup({
     layout: noisyPipe.getBindGroupLayout(0),
     entries: [sceneU, depth, normal, motion, rough, noisy, hitDist].map((r, i) => ({
@@ -82,14 +98,20 @@ async function main() {
     entries: [{ binding: 0, resource: { buffer: sceneU } }, { binding: 7, resource: reference.createView() }],
   });
 
+  const refUBG = device.createBindGroup({
+    layout: refPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: { buffer: sceneUU } }, { binding: 7, resource: referenceU.createView() }],
+  });
+
   // ---- denoiser
   let denoiser: TemporalDenoiser<object>;
   if (signal === 'shadows') {
-    denoiser = new FFX.FfxShadowDenoiser(device);
+    denoiser = new FFX.FfxShadowDenoiser(device, { compensateJitter: JITTER !== 'off' && JITTER !== 'ignore' });
   } else {
     // &stats=current|ffx (see FfxReflectionDenoiserOptions.currentFrameStatistics), &tsf=0.7
     const stats = q.get('stats');
     denoiser = new FFX.FfxReflectionDenoiser(device, {
+      compensateJitter: JITTER !== 'off' && JITTER !== 'ignore',
       ...(stats ? { currentFrameStatistics: stats === 'current' } : {}),
       ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
     });
@@ -111,11 +133,23 @@ async function main() {
     f.set(invert(vp), 0); f.set(vp, 16); f.set(pvp, 32);
     f.set(c.eye, 48); u[51] = frame;
     u[52] = W; u[53] = H; u[54] = spp; u[55] = 0;
+    const jc = jitterAt(frame), jp = frame > 0 ? jitterAt(frame - 1) : jc;
+    f[56] = jc[0]; f[57] = jc[1];
     device.queue.writeBuffer(sceneU, 0, b);
+    f[56] = 0; f[57] = 0;
+    device.queue.writeBuffer(sceneUU, 0, b);
     const cam: FrameCamera = {
       view: c.view, projection: c.proj, prevView: p.view, prevProjection: p.proj,
       near: NEAR, far: FAR, position: c.eye,
     };
+    if (JITTER === 'centroid') {
+      cam.jitter = [jc[0], jc[1]];
+      cam.prevJitter = [0, 0];
+    } else if (JITTER === 'compensate' || JITTER === 'flip') {
+      const s = JITTER === 'flip' ? -1 : 1;
+      cam.jitter = [s * jc[0], s * jc[1]];
+      cam.prevJitter = [s * jp[0], s * jp[1]];
+    }
     return cam;
   };
   const renderScene = (frame: number, withRef: boolean, pathFrame?: number, prevPathFrame?: number) => {
@@ -124,7 +158,10 @@ async function main() {
     const pass = enc.beginComputePass();
     pass.setPipeline(noisyPipe); pass.setBindGroup(0, noisyBG);
     pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
-    if (withRef) { pass.setPipeline(refPipe); pass.setBindGroup(0, refBG); pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8)); }
+    if (withRef) {
+      pass.setPipeline(refPipe); pass.setBindGroup(0, refBG); pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
+      if (JITTER !== 'off') { pass.setBindGroup(0, refUBG); pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8)); }
+    }
     pass.end();
     device.queue.submit([enc.finish()]);
     return cam;
@@ -144,15 +181,17 @@ async function main() {
   // ---- metrics
   const metricsPipe = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: METRICS_WGSL }), entryPoint: 'main' } });
   const eN = tex('r32float', 'errNoisy'), eD = tex('r32float', 'errDen');
+  const eN2 = tex('r32float', 'errNoisyU'), eD2 = tex('r32float', 'errDenU');
+  const eN3 = tex('r32float', 'errNoisyP'), eD3 = tex('r32float', 'errDenP');
   const wgX = Math.ceil(W / 16), wgY = Math.ceil(H / 16);
   const partials = device.createBuffer({ size: wgX * wgY * 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const readback = device.createBuffer({ size: wgX * wgY * 48, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
   const metricsU = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const score = async (den: GPUTexture, validPrev: boolean) => {
+  const score = async (den: GPUTexture, validPrev: boolean, ref: GPUTexture = reference, eNt = eN, eDt = eD) => {
     device.queue.writeBuffer(metricsU, 0, new Uint32Array([W, H, signal === 'shadows' ? 0 : 1, validPrev ? 1 : 0]));
     const bg = device.createBindGroup({
       layout: metricsPipe.getBindGroupLayout(0),
-      entries: [metricsU, noisy, den, reference, depth, eN, eD, partials].map((r, i) => ({
+      entries: [metricsU, noisy, den, ref, depth, eNt, eDt, partials].map((r, i) => ({
         binding: i, resource: r instanceof GPUBuffer ? { buffer: r } : r.createView(),
       })),
     });
@@ -176,6 +215,12 @@ async function main() {
       nonFiniteInputs: s[6], nonFiniteDenoised: s[7],
     };
   };
+
+  // same-jitter-phase stability (static camera): PSNR of this frame's output against the output JPHASES
+  // frames ago, which saw the identical jitter, so it measures noise/instability independent of the jitter itself
+  const ring = Array.from({ length: JPHASES }, () => device.createTexture({
+    size: [W, H], format: 'rgba16float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  }));
 
   // ---- view
   // three canvases (one per panel, labels sit below each in the HTML; CSS stacks them on narrow screens)
@@ -229,7 +274,13 @@ async function main() {
     const perFrame: ReturnType<typeof score> extends Promise<infer R> ? R[] : never = [];
     for (let f = 0; f < FRAMES; f++) {
       const den = step(f, true);
-      const r = await score(den, f !== 0 && f !== CUT);
+      const r = await score(den, f !== 0 && f !== CUT) as Awaited<ReturnType<typeof score>> & { psnrDenU?: number; psnrDenPenU?: number; phasePsnr?: number };
+      if (JITTER !== 'off') {
+        const u = await score(den, false, referenceU, eN2, eD2);
+        r.psnrDenU = u.psnrDen; r.psnrDenPenU = u.psnrDenPen;
+      }
+      if (STATIC && JITTER !== 'off' && f >= JPHASES + 8) r.phasePsnr = (await score(den, false, ring[f % JPHASES], eN3, eD3)).psnrDen;
+      if (STATIC) { const e = device.createCommandEncoder(); e.copyTextureToTexture({ texture: den }, { texture: ring[f % JPHASES] }, [W, H]); device.queue.submit([e.finish()]); }
       perFrame.push(r);
       if (f % 10 === 0 || f === FRAMES - 1) { show(den); log(`frame ${f}: noisy ${r.psnrNoisy.toFixed(2)} dB  denoised ${r.psnrDen.toFixed(2)} dB  (penumbra ${r.psnrNoisyPen.toFixed(2)} -> ${r.psnrDenPen.toFixed(2)})  flicker ${r.flickerDen.toFixed(4)}`); }
       out.frame = f;
@@ -240,6 +291,7 @@ async function main() {
     const flick = perFrame.filter((r) => !Number.isNaN(r.flickerDen));
     const summary = {
       signal, width: W, height: H, frames: FRAMES, refSpp: REFSPP, cut: CUT, noHistory: NO_HISTORY, query: location.search,
+      jitter: JITTER, jphases: JPHASES,
       psnrNoisy: mean(perFrame.map((r) => r.psnrNoisy)),
       psnrDenoised: mean(perFrame.map((r) => r.psnrDen)),
       psnrDenoisedSettled: mean(settled.map((r) => r.psnrDen)),
@@ -249,6 +301,11 @@ async function main() {
       psnrDenoisedPenumbra: mean(perFrame.map((r) => r.psnrDenPen)),
       psnrDenoisedPenumbraSettled: mean(settled.map((r) => r.psnrDenPen)),
       meanBiasDenoised: mean(perFrame.map((r) => r.biasDen)),
+      // vs the UNJITTERED reference (the image the pixel-centre lattice should show) — jitter runs only
+      psnrDenoisedUnjitteredSettled: settled[0] && 'psnrDenU' in settled[0] ? mean(settled.map((r) => (r as unknown as { psnrDenU: number }).psnrDenU)) : null,
+      psnrDenoisedPenumbraUnjitteredSettled: settled[0] && 'psnrDenPenU' in settled[0] ? mean(settled.map((r) => (r as unknown as { psnrDenPenU: number }).psnrDenPenU)) : null,
+      // same-phase output stability (static camera, jitter on): higher = steadier
+      phasePsnr: (() => { const xs = perFrame.map((r) => (r as { phasePsnr?: number }).phasePsnr).filter((x): x is number => x !== undefined); return xs.length ? mean(xs) : null; })(),
       psnrDenoisedAfterCut: perFrame[CUT]?.psnrDen,
       nonFiniteInputsTotal: perFrame.reduce((a, r) => a + r.nonFiniteInputs, 0),
       nonFiniteDenoisedTotal: perFrame.reduce((a, r) => a + r.nonFiniteDenoised, 0),

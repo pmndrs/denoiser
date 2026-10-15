@@ -139,8 +139,14 @@ No changes to `temporal.ts` were needed: shadows consume `visibility`
 `roughnessIsPerceptual: false` for linear). Motion is the NDC delta
 (current − previous) and maps to FFX's `motionVectorScale = (-0.5, 0.5)`;
 normals in [-1, 1] → `normalsUnpackMul/Add = 1/0`; `reversedDepth` drives
-the shadow denoiser's inverted-depth option (closest-velocity pick). `jitter` is not used — FFX reconstructs positions
-from the unjittered projection, the sub-pixel error is within its tolerances.
+the shadow denoiser's inverted-depth option (closest-velocity pick). `jitter` is not used by default — FFX reconstructs positions
+from the unjittered projection, the sub-pixel error is within its tolerances. `compensateJitter: true` reprojects
+with `camera.jitter - camera.prevJitter` (convention: pixel n shows the scene at `uv_n + jitter / size`); measured
+in `examples/ffx-denoiser` (`&jitter=`) and `examples/ffx-upscale-chain` it never beats ignoring jitter. Denoiser-only,
+shadows, static camera, 960×540: no jitter 33.88 dB, jittered + ignored 33.64, compensated 32.22, wrong sign 31.39.
+The history is an average over many jitter phases, so its centre is the pixel centre, not the previous frame's
+phase, and compensation adds a bilinear resample every frame. Chain results (denoise → upscaler) are in the
+[temporal denoising guide](../site/guides/realtime-temporal-denoising.mdx#with-the-upscaler).
 
 ### Test bed + results
 
