@@ -12,6 +12,9 @@ node_modules/
 *.js.map
 *.d.ts
 *.d.ts.map
+# ...except vendored source
+!examples/*/src/vendor/*.js
+!examples/*/src/vendor/*.d.ts
 
 # Ignore IDE and editor files
 .vscode/
