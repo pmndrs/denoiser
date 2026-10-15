@@ -24,9 +24,16 @@ export interface FfxShadowDenoiserOptions {
   visibilityThreshold?: number;
   /** Per-pass GPU timestamps into `gpuTimings` when the device supports them. Default true. */
   timestamps?: boolean;
+  /**
+   * Reproject history with `camera.jitter - camera.prevJitter`. Default false: jitter is ignored. Measured
+   * against the upscaler chain (examples/ffx-upscale-chain) compensation never beats ignoring it: it forces a
+   * fractional history lookup every frame, and the repeated bilinear resampling blurs more than the
+   * sub-pixel misalignment it removes. Kept as an experiment switch.
+   */
+  compensateJitter?: boolean;
 }
 
-const PARAMS_SIZE = 256;
+const PARAMS_SIZE = 512;
 const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
 
 export class FfxShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
@@ -57,6 +64,7 @@ export class FfxShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       depthSimilaritySigma: options.depthSimilaritySigma ?? 1.0,
       visibilityThreshold: options.visibilityThreshold ?? 0.5,
       timestamps: options.timestamps ?? true,
+      compensateJitter: options.compensateJitter ?? false,
     };
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -160,6 +168,10 @@ export class FfxShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[60] = this.opts.depthSimilaritySigma;
     u32[61] = camera.reversedDepth ? 1 : 0;
     f[62] = this.opts.visibilityThreshold;
+    // history pixel = uv + velocity + (jitter - prevJitter) / size: pixel n shows the scene at uv_n + jitter / size
+    const jc = this.opts.compensateJitter ? camera.jitter ?? [0, 0] : [0, 0];
+    const jp = this.opts.compensateJitter ? camera.prevJitter ?? [0, 0] : [0, 0];
+    f[64] = (jc[0] - jp[0]) / W; f[65] = (jc[1] - jp[1]) / H;
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-shadows' });

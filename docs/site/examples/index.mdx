@@ -51,3 +51,19 @@ denoise the moment the camera comes to rest. Same pinned-pathtracer caveat as ab
 The performance harness behind the numbers in [Performance](../concepts/performance.mdx):
 cold + warm timings, per-stage stats, and fp16-vs-fp32 PSNR across image sizes —
 reproducible in your own browser, on your own hardware.
+
+## Real-time (temporal) denoising
+
+These use the FidelityFX denoisers (`denoiser/ffx`), not OIDN.
+
+### [FidelityFX denoiser into the upscaler](https://pmndrs.github.io/denoiser/ffx-upscale-chain/)
+The shadow and reflection denoisers feeding `@pmndrs/upscaler`'s temporal FSR path on one
+`GPUDevice`: a jittered 640×360 ray-traced render, denoised, composed into the colour and upscaled
+to 1280×720, shown next to a supersampled native render and an error map. URL knobs switch the
+denoiser off, the signal (`sig=shadows|reflections`), camera speed and orbiting spheres; `mode=eval`
+scores the chain headlessly. Measured results are in
+[Real-time (temporal) denoising](../guides/realtime-temporal-denoising.mdx#with-the-upscaler).
+
+### [FidelityFX denoisers, raw WGSL](https://pmndrs.github.io/denoiser/ffx-denoiser/)
+The test bed behind the numbers in [Real-time (temporal) denoising](../guides/realtime-temporal-denoising.mdx#measured-results):
+1-sample shadows and reflections, noisy / denoised / reference panels, no three.js.

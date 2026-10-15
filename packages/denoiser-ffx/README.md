@@ -24,6 +24,9 @@ const mask = shadows.dispatch(
 // `mask` (rgba16float, .r = denoised visibility) is valid until the next dispatch.
 ```
 
+**Jitter:** `camera.jitter` is ignored by default; `compensateJitter: true` opts in to reprojecting with
+`jitter - prevJitter`, which measured no better (`examples/ffx-upscale-chain`).
+
 See `docs/specs/temporal.md` (FidelityFX port section) for conventions,
 deviations from AMD's source and measured quality / cost, and
 `examples/ffx-denoiser` for the test bed.

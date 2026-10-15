@@ -28,6 +28,12 @@ export interface FrameCamera {
   prevProjection: Mat4;
   /** Sub-pixel jitter applied to this frame's render, in pixels (default [0, 0]). */
   jitter?: readonly [number, number];
+  /**
+   * Jitter applied to the PREVIOUS frame's render, in pixels (default [0, 0]). With `jitter`, lets a
+   * denoiser reproject history to the right sub-pixel position instead of blurring across phases.
+   * Convention: pixel n of a frame shows the scene at `uv_n + jitter / size` (x right, y down).
+   */
+  prevJitter?: readonly [number, number];
   near: number;
   far: number;
   /** World-space camera position (needed by some filters, e.g. reflections). */

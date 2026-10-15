@@ -1812,6 +1812,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"ffx-upscale-chain@workspace:examples/ffx-upscale-chain":
+  version: 0.0.0-use.local
+  resolution: "ffx-upscale-chain@workspace:examples/ffx-upscale-chain"
+  dependencies:
+    "@pmndrs/denoiser-ffx": "workspace:*"
+    "@pmndrs/upscaler": "npm:0.5.0"
+    "@webgpu/types": "npm:^0.1.71"
+    three: "npm:^0.186.1"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+  languageName: unknown
+  linkType: soft
+
 "file-entry-cache@npm:^8.0.0":
   version: 8.0.0
   resolution: "file-entry-cache@npm:8.0.0"

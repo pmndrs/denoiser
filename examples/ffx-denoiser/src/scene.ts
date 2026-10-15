@@ -19,6 +19,11 @@ struct U {
   dims: vec2u,
   spp: u32,
   seedOffset: u32,
+  jitter: vec2f, // sub-pixel offset of the primary-ray sample, in pixels (x right, y down)
+  time: f32,     // animation time (frames) for the moving spheres
+  prevTime: f32,
+  mode: u32,     // chain study: 0 = shadow signal, 1 = glossy reflection signal
+  movers: u32,   // 1 = spheres 0, 2, 3 orbit (per-object motion vectors); 0 = static scene (default)
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -28,7 +33,15 @@ const LIGHT_RADIUS: f32 = 1.2;
 const LIGHT_RADIANCE: vec3f = vec3f(18.0, 16.5, 14.0);
 const SUN_DIR: vec3f = vec3f(0.4319, 0.7559, 0.3239); // normalize(4,7,3)
 
-struct Hit { t: f32, n: vec3f, albedo: vec3f, rough: f32, emissive: f32 };
+struct Hit { t: f32, n: vec3f, albedo: vec3f, rough: f32, emissive: f32, id: u32 };
+
+// orbit offsets of the moving spheres (0, 2, 3); zero unless u.movers != 0
+fn sphereOff(i: u32, t: f32) -> vec3f {
+  if (u.movers == 0u || !(i == 0u || i == 2u || i == 3u)) { return vec3f(0.0); }
+  let a = 0.045 * t + f32(i) * 1.7;
+  return vec3f(1.2 * sin(a), 0.0, 1.2 * cos(a));
+}
+fn sphereAt(i: u32, t: f32) -> vec4f { return vec4f(SPHERES[i].xyz + sphereOff(i, t), SPHERES[i].w); }
 
 const NUM_SPHERES: u32 = 6u;
 const SPHERES = array<vec4f, 6>(
@@ -94,7 +107,7 @@ fn groundRough(p: vec3f) -> f32 {
 }
 
 fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
-  var h = Hit(tmax, vec3f(0.0), vec3f(0.0), 1.0, 0.0);
+  var h = Hit(tmax, vec3f(0.0), vec3f(0.0), 1.0, 0.0, 99u);
   var found = false;
   // ground plane y = 0
   if (rd.y < 0.0) {
@@ -102,14 +115,15 @@ fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
     if (t > 1e-4 && t < h.t) {
       let p = ro + rd * t;
       let checker = (i32(floor(p.x)) + i32(floor(p.z))) & 1;
-      h = Hit(t, vec3f(0.0, 1.0, 0.0), select(vec3f(0.55), vec3f(0.35), checker == 1), groundRough(p), 0.0);
+      h = Hit(t, vec3f(0.0, 1.0, 0.0), select(vec3f(0.55), vec3f(0.35), checker == 1), groundRough(p), 0.0, 99u);
       found = true;
     }
   }
   for (var i = 0u; i < NUM_SPHERES; i++) {
-    let t = sphereT(ro, rd, SPHERES[i]);
+    let sph = sphereAt(i, u.time);
+    let t = sphereT(ro, rd, sph);
     if (t > 0.0 && t < h.t) {
-      h = Hit(t, normalize(ro + rd * t - SPHERES[i].xyz), SPHERE_ALBEDO[i], SPHERE_ROUGH[i], 0.0);
+      h = Hit(t, normalize(ro + rd * t - sph.xyz), SPHERE_ALBEDO[i], SPHERE_ROUGH[i], 0.0, i);
       found = true;
     }
   }
@@ -117,7 +131,7 @@ fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
     var n = vec3f(0.0);
     let t = boxT(ro, rd, BOX_MIN[i], BOX_MAX[i], &n);
     if (t > 0.0 && t < h.t) {
-      h = Hit(t, n, BOX_ALBEDO[i], BOX_ROUGH[i], 0.0);
+      h = Hit(t, n, BOX_ALBEDO[i], BOX_ROUGH[i], 0.0, 99u);
       found = true;
     }
   }
@@ -154,14 +168,19 @@ fn basis(n: vec3f) -> mat3x3f {
   return mat3x3f(t, bt, n);
 }
 
-fn primaryRay(pix: vec2u) -> array<vec3f, 2> {
-  let uv = (vec2f(pix) + 0.5) / vec2f(u.dims);
+// spos = sample position in pixel units (pixel centre = pix + 0.5)
+fn primaryRayF(spos: vec2f) -> array<vec3f, 2> {
+  let uv = spos / vec2f(u.dims);
   let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
   let pn = u.invViewProj * vec4f(ndc, 0.0, 1.0);
   let pf = u.invViewProj * vec4f(ndc, 1.0, 1.0);
   let a = pn.xyz / pn.w;
   let b = pf.xyz / pf.w;
   return array<vec3f, 2>(u.camPos, normalize(b - a));
+}
+
+fn primaryRay(pix: vec2u) -> array<vec3f, 2> {
+  return primaryRayF(vec2f(pix) + 0.5 + u.jitter);
 }
 
 fn ndcOf(m: mat4x4f, p: vec3f) -> vec3f {
@@ -249,13 +268,25 @@ fn reflectionSample(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f, xi2: ve
   return vec4f(shadeHit(hp, h, xi2) * w, h.t);
 }
 
-struct Primary { hit: bool, p: vec3f, n: vec3f, rough: f32, depth: f32, motion: vec2f, rd: vec3f };
+// thin world-space grid lines (sub-pixel at render res): aliasing-prone albedo detail for the upscaler chain study
+fn detail(p: vec3f, n: vec3f) -> f32 {
+  let a = abs(n);
+  var c: vec2f;
+  if (a.y > a.x && a.y > a.z) { c = p.xz; } else if (a.x > a.z) { c = p.yz; } else { c = p.xy; }
+  let g = abs(fract(c * 4.0) - 0.5);
+  return mix(1.0, 0.35, smoothstep(0.45, 0.49, max(g.x, g.y)));
+}
 
-fn primary(pix: vec2u) -> Primary {
-  let r = primaryRay(pix);
+struct Primary { hit: bool, p: vec3f, n: vec3f, rough: f32, depth: f32, motion: vec2f, rd: vec3f, albedo: vec3f };
+
+fn primary(pix: vec2u) -> Primary { return primaryF(vec2f(pix) + 0.5 + u.jitter); }
+
+fn primaryF(spos: vec2f) -> Primary {
+  let r = primaryRayF(spos);
   let h = trace(r[0], r[1], 1e4);
   var o: Primary;
   o.rd = r[1];
+  o.albedo = vec3f(0.0);
   if (h.t < 0.0) {
     let far = r[0] + r[1] * 1000.0;
     o.hit = false;
@@ -268,10 +299,12 @@ fn primary(pix: vec2u) -> Primary {
   o.hit = true;
   o.p = r[0] + r[1] * h.t;
   o.n = h.n;
+  o.albedo = h.albedo * detail(o.p, h.n);
   o.rough = h.rough;
   let c = ndcOf(u.viewProj, o.p);
   o.depth = c.z;
-  o.motion = c.xy - ndcOf(u.prevViewProj, o.p).xy;
+  let pPrev = o.p - (sphereOff(h.id, u.time) - sphereOff(h.id, u.prevTime)); // h.id = 99 -> sphereOff() = 0
+  o.motion = c.xy - ndcOf(u.prevViewProj, pPrev).xy;
   return o;
 }
 `;
