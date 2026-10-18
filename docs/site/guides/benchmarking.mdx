@@ -1,0 +1,110 @@
+---
+title: Benchmarking on your machine
+description: Run the full pipeline (three-gpu-pathtracer → denoiser → @pmndrs/upscaler) in the Pipeline Lab, compare runtimes, turn on WebNN, and share your numbers.
+nav: 29
+---
+
+The numbers elsewhere in these docs come from one Apple GPU. Yours will differ, and
+that's the point of this page: the [Pipeline Lab](https://pmndrs.github.io/denoiser/pipeline-lab/)
+runs the whole offline pipeline in your browser and times every stage, so you can see
+what a runtime, a model size or a render scale costs on your hardware.
+
+## What the lab runs
+
+```text
+three-gpu-pathtracer   render at a fraction of the output size, stop at N samples per pixel
+  → denoiser           any runtime, albedo + normal guides on or off, fast / balanced / high model
+  → @pmndrs/upscaler   FSR1 (EASU + RCAS) or bilinear, back up to the output size
+  → canvas
+```
+
+All three share one `GPUDevice`. The denoiser and upscaler plug into the path tracer's
+own hooks, `pathTracer.setDenoiser()` and `pathTracer.setUpscaler()`, so the lab's
+`src/passes.ts` is also a reference for wiring this package into
+[three-gpu-pathtracer](https://github.com/gkjohnson/three-gpu-pathtracer).
+
+Scenes:
+
+| scene | what it tests |
+|---|---|
+| Spheres | the easy case: sky light only, diffuse / glossy / metal |
+| Furnished room | the hard case: one small light, mostly indirect light, glossy floor. At 8 spp the input is mostly black specks |
+| LEGO Eiffel Tower | ~136k triangles, fine detail, a refractive cube |
+| Your model | drop a `.glb` / `.gltf` on the page (Draco and meshopt work). It stays in your browser |
+
+Every control is mirrored into the URL, so a setup is shareable as a link, for example
+[`?scene=room&spp=32&scale=0.5&upscale=spatial`](https://pmndrs.github.io/denoiser/pipeline-lab/?scene=room&spp=32&scale=0.5&upscale=spatial).
+
+## Running it locally
+
+```sh
+yarn install
+yarn build:lib
+yarn examples          # http://localhost:5160/ — every example from one server
+```
+
+Then open http://localhost:5160/pipeline-lab/. In dev the models load from the repo
+(`/tzas`, and `/models` for ONNX Runtime if you have `packages/denoiser/models`);
+otherwise they come from the CDN, like the deployed page.
+
+## Turning on WebNN
+
+The WebNN runtime is greyed out unless the browser exposes `navigator.ml`. In Chrome:
+
+- open `chrome://flags/#web-machine-learning-neural-network`, set it to **Enabled**,
+  and relaunch; or
+- start Chrome with the feature on (quit Chrome first):
+
+  ```sh
+  # macOS
+  open -a "Google Chrome" --args --enable-features=WebMachineLearningNeuralNetwork
+  # Windows
+  "C:\Program Files\Google\Chrome\Application\chrome.exe" --enable-features=WebMachineLearningNeuralNetwork
+  # Linux
+  google-chrome --enable-features=WebMachineLearningNeuralNetwork
+  ```
+
+On macOS, add `WebNNCoreMLExplicitGPUOrNPU` to the same flag list to let WebNN reach the
+Neural Engine; see [Choosing a runtime](./choosing-a-runtime.mdx) for what that changes.
+
+## Running the benchmark
+
+**Run benchmark** takes the scene's own camera (not wherever you orbited to) through the
+current settings:
+
+1. **Path trace.** Reset and accumulate to your sample count, three times. It reports
+   the best of the last two, so the first run absorbs pipeline warm-up. The tracer's
+   noise is stable, so every run traces the same image.
+2. **Denoise.** "first" is the first denoise with this model in the page: model load plus
+   shader compile. "warm" is the median of the warm runs.
+3. **Upscale.** The median of the warm runs. With the upscaler off, the tracer stretches
+   the image bilinearly; that is scored as bilinear, at 0 ms.
+4. **Quality.** PSNR in dB against a reference traced with many samples (512 by default),
+   8-bit after ACES and sRGB, as the canvas shows it. "noisy" and "denoised" are compared
+   at the render size, "final" at the output size. Higher is better; a few dB is a visible
+   difference.
+
+Times are wall clock from submit to the GPU finishing, so they include queue overhead,
+and they move by 10–20% between runs. Close other GPU-heavy tabs. The first reference
+trace takes a while (tens of seconds for the room at 1080p); it is cached for the
+page's lifetime.
+
+**Run on every runtime** reloads the page once per runtime your browser exposes (WGSL,
+ONNX Runtime, WebNN, HF kernels) and adds a row for each. The runtime is fixed per page
+load because ONNX Runtime creates its own `GPUDevice`, which three.js then borrows.
+
+## Sharing results
+
+Results stay in your browser (localStorage) until you clear them. **Copy as Markdown**
+gives a table with your GPU and browser at the top. Paste it into a
+[GitHub issue](https://github.com/pmndrs/denoiser/issues) and we can see how the runtimes
+behave beyond the machines we test on. **Copy JSON** has every field, including the full
+settings.
+
+## Other benchmark pages
+
+- [Benchmark](https://pmndrs.github.io/denoiser/bench/) times the network alone, on a
+  synthetic noisy image (a gradient with three discs) at 512², 720p and 1080p. It is the
+  regression check for the runtimes, not a quality test.
+- `tools/eval` with `examples/eval` compares every runtime against native OIDN on 25
+  scene/model cases; see [Choosing a runtime](./choosing-a-runtime.mdx#reproducing-the-numbers).

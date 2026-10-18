@@ -33,6 +33,14 @@ Proof of engine-neutrality: a single-file WGSL toy path tracer with no framework
 no three.js, no Babylon, no bundler magic — feeding `denoiseTextures` on the same
 `GPUDevice`. The reference for integrating a custom engine that isn't three.js.
 
+### [Pipeline Lab](https://pmndrs.github.io/denoiser/pipeline-lab/)
+The full offline pipeline in one page: three-gpu-pathtracer renders below the output
+size, this library denoises it, and @pmndrs/upscaler (FSR1) scales it back up, all on one
+`GPUDevice` through the path tracer's own `setDenoiser` / `setUpscaler` hooks. Every
+stage is tweakable, there are four scenes (or drop in your own `.glb`), and a benchmark
+times each stage and scores it against a high-sample reference. See
+[Benchmarking on your machine](../guides/benchmarking.mdx).
+
 ### [three.js path tracer](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/)
 three r186 `WebGPUPathTracer` and this library sharing one `GPUDevice`: progressive
 path tracing, denoised live while it accumulates, CPU-copy and zero-copy paths
