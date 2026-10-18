@@ -36,6 +36,9 @@ import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'three-temporal-shadows' });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for hand-written shader maths

@@ -17,34 +17,7 @@
         --good: #7ee787;
         --warn: #f0b866;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        line-height: 1.55;
-        -webkit-font-smoothing: antialiased;
-      }
-      .wrap { max-width: 1180px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
-      h1 { font-size: 1.9rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
-      h1 .name { color: var(--accent); }
-      .tagline { color: var(--muted); font-size: 1.02rem; margin: 0 0 1.5rem; max-width: 56rem; }
 
-      .controls {
-        display: flex; flex-wrap: wrap; gap: 1.25rem 1.75rem;
-        align-items: center; margin-bottom: 1.25rem;
-      }
-      .controls label { font-size: 0.88rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-      .controls .field { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--muted); }
-      .controls input[type="range"] { accent-color: var(--accent); }
-      button.btn {
-        appearance: none; border: 1px solid var(--border); background: var(--panel);
-        color: var(--text); padding: 0.4rem 0.85rem; border-radius: 8px;
-        font: inherit; font-size: 0.85rem; cursor: pointer;
-      }
-      button.btn:hover { background: var(--panel-hover); }
-      button.btn[aria-pressed="true"] { border-color: var(--accent); background: var(--panel-hover); color: var(--accent); }
 
       /* split-screen viewer */
       #stage { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem; }
@@ -92,10 +65,10 @@
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
+    <div class="dn-page">
+      <header class="dn-head">
         <h1><span class="name">denoiser</span> — realtime compare</h1>
-        <p class="tagline">
+        <p class="dn-lede">
           A deliberately noisy screen-space effect (stochastic SSR reflections on the
           floor and metal) denoised two ways, live on one shared WebGPU device.
           <b>Left</b> uses three.js's temporal <code>recurrentDenoise()</code>
@@ -105,16 +78,26 @@
         </p>
       </header>
 
-      <div class="controls">
-        <label><input type="checkbox" id="motion" checked /> Orbit (motion)</label>
-        <div class="field">
-          <span>Our denoise cadence</span>
-          <input type="range" id="cadence" min="1" max="30" value="6" />
-          <span id="cadence-val">every 6 frames</span>
+      <section class="dn-panel" aria-label="controls">
+        <div id="runtimePicker"></div>
+        <div class="dn-break"></div>
+        <div class="dn-group">
+          <span class="dn-label">Camera</span>
+          <label class="dn-check"><input type="checkbox" id="motion" checked /><span>Orbit (motion)</span></label>
         </div>
-        <label><input type="checkbox" id="aux" checked /> Feed albedo+normal to OIDN</label>
-        <button class="btn" id="ref-btn">Measure PSNR (hold camera still)</button>
-      </div>
+        <div class="dn-group">
+          <label class="dn-label" for="cadence">Our denoise cadence</label>
+          <div class="dn-row"><input type="range" id="cadence" min="1" max="30" value="6" /><span class="dn-value" id="cadence-val">every 6 frames</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">OIDN aux</span>
+          <label class="dn-check"><input type="checkbox" id="aux" checked /><span>Feed albedo+normal to OIDN</span></label>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Quality</span>
+          <button class="dn-btn" id="ref-btn">Measure PSNR (hold camera still)</button>
+        </div>
+      </section>
 
       <div id="stage">
         <div class="side left">

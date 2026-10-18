@@ -4,6 +4,9 @@
 // explicit splitAux:false Denoiser (the plain, speckled path). No local models.
 import { Denoiser } from '../../packages/denoiser/src/index';
 import { OrtRuntime } from '../../packages/denoiser/src/ort';
+import { mountShell } from '../_shared/shell';
+
+mountShell({ id: 'aux-split-verify', title: 'Aux split-graph check: live CDN', theme: false });
 
 const W = 256, H = 256;
 const el = document.getElementById('log')!;

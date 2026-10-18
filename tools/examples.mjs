@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Examples dev hub / launcher.
-//   yarn examples               -> ONE dev server for everything: the landing page (examples/site) at /,
+//   yarn examples               -> ONE dev server for everything: the landing page (examples/site, cards
+//                                  from examples/_shared/examples.json via tools/site.mjs) at /,
 //                                  every example at /<dir>/ (same paths as the deployed site). Each
 //                                  example's Vite server starts on its first visit, with its own
 //                                  vite.config, so HMR, aliases and the /models + /tzas middlewares work.
@@ -13,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
+import { renderLanding } from './site.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const examplesDir = path.join(root, 'examples');
@@ -79,7 +81,7 @@ async function hub() {
   }
 
   const { createServer } = await import('vite');
-  const byDir = new Map(examples.filter((e) => e.configFile).map((e) => [e.dir, e]));
+  const byDir = new Map(examples.map((e) => [e.dir, e]));
   const servers = new Map(); // dir -> Promise<ViteDevServer>
   const server = http.createServer(handle);
   server.setMaxListeners(0); // one HMR upgrade listener per started example
@@ -88,7 +90,7 @@ async function hub() {
     if (!servers.has(e.dir)) {
       console.log(`  starting ${e.dir} ...`);
       const p = createServer({
-        configFile: e.configFile,
+        configFile: e.configFile ?? false, // no vite.config (aux-split-verify): plain defaults
         root: e.root,
         base: `/${e.dir}/`,
         appType: 'mpa',
@@ -114,7 +116,7 @@ async function hub() {
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.end(landingPage());
+      res.end(renderLanding({ dev: true }));
       return;
     }
     if (first === 'shots') {
@@ -151,35 +153,6 @@ async function hub() {
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.end(`Vite failed to start for examples/${e.dir}:\n\n${err?.stack ?? err}`);
     }
-  }
-
-  // The deployed landing page, plus a list of the examples it doesn't link (dev harnesses).
-  function landingPage() {
-    const html = readFileSync(path.join(siteDir, 'index.html'), 'utf8');
-    const linked = new Set([...html.matchAll(/href="\.\/([^/"]+)\//g)].map((m) => m[1]));
-    const rest = [...byDir.values()].filter((e) => !linked.has(e.dir));
-    if (rest.length === 0) return html;
-    const items = rest
-      .map((e) => `<li><a href="./${e.dir}/">${e.dir}</a> <span>${escapeHtml(e.description)}</span></li>`)
-      .join('\n');
-    const section = `
-      <section class="devonly">
-        <h2>Dev harnesses <small>(local only, not deployed)</small></h2>
-        <ul>${items}</ul>
-      </section>
-      <style>
-        .devonly { margin-top: 2.5rem; }
-        .devonly h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
-        .devonly h2 small { color: var(--muted); font-weight: normal; font-size: 0.85rem; }
-        .devonly ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
-        .devonly li { color: var(--muted); font-size: 0.9rem; }
-        .devonly a { color: var(--accent); text-decoration: none; margin-right: 0.5rem; font-family: ui-monospace, monospace; }
-      </style>`;
-    return html.replace('</main>', `</main>${section}`);
-  }
-
-  function escapeHtml(s) {
-    return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   }
 
   let port = hubPort;

@@ -1,7 +1,10 @@
 import { Denoiser } from 'denoiser';
 import { ensureWebGPU, demoFooter, statsOverlay } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
 import pathTracerWGSL from './pathtracer.wgsl?raw';
 import presentWGSL from './present.wgsl?raw';
+
+mountShell({ id: 'webgpu-raw' });
 
 // A plain-WebGPU toy path tracer (no three.js, no libraries) that shares ONE
 // GPUDevice with the denoiser. The scene accumulates noisy path-traced samples

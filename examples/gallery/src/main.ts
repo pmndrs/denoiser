@@ -1,5 +1,8 @@
 import { Denoiser, type NetworkRuntime } from 'denoiser';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'gallery' });
 
 // ---- manifest -------------------------------------------------------------
 

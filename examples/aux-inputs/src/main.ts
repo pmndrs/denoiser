@@ -1,5 +1,8 @@
 import { Denoiser } from 'denoiser';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'aux-inputs' });
 
 // ---- scene ------------------------------------------------------------------
 // Single scene (LDraw Eiffel Tower, 512x512) is enough: the point is the aux

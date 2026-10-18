@@ -17,6 +17,9 @@ async function run(): Promise<Denoiser> {
 
 import pageSource from './main.ts?raw';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'hello-world' });
 
 const statusEl = document.querySelector<HTMLElement>('#status')!;
 const snippetEl = document.querySelector<HTMLElement>('#snippet')!;

@@ -40,6 +40,9 @@ import {
 } from '@babylonjs/core';
 import { Denoiser } from 'denoiser';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'babylon' });
 
 // ---- constants --------------------------------------------------------------
 

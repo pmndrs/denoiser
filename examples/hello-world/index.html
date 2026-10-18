@@ -5,27 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>denoiser — hello world</title>
     <style>
-      body {
-        font-family: system-ui, sans-serif;
-        margin: 2rem auto;
-        max-width: 900px;
-        padding: 0 1rem;
-        background: #1a202c;
-        color: #e2e8f0;
-        line-height: 1.5;
-      }
-      h1 { margin-bottom: 0.25rem; }
-      a { color: #90cdf4; }
-      .lede { color: #a0aec0; margin-top: 0; }
+      .dn-page { max-width: 980px; }
       .row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1.5rem 0; }
       figure { margin: 0; }
-      figcaption { color: #a0aec0; font-size: 0.85rem; margin-top: 0.4rem; }
-      canvas { display: block; border: 1px solid #4a5568; image-rendering: pixelated; width: 400px; max-width: 100%; height: auto; }
-      #status { color: #a0aec0; font-size: 0.9rem; min-height: 1.2em; }
+      figcaption { color: var(--dn-muted); font-size: 0.85rem; margin-top: 0.4rem; }
+      canvas { display: block; border: 1px solid var(--dn-border); border-radius: 8px; image-rendering: pixelated; width: 400px; max-width: 100%; height: auto; }
+      #status { color: var(--dn-muted); font-size: 0.9rem; min-height: 1.2em; }
       pre {
-        background: #2d3748;
+        background: var(--dn-inset);
+        border: 1px solid var(--dn-border);
         padding: 1rem;
-        border-radius: 6px;
+        border-radius: 8px;
         overflow-x: auto;
         font-size: 13px;
         line-height: 1.5;
@@ -33,11 +23,14 @@
     </style>
   </head>
   <body>
-    <h1>denoiser — hello world</h1>
-    <p class="lede">
-      A noisy path-traced render, denoised entirely in the browser over WebGPU.
-      No three.js, no build tricks — the code below is the whole story.
-    </p>
+    <div class="dn-page">
+    <header class="dn-head">
+      <h1><span class="name">denoiser</span> — hello world</h1>
+      <p class="dn-lede">
+        A noisy path-traced render, denoised entirely in the browser over WebGPU.
+        No three.js, no build tricks — the code below is the whole story.
+      </p>
+    </header>
 
     <div class="row">
       <figure>
@@ -60,6 +53,7 @@
     <img id="noisy-img" src="./noisy.png" alt="" style="display: none" />
 
     <!-- Footer is injected by the shared demo chrome (demoFooter). -->
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

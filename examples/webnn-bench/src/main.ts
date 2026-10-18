@@ -18,6 +18,9 @@ import { WgslRuntime } from '@pmndrs/denoiser-wgsl';
 import { WebnnRuntime } from '@pmndrs/denoiser-webnn';
 import { buildOidnGraph } from './build';
 import { ml, type MLContext, type MLTensor } from './webnn-types';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'webnn-bench', theme: false });
 
 const params = new URLSearchParams(location.search);
 const model = params.get('model') ?? 'rt_hdr_small';

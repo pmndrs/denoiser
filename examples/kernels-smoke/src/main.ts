@@ -7,6 +7,9 @@ import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import { parseTZA, halfToFloat } from 'denoiser';
 import { KernelsUNet, shareDeviceWithKernels, type KernelsPrecision as Precision } from 'denoiser/kernels';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'kernels-smoke', theme: false });
 
 const tzaUrls = import.meta.glob('../../../packages/denoiser/tzas/rt_ldr*.tza',
   { query: '?url', import: 'default', eager: true }) as Record<string, string>;

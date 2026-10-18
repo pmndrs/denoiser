@@ -5,43 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebGPU path tracer + denoiser (shared device)</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a202c; color: #e2e8f0; }
       .row { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-      canvas { border: 1px solid #4a5568; width: 512px; height: 512px; }
-      button { margin: 1rem 0; padding: 0.5rem 1rem; cursor: pointer; }
-      pre { background: #2d3748; padding: 0.75rem; border-radius: 4px; min-height: 4rem; white-space: pre-wrap; }
+      figure { margin: 0; max-width: 100%; }
+      figcaption { color: var(--dn-muted); font-size: 0.82rem; }
+      canvas { display: block; }
+      #out { width: 512px; height: 512px; max-width: 100%; height: auto; aspect-ratio: 1; border: 1px solid var(--dn-border); border-radius: 10px; }
       /* before/after compare: noisy path-traced base, denoised overlay clipped by the slider */
-      #compare { position: relative; width: 512px; height: 512px; }
-      #compare canvas { position: absolute; top: 0; left: 0; width: 512px; height: 512px; border: none; }
-      #compare { border: 1px solid #4a5568; }
+      #compare { position: relative; width: 512px; max-width: 100%; aspect-ratio: 1; border: 1px solid var(--dn-border); container-type: inline-size; }
+      #compare canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
       #revealWrap { position: absolute; top: 0; left: 0; height: 100%; width: 50%; overflow: hidden;
                     border-right: 2px solid #fffa; pointer-events: none; }
-      #revealWrap canvas { pointer-events: none; } /* orbit-drag falls through to #view */
+      /* the overlay stays full-size (100cqw = #compare's width) while the wrapper clips it */
+      #revealWrap canvas { pointer-events: none; width: 100cqw; height: 100cqw; } /* orbit-drag falls through to #view */
       #outGpu { transition: opacity 0.15s ease; } /* fade stale denoise out during orbit */
-      #reveal { position: absolute; left: 0; bottom: -30px; width: 100%; }
+      #reveal { position: absolute; left: 0; bottom: -30px; width: 100%; accent-color: var(--dn-accent); }
       .lbl { position: absolute; top: 6px; font-size: 11px; background: #0008; padding: 2px 6px;
              border-radius: 3px; pointer-events: none; }
-      .tagline { color: #a0aec0; max-width: 60ch; margin: 0 0 1.5rem; }
     </style>
   </head>
   <body>
-    <h1>three r186 WebGPUPathTracer → WebGPU denoiser (one GPUDevice)</h1>
-    <p class="tagline">
-      Orbit with the mouse — the path tracer accumulates samples while the WebGPU
-      denoiser cleans up the noise live, on the same GPU device. Drag the slider to compare
-      denoised vs. raw accumulation.
-    </p>
-    <!-- denoiser runtime picker (examples/_shared/chrome.ts runtimePicker; reloads with ?runtime=) -->
-    <div id="runtimePicker"></div>
-    <label>max samples <input id="maxSamples" type="number" value="6" min="1" max="500" style="width:5rem"></label>
-    <label>settle <input id="settle" type="number" value="0" min="0" max="2000" step="50" style="width:4.5rem"> ms</label>
-    <label>fade <input id="fade" type="number" value="0" min="0" max="1000" step="50" style="width:4.5rem"> ms</label>
-    <label>quality <select id="quality"><option value="fast" selected>fast (small)</option><option value="balanced">balanced</option></select></label>
-    <label><input id="live" type="checkbox" disabled> live denoise (progressive, zero-copy → render target)</label>
-    <label><input id="aux" type="checkbox" checked> G-buffer aux (albedo+normal MRT → 9ch model)</label>
-    <label><input id="fsr" type="checkbox"> FSR1 upscale (render 50% → denoise → EASU/RCAS)</label>
-    <button id="denoise" disabled>Denoise (CPU readback path)</button>
-    <button id="denoiseGpu" disabled>Denoise (zero-copy GPU path)</button>
+    <div class="dn-page">
+    <header class="dn-head">
+      <h1>three r186 WebGPUPathTracer &rarr; WebGPU denoiser (one GPUDevice)</h1>
+      <p class="dn-lede">
+        Orbit with the mouse — the path tracer accumulates samples while the WebGPU
+        denoiser cleans up the noise live, on the same GPU device. Drag the slider to compare
+        denoised vs. raw accumulation.
+      </p>
+    </header>
+    <section class="dn-panel" aria-label="controls">
+      <!-- denoiser runtime picker (examples/_shared/chrome.ts runtimePicker; reloads with ?runtime=) -->
+      <div id="runtimePicker"></div>
+      <div class="dn-break"></div>
+      <div class="dn-group">
+        <span class="dn-label">Path tracer</span>
+        <div class="dn-row">
+          <label class="dn-check">max samples <input id="maxSamples" type="number" value="6" min="1" max="500"></label>
+          <label class="dn-check">settle <input id="settle" type="number" value="0" min="0" max="2000" step="50"> <span class="dn-unit">ms</span></label>
+          <label class="dn-check">fade <input id="fade" type="number" value="0" min="0" max="1000" step="50"> <span class="dn-unit">ms</span></label>
+        </div>
+      </div>
+      <div class="dn-group">
+        <label class="dn-label" for="quality">Quality</label>
+        <select id="quality"><option value="fast" selected>fast (small)</option><option value="balanced">balanced</option></select>
+      </div>
+      <div class="dn-group">
+        <span class="dn-label">Denoise</span>
+        <label class="dn-check"><input id="live" type="checkbox" disabled><span>live denoise (progressive, zero-copy → render target)</span></label>
+        <label class="dn-check"><input id="aux" type="checkbox" checked><span>G-buffer aux (albedo+normal MRT → 9ch model)</span></label>
+        <label class="dn-check"><input id="fsr" type="checkbox"><span>FSR1 upscale (render 50% → denoise → EASU/RCAS)</span></label>
+      </div>
+      <div class="dn-group">
+        <span class="dn-label">One-shot</span>
+        <div class="dn-row">
+          <button class="dn-btn" id="denoise" disabled>Denoise (CPU readback path)</button>
+          <button class="dn-btn" id="denoiseGpu" disabled>Denoise (zero-copy GPU path)</button>
+        </div>
+      </div>
+    </section>
     <div class="row">
       <figure style="margin-bottom: 3rem;">
         <div id="compare">
@@ -55,7 +76,8 @@
       </figure>
       <figure><canvas id="out" width="512" height="512"></canvas><figcaption>denoised — CPU path button (LDR input)</figcaption></figure>
     </div>
-    <pre id="status"></pre>
+    <pre id="status" class="dn-status"></pre>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

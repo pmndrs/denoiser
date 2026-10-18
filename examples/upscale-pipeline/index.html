@@ -19,46 +19,8 @@
         --denoise: #90cdf4;
         --upscale: #7ee787;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        line-height: 1.55;
-        -webkit-font-smoothing: antialiased;
-      }
-      .wrap { max-width: 1180px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
-      h1 { font-size: 1.9rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
-      h1 .name { color: var(--accent); }
-      .tagline { color: var(--muted); font-size: 1.02rem; margin: 0 0 1.5rem; max-width: 60rem; }
-      .tagline code { color: var(--text); background: #0006; padding: 0 0.3em; border-radius: 4px; }
       .pkgs { color: var(--accent); font-weight: 600; }
 
-      h2.section-label {
-        font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em;
-        color: var(--muted); margin: 0 0 0.5rem; font-weight: 600;
-      }
-
-      .controls {
-        display: flex; flex-wrap: wrap; gap: 1.5rem 2rem;
-        align-items: flex-end; margin: 0 0 1.25rem;
-      }
-      .control-group { display: flex; flex-direction: column; gap: 0.45rem; }
-
-      .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-      .segmented button {
-        appearance: none; border: none; background: var(--panel); color: var(--text);
-        padding: 0.4rem 0.85rem; font: inherit; font-size: 0.85rem; cursor: pointer;
-        border-right: 1px solid var(--border);
-      }
-      .segmented button:last-child { border-right: none; }
-      .segmented button:hover { background: var(--panel-hover); }
-      .segmented button[aria-pressed="true"] { background: var(--accent); color: #0b0e14; font-weight: 600; }
-
-      input[type="range"] { width: 150px; accent-color: var(--accent); }
-      .rangeval { color: var(--good); font-variant-numeric: tabular-nums; }
-      label.rng { font-size: 0.82rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.3rem; }
 
       /* viewer */
       #view {
@@ -87,10 +49,10 @@
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
+    <div class="dn-page">
+      <header class="dn-head">
         <h1><span class="name">denoiser</span> · upscale pipeline</h1>
-        <p class="tagline">
+        <p class="dn-lede">
           Three pmndrs packages on <b>one <code>GPUDevice</code></b>:
           <span class="pkgs">three.js</span> renders a noisy scene at low resolution,
           <span class="pkgs">denoiser</span> cleans it, and
@@ -98,7 +60,7 @@
           resolution — no CPU pixel copies in the chain. Each GPU texture is handed
           straight to the next stage on the device the denoiser created.
         </p>
-        <p class="tagline">
+        <p class="dn-lede">
           <b>Temporal (FSR3)</b>, the default, renders every frame under a different
           sub-pixel camera jitter and accumulates those frames into a display-resolution
           history, reprojected with depth + motion vectors from the same render. Because
@@ -108,7 +70,7 @@
           <b>Spatial (FSR1)</b> is one frame in, one frame out: edge-adaptive upsampling
           plus sharpening, no history, so it can only sharpen what is already there.
         </p>
-        <p class="tagline">
+        <p class="dn-lede">
           What to look for: switch between the two on a still view (drag once to stop the
           spin). Temporal: thin curves of the knot and the sphere silhouettes stay smooth
           and steady, specular highlights stop crawling, and the flat floor and background
@@ -120,28 +82,32 @@
         </p>
       </header>
 
-      <section class="controls">
-        <div class="control-group">
-          <h2 class="section-label">Denoise</h2>
-          <div class="segmented" id="denoise-seg">
+      <section class="dn-panel" aria-label="controls">
+        <div id="runtimePicker"></div>
+        <div class="dn-break"></div>
+        <div class="dn-group">
+          <span class="dn-label">Denoise</span>
+          <div class="dn-seg" id="denoise-seg">
             <button data-v="on" aria-pressed="true">on</button>
             <button data-v="off">off</button>
           </div>
         </div>
-        <div class="control-group">
-          <h2 class="section-label">Upscale</h2>
-          <div class="segmented" id="upscale-seg">
+        <div class="dn-group">
+          <span class="dn-label">Upscale</span>
+          <div class="dn-seg" id="upscale-seg">
             <button data-v="temporal" aria-pressed="true">Temporal (FSR3)</button>
             <button data-v="spatial">Spatial (FSR1)</button>
             <button data-v="off">off (nearest)</button>
           </div>
         </div>
-        <label class="rng">Noise (samples/px): <span class="rangeval" id="spp-val">6</span>
-          <input type="range" id="spp" min="1" max="64" step="1" value="6" />
-        </label>
-        <label class="rng">FSR sharpness: <span class="rangeval" id="sharp-val">0.80</span>
-          <input type="range" id="sharp" min="0" max="1" step="0.05" value="0.8" />
-        </label>
+        <div class="dn-group">
+          <label class="dn-label" for="spp">Noise (samples / px)</label>
+          <div class="dn-row"><input type="range" id="spp" min="1" max="64" step="1" value="6" /><span class="dn-value" id="spp-val">6</span></div>
+        </div>
+        <div class="dn-group">
+          <label class="dn-label" for="sharp">FSR sharpness</label>
+          <div class="dn-row"><input type="range" id="sharp" min="0" max="1" step="0.05" value="0.8" /><span class="dn-value" id="sharp-val">0.80</span></div>
+        </div>
       </section>
 
       <figure>
@@ -150,7 +116,7 @@
       </figure>
 
       <section>
-        <h2 class="section-label">Per-stage GPU cost</h2>
+        <h2 class="dn-section-label">Per-stage GPU cost</h2>
         <p class="note">Each stage is timed to GPU completion (submit → <code>onSubmittedWorkDone</code>), so the
           bars are wall-clock per stage, not pure shader time. On the temporal path the render stage also
           writes the motion-vector target.</p>

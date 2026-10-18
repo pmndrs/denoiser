@@ -19,6 +19,9 @@ import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import albedoUrl from '../../gallery/public/scenes/spheres/albedo.png?url';
 import normalUrl from '../../gallery/public/scenes/spheres/normal.png?url';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'wgsl-bench', theme: false });
 
 const params = new URLSearchParams(location.search);
 const precision = params.get('precision') === 'fp16' ? 'fp16' : 'fp32';

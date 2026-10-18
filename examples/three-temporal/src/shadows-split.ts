@@ -39,6 +39,9 @@ import { Lightmap, unwrapStatic, markDynamic, lightmapUV } from './split/lightma
 import { SurfaceCache } from './split/cache';
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'three-temporal-shadows-split' });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for hand-written shader maths

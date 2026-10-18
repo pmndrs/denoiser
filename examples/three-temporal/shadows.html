@@ -5,81 +5,78 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>denoiser - ray-traced shadows and reflections in a raster app</title>
     <style>
-      :root { color-scheme: dark; --bg: #0b0e14; --panel: #141922; --border: #232b3a; --text: #e6edf3; --muted: #9aa7b8; --accent: #90cdf4; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; }
-      .wrap { max-width: 1020px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .dn-page { max-width: 1020px; }
       h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
-      p.tag { color: var(--muted); margin: 0 0 1rem; max-width: 60rem; font-size: .95rem; }
-      a { color: var(--accent); }
       code { background: #0006; padding: 0 .3em; border-radius: 4px; }
-      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--border); border-radius: 8px 8px 0 0; display: block; }
-      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--panel); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; }
-      .caption span { color: var(--accent); }
-      .controls { display: grid; grid-template-columns: max-content 1fr; gap: .55rem 1rem; margin: 1rem 0; align-items: center; max-width: 960px; }
-      .controls > div { justify-self: start; }
-      .controls > span { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
-      .row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
-      .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-      button { background: var(--panel); color: var(--text); border: 0; padding: .4rem .8rem; font: inherit; font-size: .9rem; cursor: pointer; }
-      .seg button + button { border-left: 1px solid var(--border); }
-      button[aria-pressed="true"] { background: #243247; color: var(--accent); }
-      button.solo { border: 1px solid var(--border); border-radius: 8px; }
-      input[type="range"] { width: 14rem; max-width: 50vw; }
-      output { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
-      .hint { color: var(--muted); font-size: .85rem; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
+      .caption span { color: var(--dn-accent); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
       table.cost { border-collapse: collapse; font-size: .85rem; width: 100%; max-width: 640px; }
-      table.cost td { padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--border); }
+      table.cost td { padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--dn-border); }
       table.cost td.num { text-align: right; font-variant-numeric: tabular-nums; width: 4.5rem; }
-      table.cost td.note { color: var(--muted); }
+      table.cost td.note { color: var(--dn-muted); }
       table.cost tr.total td { font-weight: 600; border-bottom: 0; }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; margin-top: 1.5rem; }
-      .box { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; }
       .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
       .box li { margin: .2rem 0; }
-      pre.code { background: #0008; border: 1px solid var(--border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; }
-      pre#status { color: var(--muted); font-size: .8rem; white-space: pre-wrap; margin: .5rem 0 0; }
+      pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; }
       nav.links { font-size: .9rem; margin: 1.25rem 0 0; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
     </style>
   </head>
   <body>
-    <div class="wrap">
+    <div class="dn-page">
+      <header class="dn-head">
       <h1>Ray-traced shadows and reflections in a raster app</h1>
-      <p class="tag">
+      <p class="dn-lede">
         A normal real-time three.js scene (WebGPU raster, 60 fps) where two effects are ray traced at
         <b>one ray per pixel</b>: the shadow of a big soft light, and glossy reflections. One ray is
         far too noisy to look at. <code>ffxShadows()</code> and <code>ffxReflections()</code> from
         <code>denoiser/three</code> (AMD FidelityFX denoisers, ported to WGSL) clean it up every frame.
         Compare each one with what three.js gives you without ray tracing.
       </p>
+      </header>
 
       <canvas id="view" width="960" height="540"></canvas>
       <div class="caption"><span id="cap-shadow">Shadows: ...</span><span id="cap-refl">Reflections: ...</span></div>
 
-      <div class="controls">
-        <span>shadows</span>
-        <div class="seg" id="seg-shadow">
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Shadows</span>
+  <div class="dn-seg" id="seg-shadow">
           <button data-v="map" aria-pressed="false">three.js shadow map</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ffx" aria-pressed="true">1 ray + ffxShadows</button><button data-v="ref" aria-pressed="false">reference</button>
         </div>
-        <span>light size</span>
-        <div class="row"><input id="light-size" type="range" min="0.03" max="1.0" step="0.01" value="0.3" /><output id="light-size-v"></output>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Light size</span>
+  <div class="dn-row"><input id="light-size" type="range" min="0.03" max="1.0" step="0.01" value="0.3" /><output class="dn-value" id="light-size-v"></output>
           <span class="hint">Look where the table and chair legs touch the floor.</span></div>
-        <span>reflections</span>
-        <div class="seg" id="seg-refl">
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Reflections</span>
+  <div class="dn-seg" id="seg-refl">
           <button data-v="env" aria-pressed="false">env map only</button><button data-v="noisy" aria-pressed="false">SSR 1 ray, raw</button><button data-v="ffx" aria-pressed="true">SSR + ffxReflections</button>
         </div>
-        <span>floor gloss</span>
-        <div class="row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output id="roughness-v"></output>
-          <span class="hint">roughness of the floor and table top</span></div>
-        <span>resolution</span>
-        <div class="seg" id="seg-up"><button data-v="off" aria-pressed="true">native</button><button data-v="on" aria-pressed="false">half res + FSR3 2x</button></div>
-        <span>camera</span>
-        <div class="row">
-          <div class="seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
-          <button class="solo" id="cut">camera cut (resetHistory)</button>
         </div>
-      </div>
+        <div class="dn-group">
+          <span class="dn-label">Floor gloss</span>
+  <div class="dn-row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output class="dn-value" id="roughness-v"></output>
+          <span class="hint">roughness of the floor and table top</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Resolution</span>
+  <div class="dn-seg" id="seg-up"><button data-v="off" aria-pressed="true">native</button><button data-v="on" aria-pressed="false">half res + FSR3 2x</button></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Camera</span>
+  <div class="dn-row">
+          <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
+          <button class="dn-btn" id="cut">camera cut (resetHistory)</button>
+        </div>
+        </div>
+      </section>
 
       <h2>What it costs on your GPU</h2>
       <table class="cost"><tbody id="cost-body"><tr><td>measuring...</td></tr></tbody></table>
@@ -138,7 +135,7 @@ shadows.resetHistory();</pre>
         <a href="./">three.js SSR example: FFX vs three's denoiser</a>
         <a href="https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src/shadows.ts">Source</a>
       </nav>
-      <pre id="status">starting...</pre>
+      <pre id="status" class="dn-status">starting...</pre>
     </div>
     <script type="module" src="./src/shadows.ts"></script>
   </body>
