@@ -13,6 +13,16 @@
 // 2D canvas of the exact bytes fed to the denoiser; the Babylon <canvas> on the
 // right shows the denoised result uploaded back to Babylon's device (a fullscreen
 // Layer over a RawTexture) — proof the round-trip closed on the GPU.
+//
+// The second path, "shared device": no copies at all. The denoiser runs on Babylon's
+// own GPUDevice (engine._device: Babylon has no public getter or option for this yet),
+// reads the render target's GPUTexture directly and writes into a GPUTexture that
+// Babylon wraps with engine.wrapWebGPUTexture() and draws with a Layer:
+//
+//   Babylon RTT (GPUTexture) → denoiser.denoiseTextures({ color, output }) → wrapped texture → Layer → canvas
+//
+// WebGPU engine only (WebGL2 has no GPUDevice), and only for the runtimes that adopt a
+// device (WGSL / WebNN, the default Auto); ONNX Runtime always creates its own.
 
 import {
   WebGPUEngine,
@@ -32,6 +42,9 @@ import {
   RenderTargetTexture,
   RawTexture,
   RawCubeTexture,
+  BaseTexture,
+  Layer,
+  Viewport,
   Constants,
   ImageProcessingConfiguration,
   Texture,
@@ -295,7 +308,9 @@ async function main(): Promise<void> {
   let engineName: string;
   try {
     if (new URLSearchParams(location.search).get('engine') === 'webgl') throw new Error('?engine=webgl');
-    const webgpu = new WebGPUEngine(engineCanvas, { antialias: true, stencil: false });
+    // all features + max limits: the shared-device path runs the denoiser on this device
+    // (it wants shader-f16 for fp16, and big storage buffers)
+    const webgpu = new WebGPUEngine(engineCanvas, { antialias: true, stencil: false, enableAllFeatures: true, setMaximumLimits: true });
     await webgpu.initAsync();
     engine = webgpu;
     engineName = 'WebGPU';
@@ -319,10 +334,77 @@ async function main(): Promise<void> {
   setStatus('loading denoiser model…');
   const denoiser = await Denoiser.create({ quality: 'fast' });
 
+  // ---- the shared-device path (WebGPU engine only) ----
+  // Babylon's own canvas shows two viewports: the render target as rendered (left) and
+  // the denoiser's output texture, wrapped for Babylon (right). Nothing touches the CPU.
+  const webgpu = engine instanceof WebGPUEngine ? engine : null;
+  const VIEW_L = 0x2, VIEW_R = 0x4;
+  const viewCam = (name: string, mask: number, x: number) => {
+    const c = new ArcRotateCamera(name, 0, 0, 1, Vector3.Zero(), scene);
+    c.layerMask = mask;
+    c.viewport = new Viewport(x, 0, 0.5, 1);
+    return c;
+  };
+  const camL = viewCam('viewL', VIEW_L, 0), camR = viewCam('viewR', VIEW_R, 0.5);
+  const noisyLayer = new Layer('noisy', null, scene, false);
+  noisyLayer.texture = rtt;
+  noisyLayer.layerMask = VIEW_L;
+  const denoisedLayer = new Layer('denoised', null, scene, false);
+  denoisedLayer.layerMask = VIEW_R;
+  let shared: { denoiser: Denoiser; device: GPUDevice; out: GPUTexture } | null = null;
+  async function setupShared() {
+    // engine._device is Babylon's GPUDevice. It's marked @internal: there is no public getter yet.
+    const device = webgpu!._device;
+    const d = await Denoiser.create({ quality: 'fast', device });
+    // our output texture, on Babylon's device; Babylon wraps it like any of its own
+    const out = device.createTexture({
+      size: [SIZE, SIZE], format: 'rgba8unorm',
+      usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+    const wrapped = webgpu!.wrapWebGPUTexture(out);
+    // wrapWebGPUTexture doesn't create a texture view (Babylon 9.16), so sampling it binds a null
+    // view; create one
+    (wrapped._hardwareTexture as unknown as { createView(): void }).createView();
+    denoisedLayer.texture = new BaseTexture(scene, wrapped);
+    return { denoiser: d, device, out };
+  }
+  let path: 'copy' | 'shared' = 'copy';
+
   // ---- the round-trip ----
   let busy = false;
+  /** Shared device: the render target's GPUTexture in, our wrapped texture out. */
+  async function sharedTrip(): Promise<boolean> {
+    if (busy || !shared) return false;
+    busy = true;
+    try {
+      const color = rtt.getInternalTexture()?._hardwareTexture?.underlyingResource as GPUTexture | null | undefined;
+      if (!color) return false;
+      const t0 = performance.now();
+      // the RTT holds display-encoded RGBA8, like the CPU path's bytes: transfer 'linear' = pass-through.
+      // Babylon stores render targets bottom-up on WebGPU too (see flipRows), so flip in and out.
+      await shared.denoiser.denoiseTextures({ color, output: shared.out, inputFlipY: true, outputFlipY: true });
+      await shared.device.queue.onSubmittedWorkDone();
+      const denoise = performance.now() - t0;
+      mReadback.textContent = '0';
+      mDenoise.textContent = denoise.toFixed(1);
+      mUpload.textContent = '0';
+      mTotal.textContent = denoise.toFixed(1);
+      mNoise.textContent = 'n/a on this path (measuring it needs a readback)';
+      setStatus(`model <span class="model">${shared.denoiser.modelName ?? '?'}</span> · ${SIZE}×${SIZE} · shared device, no copies`);
+      (window as unknown as Record<string, unknown>).__lastResult = { path: 'shared', denoise, total: denoise, model: shared.denoiser.modelName };
+      return true;
+    } catch (err) {
+      setStatus(`<span style="color:#ff7b72">ERROR: ${(err as Error).message}</span>`);
+      console.error(err);
+      return false;
+    } finally {
+      busy = false;
+    }
+  }
+
   /** One readback -> denoise -> upload. Returns false when the frame was still empty. */
   async function roundTrip(): Promise<boolean> {
+    if (path === 'shared') return sharedTrip();
     if (busy) return false;
     busy = true;
     try {
@@ -391,6 +473,39 @@ async function main(): Promise<void> {
   // ---- controls ----
   denoiseBtn.addEventListener('click', () => { void roundTrip(); });
 
+  const copyView = document.querySelector<HTMLElement>('#copy-view')!;
+  const sharedView = document.querySelector<HTMLElement>('#shared-view')!;
+  const pathBtns = document.querySelectorAll<HTMLButtonElement>('#seg-path button');
+  async function setPath(p: 'copy' | 'shared') {
+    if (p === 'shared' && !webgpu) return;
+    if (p === 'shared' && !shared) {
+      setStatus('loading the denoiser on Babylon\'s device…');
+      shared = await setupShared();
+    }
+    path = p;
+    pathBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === p)));
+    copyView.hidden = p !== 'copy';
+    sharedView.hidden = p !== 'shared';
+    // in shared mode Babylon draws to its own canvas: the two viewports join the cameras
+    scene.activeCameras = p === 'shared' ? [readCamera, camL, camR] : [readCamera];
+    if (p === 'shared') sharedView.appendChild(engineCanvas);
+    // the read camera takes its aspect from the canvas, which is about to become 2:1; its
+    // target is square, so pin the projection it has now (computed for the 512x512 canvas)
+    if (p === 'shared') readCamera.freezeProjectionMatrix(readCamera.getProjectionMatrix(true).clone());
+    else readCamera.unfreezeProjectionMatrix();
+    engineCanvas.classList.toggle('offscreen', p !== 'shared');
+    engineCanvas.width = p === 'shared' ? SIZE * 2 : SIZE;
+    engineCanvas.height = SIZE;
+    engine.resize();
+    await roundTrip();
+  }
+  pathBtns.forEach((b) => b.addEventListener('click', () => { void setPath(b.dataset.v as 'copy' | 'shared'); }));
+  if (!webgpu) {
+    const sb = document.querySelector<HTMLButtonElement>('#seg-path [data-v="shared"]')!;
+    sb.disabled = true;
+    sb.title = 'needs Babylon\'s WebGPU engine (this browser fell back to WebGL2)';
+  }
+
   let auto = false;
   autoToggle.addEventListener('change', () => {
     auto = autoToggle.checked;
@@ -429,7 +544,14 @@ async function main(): Promise<void> {
   }
   autoToggle.disabled = false;
   denoiseBtn.disabled = false;
+  if (new URLSearchParams(location.search).get('path') === 'shared') await setPath('shared');
   (window as unknown as Record<string, unknown>).__ready = true;
+  (window as unknown as Record<string, unknown>).__setPath = setPath;
+  // headless checks: the shared path's textures
+  (window as unknown as Record<string, unknown>).__sharedTex = () => shared && {
+    device: shared.device, out: shared.out,
+    color: rtt.getInternalTexture()?._hardwareTexture?.underlyingResource as GPUTexture,
+  };
 }
 
 main().catch((err) => {

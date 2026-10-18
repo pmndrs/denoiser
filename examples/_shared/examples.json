@@ -58,7 +58,7 @@
     {
       "id": "babylon", "section": "oidn", "href": "babylon/",
       "title": "Babylon.js",
-      "description": "Babylon renders, the denoiser cleans it up over a CPU round-trip between two devices, with every copy timed.",
+      "description": "Babylon renders, the denoiser cleans it: over a timed CPU round trip between two devices, or zero-copy on Babylon's own GPUDevice.",
       "tags": ["OIDN", "Babylon.js"], "shot": "babylon.png", "deployed": true
     },
     {
@@ -102,12 +102,6 @@
       "title": "Pipeline Lab",
       "description": "The full offline pipeline: three-gpu-pathtracer → denoiser → @pmndrs/upscaler, every stage tweakable, with a benchmark you can run on every runtime and share.",
       "tags": ["OIDN", "path tracing", "upscaler", "benchmark"], "shot": "pipeline-lab.png", "deployed": true
-    },
-    {
-      "id": "upscale-pipeline", "section": "pipeline", "href": "upscale-pipeline/",
-      "title": "Denoise + upscale pipeline",
-      "description": "three.js renders small, the denoiser cleans it, @pmndrs/upscaler (FSR3 or FSR1) brings it to full res. Zero CPU copies, every stage timed.",
-      "tags": ["OIDN", "upscaler", "three.js"], "shot": "upscale-pipeline.png", "deployed": true
     },
     {
       "id": "bench", "section": "pipeline", "href": "bench/",
@@ -156,6 +150,12 @@
       "title": "Package end-to-end test",
       "description": "import { Denoiser } from 'denoiser' with the default AutoRuntime, end to end.",
       "tags": ["OIDN"], "deployed": false
+    },
+    {
+      "id": "upscale-pipeline", "section": "tools", "href": "upscale-pipeline/",
+      "title": "Upscaler wiring check (synthetic noise)",
+      "description": "Raster scene + injected fake noise → denoiser → @pmndrs/upscaler (FSR3 or FSR1) on one device. Checks the texture hand-offs; not path-traced input.",
+      "tags": ["OIDN", "upscaler", "three.js"], "shot": "upscale-pipeline.png", "deployed": false
     }
   ]
 }

@@ -110,13 +110,46 @@ see [Troubleshooting](./troubleshooting).
 ## When you can't share a device: the CPU path
 
 Some engines create and own their WebGPU device internally with no way to
-inject an external one — you end up with **two separate `GPUDevice`s** that
-can't share textures. (Concretely: Babylon.js's `WebGPUEngine` has no option
-to adopt an external device — `initAsync` hard-codes its own adapter/device
-acquisition — and ORT can't adopt Babylon's either, same #26107 constraint
-from the other direction (the default runtime can adopt a device, but Babylon
-has none to give). See the [babylon demo](https://pmndrs.github.io/denoiser/babylon/)
-for the real thing.)
+inject an external one. That's fine as long as you can *get at* their device:
+the default runtime (WGSL / WebNN) adopts it, the way it adopts three.js's.
+Only ONNX Runtime can't share, since it always creates its own device (#26107).
+
+### Babylon.js: sharing its device
+
+Babylon's `WebGPUEngine` always creates its own device, and exposes it only as
+`engine._device` (marked internal: there is no public getter or option yet).
+Textures cross over with public API: `underlyingResource` on a texture's hardware
+texture gives you the `GPUTexture`, and `engine.wrapWebGPUTexture()` turns yours
+into a Babylon texture.
+
+```ts
+const engine = new WebGPUEngine(canvas, { enableAllFeatures: true, setMaximumLimits: true });
+await engine.initAsync();
+const denoiser = await Denoiser.create({ device: engine._device }); // Babylon's device
+
+const out = engine._device.createTexture({ size: [w, h], format: 'rgba8unorm',
+  usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING });
+const wrapped = engine.wrapWebGPUTexture(out);
+wrapped._hardwareTexture.createView(); // Babylon 9.16 doesn't create one: sampling fails without it
+layer.texture = new BaseTexture(scene, wrapped);
+
+// every frame (or on demand): Babylon's render target in, your texture out
+const color = rtt.getInternalTexture()._hardwareTexture.underlyingResource;
+await denoiser.denoiseTextures({ color, output: out, inputFlipY: true, outputFlipY: true });
+```
+
+Babylon stores render targets bottom-up on WebGPU as well as WebGL (hence the two
+flips), and `enableAllFeatures` / `setMaximumLimits` give the device the
+`shader-f16` feature and storage limits the denoiser wants. The
+[babylon demo](https://pmndrs.github.io/denoiser/babylon/) runs both paths side by
+side: about 6–7 ms for a 512² denoise either way here, plus ~1.3 ms of readback on
+the CPU path and none on the shared one.
+
+## When you can't share a device: the CPU path
+
+If you can't reach the engine's device at all, or you're on ONNX Runtime or a
+WebGL engine, you end up with **two separate `GPUDevice`s** that can't share
+textures.
 
 When zero-copy genuinely isn't possible, fall back to the CPU-copy path: read
 the rendered frame back to CPU pixels, run the plain (non-texture) `denoise()`

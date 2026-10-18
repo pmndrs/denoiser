@@ -62,6 +62,11 @@
       .metric.copy { border-color: #3b4a63; }
       .metric.copy .v { color: var(--accent); }
 
+      #engine-canvas.offscreen { position: absolute; left: -9999px; top: 0; width: 512px; height: 512px; }
+      #shared-view { margin-bottom: 1.25rem; }
+      #shared-view canvas { width: 100%; aspect-ratio: 2 / 1; display: block; border-radius: 10px; border: 1px solid var(--border); background: #05070a; }
+      #shared-view .cap2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: .85rem; color: var(--muted); margin-bottom: .4rem; }
+      #shared-view .cap2 b { color: var(--text); }
       #status { color: var(--muted); font-size: 0.85rem; min-height: 1.3em; margin: 0.25rem 0 0; }
       #status .model { color: var(--good); }
       #engine-tag { color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, Menlo, monospace; }
@@ -73,25 +78,25 @@
       <header class="dn-head">
         <h1><span class="name">denoiser</span> · babylon.js</h1>
         <p class="dn-lede">
-          Babylon renders a noisy PBR showcase; the denoiser cleans it — running on a
-          <em>different</em> GPU device. Watch the two CPU copies that bridge them.
+          Babylon renders a noisy PBR showcase and the denoiser cleans it, either on its own GPU
+          device with a CPU copy each way, or on Babylon's device with no copies at all.
         </p>
       </header>
 
       <p class="dn-note">
-        <strong>Two devices, one copy each way.</strong> Babylon's WebGPU engine can't
-        adopt an external <code>GPUDevice</code>, and onnxruntime-web can't adopt Babylon's,
-        so this is the honest <strong>CPU-copy integration</strong>: Babylon renders →
-        <code>RenderTargetTexture.readPixels()</code> (GPU→CPU) →
-        <code>denoiser.denoise()</code> (on the denoiser's own device) →
-        <code>RawTexture.update()</code> (CPU→GPU) back into Babylon. The copies cost real
-        time — which is why they're timed separately below — but the round-trip is still
-        useful for stills and preview passes. See the
-        <a href="https://github.com/pmndrs/denoiser/blob/main/docs/site/guides/custom-engines.mdx" target="_blank" rel="noopener">custom-engines guide</a>.
+        <strong>Two ways to connect Babylon and the denoiser.</strong>
+        <b>CPU copy, two devices:</b> the denoiser runs on its own GPU device, so each frame crosses on the CPU:
+        <code>RenderTargetTexture.readPixels()</code> (GPU→CPU) → <code>denoiser.denoise()</code> →
+        <code>RawTexture.update()</code> (CPU→GPU). Works on any engine, WebGL2 included, and the copies are timed below.
+        <b>Shared device, no copies:</b> the denoiser runs on Babylon's own <code>GPUDevice</code>
+        (<code>engine._device</code>: Babylon has no public getter for it yet), reads the render target's
+        <code>GPUTexture</code> directly, and writes into a texture Babylon wraps with
+        <code>engine.wrapWebGPUTexture()</code>. Nothing leaves the GPU. WebGPU engine only. See the
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/custom-engines" target="_blank" rel="noopener">custom-engines guide</a>.
         <span id="engine-tag"></span>
       </p>
 
-      <div class="views">
+      <div class="views" id="copy-view">
         <div class="view">
           <div class="cap"><span class="t">Noisy — Babylon render</span><span class="s">readPixels() input</span></div>
           <canvas id="canvas-noisy"></canvas>
@@ -102,11 +107,20 @@
         </div>
       </div>
 
-      <!-- Babylon's own WebGPU surface. Kept offscreen: the readback camera renders
-           into an RTT, and both visible panels are painted from the CPU side. -->
-      <canvas id="engine-canvas" width="512" height="512" style="position:absolute;left:-9999px;top:0;width:512px;height:512px" aria-hidden="true"></canvas>
+      <!-- Shared-device path: Babylon's own canvas, two viewports (render target | denoised texture). -->
+      <div id="shared-view" hidden>
+        <div class="cap2"><span><b>Noisy</b> · Babylon's render target, as a Layer</span><span><b>Denoised</b> · the denoiser's output texture, wrapped by Babylon</span></div>
+      </div>
+
+      <!-- Babylon's own WebGPU surface. Offscreen on the CPU-copy path (both panels are painted
+           from the CPU side); moved into #shared-view on the shared-device path. -->
+      <canvas id="engine-canvas" class="offscreen" width="512" height="512"></canvas>
 
       <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Path</span>
+          <div class="dn-seg" id="seg-path"><button data-v="copy" aria-pressed="true">CPU copy · two devices</button><button data-v="shared" aria-pressed="false">shared device · no copies</button></div>
+        </div>
         <div class="dn-group">
           <span class="dn-label">Run</span>
           <button class="dn-btn dn-btn--primary" id="denoise-btn" disabled>Denoise frame</button>
