@@ -77,6 +77,14 @@ function setStatus(html: string): void {
   statusEl.innerHTML = html;
 }
 
+/** readPixels() returns rows bottom-up (GL convention, on WebGPU too); canvases want top-down. */
+function flipRows(src: Uint8Array, w: number, h: number): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(src.length);
+  const row = w * 4;
+  for (let y = 0; y < h; y++) out.set(src.subarray((h - 1 - y) * row, (h - y) * row), y * row);
+  return out;
+}
+
 // ---- procedural HDR environment (self-contained; no asset fetch) ------------
 // A soft sky gradient baked into a float cube so the PBR metals have something to
 // reflect. Warm zenith, bright horizon, dim floor — HDR (>1) so highlights read.
@@ -286,6 +294,7 @@ async function main(): Promise<void> {
   let engine: AbstractEngine;
   let engineName: string;
   try {
+    if (new URLSearchParams(location.search).get('engine') === 'webgl') throw new Error('?engine=webgl');
     const webgpu = new WebGPUEngine(engineCanvas, { antialias: true, stencil: false });
     await webgpu.initAsync();
     engine = webgpu;
@@ -312,26 +321,28 @@ async function main(): Promise<void> {
 
   // ---- the round-trip ----
   let busy = false;
-  async function roundTrip(): Promise<void> {
-    if (busy) return;
+  /** One readback -> denoise -> upload. Returns false when the frame was still empty. */
+  async function roundTrip(): Promise<boolean> {
+    if (busy) return false;
     busy = true;
     try {
       // 1. readback (GPU → CPU)
       const t0 = performance.now();
       const pixels = (await rtt.readPixels(0, 0, undefined, true)) as Uint8Array | null;
       const t1 = performance.now();
-      if (!pixels) { busy = false; return; }
-      const bytes = new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+      if (!pixels) return false;
+      const bytes = flipRows(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), SIZE, SIZE);
+      const inNoise = noiseMetric(bytes, SIZE, SIZE);
+      if (inNoise === 0) return false; // the render target hasn't been drawn yet
 
       // Show the exact denoiser input on the left 2D canvas.
       noisyCtx.putImageData(new ImageData(new Uint8ClampedArray(bytes), SIZE, SIZE), 0, 0);
-      const inNoise = noiseMetric(bytes, SIZE, SIZE);
 
       // 2. denoise (CPU → separate ORT device → CPU)
       const t2 = performance.now();
       const out = await denoiser.denoise({ data: bytes, width: SIZE, height: SIZE });
       const t3 = performance.now();
-      if (!out) { busy = false; return; }
+      if (!out) return false;
 
       // 3. upload back to Babylon's device (CPU → GPU), then flush so the copy is
       // actually issued this frame (not just queued) — that's what we time.
@@ -367,9 +378,11 @@ async function main(): Promise<void> {
         readback, denoise, upload, total: readback + denoise + upload,
         inNoise, outNoise, drop, model: denoiser.modelName,
       };
+      return true;
     } catch (err) {
       setStatus(`<span style="color:#ff7b72">ERROR: ${(err as Error).message}</span>`);
       console.error(err);
+      return false;
     } finally {
       busy = false;
     }
@@ -405,8 +418,15 @@ async function main(): Promise<void> {
     if (auto && !busy) void roundTrip();
   });
 
-  // Prime the first result so both panels are populated on load.
-  await roundTrip();
+  // Prime the first result so both panels are populated on load: wait until the scene's
+  // shaders are ready and the render target holds a drawn frame (a blank read retries).
+  setStatus('compiling Babylon shaders…');
+  await scene.whenReadyAsync();
+  const nextFrame = () => new Promise<void>((res) => scene.onAfterRenderObservable.addOnce(() => res()));
+  for (let i = 0; i < 120; i++) {
+    await nextFrame();
+    if (await roundTrip()) break;
+  }
   autoToggle.disabled = false;
   denoiseBtn.disabled = false;
   (window as unknown as Record<string, unknown>).__ready = true;
