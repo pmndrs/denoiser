@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - probes, SSR and ray-traced reflections</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
+      .caption span { color: var(--dn-accent); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
+      table.cost { border-collapse: collapse; font-size: .85rem; width: 100%; max-width: 640px; }
+      table.cost td { padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--dn-border); }
+      table.cost td.num { text-align: right; font-variant-numeric: tabular-nums; width: 4.5rem; }
+      table.cost td.note { color: var(--dn-muted); }
+      table.cost tr.total td { font-weight: 600; border-bottom: 0; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; margin-top: 1.5rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      .box li { margin: .2rem 0; }
+      pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; }
+      nav.links { font-size: .9rem; margin: 1.25rem 0 0; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+      <h1>Hybrid reflections: probe, SSR, ray tracing</h1>
+      <p class="dn-lede">
+        The room from the <a href="shadows.html">shadows demo</a>, with reflections built the ways engines
+        build them: a <b>reflection probe</b> (a cubemap captured once, box-projected, no rays), three's
+        <b>screen-space reflections</b>, <b>rays traced</b> against the scene with
+        <a href="https://github.com/gkjohnson/three-mesh-bvh">three-mesh-bvh</a>, and the <b>hybrid</b>:
+        probe on rough surfaces, SSR on glossy ones, a traced ray where SSR misses. Every stochastic mode
+        takes one sample per pixel, cleaned up by <code>ffxReflections()</code>. Watch the turning
+        sculpture in the table and the floor: the probe froze it when it was baked.
+      </p>
+      </header>
+
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="caption"><span id="cap-shadow">Shadows: ...</span><span id="cap-refl">Reflections: ...</span></div>
+
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Shadows</span>
+  <div class="dn-seg" id="seg-shadow">
+          <button data-v="map" aria-pressed="false">three.js shadow map</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ffx" aria-pressed="true">1 ray + ffxShadows</button><button data-v="ref" aria-pressed="false">reference</button>
+        </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Light size</span>
+  <div class="dn-row"><input id="light-size" type="range" min="0.03" max="1.0" step="0.01" value="0.3" /><output class="dn-value" id="light-size-v"></output>
+          <span class="hint">Look where the table and chair legs touch the floor.</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Reflections</span>
+  <div class="dn-seg" id="seg-refl">
+          <button data-v="probe" aria-pressed="false">probe only</button><button data-v="ssr" aria-pressed="false">SSR + probe</button><button data-v="hybrid" aria-pressed="true">hybrid</button><button data-v="rt" aria-pressed="false">ray traced</button><button data-v="ref" aria-pressed="false">reference</button>
+        </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Reflection denoiser</span>
+  <div class="dn-seg" id="seg-denoise"><button data-v="on" aria-pressed="true">ffxReflections</button><button data-v="off" aria-pressed="false">raw, 1 sample</button></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Hybrid roughness cutoff</span>
+  <div class="dn-row"><input id="cutoff" type="range" min="0" max="1" step="0.01" value="0.35" /><output class="dn-value" id="cutoff-v"></output>
+          <span class="hint">rougher than this: probe only, no rays</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Probe</span>
+  <div class="dn-row"><button class="dn-btn" id="rebake">re-bake probe</button><span class="hint">captures the sculpture where it is now</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Floor gloss</span>
+  <div class="dn-row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output class="dn-value" id="roughness-v"></output>
+          <span class="hint">roughness of the floor and table top</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Resolution</span>
+  <div class="dn-seg" id="seg-up"><button data-v="off" aria-pressed="true">native</button><button data-v="on" aria-pressed="false">half res + FSR3 2x</button></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Camera</span>
+  <div class="dn-row">
+          <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
+          <button class="dn-btn" id="cut">camera cut (resetHistory)</button>
+        </div>
+        </div>
+      </section>
+
+      <h2>What it costs on your GPU</h2>
+      <table class="cost"><tbody id="cost-body"><tr><td>measuring...</td></tr></tbody></table>
+      <p class="hint" id="cost-note">
+        Measured live from GPU timestamp queries for the modes selected above, at 960x540 (1080p has 4x the pixels).
+        Passes a mode doesn't need aren't run. GPUs overlap passes, so each row is an estimate; compare the
+        GPU frame time between modes for what the reflections really cost. The probe bake is a one-off and is not in the frame time.
+      </p>
+
+      <div class="grid">
+        <div class="box">
+          <h2>What each mode gets right</h2>
+          <ul>
+            <li><b>Probe:</b> free per frame and noise-free, fine on rough surfaces. But it's a snapshot from one point: moving things freeze, and box projection only lines up for the box's walls, so the table legs reflect in the wrong place.</li>
+            <li><b>SSR:</b> exact positions and live objects, but only for what's on screen. Anything off screen or hidden falls back to the probe.</li>
+            <li><b>Ray traced:</b> exact and live, on screen or not. It costs a ray per pixel plus shading at the hit, and needs a denoiser.</li>
+            <li><b>Hybrid:</b> spends rays only where SSR can't answer and the surface is glossy enough to show the difference.</li>
+            <li><b>Why the cutoff:</b> switch to SSR or ray traced and look at the rug. One sample per pixel on a fully rough surface is mostly noise, and FFX's reflection denoiser is built for glossy surfaces. AMD's own SSSR sends rough pixels to the probe for the same reason.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h2>How the traced hits are shaded</h2>
+          <ul>
+            <li>The hit's albedo and metalness ride along in the BVH as a per-vertex attribute.</li>
+            <li>Direct light from the panel with one shadow ray, ambient from the same environment the raster pass uses. Metals mirror the environment. No second bounce into the scene.</li>
+            <li>That's the usual trade in hybrid renderers: cheap, approximate shading at the hit. The reference uses the same shading with many rays, so it shows where the 1-sample modes miss, not a path-traced ground truth.</li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="links">
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/realtime-temporal-denoising">Guide: real-time (temporal) denoising</a>
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/three-and-tsl">Guide: three.js and TSL nodes</a>
+        <a href="./">three.js SSR example: FFX vs three's denoiser</a>
+        <a href="https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src/reflections-hybrid.ts">Source</a>
+      </nav>
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/reflections-hybrid.ts"></script>
+  </body>
+</html>

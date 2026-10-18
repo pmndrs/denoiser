@@ -68,6 +68,12 @@
       "tags": ["real-time FFX", "three.js", "upscaler"], "shot": "three-temporal-shadows.png", "deployed": true
     },
     {
+      "id": "three-temporal-reflections", "section": "realtime", "href": "three-temporal/reflections-hybrid.html",
+      "title": "Hybrid reflections: probe, SSR, ray tracing",
+      "description": "Reflections built the ways engines mix them: a box-projected probe, SSR, rays traced against the BVH where SSR misses, all at one sample per pixel and denoised with FFX.",
+      "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-shadows.png", "deployed": true
+    },
+    {
       "id": "three-temporal-shadows-split", "section": "realtime", "href": "three-temporal/shadows-split.html",
       "title": "Static bake x dynamic rays (experiment)",
       "description": "The shadows scene split into a baked or cached static half (lightmap denoised with OIDN) and 1-ray dynamic shadows denoised with FFX.",
