@@ -20,6 +20,8 @@ import { sampleCounter } from '../../_shared/pathtracer';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
 import { DenoiserPass, UpscalerPass, type UpscalePath } from './passes';
 import { SCENES, type LabScene } from './scenes';
+import { createBench, toMarkdown, RESULT_COLUMNS, type BenchConfig, type BenchResult } from './bench';
+import { runtimeOptions, type RuntimeName } from '../../_shared/stack';
 
 /** vite.config.ts `define`: packages/denoiser/models exists locally (dev only). */
 declare const __LOCAL_ONNX_MODELS__: boolean;
@@ -46,6 +48,8 @@ const ui = {
   sharpness: $<HTMLInputElement>('sharpness'),
   compare: $<HTMLSelectElement>('compare'),
   split: $<HTMLInputElement>('split'),
+  refspp: $<HTMLInputElement>('refspp'),
+  runs: $<HTMLInputElement>('runs'),
 };
 for (const o of SCENES) ui.scene.add(new Option(o.label, o.id));
 for (const [k, el] of Object.entries(ui)) {
@@ -90,6 +94,7 @@ async function main() {
 
   let lab: LabScene;
   let controls: OrbitControls | undefined;
+  let home: { position: THREE.Vector3; quaternion: THREE.Quaternion };
   async function loadScene(id: string) {
     const entry = SCENES.find((s) => s.id === id) ?? SCENES[0];
     log(`loading ${entry.label}…`);
@@ -101,6 +106,7 @@ async function main() {
     pathTracer.setScene(lab.scene, lab.camera);
     denoisePass.setScene(lab.scene, lab.camera);
     log(`${entry.label}: BVH built in ${(performance.now() - t0).toFixed(0)} ms`);
+    home = { position: lab.camera.position.clone(), quaternion: lab.camera.quaternion.clone() };
     controls?.dispose();
     controls = new OrbitControls(lab.camera, canvas);
     controls.target.copy(lab.target);
@@ -178,9 +184,89 @@ async function main() {
   await upscalePass.ready.catch(() => undefined);
   await loadScene(ui.scene.value);
 
+
+  // ---- benchmark -------------------------------------------------------------------
+  const RESULTS_KEY = 'pipeline-lab:results';
+  const QUEUE_KEY = 'pipeline-lab:queue';
+  const store = {
+    get<T>(k: string, d: T): T { try { return JSON.parse(localStorage.getItem(k) ?? '') as T; } catch { return d; } },
+    set(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
+  };
+  let results: BenchResult[] = store.get(RESULTS_KEY, []);
+  const resultsTable = $<HTMLTableElement>('results');
+  function renderResults() {
+    resultsTable.innerHTML = `<thead><tr>${RESULT_COLUMNS.map(([k]) => `<th>${k}</th>`).join('')}</tr></thead><tbody>` +
+      results.map((r) => `<tr>${RESULT_COLUMNS.map(([, g]) => `<td>${g(r)}</td>`).join('')}</tr>`).join('') + '</tbody>';
+    $('resultsBox').hidden = results.length === 0;
+  }
+  renderResults();
+  let benchRunning = false;
+  const bench = createBench({
+    renderer, device, pathTracer, camera: () => lab.camera, denoisePass, upscalePass,
+    runtime: () => picker.label(), log,
+  });
+  const benchBtn = $<HTMLButtonElement>('bench');
+  const benchAllBtn = $<HTMLButtonElement>('benchAll');
+  async function runBench() {
+    if (benchRunning) return;
+    benchRunning = true;
+    benchBtn.disabled = benchAllBtn.disabled = true;
+    try {
+      // the shot is the scene's own camera, not wherever it was orbited to
+      lab.camera.position.copy(home.position);
+      lab.camera.quaternion.copy(home.quaternion);
+      controls!.target.copy(lab.target);
+      controls!.update();
+      pathTracer.updateCamera();
+      const [w, h] = sizeOf();
+      const config: BenchConfig = {
+        scene: ui.scene.value, output: [w, h], renderScale: Number(ui.scale.value),
+        spp: pathTracer.maxSamples, bounces: Math.max(1, parseInt(ui.bounces.value, 10) || 1),
+        denoise: ui.denoise.checked, aux: ui.aux.checked, model: ui.quality.value,
+        upscale: ui.upscale.value as BenchConfig['upscale'], sharpness: Number(ui.sharpness.value),
+        refSpp: Math.max(16, parseInt(ui.refspp.value, 10) || 512), warmRuns: Math.max(1, parseInt(ui.runs.value, 10) || 5),
+      };
+      const r = await bench(config);
+      results = [...results, r];
+      store.set(RESULTS_KEY, results);
+      renderResults();
+      log(`benchmark done: ${r.totalMs.toFixed(1)} ms total, PSNR final ${r.psnrFinal.toFixed(2)} dB`);
+    } catch (e) {
+      log('benchmark ERROR: ' + (e as Error).message);
+    } finally {
+      benchRunning = false;
+      benchBtn.disabled = benchAllBtn.disabled = false;
+      applyStages();
+      restart();
+    }
+  }
+  benchBtn.addEventListener('click', () => void runBench());
+  // every runtime: the runtime is fixed per page load (ORT owns the device), so this reloads
+  // through a queue kept in localStorage, adding one row per runtime
+  benchAllBtn.addEventListener('click', () => {
+    const queue = runtimeOptions().filter((o) => !o.unavailable && o.id !== 'auto').map((o) => o.id);
+    store.set(QUEUE_KEY, queue);
+    nextInQueue();
+  });
+  function nextInQueue() {
+    const queue: RuntimeName[] = store.get(QUEUE_KEY, []);
+    const next = queue.shift();
+    store.set(QUEUE_KEY, queue);
+    if (!next) return;
+    const u = new URL(location.href);
+    u.searchParams.set('runtime', next);
+    u.searchParams.set('autobench', '1');
+    location.href = u.toString();
+  }
+  $('copyMd').addEventListener('click', () => void navigator.clipboard.writeText(toMarkdown(results)));
+  $('copyJson').addEventListener('click', () => void navigator.clipboard.writeText(JSON.stringify(results, null, 2)));
+  $('clearResults').addEventListener('click', () => { results = []; store.set(RESULTS_KEY, results); renderResults(); });
+  (window as N).__bench = runBench;
+
   (window as N).__lab = { renderer, denoiser, pathTracer, denoisePass, upscalePass, get lab() { return lab; } };
 
   const loop = () => {
+    if (benchRunning) { requestAnimationFrame(loop); return; }
     pathTracer.renderSample();
     samples.poll();
 
@@ -215,6 +301,17 @@ async function main() {
     requestAnimationFrame(loop);
   };
   loop();
+
+  if (params.get('autobench') === '1') {
+    // let the first frames settle (pipelines, upscaler prepare) before timing
+    setTimeout(async () => {
+      await runBench();
+      const u = new URL(location.href);
+      u.searchParams.delete('autobench');
+      history.replaceState(null, '', u);
+      nextInQueue();
+    }, 1500);
+  }
 }
 
 demoFooter('pipeline-lab');

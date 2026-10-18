@@ -22,6 +22,8 @@ export class DenoiserPass {
   useAux = true;
   /** Wall time of the last denoise, ms (submit → result ready). */
   lastMs = 0;
+  /** First (cold: model load + compile) denoise time per model + size, ms. */
+  readonly coldMs = new Map<string, number>();
   /** Called after every finished denoise. */
   onDenoised?: (ms: number) => void;
 
@@ -89,11 +91,15 @@ export class DenoiserPass {
     this._running = false;
     if (!result) return null; // aborted
     this.lastMs = performance.now() - t0;
+    const key = this.modelKey(width, height);
+    if (!this.coldMs.has(key)) this.coldMs.set(key, this.lastMs);
     this._complete = true;
     this._texture = this.out;
     this.onDenoised?.(this.lastMs);
     return this.out;
   }
+
+  modelKey(width: number, height: number) { return `${this.denoiser.quality}|${this.useAux}|${width}x${height}`; }
 
   reset() {
     this.epoch++;
@@ -137,7 +143,9 @@ export class UpscalerPass {
   private configured = '';
 
   init(renderer: THREE.WebGPURenderer) {
+    if (this.renderer === renderer && this.upscaler) return; // re-attached to the same tracer
     this.renderer = renderer;
+    this.configured = '';
     this.upscaler?.dispose();
     this.upscaler = new Upscaler({ renderer, gpuTiming: true });
     this.ready = this.upscaler.init();
@@ -174,6 +182,13 @@ export class UpscalerPass {
     this.upscaler.settings.sharpness = this.sharpness;
     this.upscaler.dispatch({ color: source }, camera as THREE.PerspectiveCamera);
     return this.upscaler.outputTexture;
+  }
+
+  /** Configures for `source` and waits for the path's pipelines, so the next call is warm. */
+  async warm(source: THREE.Texture, camera: THREE.Camera) {
+    this.upscale(source, camera);
+    await this.upscaler.prepare();
+    this.upscale(source, camera);
   }
 
   dispose() { this.upscaler?.dispose(); }
