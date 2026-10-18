@@ -2864,6 +2864,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pipeline-lab@workspace:examples/pipeline-lab":
+  version: 0.0.0-use.local
+  resolution: "pipeline-lab@workspace:examples/pipeline-lab"
+  dependencies:
+    "@pmndrs/upscaler": "npm:0.5.0"
+    denoiser: "workspace:*"
+    onnxruntime-web: "npm:^1.27.0"
+    three: "npm:^0.186.1"
+    three-gpu-pathtracer: "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114"
+    three-mesh-bvh: "npm:^0.9.16"
+    typescript: "npm:^5.9.3"
+    vite: "npm:^8.1.4"
+    xatlas-web: "npm:^0.1.0"
+  languageName: unknown
+  linkType: soft
+
 "platform@npm:^1.3.6":
   version: 1.3.6
   resolution: "platform@npm:1.3.6"

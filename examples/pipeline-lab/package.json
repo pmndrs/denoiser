@@ -1,0 +1,25 @@
+{
+  "name": "pipeline-lab",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The full pipeline: three-gpu-pathtracer → denoiser → @pmndrs/upscaler, with a benchmark you can tweak and share.",
+  "scripts": {
+    "dev": "vite --port 5230",
+    "build": "vite build",
+    "preview": "vite preview --port 5230"
+  },
+  "dependencies": {
+    "@pmndrs/upscaler": "0.5.0",
+    "denoiser": "workspace:*",
+    "three": "^0.186.1",
+    "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114",
+    "three-mesh-bvh": "^0.9.16",
+    "xatlas-web": "^0.1.0"
+  },
+  "devDependencies": {
+    "onnxruntime-web": "^1.27.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}
