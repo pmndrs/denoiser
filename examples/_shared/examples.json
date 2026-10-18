@@ -75,8 +75,8 @@
     },
     {
       "id": "three-temporal-shadows-split", "section": "realtime", "href": "three-temporal/shadows-split.html",
-      "title": "Static bake x dynamic rays (experiment)",
-      "description": "The shadows scene split into a baked or cached static half (lightmap denoised with OIDN) and 1-ray dynamic shadows denoised with FFX.",
+      "title": "Baked + dynamic shadows: when to split",
+      "description": "Bake what never moves (a lightmap, denoised once with OIDN, or a world-space cache), trace only the moving objects every frame with FFX: what the split buys, what it costs, and when to use it.",
       "tags": ["real-time FFX", "OIDN", "three.js"], "shot": "three-temporal-shadows.png", "deployed": true
     },
     {

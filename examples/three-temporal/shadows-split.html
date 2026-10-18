@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser - ray-traced shadows and reflections in a raster app</title>
+    <title>denoiser - baked + dynamic shadows</title>
     <style>
       .dn-page { max-width: 1020px; }
-      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      h2 { font-size: 1.1rem; margin: 1.8rem 0 .5rem; }
       code { background: #0006; padding: 0 .3em; border-radius: 4px; }
       canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; }
       .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
@@ -18,26 +18,42 @@
       table.cost td.num { text-align: right; font-variant-numeric: tabular-nums; width: 4.5rem; }
       table.cost td.note { color: var(--dn-muted); }
       table.cost tr.total td { font-weight: 600; border-bottom: 0; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; margin-top: 1.5rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; }
       .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; }
       .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
       .box li { margin: .2rem 0; }
       pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; }
+.tries-hint { margin: .4rem 0 .9rem; }
+      .tour-label { margin: 0 0 .4rem; }
+      h3 { font-size: 1rem; margin: 0 0 .35rem; }
+      .box p { margin: .3rem 0; }
+      .pc { display: grid; grid-template-columns: auto 1fr; gap: .15rem .6rem; margin-top: .4rem; }
+      .pc dt { font-weight: 600; font-size: .8rem; padding-top: .1rem; }
+      .pc dd { margin: 0; }
+      .pc .plus { color: var(--dn-good); } .pc .minus { color: var(--dn-bad); } .pc .cost { color: var(--dn-accent); }
       nav.links { font-size: .9rem; margin: 1.25rem 0 0; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
     </style>
   </head>
   <body>
     <div class="dn-page">
       <header class="dn-head">
-      <h1>Ray-traced shadows and reflections in a raster app</h1>
+      <h1>Baked + dynamic shadows: when to split</h1>
       <p class="dn-lede">
-        A normal real-time three.js scene (WebGPU raster, 60 fps) where two effects are ray traced at
-        <b>one ray per pixel</b>: the shadow of a big soft light, and glossy reflections. One ray is
-        far too noisy to look at. <code>ffxShadows()</code> and <code>ffxReflections()</code> from
-        <code>denoiser/three</code> (AMD FidelityFX denoisers, ported to WGSL) clean it up every frame.
-        Compare each one with what three.js gives you without ray tracing.
+        Most of a room never moves. Its shadows only need computing once, if the light doesn't move either,
+        and only the things that move need rays every frame. That's the <b>static / dynamic split</b>
+        every game engine with lightmaps uses. This page does it in the browser, two ways, next to plain
+        "ray trace everything every frame", so you can see what the split buys and what it costs.
       </p>
       </header>
+
+      <p class="dn-label tour-label">Try this</p>
+      <div class="dn-seg tries">
+        <button data-try='{"shadow":"ffx","shot":1}'>1. Every frame: 1 ray + FFX</button><button data-try='{"shadow":"bake","shot":1}'>2. Split: baked + dynamic</button><button data-try='{"shadow":"lm","shot":1}'>3. The bake on its own</button><button data-try='{"shadow":"bakeraw","shot":1}'>4. The bake without OIDN</button><button data-try='{"shadow":"cache","shot":0}'>5. Split with a world cache</button><button data-try='{"shadow":"ref","shot":1}'>6. Reference</button>
+      </div>
+      <p class="hint tries-hint">
+        Watch the table and chair legs where they touch the rug, and the gold sculpture's shadow on the wall (it's the only thing that moves).
+        Then drag the light size: the split modes have to re-bake.
+      </p>
 
       <canvas id="view" width="960" height="540"></canvas>
       <div class="caption"><span id="cap-shadow">Shadows: ...</span><span id="cap-refl">Reflections: ...</span></div>
@@ -46,7 +62,7 @@
         <div class="dn-group">
           <span class="dn-label">Shadows</span>
   <div class="dn-seg" id="seg-shadow">
-          <button data-v="map" aria-pressed="false">three.js shadow map</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ffx" aria-pressed="true">1 ray + ffxShadows</button><button data-v="bake" aria-pressed="false">baked (OIDN) + dynamic</button><button data-v="bakeraw" aria-pressed="false">baked raw + dynamic</button><button data-v="lm" aria-pressed="false">lightmap only</button><button data-v="cache" aria-pressed="false">world cache + dynamic</button><button data-v="cacheonly" aria-pressed="false">cache only</button><button data-v="ref" aria-pressed="false">reference</button>
+          <button data-v="map" aria-pressed="false">shadow map</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ffx" aria-pressed="true">1 ray + ffxShadows</button><button data-v="bake" aria-pressed="false">split: baked + dynamic</button><button data-v="bakeraw" aria-pressed="false">split: baked raw + dynamic</button><button data-v="cache" aria-pressed="false">split: world cache + dynamic</button><button data-v="lm" aria-pressed="false">lightmap only</button><button data-v="cacheonly" aria-pressed="false">cache only</button><button data-v="ref" aria-pressed="false">reference</button>
         </div>
         </div>
         <div class="dn-group">
@@ -89,49 +105,96 @@
         Passes a mode doesn't need aren't run. GPUs overlap passes, so each row is an estimate. The frame time is measured directly.
       </p>
 
+      <h2>The idea</h2>
+      <div class="box">
+        <p>
+          A shadow at a pixel asks: <i>can this point see the light?</i> Ray tracing answers by shooting rays
+          at the light and checking whether anything is in the way. Split the "anything" in two:
+        </p>
+        <ul>
+          <li><b>Static blockers</b> (walls, table, chair, lamp): if neither they nor the light move, the answer never
+            changes. Compute it once, with lots of rays, and store it: in a <b>lightmap</b> (a texture wrapped over the
+            static geometry) or a <b>world-space cache</b>.</li>
+          <li><b>Moving blockers</b> (the sculpture): trace 1 ray per pixel against <i>only those</i>, every frame, and
+            denoise that with <code>ffxShadows()</code>.</li>
+        </ul>
+        <p>
+          Multiply the two and you have the full shadow. The static part comes out like the reference (converged,
+          stable, sharp at contact points), and the per-frame rays only test the few moving objects, however big the rest
+          of the scene is.
+        </p>
+      </div>
+
+      <h2>Three ways to get the static part</h2>
+      <p class="hint">The "here" numbers: whole GPU frame on an Apple M-series GPU at 960x540, with reflections set to "env map only" so only the shadows differ. The table above measures your GPU live.</p>
       <div class="grid">
         <div class="box">
-          <h2>When to use this</h2>
-          <ul>
-            <li>You ship a real-time raster app (a game, a product configurator, an archviz walkthrough) that has to hold 60 fps while the camera moves.</li>
-            <li>You want one effect raster can't fake well: soft area-light shadows that stay sharp where objects touch the ground and soften with distance, or glossy reflections of the actual scene instead of an env map.</li>
-            <li>So you trace 1 ray per pixel for just that effect, and let the denoiser turn the noise into a clean, stable result every frame.</li>
-          </ul>
+          <h3>No split: trace everything every frame</h3>
+          <p>1 ray per pixel against the whole scene, every frame, denoised by FFX. This is the <a href="shadows.html">shadows demo</a>.</p>
+          <dl class="pc">
+            <dt class="plus">good</dt><dd>No preparation. The light, the camera and every object can move.</dd>
+            <dt class="minus">bad</dt><dd>One noisy ray, so the denoiser has to rebuild everything, contact details included, and fine detail comes out softer. Ray cost grows with the whole scene's size.</dd>
+            <dt class="cost">here</dt><dd>3.1 ms GPU frame (rays 1.8 ms, FFX 0.7 ms).</dd>
+          </dl>
         </div>
         <div class="box">
-          <h2>When to use OIDN instead</h2>
-          <ul>
-            <li>You path trace the whole frame (all lighting, bounces, glass), for example a product render or a viewer that refines when the camera stops.</li>
-            <li>That's <code>Denoiser</code>, the package's main API (OIDN): one whole image, no history needed, tens of milliseconds per denoise. Run it on a still frame or every few frames, not every frame at 60 fps.</li>
-            <li>FFX does the opposite: one effect, every frame, about 0.5 ms (shadows) or 1.7 ms (reflections) at 1080p, using motion vectors and history.</li>
-          </ul>
+          <h3>Bake a lightmap (+ OIDN)</h3>
+          <p>
+            Give the static meshes a second UV set (an automatic unwrap), draw them flat into a 2048x2048 texture, and
+            trace 16 rays per texel. 16 rays is still noisy, so the <b>OIDN denoiser</b> cleans the lightmap once.
+            Compare "baked raw" with "baked (OIDN)".
+          </p>
+          <dl class="pc">
+            <dt class="plus">good</dt><dd>Converged, rock-steady static shadows for the price of a texture lookup. OIDN turns a bake that would need thousands of rays per texel into 16 + one denoise.</dd>
+            <dt class="minus">bad</dt><dd>The light must stay put: move it and you re-bake. Needs UVs (an unwrap step), a texture big enough for the detail (here about 1 texel per cm), and memory (32 MB for this one). Moving objects don't get the baked part: they trace everything.</dd>
+            <dt class="cost">here</dt><dd>Unwrap ~105 ms, bake ~70 ms, OIDN ~310 ms, once. Then 3.4 ms GPU frame, or 0.56 ms with the lightmap alone.</dd>
+          </dl>
         </div>
         <div class="box">
-          <h2>What it costs</h2>
-          <ul>
-            <li>Ray tracing: 1 ray per pixel against the scene's BVH. Here that's <a href="https://github.com/gkjohnson/three-mesh-bvh">three-mesh-bvh</a>'s WebGPU traversal in a full-screen TSL pass, no ray-tracing hardware needed. The table above shows what it costs for this scene.</li>
-            <li>Denoising: FFX shadows about 0.5 ms and FFX reflections about 1.7 ms at 1080p (Apple M-series). The cost depends on resolution, not on the scene.</li>
-            <li>No precomputation or baking. Lights, objects and the camera can all move.</li>
-          </ul>
-        </div>
-        <div class="box">
-          <h2>What the denoiser needs from you</h2>
-          <ul>
-            <li>From your G-buffer: depth, normals (view or world, packed is fine), motion vectors (three's <code>velocity</code> in the MRT), and roughness for reflections.</li>
-            <li>An honest 1-ray signal: new random samples every frame, not pre-blurred. For shadows that's 0 or 1 per pixel. For reflections it's the radiance plus the hit distance (three's stochastic SSR gives you both).</li>
-            <li>Call <code>resetHistory()</code> on camera cuts and teleports, or the old frame bleeds into the new one.</li>
-          </ul>
+          <h3>A world-space cache</h3>
+          <p>
+            No UVs and no bake step. The visible surfaces are bucketed into small cells in world space; each cell collects
+            rays as the camera sees it, until it has 512, then just answers lookups. Light changes empty it.
+          </p>
+          <dl class="pc">
+            <dt class="plus">good</dt><dd>Works on any geometry (user models, CAD, scanned data), fills in only what you actually look at, and recovers by itself when the light moves.</dd>
+            <dt class="minus">bad</dt><dd>Keeps tracing while cells fill, and the cell grid has to be hidden with jitter + the denoiser. More moving parts than either other option.</dd>
+            <dt class="cost">here</dt><dd>3.9 ms GPU frame while it's in use, 24 MB for the table.</dd>
+          </dl>
         </div>
       </div>
 
-      <pre class="code">// visibility: a TSL node or texture, 1 = lit, 0 = shadowed, 1 ray/pixel
-const shadows = ffxShadows(visibility, {
-  camera, depth: scenePass.getTextureNode('depth'), velocity: scenePass.getTextureNode('velocity'),
-  normal: scenePass.getTextureNode('normal'), normalSpace: 'view', normalEncoding: 'packed',
-});
-const lit = sceneColor.add(albedo.mul(irradiance).mul(shadows.r));
-// on a camera cut:
-shadows.resetHistory();</pre>
+      <h2>So when would I use it?</h2>
+      <div class="grid">
+        <div class="box">
+          <h3>Use a split when</h3>
+          <ul>
+            <li><b>The lights don't move</b> (or move rarely, like a time-of-day change you can re-bake behind a fade): archviz, interiors, most game levels, product stages.</li>
+            <li><b>The scene is big and mostly static</b>: rays against a few moving props are far cheaper than rays against a million-triangle level.</li>
+            <li><b>Static shadow quality matters</b>: thin contact shadows, no temporal lag or smearing, nothing for the denoiser to get wrong.</li>
+            <li><b>Nothing moves at all</b>: then skip the dynamic half and use the lightmap on its own, at almost no cost (0.56 ms here).</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3>Don't bother when</h3>
+          <ul>
+            <li><b>The light moves</b> (a flashlight, a draggable sun, an editor): every move means a re-bake. Trace every frame with FFX instead.</li>
+            <li><b>The scene is small</b>, like this one: ray tracing all of it is already cheap, so the split costs about the same (3.4 vs 3.1 ms) and adds a bake, UVs and memory.</li>
+            <li><b>You can't unwrap UVs</b> (user-uploaded models): use the world cache, or no split.</li>
+          </ul>
+          <p class="hint">Honest result: in this room the split is a quality win (sharper, steadier static shadows), not a speed win. The speed win needs a scene where the static part is most of the triangles.</p>
+        </div>
+      </div>
+
+      <h2>Where the two denoisers fit</h2>
+      <div class="box">
+        <p>
+          This page uses both kinds the package offers. <b>OIDN</b> (<code>Denoiser</code>) denoises the <b>lightmap once</b>:
+          a whole image, no history, a few hundred ms, done at bake time. <b>FFX</b> (<code>ffxShadows()</code>) denoises
+          the <b>moving objects' shadows every frame</b>: one signal, motion vectors and history, under a millisecond. Bake
+          with the first, run live with the second.
+        </p>
+      </div>
 
       <nav class="links">
         <a href="https://pmndrs.github.io/denoiser/docs/guides/realtime-temporal-denoising">Guide: real-time (temporal) denoising</a>

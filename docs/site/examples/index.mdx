@@ -84,6 +84,14 @@ methods split-screen; a "where reflections come from" view tints every pixel by 
 it. Every noisy mode takes one sample per pixel, denoised by `ffxReflections()`, with a cost
 table and a "which one should I use?" guide.
 
+### [Baked + dynamic shadows: when to split](https://pmndrs.github.io/denoiser/three-temporal/shadows-split.html)
+The static / dynamic split engines use for lightmaps, in the browser: the static half of the
+shadow baked once into a lightmap (16 rays per texel, cleaned by OIDN) or gathered in a
+world-space cache, and 1 ray per pixel against only the moving objects, denoised every frame by
+`ffxShadows()`. Explains what the split buys (converged, steady static shadows; rays that only
+test moving objects) and costs (bake time, UVs, memory, a light that can't move), with measured
+numbers and when to use it. Both denoisers on one page: OIDN at bake time, FFX live.
+
 ### [three.js SSR: FidelityFX vs recurrentDenoise](https://pmndrs.github.io/denoiser/three-temporal/)
 three's `webgpu_postprocessing_ssr_denoise` example with `ffxReflections()` swapped
 in, split-screen against three's own temporal denoiser.

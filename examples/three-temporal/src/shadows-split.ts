@@ -1036,6 +1036,13 @@ async function main() {
   };
   (window as unknown as { __t: typeof api }).__t = api;
 
+  // the page's "try this" buttons: each sets a few modes
+  const tries = document.querySelectorAll<HTMLButtonElement>('[data-try]');
+  tries.forEach((b) => b.addEventListener('click', () => {
+    api.setModes(JSON.parse(b.dataset.try!));
+    tries.forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+  }));
+
   log(`ready - three r${THREE.REVISION}, ${W}x${H}${manual ? ' (manual stepping)' : ''}; BVH: ${tris.toLocaleString()} triangles, built in ${bvhMs.toFixed(0)} ms` +
     (hasTimestamps ? '' : '\nno timestamp-query: per-pass GPU timings unavailable'));
 }
