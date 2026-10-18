@@ -125,6 +125,10 @@ yarn examples three-pathtracer   # or just one example on its own port
 yarn examples --list
 ```
 
+The example list (titles, descriptions, sections, tags, screenshots, which ones deploy) lives in
+`examples/_shared/examples.json`; it drives the landing page and the top bar every example gets
+from `examples/_shared/shell.ts` (back to the list, prev / next, jump menu, shared controls styling).
+
 ### License
 
 MIT. OIDN weights are Apache-2.0 (© Intel) — see `packages/denoiser/tzas/LICENSE.txt`.

@@ -1,0 +1,149 @@
+{
+  "$comment": "The ONE list of examples: order, titles, one-line descriptions, sections, tags, screenshots. Read by examples/_shared/shell.ts (top bar: back link, prev/next, jump menu), tools/site.mjs (landing-page cards, for both `yarn examples` and the deployed site) and tools/build-site.mjs (which example dirs deploy). Entry: { id (unique), section (a sections[].id), href (relative to the site root: '<dir>/' or '<dir>/<page>.html'), title, description (one line, plain text), tags (labels from `tags` below), shot (file in examples/site/shots, optional), deployed (built into GitHub Pages) }. To add an example: add its entry here, give it a screenshot, and call mountShell({ id }) in its entry module.",
+  "tags": {
+    "OIDN": "Intel Open Image Denoise networks",
+    "path tracing": "path-traced input",
+    "real-time FFX": "AMD FidelityFX temporal denoisers",
+    "three.js": "three.js WebGPURenderer / TSL",
+    "upscaler": "@pmndrs/upscaler (FSR)",
+    "runtimes": "WGSL / WebNN / ONNX Runtime / HF kernels",
+    "raw WebGPU": "no framework",
+    "Babylon.js": "Babylon.js engine",
+    "benchmark": "timings"
+  },
+  "sections": [
+    { "id": "start", "title": "Start here", "blurb": "The API in a few lines, then what good input looks like." },
+    { "id": "oidn", "title": "Path tracing + OIDN", "blurb": "Whole-frame denoising of path-traced renders with the OIDN networks, in three.js, raw WebGPU and Babylon.js." },
+    { "id": "realtime", "title": "Real-time denoising", "blurb": "One ray per pixel, every frame: the FidelityFX shadow and reflection denoisers, and how they compare." },
+    { "id": "pipeline", "title": "Pipelines & performance", "blurb": "Denoise and upscale on one GPUDevice, and the numbers behind it." },
+    { "id": "tools", "title": "Tools & tests", "blurb": "Internal harnesses, smoke tests and probes. They run locally with `yarn examples` and are not deployed.", "internal": true }
+  ],
+  "examples": [
+    {
+      "id": "hello-world", "section": "start", "href": "hello-world/",
+      "title": "Hello world",
+      "description": "A noisy render, Denoiser.create(), denoise(), canvas. No three.js, no build tricks.",
+      "tags": ["OIDN"], "shot": "hello-world.png", "deployed": true
+    },
+    {
+      "id": "gallery", "section": "start", "href": "gallery/",
+      "title": "Before / after gallery",
+      "description": "Pre-rendered path-traced scenes at 1 to 16 samples per pixel, denoised live: drag the divider, step the noise ladder, toggle albedo + normal.",
+      "tags": ["OIDN", "runtimes"], "shot": "gallery.png", "deployed": true
+    },
+    {
+      "id": "aux-inputs", "section": "start", "href": "aux-inputs/",
+      "title": "Aux inputs, explained",
+      "description": "What the network sees: albedo and normal conventions, plus three real bugs you can switch on and watch degrade the output.",
+      "tags": ["OIDN"], "shot": "aux-inputs.png", "deployed": true
+    },
+    {
+      "id": "three-pathtracer-webgpu", "section": "oidn", "href": "three-pathtracer-webgpu/",
+      "title": "three.js path tracer",
+      "description": "three.js WebGPUPathTracer and the denoiser on one GPUDevice: an interactive scene, path traced progressively and denoised live.",
+      "tags": ["OIDN", "path tracing", "three.js", "runtimes"], "shot": "three-pathtracer-webgpu.png", "deployed": true
+    },
+    {
+      "id": "ldraw-eiffel", "section": "oidn", "href": "ldraw-eiffel/",
+      "title": "LDraw Eiffel Tower",
+      "description": "A LEGO Eiffel Tower: raster preview while you orbit, path trace and denoise when the camera comes to rest.",
+      "tags": ["OIDN", "path tracing", "three.js", "runtimes"], "shot": "ldraw-eiffel.png", "deployed": true
+    },
+    {
+      "id": "webgpu-raw", "section": "oidn", "href": "webgpu-raw/",
+      "title": "Raw WebGPU",
+      "description": "No framework: a single-file WGSL path tracer and the denoiser sharing one GPUDevice. The copy-paste integration recipe.",
+      "tags": ["OIDN", "path tracing", "raw WebGPU"], "shot": "webgpu-raw.png", "deployed": true
+    },
+    {
+      "id": "babylon", "section": "oidn", "href": "babylon/",
+      "title": "Babylon.js",
+      "description": "Babylon renders, the denoiser cleans it up over a CPU round-trip between two devices, with every copy timed.",
+      "tags": ["OIDN", "Babylon.js"], "shot": "babylon.png", "deployed": true
+    },
+    {
+      "id": "three-temporal-shadows", "section": "realtime", "href": "three-temporal/shadows.html",
+      "title": "Ray-traced shadows & reflections in a raster app",
+      "description": "A three.js raster scene that traces two effects at 1 ray per pixel, denoised every frame by ffxShadows() / ffxReflections(), vs shadow maps and env maps.",
+      "tags": ["real-time FFX", "three.js", "upscaler"], "shot": "three-temporal-shadows.png", "deployed": true
+    },
+    {
+      "id": "three-temporal-shadows-split", "section": "realtime", "href": "three-temporal/shadows-split.html",
+      "title": "Static bake x dynamic rays (experiment)",
+      "description": "The shadows scene split into a baked or cached static half (lightmap denoised with OIDN) and 1-ray dynamic shadows denoised with FFX.",
+      "tags": ["real-time FFX", "OIDN", "three.js"], "shot": "three-temporal-shadows.png", "deployed": true
+    },
+    {
+      "id": "three-temporal", "section": "realtime", "href": "three-temporal/",
+      "title": "three.js SSR: FidelityFX vs recurrentDenoise",
+      "description": "three's SSR denoise example with the ffxReflections() TSL node swapped in, split-screen against three's own denoiser.",
+      "tags": ["real-time FFX", "three.js"], "shot": "three-temporal.png", "deployed": true
+    },
+    {
+      "id": "ffx-denoiser", "section": "realtime", "href": "ffx-denoiser/",
+      "title": "FidelityFX shadows & reflections",
+      "description": "AMD's FidelityFX denoisers ported to WGSL: 1-sample ray-traced signals denoised every frame vs a converged reference.",
+      "tags": ["real-time FFX", "raw WebGPU"], "shot": "ffx-denoiser.png", "deployed": true
+    },
+    {
+      "id": "realtime-compare", "section": "realtime", "href": "realtime-compare/",
+      "title": "Realtime vs OIDN",
+      "description": "Noisy SSR denoised two ways: three's temporal recurrentDenoise every frame vs OIDN single-image denoising on a cadence.",
+      "tags": ["OIDN", "three.js"], "shot": "realtime-compare.png", "deployed": true
+    },
+    {
+      "id": "upscale-pipeline", "section": "pipeline", "href": "upscale-pipeline/",
+      "title": "Denoise + upscale pipeline",
+      "description": "three.js renders small, the denoiser cleans it, @pmndrs/upscaler (FSR3 or FSR1) brings it to full res. Zero CPU copies, every stage timed.",
+      "tags": ["OIDN", "upscaler", "three.js"], "shot": "upscale-pipeline.png", "deployed": true
+    },
+    {
+      "id": "bench", "section": "pipeline", "href": "bench/",
+      "title": "Benchmark",
+      "description": "Cold and warm timings, per-stage stats and fp16-vs-fp32 PSNR for every runtime across image sizes.",
+      "tags": ["OIDN", "runtimes", "benchmark"], "shot": "bench.jpg", "deployed": true
+    },
+    {
+      "id": "eval", "section": "tools", "href": "eval/",
+      "title": "Eval vs native OIDN",
+      "description": "Every OIDN RT model on every runtime and precision vs native OIDN: quality and speed.",
+      "tags": ["OIDN", "runtimes", "benchmark"], "deployed": false
+    },
+    {
+      "id": "wgsl-bench", "section": "tools", "href": "wgsl-bench/",
+      "title": "WGSL runtime bench",
+      "description": "The Denoiser facade on ORT, HF kernels and hand-written WGSL: parity and warm timings.",
+      "tags": ["runtimes", "benchmark"], "deployed": false
+    },
+    {
+      "id": "webnn-bench", "section": "tools", "href": "webnn-bench/",
+      "title": "WebNN bench",
+      "description": "The OIDN U-Net built as a WebNN graph vs the WGSL runtime: network-only timings and parity.",
+      "tags": ["runtimes", "benchmark"], "deployed": false
+    },
+    {
+      "id": "kernels-smoke", "section": "tools", "href": "kernels-smoke/",
+      "title": "HF kernels smoke test",
+      "description": "The OIDN U-Net op by op on @huggingface/kernels, checked against onnxruntime-web.",
+      "tags": ["runtimes"], "deployed": false
+    },
+    {
+      "id": "webgpu-ort-smoke", "section": "tools", "href": "webgpu-ort-smoke/",
+      "title": "ORT WebGPU smoke test",
+      "description": "A converted OIDN ONNX U-Net on onnxruntime-web (WebGPU EP) with zero-copy GPU-buffer IO.",
+      "tags": ["runtimes"], "deployed": false
+    },
+    {
+      "id": "aux-split-verify", "section": "tools", "href": "aux-split-verify/",
+      "title": "Aux split-graph check",
+      "description": "Verifies the ORT split-graph workaround for aux models against a WASM reference.",
+      "tags": ["runtimes"], "deployed": false
+    },
+    {
+      "id": "denoiser-package-test", "section": "tools", "href": "denoiser-package-test/",
+      "title": "Package end-to-end test",
+      "description": "import { Denoiser } from 'denoiser' with the default AutoRuntime, end to end.",
+      "tags": ["OIDN"], "deployed": false
+    }
+  ]
+}

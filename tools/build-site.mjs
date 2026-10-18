@@ -4,7 +4,7 @@
 // so the two can never drift.
 //
 // Layout produced (repo-root `_site/`):
-//   _site/index.html            <- examples/site/ (the landing page)
+//   _site/index.html            <- examples/site/ (the landing page, rendered by tools/site.mjs)
 //   _site/<example>/...         <- examples/<example>/dist/*
 //
 // Prereq: `yarn workspace denoiser build` must have run first (the non-aliased
@@ -15,16 +15,17 @@
 //   node tools/build-site.mjs --no-build assemble from existing dist/ only
 
 import { execSync } from 'node:child_process';
-import { cpSync, rmSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { cpSync, rmSync, mkdirSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { deployedDirs, renderLanding } from './site.mjs';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const outDir = path.join(repoRoot, '_site');
 
-// Only these examples deploy. Internal harnesses (webgpu-ort-smoke,
-// denoiser-package-test, aux-split-verify) are intentionally excluded.
-const EXAMPLES = ['hello-world', 'gallery', 'aux-inputs', 'webgpu-raw', 'babylon', 'realtime-compare', 'upscale-pipeline', 'bench', 'ldraw-eiffel', 'three-pathtracer-webgpu', 'ffx-denoiser', 'three-temporal'];
+// Only the examples marked `deployed` in examples/_shared/examples.json ship.
+// Internal harnesses (the "tools" section) are intentionally excluded.
+const EXAMPLES = deployedDirs();
 
 const noBuild = process.argv.includes('--no-build');
 
@@ -53,8 +54,9 @@ if (!noBuild) {
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
-// 3) Landing page at the site root.
+// 3) Landing page at the site root (template + shots, cards rendered from examples.json).
 cpSync(path.join(repoRoot, 'examples', 'site'), outDir, { recursive: true });
+writeFileSync(path.join(outDir, 'index.html'), renderLanding({ dev: false }));
 
 // 4) Each example under its own subpath.
 const sizes = [];

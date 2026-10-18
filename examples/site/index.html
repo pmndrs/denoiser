@@ -3,21 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser — WebGPU denoising for the web</title>
+    <title>denoiser examples — WebGPU denoising for the web</title>
     <meta
       name="description"
       content="WebGPU denoising for the web: Intel OIDN networks for path-traced frames on interchangeable runtimes, real-time FidelityFX shadow and reflection denoisers, and three.js WebGPURenderer / TSL nodes. Live demos."
     />
+    <!--
+      Template. The cards come from examples/_shared/examples.json (the same list the
+      examples' top bar uses) and are rendered into the slot below by tools/site.mjs:
+      `yarn examples` serves the rendered page at /, tools/build-site.mjs writes it
+      to _site/index.html. To add an example, add its entry to examples.json.
+    -->
     <style>
       :root {
         color-scheme: dark;
         --bg: #0b0e14;
         --panel: #141922;
         --panel-hover: #1b2230;
+        --inset: #0e131c;
         --border: #232b3a;
+        --border-strong: #33405a;
         --text: #e6edf3;
         --muted: #9aa7b8;
         --accent: #90cdf4;
+        --good: #7ee787;
       }
       * { box-sizing: border-box; }
       body {
@@ -28,88 +37,101 @@
         line-height: 1.55;
         -webkit-font-smoothing: antialiased;
       }
-      .wrap { max-width: 960px; margin: 0 auto; padding: 3.5rem 1.25rem 4rem; }
-      header { margin-bottom: 2.5rem; }
-      h1 { font-size: 2rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+      a { color: var(--accent); }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+      .wrap { max-width: 1120px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+
+      header { margin-bottom: 2rem; }
+      h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 0.6rem; letter-spacing: -0.01em; }
       h1 .name { color: var(--accent); }
-      .tagline { color: var(--muted); font-size: 1.05rem; margin: 0 0 1.25rem; max-width: 46rem; }
+      .tagline { color: var(--muted); font-size: 1.04rem; margin: 0 0 1.1rem; max-width: 50rem; }
+      .tagline code { color: var(--text); }
+      .toplinks { display: flex; flex-wrap: wrap; gap: 0.5rem; }
       .toplinks a {
-        color: var(--accent);
-        text-decoration: none;
-        font-size: 0.92rem;
-        margin-right: 1.25rem;
-        border-bottom: 1px solid transparent;
+        display: inline-flex; align-items: center; gap: 0.35rem;
+        padding: 0.4rem 0.8rem; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--panel);
+        color: var(--text); text-decoration: none; font-size: 0.9rem;
       }
-      .toplinks a:hover { border-bottom-color: var(--accent); }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 1.1rem;
+      .toplinks a:hover { background: var(--panel-hover); border-color: var(--border-strong); }
+      .toplinks a.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+
+      /* tag filter (enabled by the script at the bottom) */
+      .filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 2rem; }
+      .filters button {
+        appearance: none; border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+        border-radius: 999px; padding: 0.28rem 0.75rem; font: inherit; font-size: 0.82rem; cursor: pointer;
       }
+      .filters button:hover { color: var(--text); border-color: var(--border-strong); }
+      .filters button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+
+      .group { margin: 0 0 2.75rem; }
+      .group[hidden] { display: none; }
+      .section-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 1rem; margin: 0 0 1rem; }
+      .section-head h2 { font-size: 1.2rem; margin: 0; }
+      .section-head p { color: var(--muted); font-size: 0.9rem; margin: 0; }
+
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 1.1rem; }
       .card {
-        display: flex;
-        flex-direction: column;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        overflow: hidden;
-        text-decoration: none;
-        color: inherit;
+        display: flex; flex-direction: column;
+        background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+        text-decoration: none; color: inherit;
         transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
       }
-      .card:hover {
-        background: var(--panel-hover);
-        border-color: #33405a;
-        transform: translateY(-2px);
-      }
-      /* Screenshot slot — either a labelled placeholder (no image yet) or an
-         actual <img class="shot">, cropped to fill the same box. */
+      .card[hidden] { display: none; }
+      .card:hover { background: var(--panel-hover); border-color: var(--border-strong); transform: translateY(-2px); }
       .shot {
-        aspect-ratio: 16 / 9;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background:
-          repeating-linear-gradient(
-            45deg,
-            #10151e,
-            #10151e 10px,
-            #131a25 10px,
-            #131a25 20px
-          );
-        color: #3f4a5c;
-        font-size: 0.78rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+        aspect-ratio: 16 / 9; width: 100%; display: block; object-fit: cover; object-position: center;
+        background: repeating-linear-gradient(45deg, #10151e, #10151e 10px, #131a25 10px, #131a25 20px);
+        border-bottom: 1px solid var(--border);
       }
-      img.shot {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        object-position: center;
-        display: block;
+      .shot--empty {
+        display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center;
+        color: #3f4a5c; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase;
       }
-      .card-body { padding: 1rem 1.1rem 1.2rem; }
-      .card-title {
-        font-size: 1.08rem;
-        font-weight: 600;
-        margin: 0 0 0.3rem;
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-      }
+      .card-body { padding: 0.95rem 1.1rem 1.05rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
+      .card-title { font-size: 1.04rem; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 0.4rem; }
       .card-title .arrow { color: var(--muted); transition: transform 0.15s ease; }
       .card:hover .card-title .arrow { transform: translateX(3px); color: var(--accent); }
-      .card-desc { color: var(--muted); font-size: 0.9rem; margin: 0; }
-      footer {
-        margin-top: 3.5rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid var(--border);
-        color: var(--muted);
-        font-size: 0.85rem;
+      .card-desc { color: var(--muted); font-size: 0.88rem; margin: 0; flex: 1; }
+      .tags { list-style: none; margin: 0.25rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+      .tags li {
+        font-size: 0.7rem; letter-spacing: 0.02em; color: var(--muted);
+        border: 1px solid var(--border); background: var(--inset); border-radius: 999px; padding: 0.05rem 0.5rem;
       }
-      footer a { color: var(--accent); text-decoration: none; }
+
+      .toollist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 0.6rem; }
+      .toollist li {
+        background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 0.65rem 0.85rem;
+        font-size: 0.85rem; color: var(--muted); display: flex; flex-direction: column; gap: 0.15rem;
+      }
+      .toollist li[hidden] { display: none; }
+      .toollist a { color: var(--text); text-decoration: none; font-weight: 600; }
+      .toollist a:hover { color: var(--accent); }
+      .toollist a code { color: var(--accent); font-weight: 400; margin-right: 0.3rem; }
+      .toollist .ext { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+
+      .howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1rem; margin-top: 1rem; }
+      .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.15rem; font-size: 0.9rem; color: var(--muted); }
+      .box h2 { color: var(--text); font-size: 1rem; margin: 0 0 0.5rem; }
+      .box p { margin: 0 0 0.6rem; }
+      .box p:last-child { margin-bottom: 0; }
+      .box pre {
+        margin: 0 0 0.6rem; padding: 0.6rem 0.75rem; overflow-x: auto;
+        background: var(--inset); border: 1px solid var(--border); border-radius: 8px;
+        color: var(--text); font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .box code { color: var(--text); }
+
+      footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+      footer a { text-decoration: none; }
       footer a:hover { text-decoration: underline; }
+
+      @media (max-width: 640px) {
+        .wrap { padding: 1.75rem 1rem 3rem; }
+        h1 { font-size: 1.45rem; }
+        .tagline { font-size: 0.95rem; }
+      }
     </style>
   </head>
   <body>
@@ -117,177 +139,51 @@
       <header>
         <h1><span class="name">denoiser</span> — WebGPU denoising for the web</h1>
         <p class="tagline">
-          A WebGPU denoising library for the web. Path-traced frames are denoised
-          with Intel Open Image Denoise (OIDN) networks, matching native OIDN
-          output, on interchangeable runtimes (hand-written WGSL, WebNN, ONNX
-          Runtime; <code>AutoRuntime</code> by default). Raster and hybrid
-          pipelines get real-time temporal denoisers (AMD FidelityFX shadows and
-          reflections, ported to WGSL). Everything shares one <code>GPUDevice</code>
-          with your renderer, including three.js <code>WebGPURenderer</code> / TSL
-          nodes. No native code, no server round-trip. These demos need a WebGPU
-          browser (Chrome/Edge 113+, Safari 26+) and have been validated on Apple
-          GPUs only so far.
+          Path-traced frames are denoised with Intel Open Image Denoise (OIDN) networks, matching
+          native OIDN output, on interchangeable runtimes (hand-written WGSL, WebNN, ONNX Runtime;
+          <code>AutoRuntime</code> picks one). Raster and hybrid pipelines get real-time temporal
+          denoisers (AMD FidelityFX shadows and reflections, ported to WGSL). Everything shares one
+          <code>GPUDevice</code> with your renderer, including three.js <code>WebGPURenderer</code> /
+          TSL nodes. No native code, no server round-trip. These demos need a WebGPU browser
+          (Chrome/Edge 113+, Safari 26+) and have been validated on Apple GPUs only so far.
         </p>
         <nav class="toplinks">
-          <a href="https://github.com/pmndrs/denoiser">GitHub repo ↗</a>
-          <a href="./docs/">Docs</a>
+          <a class="primary" href="./docs/">Docs</a>
+          <a href="https://github.com/pmndrs/denoiser">GitHub &#8599;</a>
+          <a href="#run-locally">Run locally</a>
         </nav>
       </header>
 
-      <main class="grid">
-        <a class="card" href="./hello-world/">
-          <img class="shot" src="./shots/hello-world.png" alt="hello-world demo screenshot: noisy vs denoised spheres" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Hello world <span class="arrow">→</span></p>
-            <p class="card-desc">
-              The 10-line story: a noisy render → <code>Denoiser.create()</code> →
-              <code>denoise()</code> → canvas. No three.js, no build tricks.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./gallery/">
-          <img class="shot" src="./shots/gallery.png" alt="gallery demo screenshot: before/after divider on the LDraw Eiffel Tower scene" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Before / after gallery <span class="arrow">→</span></p>
-            <p class="card-desc">
-              Pre-rendered path-traced scenes at 1–16 samples per pixel, denoised
-              live in your browser: drag the divider, step the noise ladder, toggle
-              albedo+normal guidance.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./aux-inputs/">
-          <img class="shot" src="./shots/aux-inputs.png" alt="aux-inputs demo screenshot: correct-aux baseline vs sRGB-corrupted-albedo denoise comparison" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Aux inputs, explained <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              What the network actually sees — albedo and normal conventions, plus
-              three real bugs you can toggle on and watch degrade the output.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./webgpu-raw/">
-          <img class="shot" src="./shots/webgpu-raw.png" alt="raw WebGPU demo screenshot: denoised Cornell box render with the live-denoise UI controls" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Raw WebGPU <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              No framework at all: a single-file WGSL path tracer and the denoiser
-              sharing one <code>GPUDevice</code> — the copy-paste integration recipe.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./ldraw-eiffel/">
-          <img class="shot" src="./shots/ldraw-eiffel.png" alt="LDraw Eiffel Tower demo screenshot: noisy vs denoised path-traced render" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">LDraw Eiffel Tower <span class="arrow">→</span></p>
-            <p class="card-desc">
-              A LEGO Eiffel Tower on a table: fast raster preview while you orbit,
-              path-trace + denoise the moment the camera comes to rest.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./three-pathtracer-webgpu/">
-          <img class="shot" src="./shots/three-pathtracer-webgpu.png" alt="three.js path tracer demo screenshot: noisy vs denoised spheres" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">three.js path tracer <span class="arrow">→</span></p>
-            <p class="card-desc">
-              three.js <code>WebGPUPathTracer</code> and the denoiser sharing one
-              <code>GPUDevice</code> — an interactive scene, progressively path
-              traced and denoised live.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./babylon/">
-          <img class="shot" src="./shots/babylon.png" alt="Babylon.js demo screenshot: noisy vs denoised PBR spheres with the readback/denoise/upload ms-breakdown tiles" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Babylon.js <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              The honest cross-engine integration: Babylon renders, the denoiser
-              cleans it up over a measured CPU round-trip &mdash; every copy timed.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./realtime-compare/">
-          <img class="shot" src="./shots/realtime-compare.png" alt="Realtime vs OIDN demo screenshot: split view of three.js recurrentDenoise vs our OIDN full-frame denoise, each with a live HUD" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Realtime vs OIDN <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              Noisy SSR denoised two ways: three.js's temporal
-              <code>RecurrentDenoiseNode</code> every frame vs OIDN-quality
-              single-image denoising on a cadence &mdash; same device, same noise,
-              honest trade-offs.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./three-temporal/shadows.html">
-          <img class="shot" src="./shots/three-temporal-shadows.png" alt="Split screen of a furnished room: three.js shadow map on the left, one ray per pixel denoised by ffxShadows on the right, with soft shadows that stay sharp where the table and chair legs touch the rug" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Ray-traced shadows &amp; reflections in a raster app <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              When would you use FFX? A normal three.js scene that traces just two effects at 1 ray per pixel
-              (area-light shadows against the real meshes via three-mesh-bvh, and SSR),
-              denoised every frame by <code>ffxShadows()</code> / <code>ffxReflections()</code>.
-              Compare with three's shadow maps and env maps, a converged reference, and live
-              per-pass GPU cost.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./three-temporal/">
-          <img class="shot" src="./shots/three-temporal.png" alt="three.js SSR denoise example split screen: three's recurrentDenoise on the left, AMD FidelityFX reflection denoiser on the right" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">three.js SSR: FidelityFX vs recurrentDenoise <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              three's <code>webgpu_postprocessing_ssr_denoise</code> with the
-              <code>ffxReflections()</code> TSL node swapped in, split-screen against
-              three's own denoiser.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./ffx-denoiser/">
-          <img class="shot" src="./shots/ffx-denoiser.png" alt="FidelityFX reflection denoiser demo: noisy 1-sample glossy reflections on the left, denoised on the right" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Real-time shadows &amp; reflections <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              AMD's FidelityFX shadow and reflection denoisers ported to WGSL
-              (<code>denoiser/ffx</code>): 1-sample ray-traced signals denoised every
-              frame vs a converged reference &mdash; ~0.5 / ~1.7&nbsp;ms at 1080p.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./upscale-pipeline/">
-          <img class="shot" src="./shots/upscale-pipeline.png" alt="Denoise + upscale pipeline demo screenshot: FSR-upscaled noisy raster scene with the per-stage render/denoise/upscale GPU cost bar" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Denoise &#43; upscale pipeline <span class="arrow">&#8594;</span></p>
-            <p class="card-desc">
-              Three pmndrs packages, one <code>GPUDevice</code>: render small,
-              denoise, temporal FSR3 upscale to full res (FSR1 toggle to
-              compare) &mdash; zero CPU copies, every stage timed.
-            </p>
-          </div>
-        </a>
-
-        <a class="card" href="./bench/">
-          <img class="shot" src="./shots/bench.jpg" alt="benchmark harness screenshot: per-stage timings and noisy/denoised comparison" loading="lazy">
-          <div class="card-body">
-            <p class="card-title">Benchmark <span class="arrow">→</span></p>
-            <p class="card-desc">
-              The perf harness for the runtimes: cold + warm timings, per-stage stats, and fp16-vs-fp32
-              PSNR across image sizes. Numbers you can reproduce in your own browser.
-            </p>
-          </div>
-        </a>
+      <main>
+        <!-- @examples -->
       </main>
+
+      <section class="howto" id="run-locally">
+        <div class="box">
+          <h2>Run the examples locally</h2>
+          <pre>git clone https://github.com/pmndrs/denoiser
+cd denoiser
+yarn install
+yarn build:lib
+yarn examples          # http://localhost:5160/</pre>
+          <p>
+            One dev server for everything: this page at <code>/</code> and every example at
+            <code>/&lt;name&gt;/</code>, the same paths as this site. The tools &amp; tests above
+            only run there. <code>yarn examples --list</code> prints them;
+            <code>yarn examples &lt;name&gt;</code> starts one example on its own.
+          </p>
+        </div>
+        <div class="box">
+          <h2>Enable WebNN in Chrome</h2>
+          <p>
+            The <em>WebNN</em> runtime (and <code>AutoRuntime</code>'s fp16 WebNN path) needs
+            WebNN, which Chrome still ships behind a flag. Without it the examples fall back to WGSL
+            and the WebNN button is greyed out.
+          </p>
+          <p>Turn on <code>chrome://flags/#web-machine-learning-neural-network</code> ("WebNN API") and relaunch, or start Chrome with:</p>
+          <pre>--enable-features=WebMachineLearningNeuralNetwork</pre>
+        </div>
+      </section>
 
       <footer>
         <a href="https://github.com/pmndrs/denoiser">pmndrs/denoiser</a> ·
@@ -295,5 +191,24 @@
         Demos deploy from <code>main</code> via GitHub Pages.
       </footer>
     </div>
+    <script>
+      // Tag filter: show only the cards (and sections) carrying the chosen tag.
+      (() => {
+        const bar = document.querySelector('.filters');
+        if (!bar) return;
+        bar.hidden = false;
+        const items = [...document.querySelectorAll('[data-tags]')];
+        bar.addEventListener('click', (ev) => {
+          const btn = ev.target.closest('button');
+          if (!btn) return;
+          const tag = btn.dataset.tag;
+          for (const b of bar.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b === btn));
+          for (const it of items) it.hidden = !!tag && !it.dataset.tags.split('|').includes(tag);
+          for (const g of document.querySelectorAll('.group')) {
+            g.hidden = !g.querySelector('[data-tags]:not([hidden])');
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

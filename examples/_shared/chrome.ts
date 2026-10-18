@@ -1,15 +1,17 @@
 // Shared "demo chrome" for the denoiser examples — dependency-free.
 //
 // Imported via a RELATIVE path (e.g. `import { ensureWebGPU } from '../../_shared/chrome'`),
-// NOT as a workspace package. Everything here is plain DOM + inline styles so any
-// example (three-based or not, bundled or raw) can use it without pulling deps.
+// NOT as a workspace package. Plain DOM, no deps; the look comes from shell.css (the
+// same stylesheet as the example shell's top bar and controls panel, see shell.ts).
 //
 // Public API:
 //   ensureWebGPU(el?)  -> Promise<boolean>   feature-detect + friendly banner on failure
 //   statsOverlay()     -> { frame(ms) }      fixed-corner ms/FPS readout
-//   demoFooter(name)   -> void               small footer (name, source link, back to index)
+//   demoFooter(name)   -> void               small footer (name, source link, back to the list)
 //   pathtracerNote()   -> void               dismissible note re: the early-stage WebGPU path tracer
 //   runtimePicker(o)   -> { setReadout(t) }  segmented ?runtime= switcher (reloads) + readout
+
+import './shell.css';
 
 const REPO_URL = 'https://github.com/pmndrs/denoiser';
 const SUPPORTED_BROWSERS = 'Chrome 113+, Edge 113+, or Safari 26+ (Technology Preview)';
@@ -45,13 +47,8 @@ export async function ensureWebGPU(el?: HTMLElement): Promise<boolean> {
 function injectUnsupportedBanner(host: HTMLElement, detail: string): void {
   const banner = document.createElement('div');
   banner.setAttribute('data-denoiser-chrome', 'unsupported');
-  banner.style.cssText = [
-    'position:fixed', 'inset:0', 'z-index:99999',
-    'display:flex', 'align-items:center', 'justify-content:center',
-    'padding:2rem', 'box-sizing:border-box',
-    'background:#0b0e14', 'color:#e2e8f0',
-    'font-family:system-ui,-apple-system,sans-serif', 'line-height:1.5',
-  ].join(';');
+  // Below the shell's top bar (--dn-bar-h), so "back to the examples" stays reachable.
+  banner.className = 'dn-unsupported';
   banner.innerHTML = `
     <div style="max-width:34rem;text-align:center">
       <div style="font-size:2.5rem;margin-bottom:0.5rem">⚡</div>
@@ -61,7 +58,7 @@ function injectUnsupportedBanner(host: HTMLElement, detail: string): void {
         Try a supported browser: ${SUPPORTED_BROWSERS}.
       </p>
       <p style="margin:0 0 1.5rem;color:#718096;font-size:0.85rem">${escapeHtml(detail)}</p>
-      <a href="${REPO_URL}" style="color:#90cdf4">denoiser on GitHub →</a>
+      <a href="../">&larr; all examples</a> &nbsp;·&nbsp; <a href="${REPO_URL}">denoiser on GitHub &rarr;</a>
     </div>`;
   host.appendChild(banner);
 }
@@ -74,13 +71,7 @@ function injectUnsupportedBanner(host: HTMLElement, detail: string): void {
 export function statsOverlay(): { frame(ms: number): void } {
   const el = document.createElement('div');
   el.setAttribute('data-denoiser-chrome', 'stats');
-  el.style.cssText = [
-    'position:fixed', 'top:8px', 'right:8px', 'z-index:99998',
-    'padding:4px 8px', 'border-radius:6px',
-    'background:rgba(11,14,20,0.72)', 'color:#7ee787',
-    'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace',
-    'pointer-events:none', 'white-space:pre', 'letter-spacing:0.02em',
-  ].join(';');
+  el.className = 'dn-stats';
   el.textContent = '-- ms';
   document.body.appendChild(el);
 
@@ -97,22 +88,19 @@ export function statsOverlay(): { frame(ms: number): void } {
 
 /**
  * Injects a small footer: the demo name, a link to this demo's source on GitHub,
- * and a link back to the demo index (`../`). Safe to call once per page.
+ * and a link back to the examples list (`../`). Appended to the page's `.dn-page`
+ * column when there is one, else to <body>. Safe to call once per page.
  */
 export function demoFooter(name: string): void {
   const footer = document.createElement('footer');
   footer.setAttribute('data-denoiser-chrome', 'footer');
-  footer.style.cssText = [
-    'margin-top:3rem', 'padding:1rem 0', 'border-top:1px solid rgba(128,128,128,0.25)',
-    'color:#718096', 'font:0.85rem/1.5 system-ui,-apple-system,sans-serif',
-    'display:flex', 'gap:1rem', 'flex-wrap:wrap', 'align-items:center',
-  ].join(';');
+  footer.className = 'dn-footer';
   const sourceUrl = `${REPO_URL}/tree/main/examples/${name}`;
   footer.innerHTML = `
     <span>denoiser · <strong>${escapeHtml(name)}</strong></span>
-    <a href="${sourceUrl}" style="color:#90cdf4">source ↗</a>
-    <a href="../" style="color:#90cdf4">← all demos</a>`;
-  document.body.appendChild(footer);
+    <a href="${sourceUrl}">source ↗</a>
+    <a href="../">← all examples</a>`;
+  (document.querySelector('.dn-page') ?? document.body).appendChild(footer);
 }
 
 /**
@@ -131,22 +119,17 @@ export function pathtracerNote(): void {
   }
   const note = document.createElement('div');
   note.setAttribute('data-denoiser-chrome', 'pathtracer-note');
-  note.style.cssText = [
-    'margin-top:1rem', 'padding:0.6rem 0.9rem', 'border-radius:8px',
-    'background:rgba(144,205,244,0.08)', 'border:1px solid rgba(144,205,244,0.25)',
-    'color:#a0aec0', 'font:0.8rem/1.5 system-ui,-apple-system,sans-serif',
-    'display:flex', 'gap:0.75rem', 'align-items:flex-start', 'justify-content:space-between',
-  ].join(';');
+  note.className = 'dn-pt-note';
   note.innerHTML = `
     <span>Path tracing here runs on the early-stage <code>WebGPUPathTracer</code> from gkjohnson's
-      <a href="${PATHTRACER_URL}" target="_blank" rel="noopener" style="color:#90cdf4">three-gpu-pathtracer</a>,
+      <a href="${PATHTRACER_URL}" target="_blank" rel="noopener">three-gpu-pathtracer</a>,
       pinned to a fixed commit — expect rough edges.</span>
-    <button type="button" aria-label="dismiss" style="flex:none;background:none;border:none;color:#718096;cursor:pointer;font-size:1rem;line-height:1;padding:0 0.2rem">&times;</button>`;
+    <button type="button" aria-label="dismiss">&times;</button>`;
   note.querySelector('button')!.addEventListener('click', () => {
     try { localStorage.setItem(KEY, '1'); } catch { /* ignore */ }
     note.remove();
   });
-  document.body.appendChild(note);
+  (document.querySelector('.dn-page') ?? document.body).appendChild(note);
 }
 
 export interface RuntimeOption {
@@ -178,18 +161,18 @@ export function runtimePicker(o: {
 }): { setReadout(text: string): void } {
   const host = o.mount ?? document.body.appendChild(document.createElement('div'));
   host.setAttribute('data-denoiser-chrome', 'runtime-picker');
-  host.style.cssText = [
-    'display:flex', 'flex-wrap:wrap', 'align-items:center', 'gap:0.5rem 0.75rem', 'margin:0.75rem 0',
-    'font:0.85rem/1.4 system-ui,-apple-system,sans-serif', 'color:#e2e8f0',
-  ].join(';');
+  // A shell.css control group: label, segmented buttons + readout on one row.
+  host.classList.add('dn-group', 'dn-runtime');
   const label = document.createElement('span');
-  label.textContent = 'denoiser runtime';
-  label.style.color = '#a0aec0';
+  label.className = 'dn-label';
+  label.textContent = 'Denoiser runtime';
+  const row = document.createElement('div');
+  row.className = 'dn-row';
   const seg = document.createElement('div');
+  seg.className = 'dn-seg';
   seg.setAttribute('role', 'group');
   seg.setAttribute('aria-label', 'denoiser runtime');
-  seg.style.cssText = 'display:inline-flex;border:1px solid #4a5568;border-radius:8px;overflow:hidden';
-  o.options.forEach((r, i) => {
+  o.options.forEach((r) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = r.label;
@@ -198,14 +181,6 @@ export function runtimePicker(o: {
     btn.setAttribute('aria-pressed', String(pressed));
     btn.title = r.unavailable ?? r.hint ?? '';
     btn.disabled = !pressed && !!r.unavailable;
-    btn.style.cssText = [
-      'appearance:none', 'border:none', 'margin:0', 'padding:0.35rem 0.8rem', 'font:inherit',
-      `border-right:${i < o.options.length - 1 ? '1px solid #4a5568' : 'none'}`,
-      `background:${pressed ? '#90cdf4' : '#2d3748'}`,
-      `color:${pressed ? '#0b0e14' : btn.disabled ? '#718096' : '#e2e8f0'}`,
-      `font-weight:${pressed ? '600' : '400'}`,
-      `cursor:${pressed || btn.disabled ? 'default' : 'pointer'}`,
-    ].join(';');
     btn.addEventListener('click', () => {
       if (pressed || btn.disabled) return;
       const url = new URL(location.href);
@@ -217,8 +192,9 @@ export function runtimePicker(o: {
   });
   const readout = document.createElement('span');
   readout.setAttribute('data-denoiser-chrome', 'runtime-readout');
-  readout.style.cssText = 'font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#7ee787';
-  host.append(label, seg, readout);
+  readout.className = 'dn-readout';
+  row.append(seg, readout);
+  host.append(label, row);
   return { setReadout(text: string) { readout.textContent = text; } };
 }
 
