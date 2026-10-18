@@ -43,6 +43,22 @@ Verified locally: `yarn build:lib`, the CI typecheck list plus `three-temporal` 
 (https://pmndrs.github.io/denoiser/). npm publishing is only the manual `release.yml` workflow.
 The user wanted to hold the push until they had looked things over, so ask before pushing.
 
+## Added 2026-10-18 (also unpushed)
+
+- **Pipeline Lab** (`examples/pipeline-lab`): three-gpu-pathtracer → denoiser → @pmndrs/upscaler on one device,
+  through the tracer's `setDenoiser` / `setUpscaler` hooks (`src/passes.ts`). Scenes: spheres, furnished room,
+  LEGO Eiffel, your own .glb. Benchmark button: per-stage times + PSNR vs a high-spp reference, "run on every
+  runtime" (reloads per runtime), results copy out as Markdown/JSON. Guide: `docs/site/guides/benchmarking.mdx`.
+  Known: HF-kernels logs a destroyed-texture validation error during a benchmark run (results fine); skinned
+  glTF models render black (tracer limitation).
+- **Example shell:** every example has a top bar (back to list, prev/next, jump menu) and shared controls styling
+  (`examples/_shared/shell.ts`, `shell.css`). One example list, `examples/_shared/examples.json`, drives the
+  landing page (`tools/site.mjs`), the menus and `build-site.mjs`'s deploy list. Adding an example = one entry
+  + a 640×400 shot in `examples/site/shots`.
+- **Shadow split experiment** merged (`three-temporal/shadows-split.html`).
+- **three-gpu-pathtracer** pinned to upstream main `1e206d8` (after 0.0.27). three is 0.186.1 (latest).
+  @pmndrs/upscaler 0.5.0 is the latest release; its merged #89/#90 fixes need a 0.5.1.
+
 ## Runtime / denoiser status
 
 - **`denoiser/auto` (default):** WebNN fp16 for base/large models when available, else WGSL. Never ORT.
