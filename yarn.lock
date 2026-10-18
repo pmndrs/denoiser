@@ -2309,7 +2309,7 @@ __metadata:
     denoiser: "workspace:*"
     onnxruntime-web: "npm:^1.27.0"
     three: "npm:^0.186.1"
-    three-gpu-pathtracer: "github:gkjohnson/three-gpu-pathtracer#afc7db6294c15185752b22abc553d17168aaae9b"
+    three-gpu-pathtracer: "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114"
     three-mesh-bvh: "npm:^0.9.16"
     typescript: "npm:^5.9.3"
     vite: "npm:^8.1.4"
@@ -3360,14 +3360,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"three-gpu-pathtracer@github:gkjohnson/three-gpu-pathtracer#afc7db6294c15185752b22abc553d17168aaae9b":
+"three-gpu-pathtracer@github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114":
   version: 0.0.27
-  resolution: "three-gpu-pathtracer@https://github.com/gkjohnson/three-gpu-pathtracer.git#commit=afc7db6294c15185752b22abc553d17168aaae9b"
+  resolution: "three-gpu-pathtracer@https://github.com/gkjohnson/three-gpu-pathtracer.git#commit=1e206d8340e4c01165fe3d157627333a3d508114"
   peerDependencies:
     three: ">=0.185.0"
     three-mesh-bvh: ">=0.9.15"
     xatlas-web: ^0.1.0
-  checksum: 10c0/b63d53b948952269418e35387ffb6018188041d49aa588e982baa43eb3d90e0be0af1defaae2f81459df91e24dc3744daa051dd082a0bae3ae4442eb66ac2cd0
+  checksum: 10c0/04688433906f0ddacc8290b9e1ecf5f68beef5c11eafe5fbfc11d00434879897048a06d5cc879cbdb0a23c202b826372fbf4dcc9ef7562dc651ec597409db0a5
   languageName: node
   linkType: hard
 
@@ -3387,7 +3387,7 @@ __metadata:
     denoiser: "workspace:*"
     onnxruntime-web: "npm:^1.27.0"
     three: "npm:^0.186.1"
-    three-gpu-pathtracer: "github:gkjohnson/three-gpu-pathtracer#afc7db6294c15185752b22abc553d17168aaae9b"
+    three-gpu-pathtracer: "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114"
     three-mesh-bvh: "npm:^0.9.16"
     typescript: "npm:^5.9.3"
     vite: "npm:^8.1.4"

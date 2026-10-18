@@ -12,7 +12,7 @@
   "dependencies": {
     "denoiser": "workspace:*",
     "three": "^0.186.1",
-    "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#afc7db6294c15185752b22abc553d17168aaae9b",
+    "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114",
     "three-mesh-bvh": "^0.9.16",
     "xatlas-web": "^0.1.0"
   },
