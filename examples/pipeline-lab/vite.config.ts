@@ -13,6 +13,8 @@ export default defineConfig({
   // Relative base so the built bundle works under any subpath (GitHub Pages
   // serves examples under /denoiser/<name>/).
   base: './',
+  // the Eiffel Tower model + HDRIs live with the ldraw-eiffel example
+  publicDir: '../ldraw-eiffel/public',
   server: { fs: { allow: ['../..'] } },
   // three / pathtracer source use top-level await -> need an esnext target
   esbuild: { target: 'esnext' },

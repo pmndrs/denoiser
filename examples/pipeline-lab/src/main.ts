@@ -19,7 +19,7 @@ import { createStack, mountRuntimePicker } from '../../_shared/stack';
 import { sampleCounter } from '../../_shared/pathtracer';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
 import { DenoiserPass, UpscalerPass, type UpscalePath } from './passes';
-import { SCENES, type LabScene } from './scenes';
+import { SCENES, fromGltf, type LabScene } from './scenes';
 import { createBench, toMarkdown, RESULT_COLUMNS, type BenchConfig, type BenchResult } from './bench';
 import { runtimeOptions, type RuntimeName } from '../../_shared/stack';
 
@@ -96,16 +96,20 @@ async function main() {
   let controls: OrbitControls | undefined;
   let home: { position: THREE.Vector3; quaternion: THREE.Quaternion };
   async function loadScene(id: string) {
+    if (id === 'custom') { if (customScene) setLab(customScene, 'your model'); return; }
     const entry = SCENES.find((s) => s.id === id) ?? SCENES[0];
     log(`loading ${entry.label}…`);
-    lab = await entry.build();
+    setLab(await entry.build(), entry.label);
+  }
+  function setLab(next: LabScene, label: string) {
+    lab = next;
     const [w, h] = sizeOf();
     lab.camera.aspect = w / h;
     lab.camera.updateProjectionMatrix();
     const t0 = performance.now();
     pathTracer.setScene(lab.scene, lab.camera);
     denoisePass.setScene(lab.scene, lab.camera);
-    log(`${entry.label}: BVH built in ${(performance.now() - t0).toFixed(0)} ms`);
+    log(`${label}: BVH built in ${(performance.now() - t0).toFixed(0)} ms`);
     home = { position: lab.camera.position.clone(), quaternion: lab.camera.quaternion.clone() };
     controls?.dispose();
     controls = new OrbitControls(lab.camera, canvas);
@@ -114,6 +118,32 @@ async function main() {
     controls.addEventListener('change', () => { pathTracer.updateCamera(); restart(); });
     restart();
   }
+
+  // your own model: drop a .glb / .gltf on the page or pick one (it never leaves the browser)
+  let customScene: LabScene | undefined;
+  async function loadFile(file: File) {
+    log(`loading ${file.name}…`);
+    try {
+      customScene = await fromGltf(file);
+    } catch (e) { log(`could not load ${file.name}: ${(e as Error).message}`); return; }
+    let opt = ui.scene.querySelector<HTMLOptionElement>('option[value=custom]');
+    if (!opt) { opt = new Option('', 'custom'); ui.scene.add(opt); }
+    opt.textContent = `Your model: ${file.name.length > 18 ? file.name.slice(0, 16) + '…' : file.name}`;
+    ui.scene.value = 'custom';
+    setLab(customScene, file.name);
+  }
+  $<HTMLInputElement>('file').addEventListener('change', (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (f) void loadFile(f);
+  });
+  document.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('dropping'); });
+  document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('dropping'); });
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    document.body.classList.remove('dropping');
+    const f = [...(e.dataTransfer?.files ?? [])].find((x) => /\.(glb|gltf)$/i.test(x.name));
+    if (f) void loadFile(f);
+  });
 
   const sizeOf = () => ui.size.value.split('x').map(Number) as [number, number];
   function applySize() {
@@ -182,6 +212,7 @@ async function main() {
   applySize();
   applyStages();
   await upscalePass.ready.catch(() => undefined);
+  if (ui.scene.value === '') ui.scene.value = SCENES[0].id; // e.g. ?scene=custom after a reload
   await loadScene(ui.scene.value);
 
 
