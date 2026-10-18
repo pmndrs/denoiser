@@ -26,7 +26,7 @@ import {
   float, vec3, vec4, uniform, uint, mix, screenCoordinate, pass, mrt, output, shadow, texture,
   diffuseColor, normalView, materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal,
   velocity, sample, getViewPosition, convertToTexture, renderOutput, uv,
-  Fn, If, hash, pmremTexture, EnvironmentBRDF, cameraPosition,
+  Fn, If, hash, pmremTexture, EnvironmentBRDF,
 } from 'three/tsl';
 // three's SSR sampler (ggxReflectionSample isn't in @types/three yet)
 import * as SpecularHelpers from 'three/addons/tsl/utils/SpecularHelpers.js';
@@ -34,6 +34,7 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { upscale } from '@pmndrs/upscaler';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
@@ -66,6 +67,97 @@ const REFL_LABEL: Record<ReflMode, string> = {
   ref: 'reference (ray traced, 4 rays/pixel/frame, accumulated)',
   off: 'diagnostic: no specular',
 };
+
+const SHORT: Record<ReflMode, string> = { probe: 'probe', ssr: 'SSR + probe', hybrid: 'hybrid', rt: 'ray traced', ref: 'reference', off: 'no specular' };
+
+// ---- the guided tour: one situation per weakness ----------------------------------------
+// Each one puts the camera somewhere, picks the two modes worth comparing side by side, and says
+// what to look at. `pos` / `target` are world space; no `pos` means the slow orbit.
+type Verdict = 'good' | 'bad' | 'part';
+interface Scenario {
+  id: string; short: string; title: string;
+  pos?: [number, number, number]; target?: [number, number, number];
+  left: ReflMode; right: ReflMode | 'none'; view?: 'image' | 'source'; spin?: boolean; gloss?: number; split?: number;
+  look: string; verdicts: [ReflMode, Verdict, string][]; why?: string;
+}
+const SCENARIOS: Scenario[] = [
+  {
+    id: 'mirror', short: 'A mirror', title: 'A mirror: what\'s behind the camera',
+    pos: [0.3, 1.45, 2.3], target: [0.15, 1.5, -2.08], split: 0.39,
+    left: 'ssr', right: 'hybrid',
+    look: 'The mirror faces you, so it shows the half of the room behind the camera: a blue wall, a sofa, three lit bars, a globe lamp and a plant. None of it is on screen. The divider runs through the globe lamp: compare its two halves, and the sharpness on either side.',
+    verdicts: [
+      ['ssr', 'bad', 'SSR finds nothing, so every mirror pixel falls back to the probe: soft and blocky (the probe is a 256-pixel cube), the globe lamp and plant drawn where the probe saw them, and the table\'s reflection smeared.'],
+      ['hybrid', 'good', 'A traced ray per mirror pixel: sharp, and everything where it really is, including the back of the sculpture.'],
+      ['probe', 'bad', 'The same as SSR here.'],
+    ],
+    why: 'Mirrors, windows, car paint and water facing the camera are where screen-space methods break down, and why games use ray tracing or a planar reflection (rendering the scene a second time, mirrored) for them.',
+  },
+  {
+    id: 'offscreen', short: 'Off the top of the screen', title: 'Off the top of the screen',
+    pos: [-1.0, 1.0, 2.4], target: [-1.75, 0, 0.9], gloss: 0.04,
+    left: 'ssr', right: 'hybrid',
+    look: 'Looking down at the polished floor. The glowing floor lamp is above the frame; its shade is reflected in the middle of the image, right on the divider. Look at how the two halves of the reflection don\'t line up.',
+    verdicts: [
+      ['ssr', 'bad', 'SSR can\'t see the lamp, so the probe guesses, and draws the shade in the wrong place: the probe saw the lamp from above the table, not from here.'],
+      ['hybrid', 'good', 'SSR misses too, so a ray is traced and finds the real shade.'],
+      ['probe', 'part', 'The orange ring on the left is mounted on the wall, so box projection gets it about right. Box projection works for walls and nothing else.'],
+    ],
+    why: 'This is SSR\'s most common failure in games: look down at a wet street or a glossy floor and the reflections of things above the screen fade or jump. Try it yourself: drag the view up and down and watch the left half.',
+  },
+  {
+    id: 'moving', short: 'Things that move', title: 'Things that move',
+    pos: [-0.9, 1.35, 1.4], target: [0.6, 1.15, -1.9], spin: true, split: 0.4,
+    left: 'probe', right: 'hybrid',
+    look: 'The gold sculpture turns. The mirror behind it shows its back, which the camera never sees. On the right of the divider (hybrid) the reflection turns with it. Drag the divider right over it to see what the probe has.',
+    verdicts: [
+      ['probe', 'bad', 'The sculpture isn\'t in the mirror at all: the probe photographed it from above the table, and box projection puts that image somewhere else. And whatever the probe has is frozen at the moment it was baked (press "re-bake probe").'],
+      ['hybrid', 'good', 'Rays see the scene as it is this frame (the BVH is refitted each frame as the sculpture turns).'],
+      ['ssr', 'bad', 'SSR only has the side of the sculpture facing the camera, so it can\'t show its back in the mirror.'],
+    ],
+    why: 'Re-baking costs about 45-50 ms here (6 cube faces + PMREM): fine once in a while, too slow every frame. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
+  },
+  {
+    id: 'contact', short: 'Where things touch', title: 'Where things touch the floor',
+    pos: [0.4, 0.5, -1.75], target: [-1.6, 0.3, -1.55], gloss: 0.05,
+    left: 'probe', right: 'hybrid',
+    look: 'A low view along the polished floor at the teal vase. The divider runs through it. A reflection should start exactly where the vase touches the floor.',
+    verdicts: [
+      ['probe', 'bad', 'The vase\'s reflection is faint and in the wrong place, and the chair seat shows up as a tan smear on the floor where nothing should be: the probe saw them from somewhere else and painted them onto the walls.'],
+      ['hybrid', 'good', 'The reflection starts at the base and mirrors the vase exactly.'],
+      ['ssr', 'good', 'The vase is on screen, so SSR finds it exactly too.'],
+    ],
+    why: 'Box projection is exact only for the walls of the box. Everything inside the room is drawn as if it were painted on the walls, which is why probe reflections look "floaty" and don\'t touch the things that cast them.',
+  },
+  {
+    id: 'rough', short: 'Rough surfaces', title: 'Rough surfaces: why the hybrid has a cutoff',
+    pos: [-0.2, 1.3, 1.4], target: [-1.2, 0, -0.4],
+    left: 'rt', right: 'hybrid',
+    look: 'The rug is fully rough. Its reflection is a blur of the whole room, so one random ray per pixel is mostly noise. Look at the rug on each side.',
+    verdicts: [
+      ['rt', 'part', 'Right on average, but the rug sparkles: the denoiser is built for glossy reflections, and one ray on a rough surface carries too little.'],
+      ['hybrid', 'good', 'Above the cutoff (the slider below) it takes the prefiltered probe instead: smooth, free, and the blur hides that it is approximate.'],
+      ['probe', 'good', 'Good on rough surfaces, for the same reason.'],
+    ],
+    why: 'Drag the "hybrid roughness cutoff" slider to 1 and the hybrid sparkles too. AMD\'s hybrid reflections and most engines draw the same line, around 0.3 to 0.5.',
+  },
+  {
+    id: 'sources', short: 'Where reflections come from', title: 'Where each pixel\'s reflection comes from',
+    left: 'ssr', right: 'hybrid', view: 'source',
+    look: 'Each pixel is tinted by what answered its reflection ray: <b class="c-ssr">SSR found it on screen</b>, <b class="c-rt">a ray traced against the scene</b>, <b class="c-miss">nothing found it, so the probe guessed</b>, or <b class="c-probe">the prefiltered probe, no ray at all</b>. Left is SSR, right is the hybrid. Drag the divider, or drag the view to look around: tilt down at the floor and watch green turn red on the left and blue on the right.',
+    verdicts: [
+      ['ssr', 'part', 'Green on the floor and table, where what they reflect is on screen. The mirror is red: it shows what\'s behind the camera, and SSR has nothing to find there. The rough walls are mostly red too, which matters less: their reflection is a dim blur either way.'],
+      ['hybrid', 'good', 'The same green, but the red turns blue: rays answer what SSR can\'t. Rough surfaces (the rug, the walls) are orange: they skip rays and take the prefiltered probe.'],
+    ],
+    why: 'This is the whole idea of a hybrid: use the cheap answer where it is right, and pay for rays only where it isn\'t.',
+  },
+  {
+    id: 'explore', short: 'Explore', title: 'Explore',
+    left: 'hybrid', right: 'none',
+    look: 'The slow orbit. Drag the view to look around (it then holds still) and scroll to move. Pick any two modes with "Left side" and "Right side" below, or switch "Show" to see where reflections come from.',
+    verdicts: [],
+  },
+];
 
 
 const statusEl = document.querySelector<HTMLPreElement>('#status')!;
@@ -146,7 +238,7 @@ function buildScene() {
   };
 
   // shell: glossy floor, two matte walls, skirting
-  const floorMat = std(0x6e5643, 0.12);
+  const floorMat = std(0x3d2e24, 0.12); // dark polished wood: reflections read clearly
   const floor = add(new THREE.PlaneGeometry(16, 16), floorMat, 0, 0, 0);
   floor.rotation.x = -Math.PI / 2;
   const wallMat = std(0xd9d4cc, 0.85);
@@ -156,8 +248,8 @@ function buildScene() {
   const skirt = std(0xece8e2, 0.6);
   add(new THREE.BoxGeometry(12, 0.09, 0.02), skirt, 0, 0.045, -2.09);
   add(new THREE.BoxGeometry(0.02, 0.09, 12), skirt, -2.99, 0.045, 0);
-  // rug
-  add(new RoundedBoxGeometry(2.5, 0.012, 1.7, 2, 0.005), std(0x56677a, 1.0), -0.15, 0.006, -0.55);
+  // rug, under the chair (the floor under the table stays glossy)
+  add(new RoundedBoxGeometry(1.7, 0.012, 1.6, 2, 0.005), std(0x56677a, 1.0), -1.25, 0.006, -0.5);
 
   // table: glossy dark top on four thin metal legs (contact shadows where they meet the rug)
   const topMat = std(0x2b1d15, 0.12);
@@ -189,7 +281,8 @@ function buildScene() {
   const brass = std(0xb08d57, 0.3, 1.0);
   add(new THREE.CylinderGeometry(0.17, 0.18, 0.025, 32), legMat, 0, 0.0125, 0, 0, lamp);
   add(new THREE.CylinderGeometry(0.011, 0.011, 1.5, 12), brass, 0, 0.76, 0, 0, lamp);
-  const shadeMat = new THREE.MeshStandardMaterial({ color: 0xf1ebe0, roughness: 0.9, side: THREE.DoubleSide });
+  // the lamp is on: a glowing shade, so its reflection is easy to follow
+  const shadeMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0xffd6a0, emissiveIntensity: 2.2, side: THREE.DoubleSide });
   add(new THREE.CylinderGeometry(0.13, 0.23, 0.28, 40, 1, true), shadeMat, 0, 1.58, 0, 0, lamp);
 
   // tall ceramic vase on the floor (lathe)
@@ -211,8 +304,37 @@ function buildScene() {
   bookCols.forEach((c, i) => add(new RoundedBoxGeometry(0.26, 0.035, 0.19, 2, 0.004), std(c, 0.7), 0.55, tt + 0.0175 + i * 0.036, -0.05, 0.15 * i - 0.1, table));
 
   // sculpture on a plinth: slowly turns while the camera moves (a dynamic occluder)
-  add(new RoundedBoxGeometry(0.32, 0.9, 0.32, 3, 0.01), std(0xeeeae4, 0.7), 1.95, 0.45, -1.45);
-  const knot = add(new THREE.TorusKnotGeometry(0.13, 0.04, 160, 20), std(0xc9a46a, 0.25, 1.0), 1.95, 1.12, -1.45);
+  // (in front of the mirror's right end, so the mirror shows its back, which the camera never sees)
+  add(new RoundedBoxGeometry(0.34, 0.9, 0.34, 3, 0.01), std(0xeeeae4, 0.7), 0.95, 0.45, -1.65);
+  const knot = add(new THREE.TorusKnotGeometry(0.15, 0.045, 160, 20), std(0xc9a46a, 0.25, 1.0), 0.95, 1.14, -1.65);
+
+  // a mirror on the back wall. It faces the camera, so what it shows is mostly BEHIND the camera:
+  // the case screen-space reflections can't answer
+  add(new RoundedBoxGeometry(2.32, 1.62, 0.03, 2, 0.008), std(0x1d1d1f, 0.4, 0.8), 0.15, 1.6, -2.095);
+  add(new THREE.PlaneGeometry(2.2, 1.5), std(0xe6e6e6, 0.02, 1.0), 0.15, 1.6, -2.078);
+
+  // the front of the room, behind the default camera: a wall, a sofa and three lit art bars.
+  // You only ever see it in reflections (the mirror, the floor when you look down).
+  const front = std(0x5a7690, 0.85);
+  add(new THREE.PlaneGeometry(16, 4), front, 0, 2, 4.6, Math.PI);
+  add(new THREE.BoxGeometry(12, 0.09, 0.02), skirt, 0, 0.045, 4.59);
+  const sofaMat = std(0xb5562f, 0.8);
+  add(new RoundedBoxGeometry(2.3, 0.42, 0.9, 3, 0.06), sofaMat, 0.2, 0.21, 4.1);
+  add(new RoundedBoxGeometry(2.3, 0.5, 0.22, 3, 0.06), sofaMat, 0.2, 0.62, 4.48);
+  const glow = (c: number, k: number) => new THREE.MeshStandardMaterial({ color: 0x000000, emissive: c, emissiveIntensity: k });
+  [[0xff3b5c, -0.75, 1.75, 0.9], [0x2ee6d6, 0.2, 1.95, 1.3], [0xffc93c, 1.15, 1.7, 0.8]].forEach(([c, x, y, h]) =>
+    add(new RoundedBoxGeometry(0.12, h, 0.03, 2, 0.01), glow(c, 3), x, y, 4.57));
+  // in the middle of the room behind the default camera (not on a wall, so a probe can't place them):
+  // a globe lamp and a plant
+  add(new THREE.CylinderGeometry(0.14, 0.16, 0.03, 32), legMat, -1.4, 0.015, 3.3);
+  add(new THREE.CylinderGeometry(0.012, 0.012, 1.3, 12), brass, -1.4, 0.65, 3.3);
+  add(new THREE.SphereGeometry(0.2, 32, 16), glow(0xfff0d0, 2.5), -1.4, 1.45, 3.3);
+  add(new THREE.CylinderGeometry(0.2, 0.15, 0.4, 32), std(0xe9e4dc, 0.4), 1.7, 0.2, 3.2);
+  const leaf = std(0x3f8f3a, 0.6);
+  [[0, 0.75, 0, 0.32], [-0.18, 1.05, 0.05, 0.22], [0.15, 1.15, -0.05, 0.2], [0.02, 1.35, 0.02, 0.17]].forEach(([x, y, z, r]) =>
+    add(new THREE.IcosahedronGeometry(r, 2), leaf, 1.7 + x, y, 3.2 + z));
+  // a neon ring high on the left wall: on screen in the default view, off screen when you look down
+  add(new THREE.TorusGeometry(0.32, 0.025, 12, 64), glow(0xff8a2a, 3.5), -2.96, 2.25, 0.4, Math.PI / 2);
 
   // the light panel itself. Raster, SSR and the probe see this mesh; it is not in `room`, so
   // shadow rays (which end on the panel) can't hit it. Traced reflection rays test it analytically.
@@ -230,7 +352,10 @@ function buildScene() {
     const mat = m.material as THREE.MeshStandardMaterial;
     const n = m.geometry.attributes.position.count;
     const a = new Float32Array(n * 4);
-    for (let i = 0; i < n; i++) a.set([mat.color.r, mat.color.g, mat.color.b, mat.metalness], i * 4);
+    // emitters: w = 2 + intensity, rgb = the emissive colour (traced hits return it as radiance)
+    const lit = mat.emissiveIntensity > 0 && mat.emissive.getHex() !== 0;
+    const v = lit ? [mat.emissive.r, mat.emissive.g, mat.emissive.b, 2 + mat.emissiveIntensity] : [mat.color.r, mat.color.g, mat.color.b, mat.metalness];
+    for (let i = 0; i < n; i++) a.set(v, i * 4);
     m.geometry.setAttribute('mat', new THREE.BufferAttribute(a, 4));
   });
 
@@ -242,7 +367,8 @@ function buildScene() {
 /**
  * Running average of a per-pixel node over frames (ping-pong half-float targets).
  * `count` = frames accumulated so far; set it to 0 to restart. Stops rendering
- * once `max` frames are in (the result then stays put).
+ * once `max` frames are in (the result then stays put). With `minWeight` > 0 it
+ * becomes an exponential moving average that never stops.
  */
 class AccumulateNode extends THREE.TempNode {
   readonly count = uniform(0);
@@ -250,15 +376,22 @@ class AccumulateNode extends THREE.TempNode {
   private readonly targets = [0, 1].map(() => new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false }));
   private readonly prev = texture(this.targets[0].texture);
   private readonly out = texture(this.targets[1].texture);
+  private readonly mat = new THREE.NodeMaterial();
   private readonly quad: THREE.QuadMesh;
   private read = 0;
   private state: N;
-  constructor(sampleNode: N, private readonly scale = 1) {
+  constructor(sampleNode: N, private readonly scale = 1, private readonly minWeight = 0) {
     super('vec4');
     this.updateBeforeType = THREE.NodeUpdateType.FRAME;
-    const mat = new THREE.NodeMaterial();
-    mat.fragmentNode = mix(this.prev.sample(uv()), sampleNode, float(1).div(this.count.add(1))) as N;
-    this.quad = new THREE.QuadMesh(mat);
+    if (minWeight > 0) this.max = Infinity;
+    this.sample = sampleNode;
+    this.quad = new THREE.QuadMesh(this.mat);
+  }
+  /** Swap what is accumulated (and restart). */
+  set sample(node: N) {
+    this.mat.fragmentNode = mix(this.prev.sample(uv()), node, float(1).div(this.count.add(1)).max(this.minWeight)) as N;
+    this.mat.needsUpdate = true;
+    this.count.value = 0;
   }
   get renderTargets() { return this.targets; }
   updateBefore(frame: N): undefined {
@@ -383,6 +516,7 @@ async function main() {
         var n = hit.normal;
         if ( dot( n, D ) > 0.0 ) { n = -n; }
         let m = ${(bvh.storage as N).attributes}[ hit.indices.x ].mat;
+        if ( m.w >= 2.0 ) { return vec4f( m.rgb * ( m.w - 2.0 ), hit.dist ); } // an emitter
         let diffuse = m.rgb * ( 1.0 - m.w );
         // direct light from the panel, one shadow ray (the same estimator as the shadow pass)
         let toL = C - Ph;
@@ -409,6 +543,9 @@ async function main() {
   const uFrame = uniform(0, 'uint');
   const uLightRadiance = uniform(1);
   const uRoughCut = uniform(0.35); // hybrid: rougher than this takes the prefiltered probe
+  const uSplit = uniform(0.5);     // split view: where the divider is, 0..1 across the frame
+  // the "where it came from" view's colours (match the legend in the page)
+  const SRC = { ssr: vec3(0.15, 0.8, 0.25), rt: vec3(0.2, 0.5, 1), miss: vec3(1, 0.2, 0.15), probe: vec3(1, 0.6, 0.05) };
   let lightHalf = 0.3;
 
   // three's shadow map for the same light: a SpotLight at the panel's centre, VSM
@@ -443,11 +580,11 @@ async function main() {
 
   // ---- the reflection probe ---------------------------------------------------------
   // One probe for the room: a cube capture at PROBE_POS, prefiltered with PMREM, looked up
-  // box-projected onto PROBE_BOX (the floor, the two walls, and where the open sides would be).
+  // box-projected onto PROBE_BOX (the floor, the three walls, and where the open side and ceiling would be).
   // A snapshot: the turning sculpture is frozen at the pose it had when the probe was baked.
   const PROBE_POS = new THREE.Vector3(-0.3, 1.1, -0.5);
   const PROBE_MIN = new THREE.Vector3(-3.0, -0.01, -2.1);
-  const PROBE_MAX = new THREE.Vector3(3.3, 3.6, 2.6);
+  const PROBE_MAX = new THREE.Vector3(3.3, 3.6, 4.6);
   const PROBE_SIZE = Number(q.get('probesize') ?? 256);
   const cubeRT = new THREE.CubeRenderTarget(PROBE_SIZE, { type: THREE.HalfFloatType });
   const cubeCam = new THREE.CubeCamera(0.05, 30, cubeRT);
@@ -625,11 +762,11 @@ async function main() {
       const g = (SpecularHelpers as N).ggxReflectionSample(s.N, V, rough, alb.a, alb.rgb, Xi).toVar();
       return { s, rough, dir: g.get('reflectDir'), weight: g.get('sampleWeight'), seed };
     };
+    const traceRaw = (r: ReturnType<typeof lobeSample>): N => traceReflection(r.s.P, r.s.N, r.dir, r.s.viewDist.mul(0.002).add(0.004), r.seed,
+      uLightC, uLightU, uLightV, uLightN, uLightPower, uLightRadiance, float(scene.environmentIntensity));
     // a traced reflection ray; the probe (in the sampled direction) where it leaves the scene
     const traced = (r: ReturnType<typeof lobeSample>) => {
-      const eps = r.s.viewDist.mul(0.002).add(0.004);
-      const t = traceReflection(r.s.P, r.s.N, r.dir, eps, r.seed, uLightC, uLightU, uLightV, uLightN,
-        uLightPower, uLightRadiance, float(scene.environmentIntensity)).toVar();
+      const t = traceRaw(r).toVar();
       const miss = t.w.lessThan(0);
       return clampSample(vec4(miss.select(probeLookup(r.s.P, r.dir, float(0)), t.rgb).mul(r.weight), miss.select(float(100), t.w)), r.rough);
     };
@@ -675,9 +812,24 @@ async function main() {
         return o;
       })(),
     };
-    // the denoiser's input: one texture whose node is swapped per mode (FFX keeps one history)
-    const reflIn = rtt(vec4(0));
-    const reflFFX = ffxReflections(reflIn, { ...guides, roughness: nTex.a });
+    // the denoiser's input: one texture whose node is swapped per mode (FFX keeps one history).
+    // Two of them: the left and right side of the split view.
+    const reflIn = [rtt(vec4(0)), rtt(vec4(0))];
+    const reflFFX = reflIn.map((n) => ffxReflections(n, { ...guides, roughness: nTex.a }));
+
+    // "where did this pixel's reflection come from": the same decisions the estimators make
+    // (SSR's own hit, the same lobe sample's traced ray), as a colour, averaged over frames
+    const tracedHit = () => traceRaw(lobeSample(0)).w.greaterThanEqual(0);
+    const sourceOf = (rm: ReflMode): N => {
+      switch (rm) {
+        case 'off': return vec3(0.5);
+        case 'probe': return SRC.probe;
+        case 'ssr': return ssrHit().select(SRC.ssr, SRC.miss);
+        case 'rt': case 'ref': return tracedHit().select(SRC.rt, SRC.miss);
+        case 'hybrid': return roughOf().greaterThan(uRoughCut).select(SRC.probe, ssrHit().select(SRC.ssr, tracedHit().select(SRC.rt, SRC.miss)));
+      }
+    };
+    const srcAccum = new AccumulateNode(vec4(0), scale, 0.12);
     // reference: the rt estimator, 4 rays/pixel/frame, accumulated over up to 128 frames
     const reflRef = new AccumulateNode(Fn(() => {
       const o = vec4(0).toVar();
@@ -695,29 +847,42 @@ async function main() {
       up = upscale(colorRTT, depthTex, velTex, camera, { ratio: RATIO, jitter: !q.has('nojitter') });
     }
     const dispose = () => {
-      shadowFFX.dispose(); reflFFX.dispose(); refAccum.dispose(); reflRef.dispose(); up?.dispose?.();
+      shadowFFX.dispose(); for (const f of reflFFX) f.dispose(); refAccum.dispose(); reflRef.dispose(); srcAccum.dispose(); up?.dispose?.();
     };
-    return { upscaled, scale, scenePass, depthTex, velTex, visRTT, refAccum, cleanRTT, shadowFFX, litOf, litRTT, litRTTs, ssrNode, reflFFX, reflIn, reflRef, estimator, probeSpec, uRoughCut, roughOf, colorRTT, up, dispose };
+    return { upscaled, scale, scenePass, depthTex, velTex, visRTT, refAccum, cleanRTT, shadowFFX, litOf, litRTT, litRTTs, ssrNode, reflFFX, reflIn, reflRef, estimator, probeSpec, uRoughCut, roughOf, sourceOf, srcAccum, colorRTT, up, dispose };
   }
   let g = buildGraph(q.has('upscale'));
 
   // ---- graph per mode ----------------------------------------------------------------
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false; // the graph tone maps + sRGB-encodes itself
-  const modes = { shadow: 'ffx' as ShadowMode, refl: 'hybrid' as ReflMode, denoise: true };
+  // refl = the left side (the whole frame when compare is 'none'), compare = the right side
+  const modes = { shadow: 'ffx' as ShadowMode, refl: 'hybrid' as ReflMode, compare: 'none' as ReflMode | 'none', denoise: true, view: 'image' as 'image' | 'source' };
+  /** The reflection mode of each side on screen: [left] or [left, right]. */
+  const sides = (): ReflMode[] => (modes.compare === 'none' ? [modes.refl] : [modes.refl, modes.compare]);
   const buildOutput = () => {
-    const { shadow: sm, refl: rm } = modes;
+    const sm = modes.shadow;
     uEnvSpecular.value = 0; // every mode below supplies the specular itself
-    let lit: N;
-    if (rm === 'off') lit = g.litOf(sm);
-    else if (rm === 'probe') lit = g.litOf(sm).add(g.probeSpec());
-    else if (rm === 'ref') lit = g.litOf(sm).add((g.reflRef as N).rgb);
-    else {
-      const l = g.litRTT(sm);
-      g.ssrNode.colorNode = l;
-      g.reflIn.node = g.estimator[rm];
-      lit = l.rgb.add(modes.denoise ? g.reflFFX.rgb : g.reflIn.rgb);
+    g.ssrNode.colorNode = g.litRTT(sm);
+    const litFor = (rm: ReflMode, side: number): N => {
+      if (rm === 'off') return g.litOf(sm);
+      if (rm === 'probe') return g.litOf(sm).add(g.probeSpec());
+      if (rm === 'ref') return g.litOf(sm).add((g.reflRef as N).rgb);
+      g.reflIn[side].node = g.estimator[rm];
+      let lit = g.litRTT(sm).rgb.add(modes.denoise ? g.reflFFX[side].rgb : g.reflIn[side].rgb);
       if (rm === 'hybrid') lit = lit.add(g.roughOf().greaterThan(g.uRoughCut).select(g.probeSpec(), vec3(0)));
+      return lit;
+    };
+    const left = uv().x.lessThan(uSplit);
+    const [a, b] = sides();
+    let lit: N = litFor(a, 0);
+    if (b) lit = left.select(lit, litFor(b, 1));
+    if (modes.view === 'source') {
+      // the scene in grey, tinted by where each pixel's reflection came from
+      g.srcAccum.sample = vec4(b ? left.select(g.sourceOf(a), g.sourceOf(b)) : g.sourceOf(a), 1);
+      const lum = lit.dot(vec3(0.2126, 0.7152, 0.0722));
+      const grey = lum.div(lum.add(0.6));
+      lit = mix(vec3(grey.mul(0.7)), (g.srcAccum as N).rgb.mul(grey.add(0.25)), 0.5);
     }
     if (g.upscaled) {
       // FSR3 stays linear HDR in and out; tone mapping + sRGB happen after it
@@ -755,14 +920,15 @@ async function main() {
     // concurrently with SSR on the GPU, so they are counted with SSR.
     const prep = (node: N, c: Cat) => { for (const grp of [node.inputNodes, node.guideNodes]) for (const v of Object.values(grp ?? {})) for (const rt of rtsOf(v)) rtCat.set(rt, c); };
     prep(g.shadowFFX, 'denoise');
-    prep(g.reflFFX, 'denoise'); // here the reflection input isn't always SSR, so its prep is denoiser cost
+    for (const f of g.reflFFX) prep(f, 'denoise'); // here the reflection input isn't always SSR, so its prep is denoiser cost
     rtCat.set(g.scenePass.renderTarget, 'raster');
     for (const rt of [...rtsOf(g.visRTT), ...rtsOf(g.cleanRTT), ...g.refAccum.renderTargets]) rtCat.set(rt, 'ray trace');
     for (const n of [...g.litRTTs.values(), g.colorRTT]) for (const rt of rtsOf(n)) rtCat.set(rt, 'composite');
     // the reflection estimator pass traces rays in the rt / hybrid modes; in ssr mode it only
     // merges SSR with probe lookups
-    for (const rt of rtsOf(g.reflIn)) rtCat.set(rt, modes.refl === 'rt' || modes.refl === 'hybrid' ? 'reflection rays' : 'composite');
-    for (const rt of g.reflRef.renderTargets) rtCat.set(rt, 'reflection rays');
+    const sm = sides();
+    g.reflIn.forEach((n, i) => { for (const rt of rtsOf(n)) rtCat.set(rt, sm[i] === 'rt' || sm[i] === 'hybrid' ? 'reflection rays' : 'composite'); });
+    for (const rt of [...g.reflRef.renderTargets, ...g.srcAccum.renderTargets]) rtCat.set(rt, 'reflection rays');
   }
   const uidCat = new Map<string, Cat>();
   class PassLabeler extends THREE.InspectorBase {
@@ -809,7 +975,8 @@ async function main() {
       frames.get(f)!.push({ uid, a: ticks[off], b: ticks[off + 1] });
     }
     const ffxMs = (node: N) => node.denoiser?.gpuTimings?.get('total') ?? 0;
-    const ffxS = modes.shadow === 'ffx' ? ffxMs(g.shadowFFX) : 0, ffxR = reflDenoised() ? ffxMs(g.reflFFX) : 0;
+    const ffxS = modes.shadow === 'ffx' ? ffxMs(g.shadowFFX) : 0;
+    const ffxR = modes.denoise ? sides().reduce((sum, m, i) => sum + (isStochastic(m) ? ffxMs(g.reflFFX[i]) : 0), 0) : 0;
     for (const passes of frames.values()) {
       // Apple GPUs (and other tilers) start a pass's vertex work early, so begin
       // timestamps overlap the previous pass. End timestamps are in order: charge
@@ -849,11 +1016,18 @@ async function main() {
   };
   const resetCosts = () => { history.length = 0; };
   /** The modes that take one stochastic sample per pixel (the rest have no noise to denoise). */
-  const stochastic = () => modes.refl === 'ssr' || modes.refl === 'hybrid' || modes.refl === 'rt';
+  const isStochastic = (m: ReflMode) => m === 'ssr' || m === 'hybrid' || m === 'rt';
+  const stochastic = () => sides().some(isStochastic);
   const reflDenoised = () => stochastic() && modes.denoise;
+  const showsRef = () => modes.shadow === 'ref' || sides().includes('ref');
 
   // ---- animation + stepping -------------------------------------------------------
-  let t = 0, frame = 0, moving = !q.has('paused');
+  // The camera either orbits slowly on its own, or holds still where you put it (drag to look
+  // around, scroll to move in). The sculpture turns on its own clock. Both stop while a
+  // reference is shown, so the reference can converge.
+  let tCam = 0, tKnot = 0, frame = 0;
+  let camMode: 'orbit' | 'free' = q.has('paused') ? 'free' : 'orbit';
+  let spin = true;
   let shot = 0; // 0 = wide orbit, 1 = close-up on the table/chair legs (camera cut)
   const FPS = 60;
   const SHOTS = [
@@ -868,12 +1042,29 @@ async function main() {
     camera.lookAt(s.target);
     camera.updateMatrixWorld();
   }
+  const stage = document.querySelector<HTMLDivElement>('#stage')!;
+  const controls = new OrbitControls(camera, stage);
+  controls.enableDamping = false; // a camera that stops means references converge and FFX settles
+  controls.target.copy(SHOTS[0].target);
+  controls.minDistance = 0.3;
+  controls.maxDistance = 6;
+  // keep the camera inside the room
+  const ROOM_MIN = new THREE.Vector3(-2.85, 0.08, -1.95), ROOM_MAX = new THREE.Vector3(3.2, 3.3, 4.45);
   const prevView = new THREE.Matrix4();
   let prevLight = -1;
   function animate() {
-    if (moving && modes.shadow !== 'ref' && modes.refl !== 'ref') t += 1 / FPS;
-    pose(t);
-    knot.rotation.set(0.4, t * 0.35, 0);
+    const frozen = showsRef();
+    if (camMode === 'orbit') {
+      if (!frozen) tCam += 1 / FPS;
+      pose(tCam);
+      controls.target.copy(SHOTS[shot].target); // so a drag starts from where the orbit is
+    } else {
+      controls.update();
+      camera.position.clamp(ROOM_MIN, ROOM_MAX);
+      camera.updateMatrixWorld();
+    }
+    if (spin && !frozen) tKnot += 1 / FPS;
+    knot.rotation.set(0.4, tKnot * 0.35, 0);
     knot.updateMatrixWorld();
     (bvh as N).updateTransforms(); // refit the TLAS for the turning sculpture (cheap: few objects)
     // the reference restarts whenever anything it depends on changes
@@ -911,14 +1102,32 @@ async function main() {
   const capRefl = document.querySelector<HTMLSpanElement>('#cap-refl')!;
   const costEl = document.querySelector<HTMLTableSectionElement>('#cost-body')!;
   const costNote = document.querySelector<HTMLElement>('#cost-note')!;
+  const labL = document.querySelector<HTMLSpanElement>('#lab-l')!;
+  const labR = document.querySelector<HTMLSpanElement>('#lab-r')!;
+  const divider = document.querySelector<HTMLDivElement>('#divider')!;
+  const legend = document.querySelector<HTMLDivElement>('#legend')!;
   const press = (id: string, v: string) => document.querySelectorAll<HTMLButtonElement>(`${id} button`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+  const shortName = (m: ReflMode) => SHORT[m] + (isStochastic(m) && !modes.denoise ? ', raw' : '');
+  const updateOverlay = () => {
+    const split = modes.compare !== 'none';
+    divider.hidden = !split;
+    labR.hidden = !split;
+    divider.style.left = `${uSplit.value * 100}%`;
+    labL.textContent = (split ? 'left: ' : '') + shortName(modes.refl);
+    if (split) labR.textContent = 'right: ' + shortName(modes.compare as ReflMode);
+    legend.hidden = modes.view !== 'source';
+  };
   const updateCaptions = () => {
     capShadow.textContent = 'Shadows: ' + SHADOW_LABEL[modes.shadow] + (modes.shadow === 'ref' ? ` - ${Math.min(g.refAccum.count.value, g.refAccum.max) * 16} rays/pixel so far (camera held still)` : '');
-    capRefl.textContent = 'Reflections: ' + REFL_LABEL[modes.refl]
-      + (modes.refl === 'hybrid' ? ` (cutoff ${g.uRoughCut.value.toFixed(2)})` : '')
-      + (stochastic() ? (modes.denoise ? ' + ffxReflections()' : ', raw (no denoiser)') : '')
-      + (modes.refl === 'ref' ? ` - ${Math.min(g.reflRef.count.value, g.reflRef.max) * 4} rays/pixel so far (camera held still)` : '');
+    const describe = (m: ReflMode) => REFL_LABEL[m]
+      + (m === 'hybrid' ? ` (cutoff ${g.uRoughCut.value.toFixed(2)})` : '')
+      + (isStochastic(m) ? (modes.denoise ? ' + ffxReflections()' : ', raw (no denoiser)') : '')
+      + (m === 'ref' ? ` - ${Math.min(g.reflRef.count.value, g.reflRef.max) * 4} rays/pixel so far (camera held still)` : '');
+    capRefl.textContent = modes.compare === 'none' ? 'Reflections: ' + describe(modes.refl)
+      : `Left: ${describe(modes.refl)}. Right: ${describe(modes.compare)}`;
+    updateOverlay();
   };
+  const resetHistories = () => { g.shadowFFX.resetHistory(); for (const f of g.reflFFX) f.resetHistory(); };
   const setShadow = (m: ShadowMode) => {
     if (m === modes.shadow) return;
     modes.shadow = m;
@@ -932,36 +1141,73 @@ async function main() {
   const setRefl = (m: ReflMode) => {
     if (m === modes.refl) return;
     modes.refl = m;
-    g.reflFFX.resetHistory(); // the input changes meaning between modes
+    g.reflFFX[0].resetHistory(); // the input changes meaning between modes
     if (m === 'ref') g.reflRef.count.value = 0;
     press('#seg-refl', m);
     buildOutput(); resetCosts(); updateCaptions();
   };
+  const setCompare = (m: ReflMode | 'none') => {
+    if (m === modes.compare) return;
+    modes.compare = m;
+    g.reflFFX[1].resetHistory();
+    if (m === 'ref') g.reflRef.count.value = 0;
+    press('#seg-compare', m);
+    buildOutput(); resetCosts(); updateCaptions();
+  };
+  const setView = (v: 'image' | 'source') => {
+    if (v === modes.view) return;
+    modes.view = v;
+    press('#seg-view', v);
+    buildOutput(); resetCosts(); updateCaptions();
+  };
   const setDenoise = (on: boolean) => {
+    if (on === modes.denoise) return;
     modes.denoise = on;
-    if (on) g.reflFFX.resetHistory();
+    if (on) for (const f of g.reflFFX) f.resetHistory();
     press('#seg-denoise', on ? 'on' : 'off');
     buildOutput(); resetCosts(); updateCaptions();
   };
-  document.querySelectorAll<HTMLButtonElement>('#seg-denoise button').forEach((b) => b.addEventListener('click', () => setDenoise(b.dataset.v === 'on')));
+  const setCamMode = (m: 'orbit' | 'free') => {
+    if (m === 'orbit' && camMode !== 'orbit') resetHistories(); // the camera jumps back onto the orbit
+    camMode = m;
+    press('#seg-motion', m === 'orbit' ? 'on' : 'off');
+  };
+  const setSpin = (on: boolean) => { spin = on; press('#seg-spin', on ? 'on' : 'off'); };
+  const setSplit = (x: number) => { uSplit.value = Math.min(0.98, Math.max(0.02, x)); updateOverlay(); };
+  controls.addEventListener('start', () => setCamMode('free'));
+  // the divider: drag it across the frame (it eats its own pointer events, so the camera doesn't turn)
+  divider.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    divider.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => { const r = stage.getBoundingClientRect(); setSplit((ev.clientX - r.left) / r.width); };
+    const up = () => { divider.removeEventListener('pointermove', move); divider.removeEventListener('pointerup', up); };
+    divider.addEventListener('pointermove', move);
+    divider.addEventListener('pointerup', up);
+  });
+  const segs: [string, (v: string) => void][] = [
+    ['#seg-shadow', (v) => setShadow(v as ShadowMode)],
+    ['#seg-refl', (v) => setRefl(v as ReflMode)],
+    ['#seg-compare', (v) => setCompare(v as ReflMode | 'none')],
+    ['#seg-view', (v) => setView(v as 'image' | 'source')],
+    ['#seg-denoise', (v) => setDenoise(v === 'on')],
+    ['#seg-motion', (v) => setCamMode(v === 'on' ? 'orbit' : 'free')],
+    ['#seg-spin', (v) => setSpin(v === 'on')],
+    ['#seg-up', (v) => { setUpscale(v === 'on'); press('#seg-up', v); }],
+  ];
+  for (const [id, fn] of segs) document.querySelectorAll<HTMLButtonElement>(`${id} button`).forEach((b) => b.addEventListener('click', () => fn(b.dataset.v!)));
   const cutIn = document.querySelector<HTMLInputElement>('#cutoff')!;
   const cutOut = document.querySelector<HTMLOutputElement>('#cutoff-v')!;
   const onCut = () => { g.uRoughCut.value = parseFloat(cutIn.value); cutOut.textContent = g.uRoughCut.value.toFixed(2); };
   cutIn.addEventListener('input', onCut);
   const rebakeBtn = document.querySelector<HTMLButtonElement>('#rebake')!;
   rebakeBtn.addEventListener('click', async () => { rebakeBtn.disabled = true; await bakeProbe(); rebakeBtn.disabled = false; });
-  const setMoving = (on: boolean) => { moving = on; press('#seg-motion', on ? 'on' : 'off'); };
   const setRoughness = (r: number) => { floorMat.roughness = r; topMat.roughness = r; };
   const cut = () => {
+    setCamMode('orbit');
     shot = 1 - shot;
-    g.shadowFFX.resetHistory();
-    g.reflFFX.resetHistory();
+    resetHistories();
   };
-  document.querySelectorAll<HTMLButtonElement>('#seg-shadow button').forEach((b) => b.addEventListener('click', () => setShadow(b.dataset.v as ShadowMode)));
-  document.querySelectorAll<HTMLButtonElement>('#seg-refl button').forEach((b) => b.addEventListener('click', () => setRefl(b.dataset.v as ReflMode)));
-  document.querySelectorAll<HTMLButtonElement>('#seg-motion button').forEach((b) => b.addEventListener('click', () => setMoving(b.dataset.v === 'on')));
   document.querySelector('#cut')!.addEventListener('click', cut);
-  document.querySelectorAll<HTMLButtonElement>('#seg-up button').forEach((b) => b.addEventListener('click', () => { setUpscale(b.dataset.v === 'on'); press('#seg-up', b.dataset.v!); }));
   press('#seg-up', g.upscaled ? 'on' : 'off');
   const lightIn = document.querySelector<HTMLInputElement>('#light-size')!;
   const lightOut = document.querySelector<HTMLOutputElement>('#light-size-v')!;
@@ -980,8 +1226,42 @@ async function main() {
   lightIn.addEventListener('input', onLight); onLight();
   roughIn.addEventListener('input', onRough); onRough();
   onCut();
-  setMoving(moving);
+  setCamMode(camMode);
+  setSpin(spin);
   spot.shadow.autoUpdate = modes.shadow === 'map'; // the starting mode never goes through setShadow
+
+  // ---- the guided tour ---------------------------------------------------------------
+  const scenarioEl = document.querySelector<HTMLDivElement>('#scenario')!;
+  const tourEl = document.querySelector<HTMLDivElement>('#tour')!;
+  const VERDICT = { good: 'gets it', bad: 'wrong', part: 'partly' } as const;
+  const applyScenario = (sc: Scenario) => {
+    if (sc.pos) {
+      setCamMode('free');
+      camera.position.set(...sc.pos);
+      controls.target.set(...sc.target!);
+      camera.lookAt(controls.target);
+      camera.updateMatrixWorld();
+    } else {
+      setCamMode('orbit');
+      shot = 0;
+    }
+    setRefl(sc.left);
+    setCompare(sc.right);
+    setView(sc.view ?? 'image');
+    setDenoise(true);
+    setSpin(sc.spin ?? true);
+    roughIn.value = String(sc.gloss ?? 0.12); onRough();
+    setSplit(sc.split ?? 0.5);
+    resetHistories();
+    tourEl.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === sc.id)));
+    scenarioEl.innerHTML = `<h3>${sc.title}</h3><p>${sc.look}</p><ul class="verdicts">${
+      sc.verdicts.map(([m, v, txt]) => `<li><span class="v v-${v}">${SHORT[m]}: ${VERDICT[v]}</span> ${txt}</li>`).join('')}</ul>`
+      + (sc.why ? `<p class="why">${sc.why}</p>` : '');
+  };
+  tourEl.innerHTML = SCENARIOS.map((sc, i) => `<button data-v="${sc.id}" aria-pressed="false">${i + 1}. ${sc.short}</button>`).join('');
+  tourEl.querySelectorAll<HTMLButtonElement>('button').forEach((b) => b.addEventListener('click', () => applyScenario(SCENARIOS.find((sc) => sc.id === b.dataset.v)!)));
+  const startAt = SCENARIOS.find((sc) => sc.id === q.get('scenario')) ?? SCENARIOS[0];
+  applyScenario(startAt);
 
   setInterval(() => {
     updateCaptions();
@@ -991,17 +1271,23 @@ async function main() {
     }
     const c = costs();
     const rays = modes.shadow === 'noisy' || modes.shadow === 'ffx';
+    const sm = sides();
     const rows: [string, number, string][] = [
       ['raster: G-buffer + env lighting', c.raster, ''],
       ['shadow map: render + VSM blur', c['shadow map'], modes.shadow === 'map' ? '' : 'off'],
       ['shadow rays: BVH vs scene triangles', c['ray trace'], rays ? '1 ray/pixel' : modes.shadow === 'ref' ? (g.refAccum.count.value >= g.refAccum.max ? 'converged, idle' : '16 rays/pixel') : 'off'],
-      ['reflection rays: BVH vs scene triangles', c['reflection rays'], modes.refl === 'rt' ? '1 ray/pixel, + 1 shadow ray per hit' : modes.refl === 'hybrid' ? 'only where SSR missed, below the roughness cutoff' : modes.refl === 'ref' ? (g.reflRef.count.value >= g.reflRef.max ? 'converged, idle' : '4 rays/pixel') : 'off'],
-      ['reflection rays: SSR (screen space)', c.SSR, modes.refl === 'ssr' ? '1 ray/pixel, incl. denoiser input prep' : modes.refl === 'hybrid' ? 'below the roughness cutoff' : 'off'],
+      ['reflection rays: BVH vs scene triangles', c['reflection rays'], [
+        sm.includes('rt') ? '1 ray/pixel, + 1 shadow ray per hit' : '',
+        sm.includes('hybrid') ? 'hybrid: only where SSR missed, below the roughness cutoff' : '',
+        sm.includes('ref') ? (g.reflRef.count.value >= g.reflRef.max ? 'reference converged, idle' : 'reference: 4 rays/pixel') : '',
+        modes.view === 'source' ? 'plus the "where it comes from" view' : '',
+      ].filter(Boolean).join('; ') || 'off'],
+      ['reflection rays: SSR (screen space)', c.SSR, sm.includes('ssr') ? '1 ray/pixel' : sm.includes('hybrid') ? 'below the roughness cutoff' : 'off'],
       ['FFX denoisers (compute)', c.denoise, [modes.shadow === 'ffx' ? `shadows ${c['ffx shadows (compute)'].toFixed(2)}` : '', reflDenoised() ? `reflections ${c['ffx reflections (compute)'].toFixed(2)}` : ''].filter(Boolean).join(', ') || 'off'],
       ['composite + tone map', c.composite, g.upscaled ? 'FSR3 runs in compute: counted in idle' : ''],
       ['GPU idle between passes', c.idle, 'waiting on the CPU to submit the next pass'],
     ];
-    costEl.innerHTML = rows.map(([k, v, note]) => `<tr><td>${k}</td><td class="num">${v.toFixed(2)}</td><td class="note">${note}</td></tr>`).join('')
+    costEl.innerHTML = (modes.compare !== 'none' ? '<tr><td colspan="3" class="note">Split view: the passes of BOTH sides run, so this is the cost of both. Set "Right side" to "off" to time one mode.</td></tr>' : '') + rows.map(([k, v, note]) => `<tr><td>${k}</td><td class="num">${v.toFixed(2)}</td><td class="note">${note}</td></tr>`).join('')
       + `<tr class="total"><td>GPU frame time</td><td class="num">${c.total.toFixed(2)}</td><td class="note">ms, ${g.upscaled ? `rendered at ${W / RATIO}x${H / RATIO}, FSR3 to ${W}x${H}` : `at ${W}x${H}`}</td></tr>`
       + `<tr class="total"><td>CPU time per frame</td><td class="num">${cpuWorkMs.toFixed(2)}</td><td class="note">ms of JS + command encoding (three's node updates, ${lastPasses.length} render passes)</td></tr>`
       + `<tr><td>probe bake (once, not per frame)</td><td class="num">${(probeInfo.captureMs + probeInfo.pmremMs).toFixed(2)}</td><td class="note">capture (6 faces, ${PROBE_SIZE}px) ${probeInfo.captureMs.toFixed(2)} + PMREM ${probeInfo.pmremMs.toFixed(2)} ms, wall clock</td></tr>`
@@ -1045,19 +1331,28 @@ async function main() {
     info: { three: THREE.REVISION, triangles: tris, bvhBuildMs: bvhMs, timestamps: hasTimestamps },
     get frame() { return frame; },
     async step(n: number) { await frames(n); await idle(); },
-    setModes(m: { shadow?: ShadowMode; refl?: ReflMode; denoise?: boolean; cutoff?: number; moving?: boolean; lightSize?: number; roughness?: number; shot?: number; t?: number; upscale?: boolean }) {
+    setModes(m: { shadow?: ShadowMode; refl?: ReflMode; compare?: ReflMode | 'none'; view?: 'image' | 'source'; split?: number; spin?: boolean; denoise?: boolean; cutoff?: number; moving?: boolean; lightSize?: number; roughness?: number; shot?: number; t?: number; upscale?: boolean }) {
       if (m.upscale !== undefined) { setUpscale(m.upscale); press('#seg-up', m.upscale ? 'on' : 'off'); }
       if (m.shadow) setShadow(m.shadow);
       if (m.refl) setRefl(m.refl);
       if (m.denoise !== undefined) setDenoise(m.denoise);
       if (m.cutoff !== undefined) { cutIn.value = String(m.cutoff); onCut(); }
-      if (m.moving !== undefined) setMoving(m.moving);
+      if (m.compare) setCompare(m.compare);
+      if (m.view) setView(m.view);
+      if (m.split !== undefined) setSplit(m.split);
+      if (m.spin !== undefined) setSpin(m.spin);
+      if (m.moving !== undefined) setCamMode(m.moving ? 'orbit' : 'free');
       if (m.lightSize !== undefined) { lightIn.value = String(m.lightSize); onLight(); }
       if (m.roughness !== undefined) { roughIn.value = String(m.roughness); onRough(); }
       if (m.shot !== undefined && m.shot !== shot) cut();
-      if (m.t !== undefined) t = m.t;
+      if (m.t !== undefined) { tCam = m.t; tKnot = m.t; }
     },
     cut,
+    scenario: (id: string) => applyScenario(SCENARIOS.find((sc) => sc.id === id)!),
+    /** Put the camera at a world-space pose and hold it there. */
+    look(pos: [number, number, number], target: [number, number, number]) {
+      setCamMode('free'); camera.position.set(...pos); controls.target.set(...target); camera.lookAt(controls.target); resetHistories();
+    },
     get refCount() { return g.refAccum.count.value; },
     get reflRefCount() { return g.reflRef.count.value; },
     probe: probeInfo,
@@ -1119,11 +1414,11 @@ async function main() {
       return {
         ...costs(),
         ffxShadowPasses: Object.fromEntries(g.shadowFFX.denoiser?.gpuTimings ?? []),
-        ffxReflPasses: Object.fromEntries(g.reflFFX.denoiser?.gpuTimings ?? []),
+        ffxReflPasses: Object.fromEntries(g.reflFFX[0].denoiser?.gpuTimings ?? []),
       };
     },
     async finiteCheck() {
-      return { shadows: await nonFinite(g.shadowFFX as never), reflections: await nonFinite(g.reflFFX as never) };
+      return { shadows: await nonFinite(g.shadowFFX as never), reflections: await nonFinite(g.reflFFX[0] as never) };
     },
   };
   (window as unknown as { __t: typeof api }).__t = api;

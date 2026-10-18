@@ -55,6 +55,11 @@ The user wanted to hold the push until they had looked things over, so ask befor
   (`examples/_shared/shell.ts`, `shell.css`). One example list, `examples/_shared/examples.json`, drives the
   landing page (`tools/site.mjs`), the menus and `build-site.mjs`'s deploy list. Adding an example = one entry
   + a 640×400 shot in `examples/site/shots`.
+- **Reflections explainer** (`three-temporal/reflections-hybrid.html`): probe / SSR + probe / ray traced / hybrid / reference,
+  split-screen compare (two `ffxReflections` instances), a "where reflections come from" view, a 7-step guided tour
+  (`?scenario=mirror|offscreen|moving|contact|rough|sources|explore`), diagrams and a decision guide. The room gained a mirror,
+  a front wall with lit art, a globe lamp and a plant (only visible in reflections). GPU frame at 960x540 on M-series:
+  probe 3.5, SSR 3.9, hybrid 4.2, ray traced 6.0 ms; probe bake ~50 ms.
 - **Shadow split experiment** merged (`three-temporal/shadows-split.html`).
 - **three-gpu-pathtracer** pinned to upstream main `1e206d8` (after 0.0.27). three is 0.186.1 (latest).
   @pmndrs/upscaler 0.5.0 is the latest release; its merged #89/#90 fixes need a 0.5.1.

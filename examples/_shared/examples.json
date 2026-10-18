@@ -69,9 +69,9 @@
     },
     {
       "id": "three-temporal-reflections", "section": "realtime", "href": "three-temporal/reflections-hybrid.html",
-      "title": "Hybrid reflections: probe, SSR, ray tracing",
-      "description": "Reflections built the ways engines mix them: a box-projected probe, SSR, rays traced against the BVH where SSR misses, all at one sample per pixel and denoised with FFX.",
-      "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-shadows.png", "deployed": true
+      "title": "Reflections, explained: probe, SSR, ray tracing",
+      "description": "A guided tour of how engines find reflections (probes, SSR, ray tracing, the hybrid): split-screen comparisons of where each one breaks, a view of where every pixel's reflection comes from, and what each costs.",
+      "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-reflections.png", "deployed": true
     },
     {
       "id": "three-temporal-shadows-split", "section": "realtime", "href": "three-temporal/shadows-split.html",

@@ -75,14 +75,14 @@ reflections) and against a converged reference. Use the light-size slider to see
 contact hardening. A live table shows each pass's GPU cost. There's an optional
 half-resolution + FSR3 path.
 
-### [Hybrid reflections: probe, SSR, ray tracing](https://pmndrs.github.io/denoiser/three-temporal/reflections-hybrid.html)
-The same room with reflections built the ways engines mix them: a box-projected
-reflection probe (captured once, prefiltered with PMREM), three's SSR with the probe
-behind it, rays traced against the scene with three-mesh-bvh, and the hybrid (probe on
-rough surfaces, SSR on glossy ones, a traced ray where SSR misses). Every stochastic
-mode takes one sample per pixel with the same GGX sampler, denoised by
-`ffxReflections()`, next to a many-ray reference. The cost table includes the probe
-bake, split into capture and PMREM.
+### [Reflections, explained: probe, SSR, ray tracing](https://pmndrs.github.io/denoiser/three-temporal/reflections-hybrid.html)
+An explainer for the three ways a real-time renderer finds reflections, and the hybrid that
+mixes them: a box-projected reflection probe (captured once, prefiltered with PMREM), three's
+SSR, and rays traced against the scene with three-mesh-bvh. A guided tour sets up one situation
+per weakness (a mirror, things off screen, moving objects, contact, rough surfaces) and shows two
+methods split-screen; a "where reflections come from" view tints every pixel by what answered
+it. Every noisy mode takes one sample per pixel, denoised by `ffxReflections()`, with a cost
+table and a "which one should I use?" guide.
 
 ### [three.js SSR: FidelityFX vs recurrentDenoise](https://pmndrs.github.io/denoiser/three-temporal/)
 three's `webgpu_postprocessing_ssr_denoise` example with `ffxReflections()` swapped
