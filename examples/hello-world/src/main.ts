@@ -4,7 +4,7 @@ async function run(): Promise<Denoiser> {
   const noisyImg = document.querySelector<HTMLImageElement>('#noisy-img')!;
   await noisyImg.decode();
 
-  const denoiser = await Denoiser.create();
+  const denoiser = await Denoiser.create({ quality: 'balanced' });
   const denoised = await denoiser.denoise(noisyImg);
 
   const canvas = document.querySelector<HTMLCanvasElement>('#denoised')!;
@@ -49,7 +49,7 @@ async function main() {
   const denoiseMs = denoiser.stats?.totalMs ?? totalMs;
   const setupMs = Math.max(0, totalMs - denoiseMs);
   statusEl.textContent =
-    `model + device ready in ${setupMs.toFixed(0)} ms -> denoised in ${denoiseMs.toFixed(0)} ms ` +
+    `${denoiser.modelName} · model + device ready in ${setupMs.toFixed(0)} ms -> denoised in ${denoiseMs.toFixed(0)} ms ` +
     `(${totalMs.toFixed(0)} ms total)`;
 }
 

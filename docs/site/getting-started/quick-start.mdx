@@ -34,7 +34,7 @@ async function run(): Promise<Denoiser> {
   const noisyImg = document.querySelector<HTMLImageElement>('#noisy-img')!;
   await noisyImg.decode();
 
-  const denoiser = await Denoiser.create();
+  const denoiser = await Denoiser.create({ quality: 'balanced' });
   const denoised = await denoiser.denoise(noisyImg);
 
   const canvas = document.querySelector<HTMLCanvasElement>('#denoised')!;
@@ -47,7 +47,9 @@ async function run(): Promise<Denoiser> {
 Three calls do the work:
 
 1. `Denoiser.create()` — creates the WebGPU device (or adopts the one you pass as
-   `device`), loads the default model.
+   `device`) and loads a model. `quality` picks its size: `'fast'` (the default, the
+   small network), `'balanced'` (the base network: visibly cleaner, about 1.5x the time)
+   or `'high'` (the large network where one exists).
 2. `denoiser.denoise(imageLike)` — runs it. Accepts an `HTMLImageElement`,
    `HTMLCanvasElement`, `ImageBitmap`, `ImageData`, `HTMLVideoElement`,
    `OffscreenCanvas`, or a raw `{ data, width, height }` object; returns `ImageData`.
