@@ -3,6 +3,9 @@
 // (y = clamp(x, 0, 6)), checks what the exported GPUBuffer is and whether
 // WebGPU writes / WebNN dispatches see each other, and how ownership moves.
 import { ml, MLGraphBuilderCtor, type MLContext, type MLTensor } from './webnn-types';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'webnn-bench', title: 'WebNN bench: interop probe', theme: false });
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const log = (m: string) => { status.textContent += m + '\n'; console.log(m); };

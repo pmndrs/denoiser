@@ -25,6 +25,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ffxReflections, getGPUTexture } from 'denoiser/three';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'three-temporal' });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for this much shader plumbing

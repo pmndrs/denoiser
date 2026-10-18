@@ -19,6 +19,9 @@ import { installGalleryCapture } from '../../_shared/gallery-capture';
 import { createStack, gpuTex, mountRuntimePicker } from '../../_shared/stack';
 import { sampleCounter } from '../../_shared/pathtracer';
 import { ensureWebGPU, demoFooter, pathtracerNote } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'ldraw-eiffel' });
 
 /** vite.config.ts `define`: packages/denoiser/models exists locally (dev only). */
 declare const __LOCAL_ONNX_MODELS__: boolean;

@@ -16,29 +16,6 @@
         --accent: #90cdf4;
         --good: #7ee787;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        line-height: 1.55;
-        -webkit-font-smoothing: antialiased;
-      }
-      .wrap { max-width: 1080px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
-      h1 { font-size: 1.9rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
-      h1 .name { color: var(--accent); }
-      .tagline { color: var(--muted); font-size: 1.02rem; margin: 0 0 2rem; max-width: 42rem; }
-      .tagline a { color: var(--accent); }
-
-      h2.section-label {
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        margin: 0 0 0.6rem;
-        font-weight: 600;
-      }
 
       /* scene picker */
       #scenes {
@@ -64,60 +41,6 @@
       .scene-card .t { font-weight: 600; font-size: 0.95rem; margin: 0 0 0.15rem; }
       .scene-card .d { color: var(--muted); font-size: 0.8rem; margin: 0; }
 
-      /* controls row */
-      .controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 1.75rem;
-        align-items: flex-end;
-        margin-bottom: 1.25rem;
-      }
-      .control-group { display: flex; flex-direction: column; gap: 0.4rem; }
-
-      .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-      .segmented button {
-        appearance: none;
-        border: none;
-        background: var(--panel);
-        color: var(--text);
-        padding: 0.4rem 0.85rem;
-        font: inherit;
-        font-size: 0.85rem;
-        cursor: pointer;
-        border-right: 1px solid var(--border);
-      }
-      .segmented button:last-child { border-right: none; }
-      .segmented button:disabled { opacity: 0.4; cursor: not-allowed; }
-      .segmented button:hover:not(:disabled) { background: var(--panel-hover); }
-      .segmented button[aria-pressed="true"] { background: var(--accent); color: #0b0e14; font-weight: 600; }
-
-      .toggle-row { display: flex; align-items: center; gap: 0.5rem; }
-      .toggle-row label {
-        font-size: 0.85rem;
-        color: var(--text);
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        cursor: pointer;
-      }
-      .toggle-row input[type="checkbox"]:disabled + span { color: var(--muted); }
-      .hint { color: var(--muted); font-size: 0.75rem; margin: 0; }
-
-      button.ref-btn {
-        appearance: none;
-        border: 1px solid var(--border);
-        background: var(--panel);
-        color: var(--text);
-        padding: 0.4rem 0.85rem;
-        border-radius: 8px;
-        font: inherit;
-        font-size: 0.85rem;
-        cursor: pointer;
-        touch-action: none;
-        user-select: none;
-      }
-      button.ref-btn:hover { background: var(--panel-hover); }
-      button.ref-btn:active { background: var(--accent); color: #0b0e14; }
 
       /* comparison viewer */
       #compare {
@@ -177,6 +100,9 @@
         box-shadow: 0 1px 6px rgba(0,0,0,0.5);
       }
 
+      button.ref-btn { touch-action: none; }
+      button.ref-btn:active:not(:disabled) { background: var(--accent); color: #0b0e14; }
+
       #status { color: var(--muted); font-size: 0.85rem; min-height: 1.3em; margin: 0 0 0.25rem; }
       #status .model { color: var(--good); }
       #loading { color: var(--accent); font-size: 0.85rem; min-height: 1.2em; margin: 0; }
@@ -194,10 +120,10 @@
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
+    <div class="dn-page">
+      <header class="dn-head">
         <h1><span class="name">denoiser</span> before/after gallery</h1>
-        <p class="tagline">
+        <p class="dn-lede">
           These scenes are <strong>pre-rendered</strong> path-traced frames: a ladder of
           sample counts per pixel, albedo and normal aux buffers, and a converged
           reference, all saved ahead of time. The denoising is not: the right side is
@@ -209,33 +135,31 @@
       </header>
 
       <section>
-        <h2 class="section-label">Scene</h2>
+        <h2 class="dn-section-label">Scene</h2>
         <div id="scenes"></div>
       </section>
 
-      <section class="controls">
-        <div class="control-group">
-          <h2 class="section-label" style="margin-bottom:0.3rem">Samples / pixel</h2>
-          <div id="spp-control" class="segmented"></div>
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Samples / pixel</span>
+          <div id="spp-control" class="dn-seg"></div>
         </div>
-        <div class="control-group">
-          <h2 class="section-label" style="margin-bottom:0.3rem">Aux inputs</h2>
-          <div class="toggle-row">
-            <label>
-              <input type="checkbox" id="aux-toggle" disabled />
-              <span>+ albedo + normal</span>
-            </label>
-          </div>
-          <p class="hint" id="aux-hint">this scene has no aux buffers</p>
+        <div class="dn-group">
+          <span class="dn-label">Aux inputs</span>
+          <label class="dn-check">
+            <input type="checkbox" id="aux-toggle" disabled />
+            <span>+ albedo + normal</span>
+          </label>
+          <p class="dn-hint" id="aux-hint">this scene has no aux buffers</p>
         </div>
-        <div class="control-group">
-          <h2 class="section-label" style="margin-bottom:0.3rem">Runtime</h2>
-          <div id="runtime-control" class="segmented"></div>
-          <p class="hint" id="runtime-hint"></p>
+        <div class="dn-group">
+          <span class="dn-label">Denoiser runtime</span>
+          <div id="runtime-control" class="dn-seg"></div>
+          <p class="dn-hint" id="runtime-hint"></p>
         </div>
-        <div class="control-group">
-          <h2 class="section-label" style="margin-bottom:0.3rem">Reference</h2>
-          <button class="ref-btn" id="ref-btn" disabled>hold to peek converged reference</button>
+        <div class="dn-group">
+          <span class="dn-label">Reference</span>
+          <button class="dn-btn ref-btn" id="ref-btn" disabled>hold to peek converged reference</button>
         </div>
       </section>
 

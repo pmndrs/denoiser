@@ -1,4 +1,7 @@
 import { Denoiser } from 'denoiser';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'denoiser-package-test', theme: false });
 
 const SIZE = 384; // not a multiple of 256 -> exercises tiling + padding via the package
 const noisyCanvas = document.querySelector<HTMLCanvasElement>('#noisy')!;

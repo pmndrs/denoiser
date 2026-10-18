@@ -13,6 +13,16 @@ import type { FrameCamera, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
 import { camState, CUT, FAR, NEAR, VIEW_CUT, VIEW_FRAMES, viewPathFrame, mul, invert } from './camera';
 import { METRICS_WGSL, VIEW_WGSL } from './eval';
 import { REFLECTION_SCENE_WGSL, SHADOW_SCENE_WGSL } from './scene';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'ffx-denoiser' });
+// mark the active signal/mode link in the panel
+for (const a of document.querySelectorAll<HTMLAnchorElement>('.dn-seg > a')) {
+  const p = new URLSearchParams(a.search);
+  const cur = new URLSearchParams(location.search);
+  const on = p.get('signal') === (cur.get('signal') ?? 'shadows') && (p.get('mode') ?? 'view') === (cur.get('mode') ?? 'view');
+  if (on) a.setAttribute('aria-current', 'page');
+}
 
 const q = new URLSearchParams(location.search);
 const signal = (q.get('signal') ?? 'shadows') as 'shadows' | 'reflections';

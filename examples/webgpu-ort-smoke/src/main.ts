@@ -1,6 +1,9 @@
 import modelUrl from '../../../packages/denoiser/models/rt_ldr_small.onnx?url';
 import auxModelUrl from '../../../packages/denoiser/models/rt_ldr_alb_nrm_small.onnx?url';
 import { DenoiseSession, rgbaToNCHW, nchwToRGBA } from './denoiseSession';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'webgpu-ort-smoke', theme: false });
 
 const SIZE = 256;
 const BIG_W = 640;

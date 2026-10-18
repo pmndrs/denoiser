@@ -16,42 +16,6 @@
         --accent: #90cdf4;
         --good: #7ee787;
       }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        background: var(--bg);
-        color: var(--text);
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-        line-height: 1.55;
-        -webkit-font-smoothing: antialiased;
-      }
-      .wrap { max-width: 1120px; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
-      h1 { font-size: 1.9rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
-      h1 .name { color: var(--accent); }
-      .tagline { color: var(--muted); font-size: 1.02rem; margin: 0 0 1.25rem; max-width: 46rem; }
-
-      .note {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-left: 3px solid var(--accent);
-        border-radius: 8px;
-        padding: 0.85rem 1.1rem;
-        margin: 0 0 1.75rem;
-        color: var(--muted);
-        font-size: 0.9rem;
-        max-width: 52rem;
-      }
-      .note strong { color: var(--text); }
-      .note a { color: var(--accent); }
-
-      h2.section-label {
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        margin: 0 0 0.6rem;
-        font-weight: 600;
-      }
 
       /* two-panel viewer */
       .views {
@@ -78,29 +42,6 @@
         image-rendering: auto;
       }
 
-      /* controls */
-      .controls {
-        display: flex; flex-wrap: wrap; gap: 1.75rem; align-items: flex-end;
-        margin-bottom: 1.25rem;
-      }
-      .control-group { display: flex; flex-direction: column; gap: 0.45rem; }
-
-      button.btn {
-        appearance: none;
-        border: 1px solid var(--border);
-        background: var(--accent);
-        color: #0b0e14;
-        padding: 0.45rem 1.1rem;
-        border-radius: 8px;
-        font: inherit; font-size: 0.9rem; font-weight: 600;
-        cursor: pointer;
-      }
-      button.btn:hover { filter: brightness(1.08); }
-      button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-      .toggle-row label { font-size: 0.85rem; display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
-      input[type="range"] { width: 160px; accent-color: var(--accent); }
-      .hint { color: var(--muted); font-size: 0.75rem; margin: 0; }
 
       /* ms breakdown */
       .metrics {
@@ -128,16 +69,16 @@
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
+    <div class="dn-page">
+      <header class="dn-head">
         <h1><span class="name">denoiser</span> · babylon.js</h1>
-        <p class="tagline">
+        <p class="dn-lede">
           Babylon renders a noisy PBR showcase; the denoiser cleans it — running on a
           <em>different</em> GPU device. Watch the two CPU copies that bridge them.
         </p>
       </header>
 
-      <p class="note">
+      <p class="dn-note">
         <strong>Two devices, one copy each way.</strong> Babylon's WebGPU engine can't
         adopt an external <code>GPUDevice</code>, and onnxruntime-web can't adopt Babylon's,
         so this is the honest <strong>CPU-copy integration</strong>: Babylon renders →
@@ -165,22 +106,20 @@
            into an RTT, and both visible panels are painted from the CPU side. -->
       <canvas id="engine-canvas" width="512" height="512" style="position:absolute;left:-9999px;top:0;width:512px;height:512px" aria-hidden="true"></canvas>
 
-      <section class="controls">
-        <div class="control-group">
-          <h2 class="section-label">Run</h2>
-          <button class="btn" id="denoise-btn" disabled>Denoise frame</button>
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Run</span>
+          <button class="dn-btn dn-btn--primary" id="denoise-btn" disabled>Denoise frame</button>
         </div>
-        <div class="control-group">
-          <h2 class="section-label">Auto</h2>
-          <div class="toggle-row">
-            <label><input type="checkbox" id="auto-toggle" disabled /><span>denoise every frame</span></label>
-          </div>
-          <p class="hint">live round-trip loop</p>
+        <div class="dn-group">
+          <span class="dn-label">Auto</span>
+          <label class="dn-check"><input type="checkbox" id="auto-toggle" disabled /><span>denoise every frame</span></label>
+          <p class="dn-hint">live round-trip loop</p>
         </div>
-        <div class="control-group">
-          <h2 class="section-label">Noise (SSAO strength)</h2>
+        <div class="dn-group">
+          <span class="dn-label">Noise (SSAO strength)</span>
           <input type="range" id="noise-slider" min="0" max="100" value="70" />
-          <p class="hint"><span id="noise-label">heavy</span></p>
+          <p class="dn-hint"><span id="noise-label">heavy</span></p>
         </div>
       </section>
 

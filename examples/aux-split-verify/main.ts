@@ -11,6 +11,9 @@
 // proving the fix on the real runtime.
 import * as ort from 'onnxruntime-web/webgpu';
 import { DenoiseEngine } from '../../packages/denoiser-ort/src/engine';
+import { mountShell } from '../_shared/shell';
+
+mountShell({ id: 'aux-split-verify', theme: false });
 
 const W = 256, H = 256, C = 9, C1 = 32;
 const el = document.getElementById('log')!;

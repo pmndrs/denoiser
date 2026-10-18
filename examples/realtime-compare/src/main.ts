@@ -26,8 +26,11 @@ import { temporalReproject } from 'three/addons/tsl/display/TemporalReprojectNod
 import { recurrentDenoise } from 'three/addons/tsl/display/RecurrentDenoiseNode.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { denoise } from 'denoiser/three';
-import { createStack, gpuTex } from '../../_shared/stack';
+import { createStack, gpuTex, mountRuntimePicker } from '../../_shared/stack';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'realtime-compare' });
 
 const RES = 512;
 const statusEl = document.querySelector<HTMLPreElement>('#status')!;
@@ -144,10 +147,13 @@ async function main() {
   // Offscreen canvas at RES; the SSR/temporalReproject/recurrentDenoise nodes self-size
   // to the drawing buffer.
   const glCanvas = document.createElement('canvas');
+  // Runtime picker first, so a runtime that fails to initialize can still be switched away from.
+  const picker = mountRuntimePicker(document.querySelector<HTMLElement>('#runtimePicker'));
   const { renderer, denoiser, device, runtimeName } = await createStack({
     precision: 'fp16',
     renderer: { canvas: glCanvas, antialias: false },
-  });
+  }).catch((e) => { picker.failed((e as Error).message); throw e; });
+  picker.attach(denoiser);
   device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`));
   log(`denoiser ready (${denoiser.runtime.name}) — sharing GPUDevice with three.js`);
   renderer.setSize(RES, RES, false);
@@ -427,6 +433,7 @@ async function main() {
   }
   function updateHud() {
     const cad = cadence();
+    if (oursNode.lastMs) picker.denoised(oursNode.lastMs);
     hudLeft.innerHTML =
       `<b>three.js recurrentDenoise()</b>\n` +
       `frame (SSR+denoise): <b>${leftMs.toFixed(1)} ms</b>  ~${(1000 / Math.max(leftMs, 0.01)).toFixed(0)} fps\n` +

@@ -9,6 +9,9 @@ import { OrtRuntime } from 'denoiser/ort';
 import { AutoRuntime } from 'denoiser/auto';
 import { WebnnRuntime } from 'denoiser/webnn';
 import { runRegression } from './regression';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'bench' });
 
 // Dev serves the converted models from /models (vite middleware, see vite.config.ts);
 // production builds omit the override so the denoiser falls back to its shipped CDN default.

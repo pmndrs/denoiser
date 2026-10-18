@@ -15,6 +15,9 @@ import { KernelsRuntime } from 'denoiser/kernels';
 import { WgslRuntime } from 'denoiser/wgsl';
 import { WebnnRuntime } from 'denoiser/webnn';
 import { AutoRuntime } from 'denoiser/auto';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'eval', theme: false });
 
 interface PlanItem {
   scene: string; model: string; channels: number; hdr: boolean;

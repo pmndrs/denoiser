@@ -51,7 +51,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { Upscaler } from '@pmndrs/upscaler';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
-import { createStack, gpuTex } from '../../_shared/stack';
+import { createStack, gpuTex, mountRuntimePicker } from '../../_shared/stack';
+import { mountShell } from '../../_shared/shell';
+
+mountShell({ id: 'upscale-pipeline' });
 
 // ---- resolution --------------------------------------------------------------
 const RW = 640, RH = 360;   // render (denoise) resolution
@@ -138,10 +141,13 @@ async function main() {
   //    (no aux) keeps the demo dependency-light and robust; the pipeline story is the
   //    three-package chain + per-stage cost, not aux.
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+  // Runtime picker first, so a runtime that fails to initialize can still be switched away from.
+  const picker = mountRuntimePicker(document.querySelector<HTMLElement>('#runtimePicker'));
   const { renderer, denoiser, device } = await createStack({
     quality: 'balanced',
     renderer: { canvas, antialias: false },
-  });
+  }).catch((e) => { picker.failed((e as Error).message); throw e; });
+  picker.attach(denoiser);
   log(`denoiser ready (${denoiser.runtime.name}) — GPUDevice shared; three.js + upscaler use it too`);
   device.lost.then((info) => log(`DEVICE LOST: ${info.reason} — ${info.message}`, true));
   renderer.setSize(DW, DH, false);
@@ -389,6 +395,7 @@ async function main() {
           transfer: temporal ? 'linear' : 'aces-srgb',
         });
         denoiseMs = performance.now() - t1;
+        picker.denoised(denoiseMs);
         src = denoisedTex;
         srcLinear = temporal;
       } else if (temporal) {
