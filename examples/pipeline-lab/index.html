@@ -5,13 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pipeline Lab</title>
     <style>
-      :root { --bg: #12161f; --panel: #1b2130; --line: #2c3446; --text: #e2e8f0; --dim: #94a3b8; --accent: #7cc4ff; }
-      * { box-sizing: border-box; }
-      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
-      header { padding: 16px 20px 0; }
-      h1 { font-size: 20px; margin: 0 0 4px; }
-      .tagline { color: var(--dim); margin: 0; max-width: 80ch; }
-      main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; padding: 16px 20px; }
+      /* the shared theme (examples/_shared/shell.css) plus a side panel: this page has many controls */
+      :root { --panel: var(--dn-panel); --line: var(--dn-border); --text: var(--dn-text); --dim: var(--dn-muted); --accent: var(--dn-accent); }
+      main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; }
       @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
       .stage { position: relative; }
       #view { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line); border-radius: 6px; touch-action: none; }
@@ -27,17 +23,11 @@
       input[type=number] { width: 5.5rem; }
       input[type=range] { width: 9rem; }
       #runtimePicker { margin-bottom: 4px; }
-      /* the shared picker is inline-styled for a wide row; let it wrap in the panel */
-      #runtimePicker div { flex-wrap: wrap !important; max-width: 100%; }
-      #runtimePicker button { padding: 4px 9px !important; }
       select { max-width: 60%; }
       aside { min-width: 0; }
       label > select, label > input { flex: 0 1 auto; min-width: 0; }
       .hint { color: var(--dim); font-size: 12px; margin: 4px 0 8px; }
       .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-      button { background: #24406a; color: var(--text); border: 1px solid #35598f; border-radius: 5px; padding: 5px 10px; cursor: pointer; font: inherit; }
-      button:hover:not(:disabled) { background: #2d5185; }
-      button:disabled { opacity: .5; cursor: default; }
       #resultsBox { margin-top: 16px; }
       .results-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
       .results-head h2 { font-size: 15px; margin: 0; }
@@ -53,9 +43,10 @@
     </style>
   </head>
   <body>
-    <header>
+    <div class="dn-page">
+    <header class="dn-head">
       <h1>Pipeline Lab</h1>
-      <p class="tagline">
+      <p class="dn-lede">
         three-gpu-pathtracer → denoiser → @pmndrs/upscaler, all on one GPU device. Render below the
         output size, stop at a few samples, denoise, upscale. Change any stage and the render restarts.
         Orbit with the mouse.
@@ -65,14 +56,14 @@
       <div class="stage">
         <canvas id="view" width="1280" height="720"></canvas>
         <div id="stats"></div>
-        <pre id="status"></pre>
+        <pre id="status" class="dn-status"></pre>
         <section id="resultsBox" hidden>
           <div class="results-head">
             <h2>Benchmark results</h2>
             <span class="buttons">
-              <button id="copyMd" type="button">Copy as Markdown</button>
-              <button id="copyJson" type="button">Copy JSON</button>
-              <button id="clearResults" type="button">Clear</button>
+              <button id="copyMd" class="dn-btn" type="button">Copy as Markdown</button>
+              <button id="copyJson" class="dn-btn" type="button">Copy JSON</button>
+              <button id="clearResults" class="dn-btn" type="button">Clear</button>
             </span>
           </div>
           <div class="table-wrap"><table id="results"></table></div>
@@ -139,12 +130,13 @@
           <label>reference samples <input id="refspp" type="number" value="512" min="16" max="16384"></label>
           <label>warm runs <input id="runs" type="number" value="5" min="1" max="50"></label>
           <div class="buttons">
-            <button id="bench" type="button">Run benchmark</button>
-            <button id="benchAll" type="button" title="Reloads the page once per available runtime and adds a row for each">Run on every runtime</button>
+            <button id="bench" class="dn-btn dn-btn--primary" type="button">Run benchmark</button>
+            <button id="benchAll" class="dn-btn" type="button" title="Reloads the page once per available runtime and adds a row for each">Run on every runtime</button>
           </div>
         </fieldset>
       </aside>
     </main>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

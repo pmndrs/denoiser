@@ -18,6 +18,7 @@ import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
 import { createStack, mountRuntimePicker } from '../../_shared/stack';
 import { sampleCounter } from '../../_shared/pathtracer';
 import { ensureWebGPU, demoFooter } from '../../_shared/chrome';
+import { mountShell } from '../../_shared/shell';
 import { DenoiserPass, UpscalerPass, type UpscalePath } from './passes';
 import { SCENES, fromGltf, type LabScene } from './scenes';
 import { createBench, toMarkdown, RESULT_COLUMNS, type BenchConfig, type BenchResult } from './bench';
@@ -28,6 +29,8 @@ declare const __LOCAL_ONNX_MODELS__: boolean;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
+
+mountShell({ id: 'pipeline-lab', panel: 'aside' });
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const statusEl = $<HTMLPreElement>('status');
