@@ -8,8 +8,8 @@ export default defineConfig({
   esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: {
     target: 'esnext',
-    // two pages: the SSR comparison (index) and the shadows + SSR scene
-    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html' } },
+    // pages: the SSR comparison (index), the shadows + SSR scene, and its static/dynamic split experiment
+    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html' } },
   },
   resolve: { dedupe: ['three'] },
   server: { fs: { allow: ['../..'] } },
