@@ -45,7 +45,8 @@ times each stage and scores it against a high-sample reference. See
 three r186 `WebGPUPathTracer` and this library sharing one `GPUDevice`: progressive
 path tracing, denoised live while it accumulates, CPU-copy and zero-copy paths
 side by side. See [The GPUDevice](../concepts/the-gpudevice.mdx) for how the shared
-device works.
+device works. `?fsr=1` path-traces and denoises at half resolution, then upscales 2x with
+@pmndrs/upscaler's FSR1 (EASU + RCAS).
 
 > [!NOTE]
 > The WebGPU path tracer is early-stage upstream work in `three-gpu-pathtracer`

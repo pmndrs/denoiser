@@ -204,7 +204,7 @@ Remember it's reused: copy it out (or render it) before the next `denoiseTexture
 
 Create a `StorageTexture`, register it with the renderer, unwrap it, and pass
 it as `output`. Then it's an ordinary three.js texture — feed it to materials,
-post-processing (the FSR1 upscaler in the example samples it), anything:
+post-processing (the example's @pmndrs/upscaler FSR1 pass reads it), anything:
 
 ```ts
 const denoisedTex = new THREE.StorageTexture(W, H);

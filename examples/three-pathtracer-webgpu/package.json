@@ -10,6 +10,7 @@
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
+    "@pmndrs/upscaler": "0.5.0",
     "denoiser": "workspace:*",
     "three": "^0.186.1",
     "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114",

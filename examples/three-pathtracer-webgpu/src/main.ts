@@ -9,7 +9,7 @@
 // increments; this validates the shared-device pipeline end to end.
 import * as THREE from 'three/webgpu';
 import { mrt, diffuseColor, normalView, texture } from 'three/tsl';
-import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
+import { Upscaler } from '@pmndrs/upscaler';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { WebGPUPathTracer } from 'three-gpu-pathtracer/webgpu';
 import { GradientEquirectTexture } from 'three-gpu-pathtracer/src/textures/GradientEquirectTexture.js';
@@ -84,8 +84,8 @@ async function main() {
   // ('webgpu')+configure that stalls in headless Chrome). __captureAux() reads
   // the denoise output texture directly and doesn't need the overlay.
   const headless = appParams.has('headless');
-  // FSR mode (?fsr=1) keeps the render/denoise at 512 and FSR1-upscales 2x to a
-  // 1024 output — i.e. rendering 25% of the display pixels. (Rendering at a
+  // FSR mode (?fsr=1) keeps the render/denoise at 512 and upscales 2x with
+  // @pmndrs/upscaler's FSR1 (spatial) path to a 1024 output — i.e. rendering 25% of the display pixels. (Rendering at a
   // reduced size via the tracer's renderScale/setSize would also work now, but
   // this demo keeps every target at 512 so the zero-copy paths stay size-matched.)
   const fsrMode = new URLSearchParams(location.search).has('fsr');
@@ -257,10 +257,12 @@ async function main() {
   const backendGet = (t: THREE.Texture) => gpuTex(renderer, t);
 
   // FSR1 mode (?fsr=1, page reload): path-trace + denoise at HALF resolution and
-  // upscale 2x with three's official FSR1 (EASU+RCAS) TSL node into the #outGpu
-  // canvas. Per AMD guidance EASU wants tonemapped, gamma-encoded, anti-aliased
-  // (= denoised!) [0,1] input — the denoiser resolves with tonemapOutput
-  // (ACES+sRGB) and the FSR chain passes values through untouched.
+  // upscale 2x with @pmndrs/upscaler's spatial path (EASU+RCAS, on this device) into
+  // the #outGpu canvas. Spatial, not temporal: the tracer hands us an accumulated
+  // image, not per-frame jittered renders (pmndrs/upscaler#93). Per AMD guidance EASU
+  // wants tonemapped, gamma-encoded, anti-aliased (= denoised!) [0,1] input — the
+  // denoiser resolves with tonemapOutput (ACES+sRGB) and the FSR chain passes values
+  // through untouched.
   const fsrCheckbox = document.querySelector<HTMLInputElement>('#fsr')!;
   fsrCheckbox.checked = fsrMode;
   fsrCheckbox.addEventListener('change', () => {
@@ -272,16 +274,18 @@ async function main() {
   let renderFsr: (() => void) | undefined;
   if (fsrMode) {
     const OUT = 1024;
-    const fsrNode = fsr1(texture(denoisedTex), 0.2);
-    // FSR1Node auto-sizes its output to the renderer's drawing buffer (256 here);
-    // pin it to the display resolution instead. (setSize is untyped in @types/three.)
-    const sized = fsrNode as unknown as { setSize(w: number, h: number): void };
-    const origSetSize = sized.setSize.bind(fsrNode);
-    sized.setSize = () => origSetSize(OUT, OUT);
+    const upscaler = new Upscaler({ renderer }); // shares renderer.backend.device
+    upscaler.configure({ displayWidth: OUT, displayHeight: OUT, renderWidth: RES, renderHeight: RES, path: 'spatial' });
+    await upscaler.init();
+    await upscaler.prepare(); // compile the spatial pipelines before the first frame
+    upscaler.settings.rcasDenoise = true; // don't let RCAS amplify residual denoiser grain
+    // The upscaler writes rgba16float; the overlay canvas is rgba8unorm, so resolve
+    // through a quad first. Values are already display-encoded (raw write, no transforms).
     const fsrTarget = new THREE.RenderTarget(OUT, OUT, { depthBuffer: false }); // rgba8unorm
     const fsrQuad = new THREE.QuadMesh(new THREE.NodeMaterial());
-    (fsrQuad.material as THREE.NodeMaterial).fragmentNode = fsrNode; // raw write, no transforms
+    (fsrQuad.material as THREE.NodeMaterial).fragmentNode = texture(upscaler.outputTexture);
     renderFsr = () => {
+      upscaler.dispatch({ color: denoisedTex }, camera);
       renderer.setRenderTarget(fsrTarget);
       fsrQuad.render(renderer);
       renderer.setRenderTarget(null);
@@ -316,7 +320,7 @@ async function main() {
       inputFlipY: false,
       auxInputFlipY: false,
       transfer: 'aces-srgb',
-      // FSR mode resolves into the three-owned texture feeding the fsr1() node;
+      // FSR mode resolves into the three-owned texture the upscaler reads;
       // otherwise the engine-owned rgba8 result is blitted onto the overlay.
       output: fsrMode ? denoisedGpuTex : undefined,
     });
