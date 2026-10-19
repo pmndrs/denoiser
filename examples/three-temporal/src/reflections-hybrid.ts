@@ -32,6 +32,7 @@ import {
 import * as SpecularHelpers from 'three/addons/tsl/utils/SpecularHelpers.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { upscale } from '@pmndrs/upscaler';
+import { SkyPmrem } from '@pmndrs/sky';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -115,7 +116,7 @@ const SCENARIOS: Scenario[] = [
       ['hybrid', 'good', 'Rays see the scene as it is this frame (the BVH is refitted each frame as the sculpture turns).'],
       ['ssr', 'bad', 'SSR only has the side of the sculpture facing the camera, so it can\'t show its back in the mirror.'],
     ],
-    why: 'Re-baking costs about 45-50 ms here (6 cube faces + PMREM): fine once in a while, too slow every frame. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
+    why: 'Re-baking costs about 2-3 ms here (6 cube faces + PMREM prefilter): cheap on demand, but every probe re-baked every frame adds that again. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
   },
   {
     id: 'contact', short: 'Where things touch', title: 'Where things touch the floor',
@@ -591,44 +592,64 @@ async function main() {
   cubeCam.position.copy(PROBE_POS);
   const pmremGen = new THREE.PMREMGenerator(renderer);
   let pmremRT: THREE.RenderTarget | null = null;
-  const probeInfo = { captureMs: 0, pmremMs: 0, bakes: 0 };
-  async function bakeProbe() {
-    const idleGPU = () => device.queue.onSubmittedWorkDone();
-    // The panel's direct light is added in screen space by the composite, which a cube capture
-    // doesn't run, so the capture gets a stand-in: a spot light at the panel with a cosine-ish
-    // falloff and a shadow map. Three's Lambert divides by pi, hence the pi.
-    const fill = new THREE.SpotLight(0xffffff, uLightPower.value * Math.PI, 0, Math.PI / 2 * 0.98, 1, 2);
-    fill.position.copy(LIGHT_C);
-    fill.target.position.copy(LIGHT_C.clone().add(LIGHT_N));
-    fill.castShadow = true;
-    fill.shadow.mapSize.set(1024, 1024);
-    fill.shadow.bias = -0.0005;
-    scene.add(fill, fill.target);
+  // ?pmrem=sky: @pmndrs/sky's compute prefilter (one compute pass, writes three's PMREM layout
+  // into a target it owns, so the texture never changes identity). ?pmrem=three: three's
+  // PMREMGenerator. SkyPmrem takes over the cube's mip chain, so it's built before the first capture.
+  const PMREM_GEN = q.get('pmrem') === 'three' ? 'three' : 'sky';
+  const skyPmrem = PMREM_GEN === 'sky' ? new SkyPmrem(renderer, pmremGen, cubeRT.texture) : null;
+  await skyPmrem?.ready;
+  const prefilter = () => {
+    if (skyPmrem) { skyPmrem.markDirty(); skyPmrem.flush(); }
+    else pmremRT = pmremGen.fromCubemap(cubeRT.texture, pmremRT);
+  };
+  const probeInfo = { captureMs: 0, pmremMs: 0, bakes: 0, generator: skyPmrem?.mode ?? 'three' };
+  const idleGPU = () => device.queue.onSubmittedWorkDone();
+  // The panel's direct light is added in screen space by the composite, which a cube capture
+  // doesn't run, so the capture gets a stand-in: a spot light at the panel with a cosine-ish
+  // falloff and a shadow map. It stays in the scene, dark, between bakes: adding and removing a
+  // light changes every material's lighting setup (~30 ms of re-keying per bake), while intensity
+  // is a uniform. Its shadow map only re-renders for a capture.
+  const fill = new THREE.SpotLight(0xffffff, 0, 0, Math.PI / 2 * 0.98, 1, 2);
+  fill.position.copy(LIGHT_C);
+  fill.target.position.copy(LIGHT_C.clone().add(LIGHT_N));
+  fill.castShadow = true;
+  fill.shadow.mapSize.set(1024, 1024);
+  fill.shadow.bias = -0.0005;
+  fill.shadow.autoUpdate = false;
+  scene.add(fill, fill.target);
+  /** Switches the capture's stand-ins on; returns the function that switches them off again. */
+  function probeCaptureSetup() {
+    fill.intensity = uLightPower.value * Math.PI; // three's Lambert divides by pi, hence the pi
+    fill.shadow.needsUpdate = true;
     const bg = scene.background;
     scene.background = env; // open sides see the environment, as traced rays do
     scene.backgroundIntensity = scene.environmentIntensity;
     const envSpec = uEnvSpecular.value;
     uEnvSpecular.value = 1; // materials' own env specular, so glossy things in the probe shine
+    return () => {
+      fill.intensity = 0;
+      scene.background = bg;
+      uEnvSpecular.value = envSpec;
+    };
+  }
+  async function bakeProbe() {
+    const restore = probeCaptureSetup();
     await idleGPU();
     const t0 = performance.now();
     cubeCam.update(renderer, scene);
     await idleGPU();
     const t1 = performance.now();
-    pmremRT = pmremGen.fromCubemap(cubeRT.texture, pmremRT);
+    prefilter();
     await idleGPU();
     const t2 = performance.now();
-    scene.remove(fill, fill.target);
-    fill.dispose();
-    scene.background = bg;
-    uEnvSpecular.value = envSpec;
+    restore();
     probeInfo.captureMs = t1 - t0;
     probeInfo.pmremMs = t2 - t1;
     probeInfo.bakes++;
   }
-  // the first bakes compile pipelines (the stand-in light changes every material's shader), so
-  // bake three times and report the last, warm one
+  // the first bake compiles the capture's pipelines, so bake three times and report the last, warm one
   for (let i = 0; i < 3; i++) await bakeProbe();
-  const probeTex = pmremRT!.texture;
+  const probeTex = skyPmrem ? skyPmrem.texture! : pmremRT!.texture;
   /** Box projection: where the ray from P along d leaves the probe box, seen from the probe. */
   const boxProject = (P: N, d: N) => {
     const dn = d.normalize();
@@ -1357,6 +1378,43 @@ async function main() {
     get reflRefCount() { return g.reflRef.count.value; },
     probe: probeInfo,
     rebake: async () => { await bakeProbe(); },
+    /**
+     * Debug: what a probe bake costs, ms. `capture` / `pmrem` are bursts of `n` (n submits, one
+     * wait), so neither the frame's own GPU work nor the wait's latency is counted; `fence` is that
+     * latency alone (one empty submit → onSubmittedWorkDone), which a single timed bake also pays.
+     */
+    async probeBench(n = 20) {
+      const burst = async (f: () => void) => {
+        await idleGPU();
+        const t0 = performance.now();
+        for (let i = 0; i < n; i++) f();
+        await idleGPU();
+        return (performance.now() - t0) / n;
+      };
+      await idleGPU();
+      const t0 = performance.now();
+      device.queue.submit([device.createCommandEncoder().finish()]);
+      await idleGPU();
+      const fence = performance.now() - t0;
+      // the first capture after the stand-in light goes in: what a bake actually pays, since
+      // adding (and removing) a light changes every material's lighting setup
+      let restore = probeCaptureSetup();
+      await idleGPU();
+      const t1 = performance.now();
+      cubeCam.update(renderer, scene);
+      await idleGPU();
+      const firstCapture = performance.now() - t1;
+      const capture = await burst(() => cubeCam.update(renderer, scene));
+      restore();
+      // setup + teardown alone, no capture (the next render re-keys the materials either way)
+      const t2 = performance.now();
+      restore = probeCaptureSetup();
+      restore();
+      const setupMs = performance.now() - t2;
+      prefilter();
+      const pmrem = await burst(prefilter);
+      return { generator: probeInfo.generator, size: PROBE_SIZE, fence, firstCapture, capture, setupMs, pmrem };
+    },
     /** Debug: [uid, category, start ms, end ms] of the render passes of the last timed frame. */
     passes() { return lastPasses; },
     /** Render one frame and return the canvas as a PNG data URL. */

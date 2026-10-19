@@ -200,7 +200,7 @@
           <dl class="pc">
             <dt class="plus">good</dt><dd>No noise, no rays, almost free per frame. Perfect for rough surfaces.</dd>
             <dt class="minus">bad</dt><dd>A snapshot: moving things freeze. Everything is treated as if painted on the walls, so objects inside the room reflect in the wrong place, and there's light leaking where it should be dark.</dd>
-            <dt class="cost">cost</dt><dd>A bake: 6 renders + PMREM (about 45-50 ms here, once). Then a texture lookup per pixel.</dd>
+            <dt class="cost">cost</dt><dd>A bake: 6 renders + PMREM prefilter (about 2-3 ms here, on demand). Then a texture lookup per pixel.</dd>
           </dl>
         </div>
         <div class="box">
