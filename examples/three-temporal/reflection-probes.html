@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - reflection probes on three r186</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px; display: block; touch-action: none; }
+      #controls { max-width: 960px; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; font-size: .85rem; margin: .6rem 0; }
+      #controls label { display: inline-flex; align-items: center; gap: .35rem; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+        <h1>Reflection probes on three r186</h1>
+        <p class="dn-lede">
+          Ben Houston's box-projected reflection probes (<a href="https://github.com/mrdoob/three.js/pull/35046">three.js #35046</a>),
+          running on three r186 until that lands: same API and scene as the PR's example, with the cubes kept in a 2D array texture
+          and looked up by hand, because r186 can't bind cube arrays.
+        </p>
+      </header>
+      <canvas id="view" width="960" height="540"></canvas>
+      <div id="controls"></div>
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/reflection-probes.ts"></script>
+  </body>
+</html>
