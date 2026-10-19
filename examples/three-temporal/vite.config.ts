@@ -9,7 +9,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     // pages: the SSR comparison (index), the shadows + SSR scene, and its static/dynamic split experiment
-    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html' } },
+    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html', 'reflections-rooms': 'reflections-rooms.html' } },
   },
   resolve: { dedupe: ['three'] },
   server: { fs: { allow: ['../..'] } },

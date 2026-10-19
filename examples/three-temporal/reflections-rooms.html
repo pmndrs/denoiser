@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - reflections in two rooms: probes, SSR and rays</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+      h3 { font-size: 1rem; margin: 0 0 .35rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      .tour-label { margin: 0 0 .4rem; }
+      #tour { margin-bottom: .75rem; }
+      #stage { position: relative; max-width: 960px; touch-action: none; cursor: grab; user-select: none; }
+      #stage:active { cursor: grabbing; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; }
+      .lab { position: absolute; top: .5rem; padding: .15rem .5rem; border-radius: 5px; background: #0b0e14c0; font-size: .8rem; pointer-events: none; }
+      #lab-l { left: .5rem; }
+      #lab-r { right: .5rem; }
+      #divider { position: absolute; top: 0; bottom: 0; width: 24px; margin-left: -12px; cursor: ew-resize; }
+      #divider::before { content: ""; position: absolute; left: 11px; top: 0; bottom: 0; width: 2px; background: #ffffffd0; }
+      #divider::after { content: "\2194"; position: absolute; left: 0; top: 88%; width: 24px; height: 24px; margin-top: -12px; border-radius: 50%; background: #e6edf3; color: #0b0e14; font-size: 14px; line-height: 24px; text-align: center; }
+      #divider[hidden], .lab[hidden] { display: none; }
+      .caption { max-width: 960px; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .82rem; margin-bottom: 1rem; color: var(--dn-accent); }
+      #scenario { max-width: 960px; background: var(--dn-panel); border: 1px solid var(--dn-border); border-left: 3px solid var(--dn-accent); border-radius: 8px; padding: .8rem 1rem; margin-bottom: 1rem; font-size: .92rem; }
+      #scenario p { margin: .2rem 0 .5rem; }
+      #scenario p.why { color: var(--dn-muted); margin-bottom: 0; }
+      ul.verdicts { list-style: none; padding: 0; margin: 0 0 .5rem; }
+      ul.verdicts li { margin: .3rem 0; }
+      .v { display: inline-block; font-size: .78rem; font-weight: 600; padding: .05rem .45rem; border-radius: 4px; margin-right: .3rem; }
+      .v-good { background: #7ee78726; color: var(--dn-good); }
+      .v-bad { background: #f28b8226; color: var(--dn-bad); }
+      .v-part { background: #f0b86626; color: var(--dn-warn); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
+      table.cost { border-collapse: collapse; font-size: .85rem; width: 100%; max-width: 720px; }
+      table.cost td { padding: .15rem .6rem .15rem 0; border-bottom: 1px solid var(--dn-border); }
+      table.cost td.num { text-align: right; font-variant-numeric: tabular-nums; width: 4.5rem; }
+      table.cost td.note { color: var(--dn-muted); }
+      table.cost tr.total td { font-weight: 600; border-bottom: 0; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .9rem; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      .box li { margin: .2rem 0; }
+      .box p { margin: .3rem 0; }
+      nav.links { font-size: .9rem; margin: 1.5rem 0 0; display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+        <h1>Reflections in two rooms: probes, SSR and rays</h1>
+        <p class="dn-lede">
+          Reflection probes give every room its own reflections for almost nothing per frame: one probe per room,
+          one in the doorway. They can't show what moves, where things touch, or what the probe never saw. SSR and
+          one traced ray per pixel, denoised by <code>ffxReflections()</code>, cover that. The scene is the two rooms
+          from Ben Houston's reflection probes example for three.js, with a polished floor. Step through the
+          situations below; drag the divider to compare, drag the view to look around.
+        </p>
+      </header>
+
+      <p class="dn-label tour-label">Pick a situation</p>
+      <div class="dn-seg" id="tour"></div>
+
+      <div id="stage">
+        <canvas id="view" width="960" height="540"></canvas>
+        <span class="lab" id="lab-l"></span>
+        <span class="lab" id="lab-r" hidden></span>
+        <div id="divider" hidden title="drag to compare"></div>
+      </div>
+      <div class="caption"><span id="cap-refl">Reflections: ...</span></div>
+
+      <div id="scenario"></div>
+
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Left side</span>
+          <div class="dn-seg" id="seg-refl">
+            <button data-v="probe" aria-pressed="false">probes only</button><button data-v="ssr" aria-pressed="false">probes + SSR</button><button data-v="hybrid" aria-pressed="true">probes + SSR + rays</button><button data-v="ref" aria-pressed="false">reference</button>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Right side</span>
+          <div class="dn-seg" id="seg-compare">
+            <button data-v="none" aria-pressed="true">off</button><button data-v="probe" aria-pressed="false">probes only</button><button data-v="ssr" aria-pressed="false">probes + SSR</button><button data-v="hybrid" aria-pressed="false">probes + SSR + rays</button><button data-v="ref" aria-pressed="false">reference</button>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Animate room</span>
+          <div class="dn-row">
+            <div class="dn-seg" id="seg-lights"><button data-v="on" aria-pressed="true">on</button><button data-v="off" aria-pressed="false">off</button></div>
+            <span class="hint">the lights drift through the hues, the knot turns</span>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Live capture</span>
+          <div class="dn-row">
+            <div class="dn-seg" id="seg-probes"><button data-v="live" aria-pressed="true">on</button><button data-v="frozen" aria-pressed="false">off</button></div>
+            <button class="dn-btn" id="rebake">capture now</button>
+            <button class="dn-btn" id="helper" aria-pressed="false">show probe boxes</button>
+            <span class="hint">on: the probes are re-baked every frame the room changes. Off: they show the room as it was captured.</span>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Mirror ball</span>
+          <div class="dn-seg" id="seg-ball"><button data-v="on" aria-pressed="true">moving</button><button data-v="off" aria-pressed="false">still</button></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Reflection denoiser</span>
+          <div class="dn-seg" id="seg-denoise"><button data-v="on" aria-pressed="true">ffxReflections</button><button data-v="off" aria-pressed="false">raw, 1 sample</button></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Roughness cutoff</span>
+          <div class="dn-row"><input id="cutoff" type="range" min="0" max="1" step="0.01" value="0.4" /><output class="dn-value" id="cutoff-v"></output>
+          <span class="hint">rougher than this: probes only, no SSR, no rays</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Floor gloss</span>
+          <div class="dn-row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output class="dn-value" id="roughness-v"></output>
+          <span class="hint">roughness of the floor</span></div>
+        </div>
+      </section>
+
+      <h2>What it costs on your GPU</h2>
+      <table class="cost"><tbody id="cost-body"><tr><td>measuring...</td></tr></tbody></table>
+      <p class="hint" id="cost-note">
+        Measured live from GPU timestamp queries for the modes selected above, in ms per frame at 960x540, averaged
+        over the last second. GPUs overlap passes, so each row is an estimate; turn the right side off and compare the
+        frame time between modes, or live capture on and off. The re-bake is also timed once at load, in bursts with the render loop stopped.
+      </p>
+
+      <h2>How it fits together</h2>
+      <div class="grid">
+        <div class="box">
+          <h3>Probes: the base layer</h3>
+          <p>
+            A probe is six renders of the room from one point (a cubemap), pre-blurred for each roughness. Each probe has
+            a box: surfaces inside it use it, and its reflections are projected onto the room's walls. Smaller boxes win
+            where boxes overlap, so the doorway probe takes over between the rooms, and the edges blend.
+          </p>
+          <ul>
+            <li>Every pixel gets its own room's reflection, at any roughness, with no noise and no rays.</li>
+            <li>The probes also light the materials: their diffuse ambient comes from the room's probe.</li>
+            <li>They are snapshots. When the lights change, they are stale until re-baked. Here a re-bake of all three is about 2 ms, so with "Live capture" on the page re-bakes them every frame the room changes.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3>SSR and rays: what probes can't do</h3>
+          <p>
+            Below the roughness cutoff, each pixel takes one random direction in its reflection lobe per frame. SSR looks
+            for it in the frame already rendered. Where SSR finds nothing, a ray is traced against the scene's triangles
+            (a BVH from three-mesh-bvh) and shaded at the hit, with the probes as the hit's ambient light.
+            <code>ffxReflections()</code> turns the one noisy sample per pixel into a clean image.
+          </p>
+          <ul>
+            <li>Moving objects: the mirror ball is kept out of the probes, and still shows up in the floor.</li>
+            <li>Contact and furniture: reflections start where things touch the floor.</li>
+            <li>Rough surfaces stay on the probes: one sample there is mostly noise, and the blur hides the probe's errors.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:1rem">
+        <div class="box">
+          <h3>How this demo is built</h3>
+          <ul>
+            <li>Probes: our port of <a href="https://github.com/mrdoob/three.js/pull/35046">three.js #35046</a> to three r186 (see <a href="reflection-probes.html">reflection probes on r186</a>). The materials get them as <code>scene.environmentNode</code>; the reflection passes sample them at any point with <code>sampleReflectionProbes()</code>.</li>
+            <li>The room animates as in the PR's example: the lights drift through the hues and the knot turns. Both are in the captures; the mirror ball is hidden during a bake, like the moving objects in engines.</li>
+            <li>SSR: three's <code>SSRNode</code>. Rays: three-mesh-bvh's WebGPU BVH, refitted every frame for the ball and the turning knot. Hits get direct light from both lamps (one shadow ray each), no highlights.</li>
+            <li>The same pipeline as the one-room <a href="reflections-hybrid.html">reflections explainer</a>, which compares each method on its own.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h3>When to add what</h3>
+          <ul>
+            <li><b>Rooms, corridors, interiors</b>: a probe per space, plus one at each opening. Cheap, and right for everything rough and everything on the walls.</li>
+            <li><b>Glossy floors, things that move</b>: add SSR. It is cheap and exact for what is on screen.</li>
+            <li><b>Mirrors, contact, anything off screen</b>: add rays where SSR misses, and a denoiser.</li>
+            <li><b>Lights that change</b>: re-bake on change if you can afford it, or a probe per frame; SSR and rays stay live either way.</li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="links">
+        <a href="reflections-hybrid.html">Reflections, explained (one room)</a>
+        <a href="reflection-probes.html">Reflection probes on r186</a>
+        <a href="https://pmndrs.github.io/denoiser/docs/guides/realtime-temporal-denoising">Guide: real-time (temporal) denoising</a>
+        <a href="https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src/reflections-rooms.ts">Source</a>
+      </nav>
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/reflections-rooms.ts"></script>
+  </body>
+</html>

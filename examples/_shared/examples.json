@@ -74,6 +74,12 @@
       "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-reflections.png", "deployed": true
     },
     {
+      "id": "three-temporal-reflections-rooms", "section": "realtime", "href": "three-temporal/reflections-rooms.html",
+      "title": "Reflections in two rooms: probes, SSR and rays",
+      "description": "A probe per room and one in the doorway give every surface the right reflection for almost nothing; SSR and one traced ray per pixel + ffxReflections() add the moving mirror ball, contact and what the probes never saw. Lights that change colour, probes re-baked or frozen.",
+      "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-reflections-rooms.png", "deployed": true
+    },
+    {
       "id": "three-temporal-reflection-probes", "section": "realtime", "href": "three-temporal/reflection-probes.html",
       "title": "Reflection probes on r186 (preview of three.js #35046)",
       "description": "Ben Houston's box-projected, blended reflection probes, running on three r186 until his PR lands: two rooms, a doorway probe, same API, swap in his when it ships.",

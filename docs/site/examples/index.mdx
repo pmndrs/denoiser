@@ -80,12 +80,21 @@ half-resolution + FSR3 path.
 
 ### [Reflections, explained: probe, SSR, ray tracing](https://pmndrs.github.io/denoiser/three-temporal/reflections-hybrid.html)
 An explainer for the three ways a real-time renderer finds reflections, and the hybrid that
-mixes them: a box-projected reflection probe (captured once, prefiltered with PMREM), three's
+mixes them: a box-projected reflection probe (captured once, prefiltered per roughness), three's
 SSR, and rays traced against the scene with three-mesh-bvh. A guided tour sets up one situation
 per weakness (a mirror, things off screen, moving objects, contact, rough surfaces) and shows two
 methods split-screen; a "where reflections come from" view tints every pixel by what answered
 it. Every noisy mode takes one sample per pixel, denoised by `ffxReflections()`, with a cost
 table and a "which one should I use?" guide.
+
+### [Reflections in two rooms: probes, SSR and rays](https://pmndrs.github.io/denoiser/three-temporal/reflections-rooms.html)
+The two rooms from Ben Houston's reflection probes example, with a polished floor, lights that
+change colour and a mirror ball rolling through the doorway. One probe per room plus a doorway
+probe give every surface its own room's reflection for almost nothing per frame. SSR and one
+traced ray per pixel (three-mesh-bvh), denoised by `ffxReflections()`, add what probes can't
+have: the moving ball (kept out of the captures), contact, and what the probe never saw. A guided
+tour compares the modes split-screen; the probes re-bake when the lights change (about 2 ms for all
+three) or can be frozen to show them going stale. A cost table times each pass.
 
 ### [Reflection probes on r186 (preview of three.js #35046)](https://pmndrs.github.io/denoiser/three-temporal/reflection-probes.html)
 Ben Houston's reflection probes ([three.js #35046](https://github.com/mrdoob/three.js/pull/35046))
