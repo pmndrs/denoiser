@@ -6,11 +6,12 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 
 ## Where the repo lives
 
-- **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`. There are no other local branches or worktrees.
+- **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`.
+- **Experiment worktree:** `/Users/dex/Developer/Denoiser-probes`, branch `exp/reflection-probes` (see 2026-10-19).
 - **Old clone:** `/Users/dex/Documents/GitHub/homefig/Denoiser` is stale, sitting on `feat/network-runtimes`.
   It has no uncommitted or unpushed work. Keep it only until its gitignored data is copied over (see Cleanup).
 
-## Local `main` is ahead of GitHub (not pushed)
+## Held back, then pushed on 2026-10-19
 
 On 2026-10-14, local `main` was 6 commits ahead of `origin/main` (`d2e5b7a`). Nothing below is pushed:
 
@@ -43,7 +44,7 @@ Verified locally: `yarn build:lib`, the CI typecheck list plus `three-temporal` 
 (https://pmndrs.github.io/denoiser/). npm publishing is only the manual `release.yml` workflow.
 The user wanted to hold the push until they had looked things over, so ask before pushing.
 
-## Added 2026-10-18 (also unpushed)
+## Added 2026-10-18
 
 - **Pipeline Lab** (`examples/pipeline-lab`): three-gpu-pathtracer → denoiser → @pmndrs/upscaler on one device,
   through the tracer's `setDenoiser` / `setUpscaler` hooks (`src/passes.ts`). Scenes: spheres, furnished room,
@@ -59,10 +60,41 @@ The user wanted to hold the push until they had looked things over, so ask befor
   split-screen compare (two `ffxReflections` instances), a "where reflections come from" view, a 7-step guided tour
   (`?scenario=mirror|offscreen|moving|contact|rough|sources|explore`), diagrams and a decision guide. The room gained a mirror,
   a front wall with lit art, a globe lamp and a plant (only visible in reflections). GPU frame at 960x540 on M-series:
-  probe 3.5, SSR 3.9, hybrid 4.2, ray traced 6.0 ms; probe bake ~50 ms.
+  probe 3.5, SSR 3.9, hybrid 4.2, ray traced 6.0 ms. Probe bake: ~2.5 ms since 2026-10-19 (see below).
 - **Shadow split experiment** merged (`three-temporal/shadows-split.html`).
 - **three-gpu-pathtracer** pinned to upstream main `1e206d8` (after 0.0.27). three is 0.186.1 (latest).
   @pmndrs/upscaler 0.5.0 is the latest release; its merged #89/#90 fixes need a 0.5.1.
+
+## 2026-10-19
+
+Main was pushed to `origin/main` on this date, including everything above.
+
+- **Upscaling with path-traced input is spatial only.** The tracer's `setUpscaler` hook passes the accumulated
+  average, rendered with its own random per-pixel jitter, not one frame under the upscaler's jitter. Temporal would
+  smear (jitter on) or gain nothing (jitter off). The plan is filed as pmndrs/upscaler#93. The Pipeline Lab and
+  the site docs say so.
+- **`upscale-pipeline` moved to Tools** (`deployed: false`) as "Upscaler wiring check (synthetic noise)": its input
+  is a raster scene with fake noise, so it doesn't show path-traced quality.
+- **`three-pathtracer-webgpu?fsr=1`** uses @pmndrs/upscaler's spatial path instead of three's `FSR1Node`.
+  No example uses three's FSR1 any more.
+- **Reflections explainer probe bake: ~33 ms → ~2.5 ms** at 256² (render loop stopped, M-series).
+  - The bake used to add a shadow-casting stand-in `SpotLight` per capture and remove it after. Changing the light
+    count re-keys every material (~29 ms). The light now stays in the scene at intensity 0 between bakes
+    (`shadow.autoUpdate = false`). Cost: +0.08 ms/frame raster. The image is pixel-identical.
+  - `DynamicLighting` (three r184+) would not fix it: it doesn't batch shadow-casting lights.
+  - The prefilter is `SkyPmrem` from `@pmndrs/sky@0.6.0` (3.5 → 1.1 ms). `?pmrem=three` switches back to three's
+    `PMREMGenerator`. On r186's atlas layout the rough levels differ slightly (mean 1.9/255).
+  - `__t.probeBench(n)` times fence latency, first/warm capture and the prefilter separately. Time with
+    `?manual`: while the render loop runs, `onSubmittedWorkDone` alone takes 9-19 ms (0.1 ms when stopped).
+- **Ben Houston's `ReflectionProbes` (three.js PR #35046)** is the multi-room probe system; ours is one room.
+  - The user's three.js fork (`~/Developer/three.js`, pushed to `DennisSmolek/three.js`) has
+    `pmrem-compute-probes`: Ben's head plus a compute `PMREMGenerator` and target reuse between bakes.
+  - Measured on Ben's example (3 probes + env, loop stopped): PR head 29.4 / 32.5 ms at 128 / 256;
+    with both commits 14.2 / 14.4 ms. No PR offered to Ben or upstream yet; the user decides.
+  - His PR needs `CubeArrayTexture` (#35053, open) and cube-array sampling (#35045, merged after r186).
+- **Experiment:** a standalone, swappable version of Ben's probes on r186, in the worktree above. Same
+  methodology and memory layout (a 2D array of 6 × N faces with roughness mips); our own cube lookup and compute
+  prefilter. The first question is whether face seams show on rough surfaces without hardware cube filtering.
 
 ## Runtime / denoiser status
 
@@ -92,7 +124,6 @@ The user wanted to hold the push until they had looked things over, so ask befor
 
 - **Publish `denoiser@2.0.0` to npm.** npm `latest` is still `0.0.11`. Either add an `NPM_TOKEN` repo secret
   and run `release.yml`, or publish locally. Then tag `v2.0.0` and make the GitHub release (issue #12).
-- **Push local `main`**; see above.
 - **11 gallery PNGs** accidentally committed earlier: keep them or restore?
 - **Outreach docs** (`docs/outreach/*`, with `<DEMO LINK>` placeholders) and the upstream HF-kernels / ORT issues.
   Public posts need the user's approval.
