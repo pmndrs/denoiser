@@ -87,6 +87,16 @@ methods split-screen; a "where reflections come from" view tints every pixel by 
 it. Every noisy mode takes one sample per pixel, denoised by `ffxReflections()`, with a cost
 table and a "which one should I use?" guide.
 
+### [Reflection probes on r186 (preview of three.js #35046)](https://pmndrs.github.io/denoiser/three-temporal/reflection-probes.html)
+Ben Houston's reflection probes ([three.js #35046](https://github.com/mrdoob/three.js/pull/35046))
+running on three r186 until that PR lands: probes you place per room, box-projected onto the
+walls, blended at their edges, with smaller probes (a doorway) taking priority and
+`scene.environment` filling the rest. Same API and scene as the PR's example. r186 can't bind
+cube arrays, so the cubes live in a 2D array texture and the lookup picks the face itself, with
+a seam fix so rough surfaces don't show face edges. Matches the PR's output to within 8-bit
+noise; three probes bake in 3–5 ms. This is example code, not part of the `denoiser` package:
+when #35046 ships, swap the imports for three's and re-bake.
+
 ### [Baked + dynamic shadows: when to split](https://pmndrs.github.io/denoiser/three-temporal/shadows-split.html)
 The static / dynamic split engines use for lightmaps, in the browser: the static half of the
 shadow baked once into a lightmap (16 rays per texel, cleaned by OIDN) or gathered in a

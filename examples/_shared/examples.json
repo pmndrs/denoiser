@@ -74,6 +74,12 @@
       "tags": ["real-time FFX", "three.js"], "shot": "three-temporal-reflections.png", "deployed": true
     },
     {
+      "id": "three-temporal-reflection-probes", "section": "realtime", "href": "three-temporal/reflection-probes.html",
+      "title": "Reflection probes on r186 (preview of three.js #35046)",
+      "description": "Ben Houston's box-projected, blended reflection probes, running on three r186 until his PR lands: two rooms, a doorway probe, same API, swap in his when it ships.",
+      "tags": ["three.js"], "shot": "three-temporal-reflection-probes.png", "deployed": true
+    },
+    {
       "id": "three-temporal-shadows-split", "section": "realtime", "href": "three-temporal/shadows-split.html",
       "title": "Baked + dynamic shadows: when to split",
       "description": "Bake what never moves (a lightmap, denoised once with OIDN, or a world-space cache), trace only the moving objects every frame with FFX: what the split buys, what it costs, and when to use it.",
