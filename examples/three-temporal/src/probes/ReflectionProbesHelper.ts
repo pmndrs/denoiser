@@ -1,8 +1,9 @@
 // Visualizes a ReflectionProbes set: a mirror sphere at each capture position and the outline of
-// each influence volume. Port of ReflectionProbesHelper.js from three.js PR #35046 (Ben Houston).
+// each influence volume.
+// (The sphere sits at the capture point, which differs from the box centre with `originOffset`.) Port of ReflectionProbesHelper.js from three.js PR #35046 (Ben Houston).
 
 import * as THREE from 'three/webgpu';
-import type { ReflectionProbe, ReflectionProbes } from './ReflectionProbes';
+import { probeOrigin, type ReflectionProbe, type ReflectionProbes } from './ReflectionProbes';
 
 const _position = new THREE.Vector3();
 const _size = new THREE.Vector3();
@@ -33,7 +34,7 @@ export class ReflectionProbesHelper extends THREE.Object3D {
       probe.getWorldPosition(_position);
       probe.getWorldScale(_size).multiply(probe.influenceSize);
       const sphere = new THREE.Mesh(this.geometry, this.material);
-      sphere.position.copy(_position);
+      probeOrigin(probe, sphere.position); // the capture point (the box centre unless originOffset is set)
       this.add(sphere, new THREE.Box3Helper(new THREE.Box3().setFromCenterAndSize(_position, _size), this.color));
     }
   }

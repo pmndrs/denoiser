@@ -22,8 +22,11 @@
 //     bands go away; cost ~0.06 ms per 1080p frame for 3 probes (two bilinear samples instead of
 //     one trilinear), nothing in the bake.
 //
+//   - `originOffset` (new, per probe): captures from a point other than the volumes' centre.
+//
 // Swapping to #35046 once it lands: import ReflectionProbe / ReflectionProbes / reflectionProbes
-// from three/addons instead, drop `seamFix` / `bakedSeamFix`; `texture` becomes a CubeArrayTexture
+// from three/addons instead, drop `seamFix` / `bakedSeamFix`, and move any probe with an
+// `originOffset` to its box centre (or keep that one extension); `texture` becomes a CubeArrayTexture
 // (nothing outside the node should sample it directly). Everything else (constructor, influenceSize,
 // projectionSize, blendDistance, boxProjection, bake( renderer, scene, { resolution, near, far } ),
 // texture, bakedProbes, capturing, dispose) has the same name and meaning.
@@ -51,6 +54,13 @@ export class ReflectionProbe extends THREE.Object3D {
   projectionSize: THREE.Vector3 | null = null;
   /** Distance over which the influence fades in from the volume's faces. */
   blendDistance = 0.5;
+  /**
+   * Where the probe captures from, relative to the centre of its volumes (not in #35046; Godot's
+   * `origin_offset`). Default zero: capture from the centre. Box projection still uses the volumes
+   * as placed, so a room's box can stay on its walls while the capture point moves to where it
+   * sees the most of the room. Scaled with the probe like the volume sizes; rotation is ignored.
+   */
+  readonly originOffset = new THREE.Vector3();
 
   constructor(width = 1, height = 1, depth = 1) {
     super();
@@ -63,6 +73,7 @@ export class ReflectionProbe extends THREE.Object3D {
     this.influenceSize.copy(source.influenceSize);
     this.projectionSize = source.projectionSize === null ? null : source.projectionSize.clone();
     this.blendDistance = source.blendDistance;
+    this.originOffset.copy(source.originOffset);
     return this;
   }
 }
@@ -176,7 +187,7 @@ export class ReflectionProbes extends THREE.Object3D {
       this.environmentBaked = count > probes.length;
       for (let i = 0; i < count; i++) {
         const probe = probes[i];
-        cubeCamera.position.copy(probe !== undefined ? probe.getWorldPosition(_position) : _position.set(0, 0, 0));
+        cubeCamera.position.copy(probe !== undefined ? probeOrigin(probe, _position) : _position.set(0, 0, 0));
         cubeCamera.updateMatrixWorld(true);
         cubeCamera.update(r, probe !== undefined ? scene : environment);
         // three submitted the six face renders; the prefilter goes after them on the same queue
@@ -215,6 +226,12 @@ function clearSlot(device: GPUDevice, texture: GPUTexture, slot: number) {
     encoder.beginRenderPass({ colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] }).end();
   }
   device.queue.submit([encoder.finish()]);
+}
+
+/** World-space capture point of a probe: its position plus its scaled `originOffset`. */
+export function probeOrigin(probe: ReflectionProbe, target: THREE.Vector3) {
+  probe.getWorldScale(_size).multiply(probe.originOffset);
+  return probe.getWorldPosition(target).add(_size);
 }
 
 function volume(probe: ReflectionProbe) {
