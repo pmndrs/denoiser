@@ -10,7 +10,6 @@
     "check": "node run-headless.mjs"
   },
   "dependencies": {
-    "@pmndrs/sky": "0.6.0",
     "@pmndrs/upscaler": "0.5.0",
     "denoiser": "workspace:*",
     "three": "^0.186.1",

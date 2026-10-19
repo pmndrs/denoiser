@@ -5,9 +5,10 @@
 // pixel per frame, drawn with the same sampler three's SSR uses (ggxReflectionSample), so they all
 // carry the same energy and differ only in where the reflected radiance comes from:
 //
-//   probe   a reflection probe: the room captured once into a cubemap (CubeCamera), prefiltered
-//           with PMREM, looked up box-projected at the pixel's roughness (split-sum). No rays, no
-//           noise, no denoiser - the raster default in engines (cf. three.js PR #35046).
+//   probe   a reflection probe: the room captured once into a cubemap, prefiltered per roughness,
+//           looked up box-projected at the pixel's roughness (split-sum). No rays, no noise, no
+//           denoiser - the raster default in engines. The probe code is ./probes, our r186 stand-in
+//           for three.js PR #35046's ReflectionProbes (see reflection-probes.html).
 //   ssr     three's stochastic SSR; where the screen-space ray misses, the probe in the sampled
 //           direction --> ffxReflections()
 //   hybrid  roughness above a cutoff: the prefiltered probe (no rays). Below it: SSR first, then
@@ -26,13 +27,12 @@ import {
   float, vec3, vec4, uniform, uint, mix, screenCoordinate, pass, mrt, output, shadow, texture,
   diffuseColor, normalView, materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal,
   velocity, sample, getViewPosition, convertToTexture, renderOutput, uv,
-  Fn, If, hash, pmremTexture, EnvironmentBRDF,
+  Fn, If, hash, EnvironmentBRDF,
 } from 'three/tsl';
 // three's SSR sampler (ggxReflectionSample isn't in @types/three yet)
 import * as SpecularHelpers from 'three/addons/tsl/utils/SpecularHelpers.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { upscale } from '@pmndrs/upscaler';
-import { SkyPmrem } from '@pmndrs/sky';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TeapotGeometry } from 'three/addons/geometries/TeapotGeometry.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -40,6 +40,8 @@ import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } fro
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
 import { mountShell } from '../../_shared/shell';
+import { ReflectionProbe, ReflectionProbes } from './probes/ReflectionProbes';
+import { sampleReflectionProbes } from './probes/ReflectionProbesNode';
 
 mountShell({ id: 'three-temporal-reflections' });
 
@@ -116,7 +118,7 @@ const SCENARIOS: Scenario[] = [
       ['hybrid', 'good', 'Rays see the scene as it is this frame (the BVH is refitted each frame as the sculpture turns).'],
       ['ssr', 'bad', 'SSR only has the side of the sculpture facing the camera, so it can\'t show its back in the mirror.'],
     ],
-    why: 'Re-baking costs about 2-3 ms here (6 cube faces + PMREM prefilter): cheap on demand, but every probe re-baked every frame adds that again. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
+    why: 'Re-baking costs about 3 ms here (render the cube\'s faces, then prefilter them): cheap on demand, but every probe re-baked every frame adds that again. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
   },
   {
     id: 'contact', short: 'Where things touch', title: 'Where things touch the floor',
@@ -580,30 +582,32 @@ async function main() {
   setLightSize(lightHalf);
 
   // ---- the reflection probe ---------------------------------------------------------
-  // One probe for the room: a cube capture at PROBE_POS, prefiltered with PMREM, looked up
-  // box-projected onto PROBE_BOX (the floor, the three walls, and where the open side and ceiling would be).
+  // One probe for the room, from ./probes (our r186 stand-in for three.js #35046's ReflectionProbes,
+  // shared with reflection-probes.html and reflections-rooms.html): six faces captured at PROBE_POS,
+  // prefiltered into roughness mips, looked up box-projected onto the room's box (the floor, the
+  // three walls, and where the open side and ceiling would be) by sampleReflectionProbes().
   // A snapshot: the turning sculpture is frozen at the pose it had when the probe was baked.
   const PROBE_POS = new THREE.Vector3(-0.3, 1.1, -0.5);
   const PROBE_MIN = new THREE.Vector3(-3.0, -0.01, -2.1);
   const PROBE_MAX = new THREE.Vector3(3.3, 3.6, 4.6);
   const PROBE_SIZE = Number(q.get('probesize') ?? 256);
-  const cubeRT = new THREE.CubeRenderTarget(PROBE_SIZE, { type: THREE.HalfFloatType });
-  const cubeCam = new THREE.CubeCamera(0.05, 30, cubeRT);
-  cubeCam.position.copy(PROBE_POS);
-  const pmremGen = new THREE.PMREMGenerator(renderer);
-  let pmremRT: THREE.RenderTarget | null = null;
-  // ?pmrem=sky: @pmndrs/sky's compute prefilter (one compute pass, writes three's PMREM layout
-  // into a target it owns, so the texture never changes identity). ?pmrem=three: three's
-  // PMREMGenerator. SkyPmrem takes over the cube's mip chain, so it's built before the first capture.
-  const PMREM_GEN = q.get('pmrem') === 'three' ? 'three' : 'sky';
-  const skyPmrem = PMREM_GEN === 'sky' ? new SkyPmrem(renderer, pmremGen, cubeRT.texture) : null;
-  await skyPmrem?.ready;
-  const prefilter = () => {
-    if (skyPmrem) { skyPmrem.markDirty(); skyPmrem.flush(); }
-    else pmremRT = pmremGen.fromCubemap(cubeRT.texture, pmremRT);
-  };
-  const probeInfo = { captureMs: 0, pmremMs: 0, bakes: 0, generator: skyPmrem?.mode ?? 'three' };
-  const idleGPU = () => device.queue.onSubmittedWorkDone();
+  const probes = new ReflectionProbes();
+  const probe = new ReflectionProbe();
+  const probeBox = new THREE.Box3(PROBE_MIN, PROBE_MAX);
+  // the volumes are centred on the probe; it captures from PROBE_POS (originOffset), off centre
+  probeBox.getCenter(probe.position);
+  probe.originOffset.copy(PROBE_POS).sub(probe.position);
+  // Projection: the room's box, 1 cm bigger per side (the walls lie on its faces, and wall points
+  // rebuilt from depth must count as inside). Influence: the whole scene, floor and walls run past
+  // the box on the open side, so nothing falls back to the plain environment.
+  probe.projectionSize = probeBox.getSize(new THREE.Vector3()).addScalar(0.02);
+  probe.influenceSize.set(17.2, 4.8, 19.6);
+  probe.blendDistance = 0.05;
+  probes.add(probe);
+  scene.add(probes);
+  const probeInfo = { bakeMs: 0, bakes: 0, size: PROBE_SIZE };
+  // every GPU wait has a timeout, so a stuck device can't hang the page
+  const idleGPU = () => Promise.race([device.queue.onSubmittedWorkDone(), new Promise<void>((res) => setTimeout(res, 2000))]);
   // The panel's direct light is added in screen space by the composite, which a cube capture
   // doesn't run, so the capture gets a stand-in: a spot light at the panel with a cosine-ish
   // falloff and a shadow map. It stays in the scene, dark, between bakes: adding and removing a
@@ -632,31 +636,21 @@ async function main() {
       uEnvSpecular.value = envSpec;
     };
   }
+  const bakeOnce = () => probes.bake(renderer, scene, { resolution: PROBE_SIZE, near: 0.05, far: 30 });
   async function bakeProbe() {
     const restore = probeCaptureSetup();
     await idleGPU();
     const t0 = performance.now();
-    cubeCam.update(renderer, scene);
+    bakeOnce();
     await idleGPU();
-    const t1 = performance.now();
-    prefilter();
-    await idleGPU();
-    const t2 = performance.now();
+    probeInfo.bakeMs = performance.now() - t0;
     restore();
-    probeInfo.captureMs = t1 - t0;
-    probeInfo.pmremMs = t2 - t1;
     probeInfo.bakes++;
   }
   // the first bake compiles the capture's pipelines, so bake three times and report the last, warm one
   for (let i = 0; i < 3; i++) await bakeProbe();
-  const probeTex = skyPmrem ? skyPmrem.texture! : pmremRT!.texture;
-  /** Box projection: where the ray from P along d leaves the probe box, seen from the probe. */
-  const boxProject = (P: N, d: N) => {
-    const dn = d.normalize();
-    const tf = vec3(PROBE_MAX).sub(P).div(dn).max(vec3(PROBE_MIN).sub(P).div(dn));
-    return P.add(dn.mul(tf.x.min(tf.y).min(tf.z))).sub(vec3(PROBE_POS));
-  };
-  const probeLookup = (P: N, d: N, rough: N) => pmremTexture(probeTex, boxProject(P, d), rough);
+  /** The probe's radiance at world point P along d, prefiltered for roughness `rough`. */
+  const probeLookup = (P: N, d: N, rough: N) => sampleReflectionProbes(probes, P, d, rough);
 
   // three's shadow-map visibility for the spot, evaluated per fragment in the scene pass
   const smNode = shadow(spot, spot.shadow) as N;
@@ -1311,7 +1305,7 @@ async function main() {
     costEl.innerHTML = (modes.compare !== 'none' ? '<tr><td colspan="3" class="note">Split view: the passes of BOTH sides run, so this is the cost of both. Set "Right side" to "off" to time one mode.</td></tr>' : '') + rows.map(([k, v, note]) => `<tr><td>${k}</td><td class="num">${v.toFixed(2)}</td><td class="note">${note}</td></tr>`).join('')
       + `<tr class="total"><td>GPU frame time</td><td class="num">${c.total.toFixed(2)}</td><td class="note">ms, ${g.upscaled ? `rendered at ${W / RATIO}x${H / RATIO}, FSR3 to ${W}x${H}` : `at ${W}x${H}`}</td></tr>`
       + `<tr class="total"><td>CPU time per frame</td><td class="num">${cpuWorkMs.toFixed(2)}</td><td class="note">ms of JS + command encoding (three's node updates, ${lastPasses.length} render passes)</td></tr>`
-      + `<tr><td>probe bake (once, not per frame)</td><td class="num">${(probeInfo.captureMs + probeInfo.pmremMs).toFixed(2)}</td><td class="note">capture (6 faces, ${PROBE_SIZE}px) ${probeInfo.captureMs.toFixed(2)} + PMREM ${probeInfo.pmremMs.toFixed(2)} ms, wall clock</td></tr>`
+      + `<tr><td>probe bake (on demand, not per frame)</td><td class="num">${probeInfo.bakeMs.toFixed(2)}</td><td class="note">ms wall clock: the probe and the environment, 6 faces each at ${PROBE_SIZE}px, + GGX prefilter</td></tr>`
       + `<tr class="total"><td>frame rate</td><td class="num">${(1000 / cpuFrameMs).toFixed(0)}</td><td class="note">fps (${cpuFrameMs.toFixed(1)} ms between frames, capped by the display refresh)</td></tr>`;
   }, 400);
 
@@ -1379,9 +1373,11 @@ async function main() {
     probe: probeInfo,
     rebake: async () => { await bakeProbe(); },
     /**
-     * Debug: what a probe bake costs, ms. `capture` / `pmrem` are bursts of `n` (n submits, one
-     * wait), so neither the frame's own GPU work nor the wait's latency is counted; `fence` is that
-     * latency alone (one empty submit → onSubmittedWorkDone), which a single timed bake also pays.
+     * Debug: what a probe bake costs, ms. `bake` is a burst of `n` bakes (n submits, one wait), so
+     * neither the frame's own GPU work nor the wait's latency is counted; `fence` is that latency
+     * alone (one empty submit -> onSubmittedWorkDone), which a single timed bake (`firstBake`, and
+     * the cost table's row) also pays. `setupMs`: switching the capture's stand-ins on and off.
+     * A bake captures `captures` cubes: the probe, and scene.environment for the fallback slot.
      */
     async probeBench(n = 20) {
       const burst = async (f: () => void) => {
@@ -1396,24 +1392,20 @@ async function main() {
       device.queue.submit([device.createCommandEncoder().finish()]);
       await idleGPU();
       const fence = performance.now() - t0;
-      // the first capture after the stand-in light goes in: what a bake actually pays, since
-      // adding (and removing) a light changes every material's lighting setup
       let restore = probeCaptureSetup();
       await idleGPU();
       const t1 = performance.now();
-      cubeCam.update(renderer, scene);
+      bakeOnce();
       await idleGPU();
-      const firstCapture = performance.now() - t1;
-      const capture = await burst(() => cubeCam.update(renderer, scene));
+      const firstBake = performance.now() - t1;
+      const bake = await burst(bakeOnce);
       restore();
-      // setup + teardown alone, no capture (the next render re-keys the materials either way)
+      // setup + teardown alone, no capture (the stand-in light only changes intensity: no re-keying)
       const t2 = performance.now();
       restore = probeCaptureSetup();
       restore();
       const setupMs = performance.now() - t2;
-      prefilter();
-      const pmrem = await burst(prefilter);
-      return { generator: probeInfo.generator, size: PROBE_SIZE, fence, firstCapture, capture, setupMs, pmrem };
+      return { size: PROBE_SIZE, captures: probes.bakedProbes.length + 1, fence, firstBake, bake, setupMs };
     },
     /** Debug: [uid, category, start ms, end ms] of the render passes of the last timed frame. */
     passes() { return lastPasses; },

@@ -216,5 +216,5 @@ export const reflectionProbes = (probes: ReflectionProbes) => nodeObject(new Ref
  * priority, box projection and environment fallback as {@link reflectionProbes}, for any shader
  * (a full-screen pass, a traced ray's miss, a hit point). Not in #35046.
  */
-export const sampleReflectionProbes = (probes: ReflectionProbes, position: N, direction: N, roughness: N) =>
+export const sampleReflectionProbes = (probes: ReflectionProbes, position: N, direction: N, roughness: N): N =>
   nodeObject(new ReflectionProbesNode(probes, { position, direction, roughness }));

@@ -428,25 +428,6 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@pmndrs/sky@npm:0.6.0":
-  version: 0.6.0
-  resolution: "@pmndrs/sky@npm:0.6.0"
-  peerDependencies:
-    "@react-three/fiber": ">=10.0.0-0"
-    react: ">=18"
-    react-dom: ">=18"
-    three: ">=0.186.0"
-  peerDependenciesMeta:
-    "@react-three/fiber":
-      optional: true
-    react:
-      optional: true
-    react-dom:
-      optional: true
-  checksum: 10c0/064635afba5f67c6a12e8d4908ca572511db7670ac721aaf66f37560dbdd212786471c7d65df735d26e109d5b550d07cd6a9ac4ce06de827795fc4647c2a32c2
-  languageName: node
-  linkType: hard
-
 "@pmndrs/upscaler@npm:0.5.0":
   version: 0.5.0
   resolution: "@pmndrs/upscaler@npm:0.5.0"
@@ -3435,7 +3416,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "three-temporal@workspace:examples/three-temporal"
   dependencies:
-    "@pmndrs/sky": "npm:0.6.0"
     "@pmndrs/upscaler": "npm:0.5.0"
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
