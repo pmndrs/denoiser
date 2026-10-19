@@ -39,7 +39,9 @@ size, this library denoises it, and @pmndrs/upscaler (FSR1) scales it back up, a
 `GPUDevice` through the path tracer's own `setDenoiser` / `setUpscaler` hooks. Every
 stage is tweakable, there are four scenes (or drop in your own `.glb`), and a benchmark
 times each stage and scores it against a high-sample reference. See
-[Benchmarking on your machine](../guides/benchmarking.mdx).
+[Benchmarking on your machine](../guides/benchmarking.mdx). Upscaling is spatial only for
+now: the temporal (FSR3) path needs a fresh, jittered render every frame, and the path tracer
+accumulates one image instead ([pmndrs/upscaler#93](https://github.com/pmndrs/upscaler/issues/93)).
 
 ### [three.js path tracer](https://pmndrs.github.io/denoiser/three-pathtracer-webgpu/)
 three r186 `WebGPUPathTracer` and this library sharing one `GPUDevice`: progressive

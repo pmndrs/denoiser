@@ -113,6 +113,7 @@
             <option value="off">off (tracer stretches)</option>
           </select></label>
           <label>sharpness <input id="sharpness" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+          <p class="hint">Temporal (FSR3) needs a fresh, jittered render every frame. The path tracer accumulates one image instead, so the lab is spatial-only for now (<a href="https://github.com/pmndrs/upscaler/issues/93">pmndrs/upscaler#93</a>).</p>
         </fieldset>
         <fieldset>
           <legend>Compare</legend>
