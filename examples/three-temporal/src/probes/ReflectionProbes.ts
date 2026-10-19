@@ -23,6 +23,7 @@
 //     one trilinear), nothing in the bake.
 //
 //   - `originOffset` (new, per probe): captures from a point other than the volumes' centre.
+//   - `bake( ..., { environment: false } )` (new): skip the environment slot.
 //
 // Swapping to #35046 once it lands: import ReflectionProbe / ReflectionProbes / reflectionProbes
 // from three/addons instead, drop `seamFix` / `bakedSeamFix`, and move any probe with an
@@ -85,6 +86,12 @@ export interface BakeOptions {
   near?: number;
   /** Far plane of the capture camera. Default 100. */
   far?: number;
+  /**
+   * Whether to capture `scene.environment` into the fallback slot. Default true. Pass false when the
+   * probes' influence covers every surface that samples them: the slot then stays black and the
+   * bake skips its six faces and prefilter. (Not in #35046.)
+   */
+  environment?: boolean;
 }
 
 export type SeamFix = 'warp' | 'none';
@@ -130,7 +137,7 @@ export class ReflectionProbes extends THREE.Object3D {
   bake(renderer: THREE.WebGPURenderer, scene: THREE.Scene, options: BakeOptions = {}) {
     const r = renderer as Renderer;
     if (r.backend.isWebGPUBackend !== true) throw new Error('ReflectionProbes: .bake() requires the WebGPU backend.');
-    const { resolution = 128, near = 0.1, far = 100 } = options;
+    const { resolution = 128, near = 0.1, far = 100, environment: captureEnvironment = true } = options;
     if (!Number.isInteger(Math.log2(resolution)) || resolution < 64) throw new Error('ReflectionProbes: resolution must be a power of two from 64.');
 
     this.updateWorldMatrix(true, true);
@@ -178,7 +185,7 @@ export class ReflectionProbes extends THREE.Object3D {
     this.capturing = true;
     try {
       // unfilled slots stay black, so an empty environment needs no capture
-      const count = scene.environment !== null ? probes.length + 1 : probes.length;
+      const count = scene.environment !== null && captureEnvironment ? probes.length + 1 : probes.length;
       const device: GPUDevice = r.backend.device;
       // ...but a reused array still holds the last bake's environment: clear that slot
       if (count === probes.length && renderTarget === this.renderTarget && this.environmentBaked) {

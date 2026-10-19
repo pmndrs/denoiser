@@ -200,7 +200,7 @@
           <dl class="pc">
             <dt class="plus">good</dt><dd>No noise, no rays, almost free per frame. Perfect for rough surfaces.</dd>
             <dt class="minus">bad</dt><dd>A snapshot: moving things freeze. Everything is treated as if painted on the walls, so objects inside the room reflect in the wrong place, and there's light leaking where it should be dark.</dd>
-            <dt class="cost">cost</dt><dd>A bake: 6 renders + a prefilter (about 3 ms here, on demand). Then a texture lookup per pixel.</dd>
+            <dt class="cost">cost</dt><dd>A bake: 6 renders + a prefilter (about 2 ms here, on demand). Then a texture lookup per pixel.</dd>
           </dl>
         </div>
         <div class="box">
@@ -297,11 +297,11 @@
             <tr><td>Rough surfaces</td><td class="y">great</td><td class="m">noisy</td><td class="m">noisy</td><td class="y">uses the probe</td></tr>
             <tr><td>Needs a denoiser</td><td class="y">no</td><td>yes</td><td>yes</td><td>yes</td></tr>
             <tr><td>Cost grows with</td><td>nothing per frame (bake once)</td><td>screen pixels</td><td>pixels x scene complexity</td><td>pixels, plus rays where SSR misses</td></tr>
-            <tr><td>GPU frame, this room</td><td>3.5 ms</td><td>3.9 ms</td><td>6.0 ms</td><td>4.2 ms</td></tr>
+            <tr><td>GPU frame, this room</td><td>3.3 ms</td><td>3.9 ms</td><td>4.5 ms</td><td>4.2 ms</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="hint">The last row: the whole frame (raster, ray-traced shadows, reflections, denoisers) on an Apple M-series GPU at 960x540, with no reflections at all at about 3.5 ms. Run the modes yourself and read the table further down for your GPU.</p>
+      <p class="hint">The last row: the whole frame (raster, ray-traced shadows, reflections, denoisers) on an Apple M-series GPU at 960x540, the slow orbit ("Explore"), median of 6 runs of 60 frames each; with no reflections at all it is about 3.1 ms. Runs vary by about &plusmn;0.4 ms. Run the modes yourself and read the table further down for your GPU.</p>
       <div class="grid" style="margin-top:1rem">
         <div class="box">
           <h3>Rules of thumb</h3>
@@ -309,7 +309,7 @@
             <li><b>Mostly rough or matte materials</b> (fabric, stone, painted walls), a static scene, phones, or a product viewer on an HDRI: <b>probes</b> (or just the environment map). Blurry reflections hide the probe's errors.</li>
             <li><b>Glossy floors, roads or water seen at a low angle</b>, where what's reflected is usually on screen: <b>SSR with probes behind it</b>. The standard for most games.</li>
             <li><b>Mirrors, windows, car paint, anything facing the camera</b>, or moving objects that must reflect correctly: <b>add rays</b>, as a <b>hybrid</b>.</li>
-            <li><b>A small scene on a fast GPU</b> and you want the simplest thing that's right: <b>ray trace</b>. It's the least code, but even in this small room tracing every pixel costs about 2.5 ms over the probe, against 0.7 ms for the hybrid. Most of the difference is rays on rough surfaces, which the probe answers for free.</li>
+            <li><b>A small scene on a fast GPU</b> and you want the simplest thing that's right: <b>ray trace</b>. It's the least code, but even in this small room tracing every pixel costs about 1.2 ms over the probe, against 0.9 ms for the hybrid, and one ray on a rough surface is mostly noise, where the probe is smooth and free.</li>
             <li><b>Huge scenes, skinned characters, low-end GPUs</b>: SSR + probes, with rays only on a few hero surfaces, if any.</li>
           </ul>
         </div>

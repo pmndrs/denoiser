@@ -117,7 +117,7 @@ const SCENARIOS: Scenario[] = [
       ['hybrid', 'good', 'Rays see the scene as it is this frame (the BVH is refitted each frame as the sculpture turns).'],
       ['ssr', 'bad', 'SSR only has the side of the sculpture facing the camera, so it can\'t show its back in the mirror.'],
     ],
-    why: 'Re-baking costs about 3 ms here (render the cube\'s faces, then prefilter them): cheap on demand, but every probe re-baked every frame adds that again. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
+    why: 'Re-baking costs about 2 ms here (render the cube\'s faces, then prefilter them): cheap on demand, but every probe re-baked every frame adds that again. Engines re-bake on demand or one face per frame, and keep probes for static things and SSR or rays for moving ones.',
   },
   {
     id: 'contact', short: 'Where things touch', title: 'Where things touch the floor',
@@ -532,12 +532,18 @@ async function main() {
   // ---- the reflection probe ---------------------------------------------------------
   // One probe for the room, from ./probes (our r186 stand-in for three.js #35046's ReflectionProbes,
   // shared with reflection-probes.html and reflections-rooms.html): six faces captured at PROBE_POS,
-  // prefiltered into roughness mips, looked up box-projected onto the room's box (the floor, the
-  // three walls, and where the open side and ceiling would be) by sampleReflectionProbes().
-  // A snapshot: the turning sculpture is frozen at the pose it had when the probe was baked.
+  // prefiltered into roughness mips, looked up box-projected onto the room's box by
+  // sampleReflectionProbes(). A snapshot: the turning sculpture is frozen at the pose it had when
+  // the probe was baked.
+  //
+  // The box: the floor, the back, left and front walls. The room has no right wall and no ceiling;
+  // on those two sides the box goes out to where the geometry ends (the back wall and the floor run
+  // to x = 8, the walls to y = 4). A surface outside the box gets no box projection, so its lookup
+  // direction jumps at the box face: with the box closed at x = 3.3 that was a hard edge across the
+  // back wall and the floor (see the "moving" view).
   const PROBE_POS = new THREE.Vector3(-0.3, 1.1, -0.5);
   const PROBE_MIN = new THREE.Vector3(-3.0, -0.01, -2.1);
-  const PROBE_MAX = new THREE.Vector3(3.3, 3.6, 4.6);
+  const PROBE_MAX = new THREE.Vector3(8.0, 4.0, 4.6);
   const PROBE_SIZE = Number(q.get('probesize') ?? 256);
   const probes = new ReflectionProbes();
   const probe = new ReflectionProbe();
@@ -545,11 +551,11 @@ async function main() {
   // the volumes are centred on the probe; it captures from PROBE_POS (originOffset), off centre
   probeBox.getCenter(probe.position);
   probe.originOffset.copy(PROBE_POS).sub(probe.position);
-  // Projection: the room's box, 1 cm bigger per side (the walls lie on its faces, and wall points
-  // rebuilt from depth must count as inside). Influence: the whole scene, floor and walls run past
-  // the box on the open side, so nothing falls back to the plain environment.
+  // Projection: the box, 1 cm bigger per side (the walls lie on its faces, and wall points rebuilt
+  // from depth must count as inside). Influence: the whole scene, so nothing falls back to the
+  // environment (which is therefore not baked, see bakeOnce).
   probe.projectionSize = probeBox.getSize(new THREE.Vector3()).addScalar(0.02);
-  probe.influenceSize.set(17.2, 4.8, 19.6);
+  probe.influenceSize.set(21.2, 5.2, 19.6);
   probe.blendDistance = 0.05;
   probes.add(probe);
   scene.add(probes);
@@ -584,7 +590,8 @@ async function main() {
       uEnvSpecular.value = envSpec;
     };
   }
-  const bakeOnce = () => probes.bake(renderer, scene, { resolution: PROBE_SIZE, near: 0.05, far: 30 });
+  // environment: false - the probe's influence covers the scene, so the environment slot is never sampled
+  const bakeOnce = () => probes.bake(renderer, scene, { resolution: PROBE_SIZE, near: 0.05, far: 30, environment: false });
   async function bakeProbe() {
     const restore = probeCaptureSetup();
     await idleGPU();
@@ -1246,7 +1253,7 @@ async function main() {
     costEl.innerHTML = (modes.compare !== 'none' ? '<tr><td colspan="3" class="note">Split view: the passes of BOTH sides run, so this is the cost of both. Set "Right side" to "off" to time one mode.</td></tr>' : '') + rows.map(([k, v, note]) => `<tr><td>${k}</td><td class="num">${v.toFixed(2)}</td><td class="note">${note}</td></tr>`).join('')
       + `<tr class="total"><td>GPU frame time</td><td class="num">${c.total.toFixed(2)}</td><td class="note">ms, ${g.upscaled ? `rendered at ${W / RATIO}x${H / RATIO}, FSR3 to ${W}x${H}` : `at ${W}x${H}`}</td></tr>`
       + `<tr class="total"><td>CPU time per frame</td><td class="num">${cpuWorkMs.toFixed(2)}</td><td class="note">ms of JS + command encoding (three's node updates, ${lastPasses.length} render passes)</td></tr>`
-      + `<tr><td>probe bake (on demand, not per frame)</td><td class="num">${probeInfo.bakeMs.toFixed(2)}</td><td class="note">ms wall clock: the probe and the environment, 6 faces each at ${PROBE_SIZE}px, + GGX prefilter</td></tr>`
+      + `<tr><td>probe bake (on demand, not per frame)</td><td class="num">${probeInfo.bakeMs.toFixed(2)}</td><td class="note">ms wall clock: 6 faces at ${PROBE_SIZE}px + GGX prefilter</td></tr>`
       + `<tr class="total"><td>frame rate</td><td class="num">${(1000 / cpuFrameMs).toFixed(0)}</td><td class="note">fps (${cpuFrameMs.toFixed(1)} ms between frames, capped by the display refresh)</td></tr>`;
   }, 400);
 
@@ -1318,7 +1325,7 @@ async function main() {
      * neither the frame's own GPU work nor the wait's latency is counted; `fence` is that latency
      * alone (one empty submit -> onSubmittedWorkDone), which a single timed bake (`firstBake`, and
      * the cost table's row) also pays. `setupMs`: switching the capture's stand-ins on and off.
-     * A bake captures `captures` cubes: the probe, and scene.environment for the fallback slot.
+     * A bake captures `captures` cubes (the probe only: environment: false).
      */
     async probeBench(n = 20) {
       const burst = async (f: () => void) => {
@@ -1346,7 +1353,7 @@ async function main() {
       restore = probeCaptureSetup();
       restore();
       const setupMs = performance.now() - t2;
-      return { size: PROBE_SIZE, captures: probes.bakedProbes.length + 1, fence, firstBake, bake, setupMs };
+      return { size: PROBE_SIZE, captures: probes.bakedProbes.length, fence, firstBake, bake, setupMs };
     },
     /** Debug: [uid, category, start ms, end ms] of the render passes of the last timed frame. */
     passes() { return lastPasses; },
