@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>denoiser — upscale pipeline</title>
+    <title>denoiser — upscaler wiring check</title>
     <style>
       :root {
         color-scheme: dark;
@@ -51,10 +51,16 @@
   <body>
     <div class="dn-page">
       <header class="dn-head">
-        <h1><span class="name">denoiser</span> · upscale pipeline</h1>
+        <h1><span class="name">denoiser</span> · upscaler wiring check</h1>
+        <p class="dn-lede">
+          <b>A test tool, not a path tracer.</b> The scene is an ordinary raster render with
+          fake Monte-Carlo-style noise added every frame, so the temporal path gets the
+          per-frame jitter and motion vectors it needs. Real path-traced input currently
+          only goes through the spatial path: see the Pipeline Lab.
+        </p>
         <p class="dn-lede">
           Three pmndrs packages on <b>one <code>GPUDevice</code></b>:
-          <span class="pkgs">three.js</span> renders a noisy scene at low resolution,
+          <span class="pkgs">three.js</span> renders the scene at low resolution, synthetic noise is added,
           <span class="pkgs">denoiser</span> cleans it, and
           <span class="pkgs">@pmndrs/upscaler</span> (AMD FSR-style) upscales it to full canvas
           resolution — no CPU pixel copies in the chain. Each GPU texture is handed

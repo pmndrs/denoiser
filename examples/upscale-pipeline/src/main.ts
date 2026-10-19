@@ -1,4 +1,6 @@
 // Phase B2 demo #8 — the "three packages, one GPUDevice" pipeline.
+// Listed under Tools: the input is raster + synthetic noise, not a path tracer, so it checks
+// the wiring rather than showing path-traced quality (that's the Pipeline Lab, spatial only).
 //
 //   three.js (render @ low res) → denoiser (clean) → @pmndrs/upscaler (FSR3 / FSR1) → canvas
 //
