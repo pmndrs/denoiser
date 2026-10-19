@@ -1170,16 +1170,16 @@ async function main() {
   const roughIn = document.querySelector<HTMLInputElement>('#roughness')!;
   const roughOut = document.querySelector<HTMLOutputElement>('#roughness-v')!;
   let rebakeTimer = 0;
-  const onLight = () => {
+  const onLight = (rebake = true) => {
     const h = parseFloat(lightIn.value);
     setLightSize(h);
     lightOut.textContent = `${(h * 2 * LIGHT_ASPECT).toFixed(2)} x ${(h * 2).toFixed(2)} m`;
     // the probe saw the old panel: re-bake once the slider settles
     clearTimeout(rebakeTimer);
-    rebakeTimer = window.setTimeout(() => { if (probeInfo.bakes) void bakeProbe(); }, 300);
+    if (rebake) rebakeTimer = window.setTimeout(() => { if (probeInfo.bakes) void bakeProbe(); }, 300);
   };
   const onRough = () => { const r = parseFloat(roughIn.value); setRoughness(r); roughOut.textContent = r.toFixed(2); };
-  lightIn.addEventListener('input', onLight); onLight();
+  lightIn.addEventListener('input', () => onLight()); onLight(false); // the probe was just baked with this light
   roughIn.addEventListener('input', onRough); onRough();
   onCut();
   setCamMode(camMode);
