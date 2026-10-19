@@ -24,13 +24,11 @@
 
 import * as THREE from 'three/webgpu';
 import {
-  float, vec3, vec4, uniform, uint, mix, screenCoordinate, pass, mrt, output, shadow, texture,
+  float, vec3, vec4, uniform, uint, mix, screenCoordinate, pass, mrt, output, shadow,
   diffuseColor, normalView, materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal,
   velocity, sample, getViewPosition, convertToTexture, renderOutput, uv,
-  Fn, If, hash, EnvironmentBRDF,
+  Fn, If, EnvironmentBRDF,
 } from 'three/tsl';
-// three's SSR sampler (ggxReflectionSample isn't in @types/three yet)
-import * as SpecularHelpers from 'three/addons/tsl/utils/SpecularHelpers.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { upscale } from '@pmndrs/upscaler';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -42,6 +40,7 @@ import type { TemporalDenoiseNode } from 'denoiser/three';
 import { mountShell } from '../../_shared/shell';
 import { ReflectionProbe, ReflectionProbes } from './probes/ReflectionProbes';
 import { sampleReflectionProbes } from './probes/ReflectionProbesNode';
+import { AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from './reflections/common';
 
 mountShell({ id: 'three-temporal-reflections' });
 
@@ -363,57 +362,6 @@ function buildScene() {
   });
 
   return { scene, camera, env, room, floorMat, topMat, knot, panel, panelMat };
-}
-
-// ---- reference accumulation ---------------------------------------------------------
-
-/**
- * Running average of a per-pixel node over frames (ping-pong half-float targets).
- * `count` = frames accumulated so far; set it to 0 to restart. Stops rendering
- * once `max` frames are in (the result then stays put). With `minWeight` > 0 it
- * becomes an exponential moving average that never stops.
- */
-class AccumulateNode extends THREE.TempNode {
-  readonly count = uniform(0);
-  max = 128;
-  private readonly targets = [0, 1].map(() => new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false }));
-  private readonly prev = texture(this.targets[0].texture);
-  private readonly out = texture(this.targets[1].texture);
-  private readonly mat = new THREE.NodeMaterial();
-  private readonly quad: THREE.QuadMesh;
-  private read = 0;
-  private state: N;
-  constructor(sampleNode: N, private readonly scale = 1, private readonly minWeight = 0) {
-    super('vec4');
-    this.updateBeforeType = THREE.NodeUpdateType.FRAME;
-    if (minWeight > 0) this.max = Infinity;
-    this.sample = sampleNode;
-    this.quad = new THREE.QuadMesh(this.mat);
-  }
-  /** Swap what is accumulated (and restart). */
-  set sample(node: N) {
-    this.mat.fragmentNode = mix(this.prev.sample(uv()), node, float(1).div(this.count.add(1)).max(this.minWeight)) as N;
-    this.mat.needsUpdate = true;
-    this.count.value = 0;
-  }
-  get renderTargets() { return this.targets; }
-  updateBefore(frame: N): undefined {
-    if (this.count.value >= this.max) return;
-    const renderer = frame.renderer as THREE.WebGPURenderer;
-    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-    for (const t of this.targets) t.setSize(Math.round(size.x * this.scale), Math.round(size.y * this.scale));
-    const write = 1 - this.read;
-    this.prev.value = this.targets[this.read].texture;
-    this.state = THREE.RendererUtils.resetRendererState(renderer, this.state);
-    renderer.setRenderTarget(this.targets[write]);
-    this.quad.render(renderer);
-    THREE.RendererUtils.restoreRendererState(renderer, this.state);
-    this.out.value = this.targets[write].texture;
-    this.read = write;
-    this.count.value++;
-  }
-  setup() { return this.out; }
-  dispose() { for (const t of this.targets) t.dispose(); super.dispose(); }
 }
 
 // ---- main ---------------------------------------------------------------------------
@@ -754,14 +702,9 @@ async function main() {
 
     // SSR marks a miss with alpha = ENV_RAY_LENGTH (1e4), even without an env map
     const ssrHit = () => ssrNode.a.greaterThan(0).and(ssrNode.a.lessThan(1e3));
-    // Firefly clamp on a sample's luminance, as SSR does (its maxLuminance, 10), tightened on rough
-    // surfaces: a fully rough rug that once in a while samples the bright panel otherwise leaves
-    // speckles a 1-sample-per-pixel denoiser can't average away. Biased, like every engine's clamp.
-    const clampSample = (v: N, rough: N) => {
-      const maxLum = mix(float(10), float(1), rough.smoothstep(0.3, 1));
-      const lum = v.rgb.dot(vec3(0.2126, 0.7152, 0.0722)).max(1e-4);
-      return vec4(v.rgb.mul(maxLum.div(lum).min(1)), v.a);
-    };
+    // Every 1-sample estimate goes through clampSample (./reflections/common): a firefly clamp on
+    // luminance, tightened on rough surfaces (a fully rough rug that once in a while samples the
+    // bright panel otherwise leaves speckles the denoiser can't average away).
 
     // one GGX sample of the pixel's specular lobe, in world space, with the sampler and
     // weights three's SSR uses: SSR hits, traced hits and probe lookups all carry the same energy
@@ -771,11 +714,9 @@ async function main() {
       const alb = dTex.sample(uv());
       const rough = nTex.sample(uv()).a;
       const V = camPos.sub(s.P).normalize();
-      const px = screenCoordinate.xy.floor();
-      const seed: N = uint(px.x).add(uint(px.y).mul(4099)).mul(uint(1973)).add(uFrame.mul(9277)).add(uint(k * 104729));
-      const Xi = vec4(hash(seed), hash(seed.add(1)), hash(seed.add(2)), hash(seed.add(3)));
-      const g = (SpecularHelpers as N).ggxReflectionSample(s.N, V, rough, alb.a, alb.rgb, Xi).toVar();
-      return { s, rough, dir: g.get('reflectDir'), weight: g.get('sampleWeight'), seed };
+      const seed = pixelSeed(uFrame, k);
+      const g = ggxLobeSample(s.N, V, rough, alb.a, alb.rgb, seed);
+      return { s, rough, dir: g.dir, weight: g.weight, seed };
     };
     const traceRaw = (r: ReturnType<typeof lobeSample>): N => traceReflection(r.s.P, r.s.N, r.dir, r.s.viewDist.mul(0.002).add(0.004), r.seed,
       uLightC, uLightU, uLightV, uLightN, uLightPower, uLightRadiance, float(scene.environmentIntensity));
