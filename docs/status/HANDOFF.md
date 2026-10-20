@@ -7,7 +7,6 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 ## Where the repo lives
 
 - **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`.
-- **Experiment worktree:** `/Users/dex/Developer/Denoiser-probes`, branch `exp/multi-room-reflections` (see 2026-10-19).
 - **Old clone:** `/Users/dex/Documents/GitHub/homefig/Denoiser` is stale, sitting on `feat/network-runtimes`.
   It has no uncommitted or unpushed work. Keep it only until its gitignored data is copied over (see Cleanup).
 
@@ -97,9 +96,11 @@ Main was pushed to `origin/main` on this date, including everything above.
   - The user's three.js fork (`~/Developer/three.js`, pushed to `DennisSmolek/three.js`) has
     `pmrem-compute-probes`: Ben's head plus a compute `PMREMGenerator` and target reuse between bakes.
   - Measured on Ben's example (3 probes + env, loop stopped): PR head 29.4 / 32.5 ms at 128 / 256;
-    with both commits 14.2 / 14.4 ms. No PR offered to Ben or upstream yet; the user decides.
+    with both commits 14.2 / 14.4 ms. Later fork commits (by the three.js-side session) keep the moving mirror
+    out of live captures and clear the environment slot when it's removed (`3cb8af5b6b`). No PR offered to Ben
+    or upstream yet; the user decides.
   - His PR needs `CubeArrayTexture` (#35053, open) and cube-array sampling (#35045, merged after r186).
-- **Experiment (worktree above): Ben's probes on r186, as example code.** `three-temporal/src/probes` stands in
+- **Ben's probes on r186, as example code (merged 2026-10-20).** `three-temporal/src/probes` stands in
   for three.js #35046 until it lands (same API; swap the imports for three's then). Not part of the published
   `denoiser` package. A 2D array of 6 × N faces with roughness mips, our own cube lookup with a 'warp' seam fix,
   and a compute prefilter. Extensions over #35046: `sampleReflectionProbes(probes, P, dir, rough)` (any shader;
