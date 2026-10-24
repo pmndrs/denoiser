@@ -117,7 +117,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       0.43–0.64 ms solo (FFX 0.50–0.73; `thin` 0.64 over the 0.6 target). Weak spot: first ~5 frames
       after a reset/disocclusion. `results/M4.md`; PROVENANCE rows marked "yes" need the second
       reviewer (RULES §8)._
-- [ ] **T5 Occlusion** (AO/SO from normalized hit distance).
+- [~] occlusion **T5 Occlusion** (AO/SO from normalized hit distance). _In progress (occlusion agent, 2026-10-25): test-bed `ao`/`so` signals + references, `OcclusionDenoiser` (recurrent occlusion-only mode, SVGF on the scalar), M5 results._
 
 ## Found along the way
 
