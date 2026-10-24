@@ -28,9 +28,241 @@ import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, REPROJECT_WGSL } from './common';
 import { PARAMS_STRUCT } from './svgf';
 
+
+/**
+ * v2 storage: one rgba32uint per stratum, 8 halves (f16 storage, f32 math):
+ * x = (delta, Delta), y = (sigma(delta), 1 + kernel variance), z = (mean l, sigma l),
+ * w = (z, |dz|). Standard deviations, not variances, so HDR luminance can't overflow
+ * f16 (as SPEC S-2a). Halves the bandwidth of the two rgba32float textures of v1.
+ */
+const PACK_WGSL = /* wgsl */ `
+fn packG(g0: vec4f, g1: vec4f) -> vec4u {
+  return vec4u(pack2x16float(g0.xy), pack2x16float(vec2f(sqrt(max(g0.z, 0.0)), g0.w)),
+               pack2x16float(vec2f(g1.x, sqrt(max(g1.y, 0.0)))), pack2x16float(g1.zw));
+}
+// returns g0 = (delta, Delta, var(delta), 1 + v), g1 = (mean l, var l, z, |dz|)
+fn unpackG0(u: vec4u) -> vec4f { let a = unpack2x16float(u.x); let b = unpack2x16float(u.y); return vec4f(a, b.x * b.x, b.y); }
+fn unpackG1(u: vec4u) -> vec4f { let a = unpack2x16float(u.z); let b = unpack2x16float(u.w); return vec4f(a.x, a.y * a.y, b); }
+`;
+
 /** Stratum size (A-SVGF: 3x3 strata, <= 11 % of samples recycled). */
 export const GRADIENT_DOWNSAMPLE = 3;
 
+/**
+ * v2 gradient samples (our design): one thread per 3x3 stratum and ONE reprojection,
+ * at the stratum centre. The history mean over the stratum is the mean of the 9
+ * bilinear history samples at the centre's reprojected position + (dx, dy): per axis
+ * that is weights (1 - f, 1, 1, f) / 3 over 4 texels, i.e. exactly 2 bilinear taps
+ * per axis (4 hardware-filtered samples in 2D). Assumes uniform motion inside the
+ * stratum; strata whose centre reprojection is not fully valid or that touch sky get
+ * no history (they are fresh history anyway). ~4x fewer loads than v1.
+ */
+export function gradientCreatePassV2(count: number, fromInput: boolean): PassDef {
+  const I = [...Array(count).keys()];
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  I.forEach((i) => b.uniform(`P${i}`, 'Params'));
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  b.add('geoPrev', 'texture_2d<u32>', 'i');
+  b.add('geoGrad', 'texture_2d<u32>', 'i');
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('motionZTex', 'texture_2d<f32>', 'f');
+  b.add('smp', 'sampler', 's');
+  I.forEach((i) => {
+    b.add(`input${i}`, 'texture_2d<f32>', 'f');
+    b.add(`accumPrev${i}`, 'texture_2d<f32>', 'F');
+    b.add(`gradInput${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outG${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');   // packG()
+  });
+  const taps = [...Array(9).keys()].map((k) => [k % 3, Math.floor(k / 3)]);
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_STRUCT}
+${b.wgsl}
+${REPROJECT_WGSL}
+${PACK_WGSL}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let s = vec2i(gid.xy);
+  if (s.x >= P0.gradDims.x || s.y >= P0.gradDims.y) { return; }
+  let p0 = s * 3;
+  ${I.map((i) => `var sL${i} = 0.0; var sL2${i} = 0.0;`).join(' ')}
+  var cnt = 0.0;
+  var zAny = 0.0; var pAny = p0;
+  ${taps.map(([x, y]) => /* wgsl */ `
+  {
+    let q = p0 + vec2i(${x}, ${y});
+    let qc = clampPix(q);
+    let z = geoTap(geoCur, qc).z;
+    let ok = inside(q) && z > 0.0;
+    let w = select(0.0, 1.0, ok);
+    cnt += w;
+    if (ok && (zAny == 0.0 || ${x === 1 && y === 1 ? 'true' : 'false'})) { zAny = z; pAny = qc; }
+    ${I.map((i) => `{ let l = luma(max(textureLoad(input${i}, qc, 0).rgb, vec3f(0.0))) * w; sL${i} += l; sL2${i} += l * l; }`).join('\n    ')}
+  }`).join('')}
+  if (cnt <= 0.0) {
+    ${I.map((i) => `textureStore(outG${i}, s, vec4u(0u));`).join('\n    ')}
+    return;
+  }
+  var g = geoTap(geoCur, pAny);
+  g.grad = unpack2x16float(textureLoad(geoGrad, pAny, 0).r);
+  let dz = max(abs(g.grad.x), abs(g.grad.y));
+  ${fromInput ? '' : /* wgsl */ `
+  // history mean over the stratum (needs the centre, all 9 pixels on surfaces)
+  var hasHist = false;
+  var uA = vec2f(0.0); var uB = vec2f(0.0); var wA = vec2f(0.0); var wB = vec2f(0.0);   // per axis: tap uv, weight
+  if (!hasFlag(FRAME_RESET) && cnt == 9.0 && pAny.x == p0.x + 1 && pAny.y == p0.y + 1) {
+    let r = reproject(pAny, g, P0.planeTol, P0.normalTol);
+    if (r.allValid) {
+      hasHist = true;
+      let pp = r.prevUV * F.dims - 0.5;
+      let bse = floor(pp);
+      let f = pp - bse;
+      // texel-centre coordinates of the two taps per axis, then uv
+      let posA = bse - 1.0 + 1.0 / (2.0 - f);
+      let posB = bse + 1.0 + f / (1.0 + f);
+      uA = (posA + 0.5) * F.invDims; uB = (posB + 0.5) * F.invDims;
+      wA = 2.0 - f; wB = 1.0 + f;
+    }
+  }`}
+  ${I.map((i) => /* wgsl */ `
+  {
+    let m = sL${i} / cnt;
+    let v = max(0.0, sL2${i} / cnt - m * m);
+    var g0 = vec4f(0.0, 0.0, 0.0, 1.0);
+    ${fromInput ? /* wgsl */ `
+    let gi = textureLoad(gradInput${i}, s, 0);   // (l_prev, l_curr, valid)
+    if (gi.z > 0.0 && !hasFlag(FRAME_RESET)) {
+      g0 = vec4f(gi.y - gi.x, max(gi.x, gi.y), 0.0, 1.0);
+    }` : /* wgsl */ `
+    if (hasHist) {
+      let mh = (luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uA.y), 0.0).rgb) * wA.x * wA.y
+              + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uA.y), 0.0).rgb) * wB.x * wA.y
+              + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uB.y), 0.0).rgb) * wA.x * wB.y
+              + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uB.y), 0.0).rgb) * wB.x * wB.y) / 9.0;
+      g0 = vec4f(m - mh, max(m, mh), v / cnt, 1.0);
+    }`}
+    textureStore(outG${i}, s, packG(g0, vec4f(m, v, zAny, dz)));
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+/**
+ * v2 reconstruction (packed): S2 sec. 3.4 / S3 AtrousGradient weights as v1, but one
+ * 16-byte load per tap, taps unrolled with clamped coordinates and select()ed weights,
+ * the luminance-variance prefilter from this iteration's taps (exact at stride 1).
+ * var(delta) is filtered with linear weights (local mean of the per-stratum variance;
+ * strata without history count as 0, matching their 0 in delta) and w carries
+ * 1 + the spatial variance (strata^2 per axis) of the composite kernel so far: the
+ * weighted mixture of the taps' kernels plus this iteration's offset spread. v1's
+ * sum w^2 var / (sum w)^2 treats taps as independent although after the first
+ * iteration neighbours share inputs: 5 iterations shrank the estimate ~20x too far.
+ */
+export function gradientAtrousPassV2(count: number): PassDef {
+  const I = [...Array(count).keys()];
+  const b = new Bindings();
+  I.forEach((i) => b.uniform(`P${i}`, 'Params'));
+  b.uniform('It', 'Iter');
+  I.forEach((i) => {
+    b.add(`inG${i}`, 'texture_2d<u32>', 'i');
+    b.add(`outG${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');
+  });
+  const taps: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) taps.push([x, y]);
+  const code = /* wgsl */ `
+${PARAMS_STRUCT}
+struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
+${b.wgsl}
+${PACK_WGSL}
+
+fn inStrata(q: vec2i) -> bool { return q.x >= 0 && q.y >= 0 && q.x < P0.gradDims.x && q.y < P0.gradDims.y; }
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let s = vec2i(gid.xy);
+  if (!inStrata(s)) { return; }
+  ${I.map((i) => /* wgsl */ `
+  {
+    let cu = textureLoad(inG${i}, s, 0);
+    let c0 = unpackG0(cu);
+    let c1 = unpackG1(cu);
+    if (c1.z <= 0.0) {
+      textureStore(outG${i}, s, cu);
+    } else {
+      ${taps.map(([x, y], k) => `let q${k} = s + vec2i(${x}, ${y}) * It.stride;
+      let u${k} = textureLoad(inG${i}, clamp(q${k}, vec2i(0), P0.gradDims - 1), 0);
+      let a${k} = unpackG0(u${k}); let b${k} = unpackG1(u${k});`).join('\n      ')}
+      let gv = (4.0 * c1.y + ${taps.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * b${k}.y`).join(' + ')}) / 16.0;
+      let sl = 3.0 * sqrt(max(gv, 0.0)) + 1e-10;
+      let dzs = c1.w * f32(It.stride) * f32(P0.gradDown);
+      var s0 = c0; var sL = c1.x; var sV = c1.y; var sw = 1.0;
+      var sR = vec2f(0.0); var sR2 = 0.0;
+      ${taps.map(([x, y], k) => `{
+        let wl = abs(b${k}.x - c1.x) / sl;
+        let wz = abs(b${k}.z - c1.z) / (dzs * ${Math.hypot(x, y).toFixed(6)} + 1e-2 * c1.z);
+        let w = select(0.0, exp(-wl * wl - wz), inStrata(q${k}) && b${k}.z > 0.0);
+        s0 += a${k} * w; sL += b${k}.x * w; sV += b${k}.y * w * w; sw += w;
+        let fo = vec2f(${x}.0, ${y}.0) * f32(It.stride);
+        sR += fo * w; sR2 += dot(fo, fo) * w;
+      }`).join('\n      ')}
+      var o0 = s0 / sw;
+      let m = sR / sw;
+      o0.w = 1.0 + max(0.0, o0.w - 1.0) + 0.5 * max(0.0, sR2 / sw - dot(m, m));
+      textureStore(outG${i}, s, packG(o0, vec4f(sL / sw, sV / (sw * sw), c1.z, c1.w)));
+    }
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+/**
+ * v2 lambda: max(0, |delta| - k sigma) / Delta, max over (2r+1)^2 strata, with
+ * sigma^2 = var(delta) x sum K^2 of the composite kernel, sum K^2 ~ 1/(4 pi v)
+ * (2-D Gaussian of per-axis variance v; clamped to <= 1).
+ */
+export function gradientLambdaPassV2(count: number): PassDef {
+  const I = [...Array(count).keys()];
+  const b = new Bindings();
+  I.forEach((i) => b.uniform(`P${i}`, 'Params'));
+  I.forEach((i) => {
+    b.add(`inG${i}`, 'texture_2d<u32>', 'i');
+    b.add(`outL${i}`, 'texture_storage_2d<r32float, write>', 'r32float');
+  });
+  const code = /* wgsl */ `
+${PARAMS_STRUCT}
+${b.wgsl}
+${PACK_WGSL}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let s = vec2i(gid.xy);
+  if (s.x >= P0.gradDims.x || s.y >= P0.gradDims.y) { return; }
+  ${I.map((i) => /* wgsl */ `
+  {
+    var lam = 0.0;
+    for (var dy = -P${i}.gradRadius; dy <= P${i}.gradRadius; dy++) {
+      for (var dx = -P${i}.gradRadius; dx <= P${i}.gradRadius; dx++) {
+        let v = unpackG0(textureLoad(inG${i}, clamp(s + vec2i(dx, dy), vec2i(0), P${i}.gradDims - 1), 0));
+        if (v.y <= 1e-6) { continue; }
+        var d = abs(v.x);
+        if ((P${i}.flags & P_GRADIENT_INPUT) == 0u) {
+          d = max(0.0, d - P${i}.gradNoiseK * sqrt(v.z * min(1.0, 1.0 / (12.566371 * max(v.w - 1.0, 1e-6)))));
+        }
+        lam = max(lam, d / v.y);
+      }
+    }
+    textureStore(outL${i}, s, vec4f(clamp(lam, 0.0, 1.0)));
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+/** v1 gradient samples (antiLagVersion 1, M1): one thread per pixel, 9x9 workgroups, per-pixel reprojection. */
 export function gradientCreatePass(count: number, fromInput: boolean): PassDef {
   const I = [...Array(count).keys()];
   const b = new Bindings();
@@ -135,6 +367,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
   return { code, entries: b.entries };
 }
 
+/** v1 reconstruction (rgba32float pair, naive variance propagation). */
 export function gradientAtrousPass(count: number): PassDef {
   const I = [...Array(count).keys()];
   const b = new Bindings();
@@ -202,7 +435,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 
 /**
- * lambda = min(1, |delta| / Delta) per stratum, max over a (2r+1)^2
+ * v1 lambda = min(1, |delta| / Delta) per stratum, max over a (2r+1)^2
  * neighbourhood of strata (A-SVGF sec. 3.5, p.9 safety margin), written once
  * at stratum resolution so the temporal pass reads one texel. 'auto' subtracts
  * a noise floor k sigma_delta first (our design).

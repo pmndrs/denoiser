@@ -11,7 +11,9 @@ import type { PassTimer } from './common';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res } from './gpu';
 import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
-import { GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientCreatePass, gradientLambdaPass } from './shaders/gradient';
+import {
+  GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientAtrousPassV2, gradientCreatePass, gradientCreatePassV2, gradientLambdaPass, gradientLambdaPassV2,
+} from './shaders/gradient';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
   PARAMS_SIZE, temporalPass, variancePass, type SignalKind,
@@ -67,11 +69,23 @@ export interface SvgfOptions {
    * samples (`inputs.gradient`, see README). Default 'off'.
    */
   antiLag?: 'off' | 'auto' | 'gradient';
-  /** 'auto' anti-lag: gradient noise floor in standard deviations. Default 2. */
+  /**
+   * 'auto' anti-lag: gradient noise floor in standard deviations. Default (-1 = per signal):
+   * 2 for diffuse (static regions keep long histories), 1 for specular (stays sensitive to
+   * view-dependent drift: +0.11 dB pooled on the test bed); 2 for both with antiLagVersion 1.
+   */
   antiLagNoiseFloor?: number;
+  /**
+   * Anti-lag implementation. 2 (default): gradient samples per stratum from one
+   * reprojection, packed f16 reconstruction, and a noise floor from the composite
+   * reconstruction kernel (v1 underestimated the noise ~4.5x, so static regions never
+   * kept more than ~13 frames of history). 1: the M1 passes (results/M1.md §4), for
+   * comparisons.
+   */
+  antiLagVersion?: 1 | 2;
   /** Anti-lag: neighbourhood (in strata) for the max over lambda. Default 1 (3x3, A-SVGF). */
   antiLagRadius?: number;
-  /** Anti-lag: a-trous iterations of the gradient reconstruction. Default 5 (A-SVGF). */
+  /** Anti-lag: a-trous iterations of the gradient reconstruction. Default 4 (5 with antiLagVersion 1, as A-SVGF). */
   gradientIterations?: number;
   /**
    * Multiply the result by the demodulation factor (`inputs.demodulation`, or
@@ -107,6 +121,7 @@ export type ResolvedOptions = Required<Omit<SpecularSvgfOptions, 'filter'>>;
 export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
   if (o.filter && o.filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${o.filter}'`);
   const antiLag = o.antiLag ?? 'off';
+  const antiLagVersion = o.antiLagVersion ?? 2;
   const temporalAlpha = o.temporalAlpha ?? (antiLag === 'off' ? 0.2 : 0.1);
   return {
     temporalAlpha,
@@ -125,9 +140,10 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     varianceRampFrames: o.varianceRampFrames ?? 4,
     spatialVarianceBoost: o.spatialVarianceBoost ?? 3,
     antiLag,
-    antiLagNoiseFloor: o.antiLagNoiseFloor ?? 2,
+    antiLagNoiseFloor: o.antiLagNoiseFloor ?? -1,
+    antiLagVersion,
     antiLagRadius: o.antiLagRadius ?? 1,
-    gradientIterations: o.gradientIterations ?? 5,
+    gradientIterations: o.gradientIterations ?? (antiLagVersion === 1 ? 5 : 4),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
     specularHistoryScale: o.specularHistoryScale ?? 1,
@@ -172,7 +188,7 @@ class SignalState {
 
 /** Options that change the pass structure: signals in one pipeline must agree on these. */
 export function structuralKey(o: ResolvedOptions) {
-  return [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations].join('|');
+  return [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion].join('|');
 }
 
 /**
@@ -221,9 +237,10 @@ export class SvgfPipeline {
       }
     }
     if (o.antiLag !== 'off') {
-      make('gcreate', gradientCreatePass(kinds.length, o.antiLag === 'gradient'));
-      make('gatrous', gradientAtrousPass(kinds.length));
-      make('glambda', gradientLambdaPass(kinds.length));
+      const v1 = o.antiLagVersion === 1;
+      make('gcreate', (v1 ? gradientCreatePass : gradientCreatePassV2)(kinds.length, o.antiLag === 'gradient'));
+      make('gatrous', (v1 ? gradientAtrousPass : gradientAtrousPassV2)(kinds.length));
+      make('glambda', (v1 ? gradientLambdaPass : gradientLambdaPassV2)(kinds.length));
     }
   }
 
@@ -244,7 +261,10 @@ export class SvgfPipeline {
       s.ping = [tex('ping', 'rgba16float'), tex('pong', 'rgba16float')];
       s.out = tex('output', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
       if (this.opts.antiLag !== 'off') {
-        s.grad = ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh));
+        // v1: (g0, g1) rgba32float ping-pong; v2: one packed rgba32uint ping-pong
+        s.grad = this.opts.antiLagVersion === 1
+          ? ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh))
+          : ['ga', 'gb'].map((n) => tex(n, 'rgba32uint', this.gw, this.gh));
         s.grad.push(tex('lambda', 'r32float', this.gw, this.gh));
       }
       this.writeParams(s);
@@ -261,7 +281,8 @@ export class SvgfPipeline {
     f[4] = o.normalThreshold; f[5] = o.sigmaDepth; f[6] = o.sigmaNormal; f[7] = o.sigmaLuminance;
     f[8] = o.varianceRampFrames; f[9] = o.spatialVarianceBoost;
     f[10] = o.specularHistoryScale; f[11] = o.specularHistoryCurve;
-    f[12] = o.lobeFraction; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
+    f[12] = o.lobeFraction; f[14] = o.radiusScale;
+    f[13] = o.antiLagNoiseFloor >= 0 ? o.antiLagNoiseFloor : this.opts.antiLagVersion === 1 || s.kind === 'diffuse' ? 2 : 1;
     u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (this.opts.antiLag !== 'off' ? P_ANTILAG : 0)
       | (o.remodulate ? P_REMODULATE : 0) | (this.opts.antiLag === 'gradient' ? P_GRADIENT_INPUT : 0)
       | (this.opts.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
@@ -277,7 +298,7 @@ export class SvgfPipeline {
   debugTexture(name: 'accum' | 'gradient', signal = 0): GPUTexture | undefined {
     const s = this.sigs[signal];
     if (name === 'accum') return s.accum[this.cur ^ 1];
-    return s.grad[4];
+    return s.grad[s.grad.length - 1];
   }
 
   private group(name: string, res: Record<string, Res>): GPUBindGroup {
@@ -315,7 +336,7 @@ export class SvgfPipeline {
     };
 
     const gradResult: GPUTexture[] = this.sigs.map(() => gp.dummy32);
-    if (o.antiLag !== 'off') {
+    if (o.antiLag !== 'off' && o.antiLagVersion === 1) {
       runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, this.group('gcreate', per((s, f) => ({
         input: f.radiance, accumPrev: s.accum[c ^ 1], gradInput: f.gradient ?? gp.dummy32, outG0: s.grad[0], outG1: s.grad[1],
       }))), Math.ceil(W / 9), Math.ceil(H / 9));
@@ -331,6 +352,23 @@ export class SvgfPipeline {
         inG0: s.grad[a], outL: s.grad[4],
       }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
       this.sigs.forEach((s, i) => { gradResult[i] = s.grad[4]; });
+    } else if (o.antiLag !== 'off') {
+      // v2: thread per stratum, packed rgba32uint ping-pong (grad[0], grad[1]), lambda grad[2]
+      runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, this.group('gcreate', per((s, f) => ({
+        input: f.radiance, accumPrev: s.accum[c ^ 1], gradInput: f.gradient ?? gp.dummy32, outG: s.grad[0],
+      }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+      let a = 0;
+      for (let it = 0; it < o.gradientIterations; it++) {
+        const res = per((s) => ({ inG: s.grad[a], outG: s.grad[a ^ 1] }));
+        res.It = this.iterParams[it];
+        runPass(enc, timer, name(`gradient_atrous_${it}`), this.pipes.gatrous, this.group('gatrous', res),
+          Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+        a ^= 1;
+      }
+      runPass(enc, timer, name('gradient_lambda'), this.pipes.glambda, this.group('glambda', per((s) => ({
+        inG: s.grad[a], outL: s.grad[2],
+      }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+      this.sigs.forEach((s, i) => { gradResult[i] = s.grad[2]; });
     }
 
     runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({

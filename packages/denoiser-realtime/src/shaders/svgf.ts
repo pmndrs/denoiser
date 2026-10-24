@@ -238,6 +238,10 @@ export function temporalPass(kinds: SignalKind[]): PassDef {
           let lam = antilagLambda${i}(p);
           a = mix(a, 1.0, lam);
           am = mix(am, 1.0, lam);
+          // A-SVGF code: n = 1/alpha. Compounded every frame, a persistent lambda settles at
+          // n ~ 1/sqrt(lambda), so it only stays long where lambda is exactly 0 (v2's noise
+          // floor); a residual lambda of a real drift (view-dependent specular) keeps
+          // shortening it, which the test bed rewards (results/M1.md §12).
           n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
         }
         col = mix(finite3(hist), cur, a);
