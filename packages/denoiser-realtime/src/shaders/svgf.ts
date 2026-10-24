@@ -36,6 +36,7 @@ export const P_REMODULATE = 4;
 export const P_GRADIENT_INPUT = 8;
 export const P_KERNEL_BOX3 = 16;
 export const P_VAR_OF_MEAN = 32;
+export const P_SPEC_NORMAL_POWER = 64;
 
 export const PARAMS_SIZE = 256;
 
@@ -67,6 +68,7 @@ const P_REMODULATE = ${P_REMODULATE}u;
 const P_GRADIENT_INPUT = ${P_GRADIENT_INPUT}u;
 const P_KERNEL_BOX3 = ${P_KERNEL_BOX3}u;
 const P_VAR_OF_MEAN = ${P_VAR_OF_MEAN}u;
+const P_SPEC_NORMAL_POWER = ${P_SPEC_NORMAL_POWER}u;
 fn pflag(f: u32) -> bool { return (P.flags & f) != 0u; }
 
 fn finite3(c: vec3f) -> vec3f {
@@ -81,17 +83,22 @@ function weightsWgsl(kind: SignalKind): string {
     ? /* wgsl */ `
 fn wNormal(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), P.sigmaN); }`
     : /* wgsl */ `
-// Specular: reject beyond the lobe half-angle (+0.5 deg), linear falloff.
+// Specular: reject beyond the GGX lobe half-angle theta_L(alpha) (SPEC R-1,
+// our derivation) + 1 deg, linear falloff (shape from GTC 2020 slide 46); or
+// SVGF's power form (SPEC S-3).
 fn wNormal(g: Geo, gq: Geo) -> f32 {
+  let d = dot(g.n, gq.n);
+  if (pflag(P_SPEC_NORMAL_POWER)) { return pow(max(0.0, d), P.sigmaN); }
   let a = g.rough * g.rough;
-  let theta0 = 1.5707963 * a / (1.0 + a) + 0.0087266;
-  let ang = acos(clamp(dot(g.n, gq.n), -1.0, 1.0));
+  let theta0 = atan(a * sqrt(P.lobeFraction / (1.0 - P.lobeFraction))) + 0.0174533;
+  let ang = acos(clamp(d, -1.0, 1.0));
   return clamp(1.0 - ang / theta0, 0.0, 1.0);
 }`;
   const spec = kind === 'specular' ? /* wgsl */ `
 // RTG ch. 32 eq. 14-15: f_w(a, b, x) = 1 - smoothstep(a, b, x)
 fn wRough(g: Geo, gq: Geo) -> f32 { return 1.0 - smoothstep(0.01, 0.1, abs(g.rough - gq.rough)); }
 fn wRadius(g: Geo, dist: f32) -> f32 {
+  if (P.radiusScale <= 0.0) { return 1.0; }
   let r = max(g.rough, 1e-3) * P.radiusScale;
   return 1.0 - smoothstep(10.0 * r, 70.0 * r, dist);
 }` : '';

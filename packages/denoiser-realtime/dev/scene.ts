@@ -215,8 +215,10 @@ fn rnd(p: vec2u, salt: u32) -> f32 {
 fn noiseFactor(p: vec2u, salt: u32, s: f32) -> f32 {
   let ex = -log(rnd(p, salt));
   var x = mix(1.0, ex, s * S.noise);
-  let ff = select(1.0, 24.0, rnd(p, salt + 7u) < S.fireflyRate);
-  return x * ff / (1.0 + 23.0 * S.fireflyRate);
+  // fireflies scale with the noise level (a mirror's 1-spp sample is exact)
+  let amp = 23.0 * s * S.noise;
+  let ff = select(1.0, 1.0 + amp, rnd(p, salt + 7u) < S.fireflyRate);
+  return x * ff / (1.0 + amp * S.fireflyRate);
 }
 
 @compute @workgroup_size(8, 8)

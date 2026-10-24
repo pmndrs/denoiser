@@ -12,7 +12,7 @@ import { makeBindGroup, makeLayout, makePipeline, runPass, STORAGE_TEX } from '.
 import type { GuidePass } from './guides';
 import { GRADIENT_DOWNSAMPLE, gradientAtrousWgsl, gradientCreateWgsl } from './shaders/gradient';
 import {
-  atrousWgsl, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_VAR_OF_MEAN, PARAMS_SIZE,
+  atrousWgsl, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN, PARAMS_SIZE,
   temporalWgsl, varianceWgsl, type SignalKind,
 } from './shaders/svgf';
 
@@ -88,7 +88,12 @@ export interface SpecularSvgfOptions extends SvgfOptions {
   specularHistoryCurve?: number;
   /** Energy fraction E defining the GGX lobe half-angle theta_L (SPEC R-1). Default 0.75. */
   lobeFraction?: number;
-  /** Scales the roughness-dependent kernel radius (RTG ch. 32 eq. 15). Default 1. */
+  /**
+   * Specular normal edge-stop: 'lobe' (reject beyond the GGX lobe half-angle,
+   * roughness-aware) or 'power' (SVGF's max(0, n.n')^sigmaNormal). Default 'lobe'.
+   */
+  specularNormalWeight?: 'lobe' | 'power';
+  /** Scales the roughness-dependent kernel radius (RTG ch. 32 eq. 15); 0 disables it. Default 1. */
   radiusScale?: number;
 }
 
@@ -124,6 +129,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
     lobeFraction: o.lobeFraction ?? 0.75,
     radiusScale: o.radiusScale ?? 1,
+    specularNormalWeight: o.specularNormalWeight ?? 'lobe',
   };
 }
 
@@ -223,7 +229,8 @@ export class SvgfSignal {
     f[12] = o.lobeFraction; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
     u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (o.antiLag !== 'off' ? P_ANTILAG : 0)
       | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'gradient' ? P_GRADIENT_INPUT : 0)
-      | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0);
+      | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
+      | (o.specularNormalWeight === 'power' ? P_SPEC_NORMAL_POWER : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
     this.device.queue.writeBuffer(this.params, 0, f);
   }

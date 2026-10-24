@@ -10,7 +10,7 @@
 //   alpha=  motionZ=0|1  viewZ=0|1  view=out|noisy|ref|err  gain=  stopAt=N
 import {
   DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser,
-  type FrameCamera, type FrameGuides, type SvgfOptions,
+  type FrameCamera, type FrameGuides, type SpecularSvgfOptions, type SvgfOptions,
 } from '@pmndrs/denoiser-realtime';
 import { BLIT_WGSL, METRICS_WGSL } from './metrics';
 import { SCENE_OUTPUTS, SCENE_PARAMS_SIZE, sceneWgsl } from './scene';
@@ -106,7 +106,7 @@ async function main() {
   const signal = (q.get('signal') ?? 'diffuse') as Sig | 'both';
   const sigs: Sig[] = signal === 'both' ? ['diffuse', 'specular'] : [signal];
   const antiLag = (q.get('antiLag') ?? 'off') as SvgfOptions['antiLag'];
-  const opts: SvgfOptions = {
+  const opts: SvgfOptions & SpecularSvgfOptions = {
     antiLag,
     kernel: (q.get('kernel') ?? '3x3') as '5x5' | '3x3',
     atrousIterations: num('iters', 5),
@@ -114,6 +114,9 @@ async function main() {
     historyFilter: (q.get('history') ?? 'bilinear') as 'catmull-rom' | 'bilinear',
     ...(q.has('lumVar') ? { luminanceVariance: q.get('lumVar') as 'sample' | 'mean' } : {}),
     ...(q.has('sigmaL') ? { sigmaLuminance: num('sigmaL', 4) } : {}),
+    ...(q.has('specNormal') ? { specularNormalWeight: q.get('specNormal') as 'lobe' | 'power' } : {}),
+    ...(q.has('radius') ? { radiusScale: num('radius', 1) } : {}),
+    ...(q.has('specScale') ? { specularHistoryScale: num('specScale', 1) } : {}),
     ...(q.has('boost') ? { spatialVarianceBoost: num('boost', 3) } : {}),
     ...(q.has('cosN') ? { normalThreshold: num('cosN', 0.95) } : {}),
     ...(q.has('plane') ? { planeDistance: num('plane', 0.01) } : {}),
