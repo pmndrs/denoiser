@@ -66,7 +66,7 @@ struct ShadowParams {
   pixScale: f32, pixOrtho: f32, minRadiusPx: f32, maxRadiusPx: f32,
   flags: u32, maxWHistory: f32, geoTol: f32, normalCos: f32,
   noiseScale: f32, anisoMax: f32, tilesX: u32, tilesY: u32,
-  antiLagHistory: f32, q0: f32, q1: f32, q2: f32,
+  antiLagHistory: f32, freshBoost: f32, q1: f32, q2: f32,
   terminatorPx: f32, historyScale: f32, minHistory: f32, historyShrink: f32,
   PA0: vec3f, r0: f32,   // the same affine form for the previous frame's projection
   PAx: vec3f, r1: f32,
@@ -474,7 +474,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
     if (h.w <= 0.0 && nl < sinL) { Rw = SP.terminatorPx * pix; }
   }
   let An = saturate(h.z / SP.maxHistory);
-  Rw *= SP.radiusScale * mix(1.0, SP.historyShrink, An) * select(1.0, 0.5, PASS == 1);
+  Rw *= SP.radiusScale * mix(1.0, SP.historyShrink, An) * select(1.0, 0.5, PASS == 1) * (1.0 + SP.freshBoost / (1.0 + h.z));
   Rw = max(Rw, SP.minRadiusPx * pix);
   if (Rw < 0.5 * pix) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
 

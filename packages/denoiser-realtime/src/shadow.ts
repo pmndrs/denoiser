@@ -45,6 +45,8 @@ export interface ShadowDenoiserOptions {
    * (0 = off). Default 64 (any noticeable clamp restarts the history at 1 frame).
    */
   antiLag?: number;
+  /** Radius factor 1 + freshBoost / (1 + A) for young histories (disocclusions, anti-lag). Default 0. */
+  freshBoost?: number;
   /** History length (A) a full anti-lag drops to (0 = this frame only). Default 0. */
   antiLagHistory?: number;
   /** Temporal disocclusion: plane distance relative to view distance. Default 0.01. */
@@ -97,6 +99,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     clampFloor: o.clampFloor ?? 0.05,
     antiLag: o.antiLag ?? 64,
     antiLagHistory: o.antiLagHistory ?? 0,
+    freshBoost: o.freshBoost ?? 0,
     planeDistance: o.planeDistance ?? 0.01,
     radiusScale: o.radiusScale ?? 0.75,
     historyShrink: o.historyShrink ?? 0.5,
@@ -365,6 +368,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     u[54] = this.tilesX;
     u[55] = this.tilesY;
     f[56] = o.antiLagHistory;
+    f[57] = o.freshBoost;
     f[60] = o.terminatorRadius * H / 1080;
     f[61] = o.historyScale;
     f[62] = o.minHistory;
