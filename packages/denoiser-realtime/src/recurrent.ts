@@ -37,9 +37,9 @@ export interface RecurrentOptions {
   hitDistanceViewScale?: number;
   /** Safety clamp per channel on the input (SPEC F-1). Default 1e4. */
   maxRadiance?: number;
-  /** Pre-blur radius in px at 1080p (SPEC D1). Default 15 (diffuse), 10 (specular). */
+  /** Pre-blur radius in px at 1080p (SPEC D1: 15; tuned on the test bed). Default 25 (diffuse), 10 (specular). */
   preBlurRadius?: number;
-  /** Blur radius at A = 0 in px at 1080p (R_max, SPEC R-5). Default 30. */
+  /** Blur radius at A = 0 in px at 1080p (R_max, SPEC R-5: 30; tuned on the test bed). Default 45. */
   blurRadius?: number;
   /** Minimum blur radius in px (SPEC R-5). Default 1. */
   minBlurRadius?: number;
@@ -57,7 +57,7 @@ export interface RecurrentOptions {
   fireflyThreshold?: number;
   /** Anti-lag from the fast history (SPEC C-10). Default true. */
   antiLag?: boolean;
-  /** Anti-lag clamp window in fast-history standard deviations γ. Default 2. */
+  /** Anti-lag clamp window γ (in standard errors of the 3x3 fast-history mean, see antiLagStandardError). Default 1 (SPEC: 2 spreads). */
   antiLagSigma?: number;
   /** Relative luminance excess e_max at which history is fully shortened. Default 0.5. */
   antiLagExcess?: number;
@@ -71,6 +71,8 @@ export interface RecurrentOptions {
   antiLagCurrentSigma?: number;
   /** Absolute ĥ tolerance added to the current-frame detector. Default 0.05. */
   antiLagCurrentHitTolerance?: number;
+  /** Fast-history clamp window from the standard error of the 3x3 mean instead of the spread (SPEC C-10 uses the spread). Default true. */
+  antiLagStandardError?: boolean;
   /** Stabilization speed N_stab (α ≥ 1/(1 + N), SPEC D10); 0 disables stabilization. Default 7. */
   stabilizationFrames?: number;
   /** Plane-distance disocclusion threshold, relative to view distance (SPEC C-7). Default 0.01. */
@@ -106,7 +108,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     hitDistanceViewScale: o.hitDistanceViewScale ?? 0.05,
     maxRadiance: o.maxRadiance ?? 1e4,
     preBlurRadius: o.preBlurRadius,
-    blurRadius: o.blurRadius ?? 30,
+    blurRadius: o.blurRadius ?? 45,
     minBlurRadius: o.minBlurRadius ?? 1,
     maxAccumulatedFrames: o.maxAccumulatedFrames ?? 31,
     fastFrames: o.fastFrames ?? 3,
@@ -115,11 +117,12 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     antiLag: o.antiLag ?? true,
-    antiLagSigma: o.antiLagSigma ?? 2,
+    antiLagSigma: o.antiLagSigma ?? 1,
     antiLagExcess: o.antiLagExcess ?? 0.5,
     antiLagHitTolerance: o.antiLagHitTolerance ?? 0.2,
     antiLagCurrentSigma: o.antiLagCurrentSigma ?? 3,
     antiLagCurrentHitTolerance: o.antiLagCurrentHitTolerance ?? 0.05,
+    antiLagStandardError: o.antiLagStandardError ?? true,
     stabilizationFrames: o.stabilizationFrames ?? 7,
     planeDistance: o.planeDistance ?? 0.01,
     lobeFraction: o.lobeFraction ?? 0.75,
@@ -240,7 +243,7 @@ export class RecurrentPipeline {
     const f = new Float32Array(RP_SIZE / 4);
     const u = new Uint32Array(f.buffer);
     const res = this.height / 1080;
-    const pre = o.preBlurRadius ?? (s.kind === 'diffuse' ? 15 : 10);
+    const pre = o.preBlurRadius ?? (s.kind === 'diffuse' ? 25 : 10);
     f.set([
       o.hitDistanceScale, o.hitDistanceViewScale, o.maxRadiance, pre * res,
       o.blurRadius * res, o.minBlurRadius, o.maxAccumulatedFrames, o.fastFrames,
@@ -252,7 +255,7 @@ export class RecurrentPipeline {
       t.hitTolHi, t.hitTolTight, o.specularHistoryScale,
     ]);
     u[31] = flagsOf(o, false);
-    f[32] = o.antiLagCurrentSigma; f[33] = o.antiLagCurrentHitTolerance;
+    f[32] = o.antiLagCurrentSigma; f[33] = o.antiLagCurrentHitTolerance; f[34] = o.antiLagStandardError ? 1 : 0;
     this.hitFlags.delete(s);
     this.device.queue.writeBuffer(s.params, 0, f);
   }

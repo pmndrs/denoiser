@@ -63,6 +63,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   (10.6 GB in ~45 s on the M5 Pro, validated) and `--set=<set> --replay=<ids>` (replays +
   compare.mjs). Live and replay give the same PSNR to 0.001 dB, so a capture can stand in
   for the live test bed in any comparison. — wiring, 2026-10-25
+- To run a registry entry in the test bed before it is registered (without editing
+  `tools/rt-capture` or `examples/realtime-denoiser`): a scratch `registry-wrap.ts` that
+  `export *`s the registry by absolute path and calls `registerDenoiser()` for the new ids,
+  plus a scratch Vite config that `mergeConfig`s the test bed's config with `root` set and
+  an alias `/^(\.\.\/)+tools\/rt-capture\/src\/denoisers$/` → the wrapper. A config file
+  outside the repo can't resolve the bare `vite` import; import
+  `<repo>/node_modules/vite/dist/node/index.js` by absolute path. — recurrent, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -103,6 +110,15 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Generate WGSL binding declarations and the bind-group-layout entries from one list
   (`packages/denoiser-realtime/src/shaders/bindings.ts`) and bind by name: with 1- or
   2-signal variants of every pass, hand-numbered bindings drift immediately. — svgf, 2026-10-25
+- Recurrent skeleton (7 passes + prepass, trivial kernels with the real bindings and
+  SPEC §10.1 formats/rotation) at 1080p on the M5 Pro: **1.03 ms** diffuse + specular,
+  0.87 ms diffuse only (prepass 0.18 of it). Dispatch + centre I/O is a quarter of the
+  4 ms budget, so the 8-dispatch structure stands. `shaders/recurrent.ts` `trivialPass`
+  regenerates it from any pass's binding list (`skeleton: true`). — recurrent, 2026-10-25
+- A screen-offset clamp tied to one radius parameter silently disables another pass:
+  the recurrent kernel clamps tap offsets to 2·R_max, so a sweep with `blurRadius≈0`
+  also collapsed the pre-blur onto the centre pixel (identical numbers with and without
+  pre-blur). Clamp to 2·max(R_max, R_pre). — recurrent, 2026-10-25
 
 ## Conventions
 

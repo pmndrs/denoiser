@@ -242,9 +242,10 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
  * Conforms to TemporalDenoiser: `dispatch()` returns the diffuse output; use
  * `dispatchBoth()` (or `outputs` after `dispatch()`) for both textures. Each pass
  * processes both signals per thread (SPEC §4.1, §5.1) unless their filters or
- * structural options differ (e.g. `{ filter: 'recurrent', specular: { filter:
- * 'svgf' } }`); then they run separately and timings are prefixed `diffuse/`
- * and `specular/`.
+ * structural options differ; then they run separately and timings are prefixed
+ * `diffuse/` and `specular/`. `{ filter: 'recurrent' }` currently means recurrent
+ * diffuse + SVGF (antiLag 'auto') specular (provisional until M3); add
+ * `specular: { filter: 'recurrent' }` for both recurrent in shared dispatches.
  */
 export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuseSpecularInputs> {
   readonly name: string;
@@ -258,7 +259,13 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
   constructor(device: GPUDevice, options: DiffuseSpecularDenoiserOptions = {}) {
     const { diffuse: dOpts, specular: sOpts, ...shared } = options;
     const rd = resolve({ ...shared, ...dOpts } as Partial<SpecularSvgfOptions>);
-    const rs = resolve({ ...shared, ...sOpts } as Partial<SpecularSvgfOptions>);
+    // Until recurrent specular has virtual motion (M3), `filter: 'recurrent'` denoises
+    // specular with SVGF + antiLag 'auto' (measured best on the test bed); pass
+    // `specular: { filter: 'recurrent' }` for the interim recurrent specular (joint dispatch).
+    const recurrentShared = shared.filter === 'recurrent' && !sOpts?.filter;
+    const rs = resolve((recurrentShared
+      ? { filter: 'svgf', antiLag: 'auto', remodulate: shared.remodulate, timestamps: shared.timestamps, ...sOpts }
+      : { ...shared, ...sOpts }) as Partial<SpecularSvgfOptions>);
     this.options = { diffuse: rd.o, specular: rs.o };
     this.filters = { diffuse: filterName(rd), specular: filterName(rs) };
     this.name = rd.filter === rs.filter ? `${rd.filter}-diffuse-specular` : `${rd.filter}+${rs.filter}-diffuse-specular`;

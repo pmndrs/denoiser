@@ -11,6 +11,8 @@
 //   filter=svgf|recurrent  r.<option>=number|bool (recurrent options, e.g. r.blurRadius=20)
 //   t.<tune>=number (recurrent weight tolerances)  skeleton=1 (recurrent: trivial kernels)
 //   hit=0 (no hit distance inputs)  still=1 (lights don't move)
+//   specularFilter=svgf|recurrent (signal=both with filter=recurrent: specular's filter;
+//   default recurrent diffuse + SVGF antiLag 'auto' specular)
 import {
   DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser,
   type FrameCamera, type FrameGuides, type RecurrentOptions, type SpecularSvgfOptions, type SvgfOptions,
@@ -194,7 +196,8 @@ async function main() {
   let both: DiffuseSpecularDenoiser | undefined;
   let single: DiffuseDenoiser | SpecularDenoiser | undefined;
   if (signal === 'both') {
-    both = new DiffuseSpecularDenoiser(device, specFilter === 'svgf' ? { ...dOpts, specular: { ...opts, filter: 'svgf' } } : dOpts);
+    both = new DiffuseSpecularDenoiser(device, specFilter === 'svgf' ? { ...dOpts, specular: { ...opts, filter: 'svgf' } }
+      : specFilter === 'recurrent' ? { ...dOpts, specular: { filter: 'recurrent' } } : dOpts);
   } else if (signal === 'diffuse') single = new DiffuseDenoiser(device, dOpts);
   else single = new SpecularDenoiser(device, dOpts);
   (both ?? single)!.configure({ width: W, height: H });

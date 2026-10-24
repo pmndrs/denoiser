@@ -122,6 +122,33 @@ fn geoTap(t: texture_2d<u32>, p: vec2i) -> Geo {
 }
 `;
 
+/** History sampling helpers (2x2 tap offsets, 5-fetch Catmull-Rom); need `F: Frame`. */
+export const HISTORY_SAMPLE_WGSL = /* wgsl */ `
+const TAP_OFFS = array<vec2i, 4>(vec2i(0, 0), vec2i(1, 0), vec2i(0, 1), vec2i(1, 1));
+
+// 5-fetch Catmull-Rom on a filterable texture (bilinear taps), uv in [0, 1].
+fn sampleCatmullRom(tex: texture_2d<f32>, smp: sampler, uv: vec2f) -> vec4f {
+  let pos = uv * F.dims;
+  let t1 = floor(pos - 0.5) + 0.5;
+  let f = pos - t1;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let w12 = w1 + w2;
+  let t0 = (t1 - 1.0) * F.invDims;
+  let t3 = (t1 + 2.0) * F.invDims;
+  let t12 = (t1 + w2 / w12) * F.invDims;
+  var c = textureSampleLevel(tex, smp, vec2f(t12.x, t0.y), 0.0) * (w12.x * w0.y);
+  c += textureSampleLevel(tex, smp, vec2f(t0.x, t12.y), 0.0) * (w0.x * w12.y);
+  c += textureSampleLevel(tex, smp, t12, 0.0) * (w12.x * w12.y);
+  c += textureSampleLevel(tex, smp, vec2f(t3.x, t12.y), 0.0) * (w3.x * w12.y);
+  c += textureSampleLevel(tex, smp, vec2f(t12.x, t3.y), 0.0) * (w12.x * w3.y);
+  let wsum = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
+  return c / wsum;
+}
+`;
+
 /**
  * Shared temporal core. Expects in scope: `F: Frame`, `geoPrev:
  * texture_2d<u32>`, `motionTex`, `motionZTex: texture_2d<f32>`, and the tolerances
@@ -191,27 +218,5 @@ fn reproject(p: vec2i, g: Geo, planeTol: f32, normalTol: f32) -> Reproj {
   return r;
 }
 
-const TAP_OFFS = array<vec2i, 4>(vec2i(0, 0), vec2i(1, 0), vec2i(0, 1), vec2i(1, 1));
-
-// 5-fetch Catmull-Rom on a filterable texture (bilinear taps), uv in [0, 1].
-fn sampleCatmullRom(tex: texture_2d<f32>, smp: sampler, uv: vec2f) -> vec4f {
-  let pos = uv * F.dims;
-  let t1 = floor(pos - 0.5) + 0.5;
-  let f = pos - t1;
-  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
-  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
-  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
-  let w3 = f * f * (-0.5 + 0.5 * f);
-  let w12 = w1 + w2;
-  let t0 = (t1 - 1.0) * F.invDims;
-  let t3 = (t1 + 2.0) * F.invDims;
-  let t12 = (t1 + w2 / w12) * F.invDims;
-  var c = textureSampleLevel(tex, smp, vec2f(t12.x, t0.y), 0.0) * (w12.x * w0.y);
-  c += textureSampleLevel(tex, smp, vec2f(t0.x, t12.y), 0.0) * (w0.x * w12.y);
-  c += textureSampleLevel(tex, smp, t12, 0.0) * (w12.x * w12.y);
-  c += textureSampleLevel(tex, smp, vec2f(t3.x, t12.y), 0.0) * (w3.x * w12.y);
-  c += textureSampleLevel(tex, smp, vec2f(t12.x, t3.y), 0.0) * (w12.x * w3.y);
-  let wsum = w12.x * w0.y + w0.x * w12.y + w12.x * w12.y + w3.x * w12.y + w12.x * w3.y;
-  return c / wsum;
-}
+${HISTORY_SAMPLE_WGSL}
 `;

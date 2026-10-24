@@ -37,7 +37,7 @@
 //   clamp, A packed as fixed point in an r32uint, mip atlas, stabilization
 //   clamp widening with A, post-blur radius function.
 import { Bindings, type PassDef } from './bindings';
-import { FRAME_WGSL, REPROJECT_WGSL } from './common';
+import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REPROJECT_WGSL } from './common';
 
 export type RecurrentKind = 'diffuse' | 'specular';
 
@@ -73,7 +73,7 @@ struct RParams {
   geoTolLo: f32, geoTolHi: f32, normalTight: f32, lobeFraction: f32,
   postLo: f32, postHi: f32, postDelta: f32, hitTolLo: f32,
   hitTolHi: f32, hitTolTight: f32, specScale: f32, flags: u32,
-  lagCurSigma: f32, lagCurHitTol: f32, pad0: f32, pad1: f32,
+  lagCurSigma: f32, lagCurHitTol: f32, lagStdErr: f32, pad1: f32,
 }
 const RP_HAS_HIT = ${RP_HAS_HIT}u;
 const RP_REMODULATE = ${RP_REMODULATE}u;
@@ -116,23 +116,51 @@ fn onbB(n: vec3f) -> vec3f {
   let a = -1.0 / (s + n.z);
   return vec3f(n.x * n.y * a, s + n.y * n.y * a, -n.y);
 }
-// data texture (SPEC §5.12, D14): A_d, A_s as 10-bit fixed point A*16, m 12-bit unorm.
+// data texture (SPEC §5.12, D14): A_d, A_s as 10-bit fixed point A*16, m 8-bit unorm,
+// and the temporal pass's 2x2 history validity mask (4 bits, reused by stabilization).
 fn unpackA(v: u32, slot: u32) -> f32 { return f32((v >> (10u * slot)) & 1023u) / 16.0; }
-fn unpackM(v: u32) -> f32 { return f32(v >> 20u) / 4095.0; }
-fn packData(ad: f32, as_: f32, m: f32) -> u32 {
+fn unpackM(v: u32) -> f32 { return f32((v >> 20u) & 255u) / 255.0; }
+fn packData(ad: f32, as_: f32, m: f32, mask: u32) -> u32 {
   let a = u32(round(clamp(ad, 0.0, 63.9375) * 16.0));
   let b = u32(round(clamp(as_, 0.0, 63.9375) * 16.0));
-  let c = u32(round(clamp(m, 0.0, 1.0) * 4095.0));
-  return a | (b << 10u) | (c << 20u);
+  let c = u32(round(clamp(m, 0.0, 1.0) * 255.0));
+  return a | (b << 10u) | (c << 20u) | ((mask & 15u) << 28u);
+}
+
+// Plane distance of a tap (pixel q, depth z) from the centre's plane {X, n}, relative
+// to the view distance: dot(n, X_q) is linear in q for a fixed depth, so the per-tap
+// cost is a few FMAs (perspective: X_q = z (lin(q), -1); orthographic: X_q = (lin(q), -z)).
+struct Plane { a: vec3f, b: vec3f, c0: f32, invLen: f32 }
+fn makePlane(X: vec3f, nv: vec3f) -> Plane {
+  var pl: Plane;
+  let kx = 2.0 * F.invDims.x;
+  let cx = F.invDims.x - 1.0;
+  let ky = -2.0 * F.invDims.y;
+  let cy = 1.0 - F.invDims.y;
+  let ex = nv.x * RF.unp.x;
+  let ey = nv.y * RF.unp.y;
+  if (isOrtho()) {
+    pl.a = vec3f(-nv.z, 0.0, 0.0);
+    pl.b = vec3f(ex * (cx - RF.unp2.x) + ey * (cy - RF.unp2.y), ex * kx, ey * ky);
+  } else {
+    pl.a = vec3f(ex * (cx + RF.unp.z) + ey * (cy + RF.unp.w) - nv.z, ex * kx, ey * ky);
+    pl.b = vec3f(0.0);
+  }
+  pl.c0 = dot(nv, X);
+  pl.invLen = 1.0 / length(X);
+  return pl;
+}
+fn planeDist(pl: Plane, q: vec2i, z: f32) -> f32 {
+  let qf = vec2f(q);
+  return abs(z * (pl.a.x + pl.a.y * qf.x + pl.a.z * qf.y) + pl.b.x + pl.b.y * qf.x + pl.b.z * qf.y - pl.c0) * pl.invLen;
 }
 
 // ---- spatial kernel (SPEC §5.9)
 struct Kern {
-  c: vec4f, t: vec4f, b: vec4f,   // clip-space centre and axis offsets (radius included)
-  X: vec3f, invLen: f32,
-  nv: vec3f, invGeoTol: f32,
-  invOneMinusCos: f32, invHitTol: f32, invRoughTol: f32, hh: f32,
-  rough: f32, maxPx: f32,
+  jx: vec2f, jy: vec2f,   // screen-space (pixel) images of the kernel axes T*R, B*R at the centre
+  pl: Plane,
+  invGeoTol: f32, invOneMinusCos: f32, invHitTol: f32, invRoughTol: f32,
+  hh: f32, rough: f32,
 }
 // R-3: 8 taps in 4 antipodal pairs (golden-angle spiral, radii sqrt((i + 0.5)/4)).
 const DISK = array<vec2f, 8>(
@@ -147,30 +175,23 @@ fn blurRotation(p: vec2i) -> mat2x2f {
   return mat2x2f(c, s, -s, c);
 }
 // Pixel a kernel offset o (unit disk) lands in; x = -1 when rejected (off-screen,
-// centre pixel, behind the camera). Screen offsets beyond maxPx are scaled back.
+// centre pixel). Affine: the projected kernel axes at the centre (our approximation
+// of projecting each world-space tap, SPEC R-4).
 fn tapPixel(p: vec2i, k: Kern, o: vec2f) -> vec2i {
-  let clip = k.c + o.x * k.t + o.y * k.b;
-  if (clip.w <= 0.0) { return vec2i(-1); }
-  var off = (clip.xy / clip.w * vec2f(0.5, -0.5) + 0.5) * F.dims - (vec2f(p) + 0.5);
-  let l = length(off);
-  if (l > k.maxPx) { off *= k.maxPx / l; }
-  let q = vec2i(floor(vec2f(p) + 0.5 + off));
+  let q = vec2i(floor(vec2f(p) + 0.5 + k.jx * o.x + k.jy * o.y));
   if (all(q == p) || !inside(q)) { return vec2i(-1); }
   return q;
 }
 // Geometry (plane distance relative to view distance) x normal (lobe angle) weights.
 fn tapGeoW(k: Kern, n: vec3f, gq: Geo, q: vec2i) -> f32 {
-  let Xt = viewPosAt(uvOf(q), gq.z);
-  let xg = abs(dot(k.nv, Xt - k.X)) * k.invLen * k.invGeoTol;
+  let xg = planeDist(k.pl, q, gq.z) * k.invGeoTol;
   // angle ratio theta/theta0 in cosine space: sqrt((1 - cos)/(1 - cos0)) (no acos per tap)
   let xn = sqrt(max(0.0, 1.0 - dot(n, gq.n)) * k.invOneMinusCos);
   return Wt(xg) * Wt(xn);
 }
 // Plane-distance test only (neighbourhood validity at A = 0 tolerance).
-fn planeOk(X: vec3f, nv: vec3f, invLen: f32, tol: f32, gq: Geo, q: vec2i) -> bool {
-  if (gq.z <= 0.0) { return false; }
-  let Xt = viewPosAt(uvOf(q), gq.z);
-  return abs(dot(nv, Xt - X)) * invLen < tol;
+fn planeOk(pl: Plane, tol: f32, gq: Geo, q: vec2i) -> bool {
+  return gq.z > 0.0 && planeDist(pl, q, gq.z) < tol;
 }
 `;
 
@@ -210,12 +231,17 @@ fn kern${i}(g: Geo, X: vec3f, nv: vec3f, R: f32, An: f32, hh: f32) -> Kern {
   T *= 1.0 - 0.75 * (1.0 - NoV) * 4.0 * g.rough * (1.0 - g.rough);` : /* wgsl */ `
   T = onbT(nv);   // diffuse: tangent plane (a = n)
   B = onbB(nv);`}
-  k.c = RF.proj * vec4f(X, 1.0);
-  k.t = RF.proj * vec4f(T * R, 0.0);
-  k.b = RF.proj * vec4f(B * R, 0.0);
-  k.X = X;
-  k.invLen = 1.0 / length(X);
-  k.nv = nv;
+  // screen-space Jacobian of the kernel plane at the centre, offsets capped at 2 R_max
+  let c = RF.proj * vec4f(X, 1.0);
+  let t = RF.proj * vec4f(T * R, 0.0);
+  let b = RF.proj * vec4f(B * R, 0.0);
+  let sc = vec2f(0.5, -0.5) * F.dims / (c.w * c.w);
+  k.jx = (t.xy * c.w - c.xy * t.w) * sc;
+  k.jy = (b.xy * c.w - c.xy * b.w) * sc;
+  let mx = max(length(k.jx), length(k.jy));
+  let maxPx = 2.0 * max(${P}.maxRadius, ${P}.preRadius);
+  if (mx > maxPx) { k.jx *= maxPx / mx; k.jy *= maxPx / mx; }
+  k.pl = makePlane(X, nv);
   k.invGeoTol = 1.0 / mix(${P}.geoTolLo, ${P}.geoTolHi, An);
   let thN = min(thetaL(alpha, ${P}.lobeFraction) * mix(1.0, ${P}.normalTight, An) + 0.0174533, 1.5);
   k.invOneMinusCos = 1.0 / max(1.0 - cos(thN), 1e-6);
@@ -223,7 +249,6 @@ fn kern${i}(g: Geo, X: vec3f, nv: vec3f, R: f32, An: f32, hh: f32) -> Kern {
   k.invRoughTol = 1.0 / (0.05 + 0.25 * g.rough);
   k.hh = hh;
   k.rough = g.rough;
-  k.maxPx = 2.0 * max(${P}.maxRadius, ${P}.preRadius);
   return k;
 }
 `;
@@ -233,20 +258,18 @@ fn kern${i}(g: Geo, X: vec3f, nv: vec3f, R: f32, An: f32, hh: f32) -> Kern {
 function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean; hitWeight: boolean; load: (q: string) => string; rgbOnly: boolean }) {
   const off = o.rotate ? `rot * DISK[${t}]` : `DISK[${t}]`;
   const acc = o.rgbOnly ? '.rgb' : '';
+  // Branchless: both loads issue together (latency-bound otherwise); rejected taps get w = 0.
   return /* wgsl */ `
     {
-      let q = tapPixel(p, k${i}, ${off});
-      if (q.x >= 0) {
-        let gq = geoTap(geoCur, q);
-        if (gq.z > 0.0) {
-          let s = ${o.load('q')};
-          var w = tapGeoW(k${i}, g.n, gq, q);${o.hitWeight ? `
-          w *= Wt(abs(s.a - k${i}.hh) * k${i}.invHitTol);` : ''}${kind === 'specular' ? `
-          w *= Wt(abs(gq.rough - k${i}.rough) * k${i}.invRoughTol);` : ''}
-          sum${i} += s${acc} * w;
-          sw${i} += w;
-        }
-      }
+      let q0 = tapPixel(p, k${i}, ${off});
+      let q = select(p, q0, q0.x >= 0);
+      let gq = geoTap(geoCur, q);
+      let s = ${o.load('q')};
+      var w = select(0.0, tapGeoW(k${i}, g.n, gq, q), q0.x >= 0 && gq.z > 0.0);${o.hitWeight ? `
+      w *= Wt(abs(s.a - k${i}.hh) * k${i}.invHitTol);` : ''}${kind === 'specular' ? `
+      w *= Wt(abs(gq.rough - k${i}.rough) * k${i}.invRoughTol);` : ''}
+      sum${i} += s${acc} * w;
+      sw${i} += w;
     }`;
 }
 
@@ -285,7 +308,7 @@ export function preBlurPass(kinds: RecurrentKind[]): PassDef {
   });
   const I = kinds.map((_, i) => i);
   const code = /* wgsl */ `
-${head(b, REPROJECT_WGSL)}
+${head(b)}
 ${kinds.map((k, i) => signalWgsl(k, i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
@@ -301,25 +324,27 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let X = viewPosAt(uv, g.z);
   let nv = viewNormal(g.n);
   let ps = pixSize(g.z);
-  // D1b: last frame's denoised hit distance at the nearest reprojected texel,
-  // if that texel passes the plane test (raw hitT is too noisy to size kernels).
-  var guideOk = false;
-  var guideQ = vec2i(0);
-  if (!hasFlag(FRAME_RESET)) {
-    let mv = textureLoad(motionTex, p, 0).xy;
-    let prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
-    let world = (F.viewInv * vec4f(X, 1.0)).xyz;
-    let expPrev = expectedPrev(p, g, prevUV, world);
-    guideQ = vec2i(floor(prevUV * F.dims));
-    guideOk = tapValid(guideQ, g, expPrev, P0.planeTol, -1.0);
-  }
+  // D1b: last frame's denoised hit distance at the nearest reprojected texel, if
+  // that texel's depth matches (raw hitT is too noisy to size kernels). A 5 %
+  // relative-depth check instead of the plane test (only sizes a kernel; keeps the
+  // loads parallel).
+  let mv = textureLoad(motionTex, p, 0).xy;
+  let prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+  let gq0 = vec2i(floor(prevUV * F.dims));
+  let guideQ = clampPix(gq0);
+  let zPrevTap = bitcast<f32>(textureLoad(geoPrev, guideQ, 0).x);
+  var zPrev: f32;
+  if (hasFlag(FRAME_HAS_MOTIONZ)) { zPrev = g.z - textureLoad(motionZTex, p, 0).r; }
+  else { zPrev = -(F.prevView * (F.viewInv * vec4f(X, 1.0))).z; }
+  let guideOk = !hasFlag(FRAME_RESET) && all(gq0 == guideQ) && zPrevTap > 0.0 && abs(zPrevTap - zPrev) < 0.05 * zPrev;
   ${I.map((i) => /* wgsl */ `
   {
     let c = sanitize(textureLoad(input${i}, p, 0).rgb, P${i}.maxRadiance);
     var hh = 1.0;
     if ((P${i}.flags & RP_HAS_HIT) != 0u) { hh = hNorm${i}(textureLoad(hit${i}, p, 0).r, g.z); }
     var R = P${i}.preRadius * radiusRough${i}(g) * ps;
-    if (guideOk) { R = min(R, hitClamp${i}(g) * hDenorm${i}(textureLoad(histPrev${i}, guideQ, 0).a, g.z)); }
+    let hPrev${i} = textureLoad(histPrev${i}, guideQ, 0).a;
+    if (guideOk) { R = min(R, hitClamp${i}(g) * hDenorm${i}(hPrev${i}, g.z)); }
     var sum${i} = c;
     var sw${i} = 1.0;
     if (R > 0.5 * ps) {   // smaller kernels land on the centre pixel
@@ -427,7 +452,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   // mean's standard error. Geometry-valid neighbours only.
   let X = viewPosAt(uvOf(p), g.z);
   let nv = viewNormal(g.n);
-  let invLen = 1.0 / length(X);
+  let pl = makePlane(X, nv);
   ${I.map((i) => `let pc${i} = textureLoad(pre${i}, p, 0);
   var m1_${i} = vec2f(luma(pc${i}.rgb), pc${i}.a);
   var m2_${i} = m1_${i} * m1_${i};`).join('\n  ')}
@@ -435,14 +460,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (hasHist) {
     ${nb.map(([x, y]) => /* wgsl */ `
     {
-      let q = p + vec2i(${x}, ${y});
-      if (inside(q)) {
-        let gq = geoTap(geoCur, q);
-        if (planeOk(X, nv, invLen, P0.geoTolLo, gq, q)) {
-          nn += 1.0;
-          ${I.map((i) => `{ let s = textureLoad(pre${i}, q, 0); let v = vec2f(luma(s.rgb), s.a); m1_${i} += v; m2_${i} += v * v; }`).join('\n          ')}
-        }
-      }
+      let qq = p + vec2i(${x}, ${y});
+      let q = clampPix(qq);
+      let gq = geoTap(geoCur, q);
+      let ok = select(0.0, 1.0, inside(qq) && planeOk(pl, P0.geoTolLo, gq, q));
+      nn += ok;
+      ${I.map((i) => `{ let s = textureLoad(pre${i}, q, 0); let v = vec2f(luma(s.rgb), s.a) * ok; m1_${i} += v; m2_${i} += v * v; }`).join('\n      ')}
     }`).join('')}
   }
   ${I.map((i) => /* wgsl */ `
@@ -472,7 +495,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     fastOut[${2 * slot(i) + 1}] = fNew.y;
   }`).join('')}
   textureStore(outFast, p, fastOut);
-  textureStore(outData, p, vec4u(packData(A.x, A.y, 0.0), 0u, 0u, 0u));
+  var mask = 0u;
+  if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
+  textureStore(outData, p, vec4u(packData(A.x, A.y, 0.0, mask), 0u, 0u, 0u));
 }
 `;
   return { code, entries: b.entries };
@@ -582,22 +607,23 @@ fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> vec4f {
     let f = (vec2f(p) + 0.5) / scale - 0.5;
     let c = vec2i(round(f));
     let dims = levelDims(L);
+    let tol = 1.0 / (P${i}.fixTol * scale * d);
     var sumB = 0.0;
     var sumW = 0.0;
     var sumC = vec4f(0.0);
-    for (var k = 0; k < 9; k++) {
-      let t = c + vec2i(k % 3 - 1, k / 3 - 1);
+    // unrolled, branchless 3x3 (all loads in flight together)
+    ${[...Array(9).keys()].map((k) => `{
+      let t = c + vec2i(${(k % 3) - 1}, ${Math.floor(k / 3) - 1});
       let dt = abs(f - vec2f(t));
       let wb = max(0.0, 1.0 - dt.x / 1.5) * max(0.0, 1.0 - dt.y / 1.5);
-      sumB += wb;
-      if (any(t < vec2i(0)) || any(t >= dims)) { continue; }
-      let a = atlasCoord(L, t);
+      let a = atlasCoord(L, clamp(t, vec2i(0), dims - 1));
       let dm = textureLoad(mipZ, a, 0).r;
-      if (dm <= 0.0) { continue; }
-      let w = wb * Wt(abs(dm - d) / (P${i}.fixTol * scale * d));
+      let v = textureLoad(mip${i}, a, 0);
+      let w = select(0.0, wb * Wt(abs(dm - d) * tol), all(t >= vec2i(0)) && all(t < dims) && dm > 0.0);
+      sumB += wb;
       sumW += w;
-      sumC += textureLoad(mip${i}, a, 0) * w;
-    }
+      sumC += v * w;
+    }`).join('\n    ')}
     if (sumW >= P${i}.fixMinWeight * sumB && sumW > 0.0) { return vec4f(sumC / sumW); }
     L -= 1;
   }
@@ -615,7 +641,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   let X = viewPosAt(uvOf(p), g.z);
   let nv = viewNormal(g.n);
-  let invLen = 1.0 / length(X);
+  let pl = makePlane(X, nv);
   let dv = textureLoad(dataRW, p).r;
   var A = vec2f(unpackA(dv, 0u), unpackA(dv, 1u));
   // 3x3 neighbourhood, geometry-valid at the A = 0 plane tolerance:
@@ -627,23 +653,23 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   ${I.map((i) => `var l1_${i} = 0.0;\n  var l2_${i} = 0.0;`).join('\n  ')}
   ${nb.map(([x, y]) => /* wgsl */ `
   {
-    let q = p + vec2i(${x}, ${y});
-    if (inside(q)) {
-      let gq = geoTap(geoCur, q);
-      if (planeOk(X, nv, invLen, P0.geoTolLo, gq, q)) {
-        let f = textureLoad(fastCur, q, 0);
-        fSum += f;
-        fSq += f * f;
-        nValid += 1.0;
-        ${I.map((i) => `{
-          let l = luma(textureLoad(acc${i}, q, 0).rgb);
-          if (l > l1_${i}) { l2_${i} = l1_${i}; l1_${i} = l; } else if (l > l2_${i}) { l2_${i} = l; }
-        }`).join('\n        ')}
-      }
-    }
+    let qq = p + vec2i(${x}, ${y});
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let ok = select(0.0, 1.0, inside(qq) && planeOk(pl, P0.geoTolLo, gq, q));
+    let f = textureLoad(fastCur, q, 0) * ok;
+    fSum += f;
+    fSq += f * f;
+    nValid += ok;
+    ${I.map((i) => `{
+      let l = luma(textureLoad(acc${i}, q, 0).rgb) * ok;
+      l2_${i} = max(l2_${i}, min(l1_${i}, l));
+      l1_${i} = max(l1_${i}, l);
+    }`).join('\n    ')}
   }`).join('')}
   let fMean = fSum / nValid;
-  let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0)));
+  // window from the spread of the fast history; optionally its standard error (our variant)
+  let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0))) / mix(1.0, sqrt(nValid), P0.lagStdErr);
   ${I.map((i) => /* wgsl */ `
   {
     var c = textureLoad(acc${i}, p, 0);
@@ -678,7 +704,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     A[${slot(i)}] = a;
     textureStore(outFix${i}, p, c);
   }`).join('')}
-  textureStore(dataRW, p, vec4u(packData(A.x, A.y, unpackM(dv)), 0u, 0u, 0u));
+  textureStore(dataRW, p, vec4u(packData(A.x, A.y, unpackM(dv), dv >> 28u), 0u, 0u, 0u));
 }
 `;
   return { code, entries: b.entries };
@@ -741,7 +767,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): PassDef {
   const b = base(kinds);
-  addReproj(b);
+  b.add('motionTex', 'texture_2d<f32>', 'f');
   b.add('smp', 'sampler', 's');
   b.add('dataTex', 'texture_2d<u32>', 'i');
   kinds.forEach((_, i) => {
@@ -759,7 +785,7 @@ export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): Pass
   const store = (i: number, v: string) => `textureStore(outS${i}, p, ${v});${remodulate ? `
     textureStore(outRemod${i}, p, vec4f(${v}.rgb * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & RP_REMODULATE) != 0u), ${v}.a));` : ''}`;
   const code = /* wgsl */ `
-${head(b, REPROJECT_WGSL)}
+${head(b, HISTORY_SAMPLE_WGSL)}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -772,44 +798,47 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   let X = viewPosAt(uvOf(p), g.z);
   let nv = viewNormal(g.n);
-  let invLen = 1.0 / length(X);
+  let pl = makePlane(X, nv);
   let dv = textureLoad(dataTex, p, 0).r;
   ${I.map((i) => `let h${i} = textureLoad(hCur${i}, p, 0);\n  var m1_${i} = h${i};\n  var m2_${i} = h${i} * h${i};`).join('\n  ')}
   var n = 1.0;
   ${nb.map(([x, y]) => /* wgsl */ `
   {
-    let q = p + vec2i(${x}, ${y});
-    if (inside(q)) {
-      let gq = geoTap(geoCur, q);
-      if (planeOk(X, nv, invLen, P0.geoTolLo, gq, q)) {
-        n += 1.0;
-        ${I.map((i) => `{ let s = textureLoad(hCur${i}, q, 0); m1_${i} += s; m2_${i} += s * s; }`).join('\n        ')}
-      }
-    }
+    let qq = p + vec2i(${x}, ${y});
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let ok = select(0.0, 1.0, inside(qq) && planeOk(pl, P0.geoTolLo, gq, q));
+    n += ok;
+    ${I.map((i) => `{ let s = textureLoad(hCur${i}, q, 0) * ok; m1_${i} += s; m2_${i} += s * s; }`).join('\n    ')}
   }`).join('')}
-  var hasHist = false;
-  var r: Reproj;
-  if (!hasFlag(FRAME_RESET)) {
-    r = reproject(p, g, P0.planeTol, -1.0);
-    hasHist = any(r.valid > vec4f(0.5));
-  }
+  // The temporal pass's 2x2 validity (same reprojection, stored in data): no second
+  // set of plane tests here.
+  let mask = dv >> 28u;
+  let hasHist = !hasFlag(FRAME_RESET) && mask != 0u;
+  let mv = textureLoad(motionTex, p, 0).xy;
+  let prevUV = uvOf(p) - vec2f(mv.x, -mv.y) * 0.5;
+  let pp = prevUV * F.dims - 0.5;
+  let base = vec2i(floor(pp));
+  let fr = pp - floor(pp);
+  let bil = vec4f((1.0 - fr.x) * (1.0 - fr.y), fr.x * (1.0 - fr.y), (1.0 - fr.x) * fr.y, fr.x * fr.y);
+  let valid = vec4f(f32(mask & 1u), f32((mask >> 1u) & 1u), f32((mask >> 2u) & 1u), f32((mask >> 3u) & 1u));
   ${I.map((i) => /* wgsl */ `
   {
     var s = h${i};
     if (hasHist && (P${i}.flags & RP_NO_STABILIZE) == 0u) {
-      let wts = max(r.bil, vec4f(1e-3)) * r.valid;
+      let wts = max(bil, vec4f(1e-3)) * valid;
       var sp = vec4f(0.0);
       var lo = vec4f(1e30);
       var hi = vec4f(-1e30);
       for (var k = 0; k < 4; k++) {
         if (wts[k] <= 0.0) { continue; }
-        let v = textureLoad(sPrev${i}, r.base + TAP_OFFS[k], 0);
+        let v = textureLoad(sPrev${i}, base + TAP_OFFS[k], 0);
         sp += v * wts[k];
         lo = min(lo, v);
         hi = max(hi, v);
       }
       sp /= wts.x + wts.y + wts.z + wts.w;
-      if (r.allValid) { sp = clamp(sampleCatmullRom(sPrev${i}, smp, r.prevUV), lo, hi); }
+      if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev${i}, smp, prevUV), lo, hi); }
       let A = unpackA(dv, ${slotOf(kinds[i])}u);
       let An = clamp(A / P${i}.aCap, 0.0, 1.0);
       let mu = m1_${i} / n;

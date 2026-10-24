@@ -81,10 +81,10 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 | depth source / linearization | C-2 | standard projection algebra | — | | `packages/denoiser-realtime/src/shaders/prepass.ts` `linZ` |
 | previous depth from 2.5D motion or static transform | C-3, D16 | 2.5D convention: nrd-provenance §3.2 (interface fact) | static-world derivation when absent: ours | | `packages/denoiser-realtime/src/shaders/common.ts` `expectedPrev` |
 | packed guide `G` (oct normal 2×12 b + roughness 8 b + f32 depth) | C-5 | CIG14 (octahedral) | packing layout ours | | `packages/denoiser-realtime/src/shaders/common.ts` `packGeoTap`/`geoTap`, `shaders/prepass.ts` (same layout) |
-| sanitize / safety clamp | F-1 | our design | | | |
+| sanitize / safety clamp | F-1 | our design | | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `sanitize` |
 | diffuse demodulation, 1e-3 floor | F-2 | S1 §3 "Reconstruction"; Z15 §3 (floor) | — | yes (Z15 via shadows-specular.md) | |
 | specular demodulation (split-sum, analytic) | F-2 | K13 Eq. 7–8; K14m (analytic env-BRDF fit; constants as in CAPTURE-FORMAT) | f90 = 1 | yes | |
-| hit-distance normalization ĥ = h/(h + a + b·d) | F-3, D5 | concept "normalized hit distance = AO/SO": GTC20 s.9 | **our design, tuned on captures** (rational curve, a = 1, b = 0.05) | | |
+| hit-distance normalization ĥ = h/(h + a + b·d) | F-3, D5 | concept "normalized hit distance = AO/SO": GTC20 s.9 | **our design, tuned on captures** (rational curve, a = 1, b = 0.05) | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `hNorm{i}`/`hDenorm{i}` |
 | firefly policy: redistribute, don't suppress | F-4 | RTG2 §49.5.1 | — | | |
 
 ### Shared temporal core
@@ -98,7 +98,7 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 | custom-weighted bilinear history | C-8 | GTC20 s.27–30; RTG2 p.832; S1 p.5 | 1e-3 weight guard ours | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalPass` (accept if Σ b·v > 0.01, S3; no 1e-3 guard) |
 | Catmull-Rom when 4×4 valid | C-8 | RTG2 §49.7 | 16-tap exact check, 9-tap evaluation (GG2-20), min/max clamp: ours | | `packages/denoiser-realtime/src/shaders/common.ts` `sampleCatmullRom` (5-fetch); option, off by default for svgf; gate = the 4 inner taps valid + clamp, not a 16-tap test |
 | history length A, α = 1/(1+A), increment / reset | C-9 | RTG2 Eq. 49.1, §49.5.2; GTC20 s.25–26; BAV12 s.37–39 | A_cap = 31 default (RTG2: up to 64) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalPass` (n = A + 1 in `accum.a`) |
-| fast history + luminance clamp + A reduction (anti-lag) | C-10, D8, D11 | idea "clamp toward a faster history": RTG2 p.830 (and p.824 for ReLAX); variance clipping SAL16; A reduction behaviour RTG2 §49.11 | **our design, tuned on captures** (luminance/ĥ only, γ = 2, A_fast = 3, min-combine, runs in history fix) | | |
+| fast history + luminance clamp + A reduction (anti-lag) | C-10, D8, D11 | idea "clamp toward a faster history": RTG2 p.830 (and p.824 for ReLAX); variance clipping SAL16; A reduction behaviour RTG2 §49.11 | **our design, tuned on captures** (luminance/ĥ only, γ = 2, A_fast = 3, min-combine, runs in history fix) | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `temporalPass` (F update), `historyFixPass` (c); plus a current-frame detector (M2 additions below) |
 | reset via `historyValid` uniform | C-12 | our design | | | `packages/denoiser-realtime/src/shaders/common.ts` `FRAME_RESET` flag |
 
 ### SVGF + A-SVGF (M1)
@@ -140,35 +140,50 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| 7-pass structure, recurrent loop, separate stabilization history | §5.1 | RTG2 §49.3, §49.5, Fig. 49-3; GTC20 s.15–19, s.51 | + `prepare` pass | | |
-| GGX lobe half-angle θ_L, E = 0.75 | R-1, D4e | E = 0.75 from RTG2 p.841 prose; derivation from the GGX NDF | **our derivation** (replaces GTC20 / FB p.72 forms) | | `packages/denoiser-realtime/src/shaders/svgf.ts` (SVGF specular: `setCenter`, `historyCap`) |
-| dominant direction factor (simple fit, α input) | R-2, D4f | FB Listing 22, p.71 (and its remark that the simple fit performs better) | input convention α chosen deliberately | | |
-| pre-blur: static disk, constant radius, A = 0 weights | R1, D1 | RTG2 §49.5.1, §49.5.5; GTC20 s.51 | radii 15/10 px and the denoised-ĥ clamp: **our design** | | |
-| ĥ not filtered in pre-blur | R1 | GTC20 s.60 | — | | |
-| temporal accumulation, Catmull-Rom, no clamp in TA | R2 | RTG2 §49.5.2, §49.7, p.834 | — | | |
+| 7-pass structure, recurrent loop, separate stabilization history | §5.1 | RTG2 §49.3, §49.5, Fig. 49-3; GTC20 s.15–19, s.51 | + `prepare` pass | | `packages/denoiser-realtime/src/recurrent.ts` `RecurrentPipeline.encode` (buffer rotation §10.1; both signals per dispatch) |
+| GGX lobe half-angle θ_L, E = 0.75 | R-1, D4e | E = 0.75 from RTG2 p.841 prose; derivation from the GGX NDF | **our derivation** (replaces GTC20 / FB p.72 forms) | | `packages/denoiser-realtime/src/shaders/svgf.ts` (SVGF specular: `setCenter`, `historyCap`); `src/shaders/recurrent.ts` `thetaL` |
+| dominant direction factor (simple fit, α input) | R-2, D4f | FB Listing 22, p.71 (and its remark that the simple fit performs better) | input convention α chosen deliberately | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `kern{i}` (specular kernel plane; interim until M3) |
+| pre-blur: static disk, constant radius, A = 0 weights | R1, D1 | RTG2 §49.5.1, §49.5.5; GTC20 s.51 | radii 15/10 px and the denoised-ĥ clamp: **our design** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `preBlurPass` |
+| ĥ not filtered in pre-blur | R1 | GTC20 s.60 | — | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `preBlurPass` |
+| temporal accumulation, Catmull-Rom, no clamp in TA | R2 | RTG2 §49.5.2, §49.7, p.834 | — | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `temporalPass` (Catmull-Rom gated on the 4 inner taps + min/max clamp, like svgf) |
 | parallax definition | R-7 | RTG2 §49.8.1 prose, Fig. 49-5 | previous direction from 2.5D reprojection; no ×60 | | `packages/denoiser-realtime/src/shaders/svgf.ts` `historyCap` (previous direction from `expectedPrev`) |
-| surface-motion frame cap A_spec = θ_L·NoV^κ/π | R-8 | properties from RTG2 p.834 | **our design** (listing 49-4 not used) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `historyCap` (used by SVGF specular, SPEC S-1) |
+| surface-motion frame cap A_spec = θ_L·NoV^κ/π | R-8 | properties from RTG2 p.834 | **our design** (listing 49-4 not used) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `historyCap` (used by SVGF specular, SPEC S-1); `src/shaders/recurrent.ts` `specCap{i}` (interim recurrent specular) |
 | virtual position X + v̂·h̃·F_dom | R-9 | virtual image: RTG1-25 p.451, S15 slide 67; pull-back by dominant factor: RTG2 p.835–836 prose | listing 49-6 not used | yes (RTG1-25/S15 via shadows-specular.md) | |
 | virtual confidence (validity × normal × roughness × fast-ĥ) | R-10, D12a | concept: RTG2 p.837 prose | **our design** (listing 49-7 not used) | | |
 | confidence-scaled virtual clamp | R-11, D12b | RTG2 p.837 prose | **our design** | | |
 | surface/virtual blend by dominant factor; α-space A update | R-12 | RTG2 p.837 prose ("amount of virtual motion") | blend in α-space ours (listing 49-8 not used) | | |
-| mip generation, 3 levels, shared memory | R3, D7e | RTG2 §49.5.3, Fig. 49-3; GTC20 s.32–35 | atlas layout, non-sky averaging: ours | | |
-| history fix: start level, 3×3 viewZ-only cross-bilateral, fall to finer level | R4a, D7 | RTG2 §49.5.4 p.829; GTC20 s.35 (start-level formula, slide pseudo-code) | τ_fix, sum threshold 0.25, A_fix = 3: **ours, tuned on captures** | | |
-| anti-firefly (rank-based clamp) | R4b, D9 | named in RTG2 p.830 (RCRS, HB94 — not read) | **our design** | | |
-| 8-tap Poisson disk | R-3, D3a | 8 taps: RTG2 §49.5.5, §49.10; golden-angle spiral VOG79 | antipodal 4+4 layout ours | | |
-| Bayer 4×4 rotation, animated | D3b | RTG2 §49.5.5; golden-ratio animation RTG2-24 §24.7.2 | — | yes (RTG2-24 via shadows-specular.md) | |
-| world-space kernel plane, axis reflect(−D, n), tangent ⟂ n | R-4 | RTG2 §49.9 prose, Fig. 49-9; GTC20 s.38–40; METRO s.56 | elongation function s_T: **ours** (listing 49-9 not used); basis DUF17 | | |
-| radius: 1/(1+A), hit-distance clamp, R_max/R_min | R-5, D2 | GTC20 s.20–22 (1/(1+A)), s.60 (shrink for short hits); RTG2 p.830 (inputs) | lobe-footprint clamp c_h·h̃ and constants: **ours** | | |
-| weight shape smoothstep(0,1,sat(1−|ax+b|)) | R-6 | RTG2 Eq. 49.3 | — | | |
-| geometry weight = plane distance | R-6 | RTG2 p.841; GTC20 s.44–45; METRO s.59 | relative tolerance lerp(2 %, 0.5 %) ours | | |
-| normal weight via lobe angle, tightening with A | R-6 | RTG2 p.841; GTC20 s.46 | g(A) and +1° ours | | |
-| roughness weight | R-6 | concept GTC20 s.48 | tolerance ours | | |
-| hit-distance weight | R-6, D4b | concept RTG2 p.841 | **our formula** | | |
-| post-blur radius scaled by |blur − TA| | R6, D2c | RTG2 §49.5.6 | scaling function **ours** | | |
-| temporal stabilization, variance clamp, own history | R7, D10 | RTG2 §49.5.7; SAL16 | widening γ_s/β_s, N_stab = 7: **ours**; anti-lag moved to R4 | | |
+| mip generation, 3 levels, shared memory | R3, D7e | RTG2 §49.5.3, Fig. 49-3; GTC20 s.32–35 | atlas layout, non-sky averaging: ours | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `mipsPass`, `ATLAS` |
+| history fix: start level, 3×3 viewZ-only cross-bilateral, fall to finer level | R4a, D7 | RTG2 §49.5.4 p.829; GTC20 s.35 (start-level formula, slide pseudo-code) | τ_fix, sum threshold 0.25, A_fix = 3: **ours, tuned on captures** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `historyFixPass` `mipRepair{i}` |
+| anti-firefly (rank-based clamp) | R4b, D9 | named in RTG2 p.830 (RCRS, HB94 — not read) | **our design** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `historyFixPass` (b) |
+| 8-tap Poisson disk | R-3, D3a | 8 taps: RTG2 §49.5.5, §49.10; golden-angle spiral VOG79 | antipodal 4+4 layout ours | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `DISK` |
+| Bayer 4×4 rotation, animated | D3b | RTG2 §49.5.5; golden-ratio animation RTG2-24 §24.7.2 | — | yes (RTG2-24 via shadows-specular.md) | `packages/denoiser-realtime/src/shaders/recurrent.ts` `blurRotation` |
+| world-space kernel plane, axis reflect(−D, n), tangent ⟂ n | R-4 | RTG2 §49.9 prose, Fig. 49-9; GTC20 s.38–40; METRO s.56 | elongation function s_T: **ours** (listing 49-9 not used); basis DUF17 | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `kern{i}`, `tapPixel`, `onbT`/`onbB` (taps projected exactly: clip = c + kx·P·T + ky·P·B) |
+| radius: 1/(1+A), hit-distance clamp, R_max/R_min | R-5, D2 | GTC20 s.20–22 (1/(1+A)), s.60 (shrink for short hits); RTG2 p.830 (inputs) | lobe-footprint clamp c_h·h̃ and constants: **ours** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `blurPass`, `radiusRough{i}`, `hitClamp{i}` |
+| weight shape smoothstep(0,1,sat(1−|ax+b|)) | R-6 | RTG2 Eq. 49.3 | — | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `Wt` |
+| geometry weight = plane distance | R-6 | RTG2 p.841; GTC20 s.44–45; METRO s.59 | relative tolerance lerp(2 %, 0.5 %) ours | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `tapGeoW` |
+| normal weight via lobe angle, tightening with A | R-6 | RTG2 p.841; GTC20 s.46 | g(A) and +1° ours | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `tapGeoW` (angle ratio in cosine space, sqrt((1−cos)/(1−cos θ0))) |
+| roughness weight | R-6 | concept GTC20 s.48 | tolerance ours | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `tapWgsl` (specular) |
+| hit-distance weight | R-6, D4b | concept RTG2 p.841 | **our formula** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `tapWgsl` |
+| post-blur radius scaled by |blur − TA| | R6, D2c | RTG2 §49.5.6 | scaling function **ours** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `blurPass(kinds, true)` |
+| temporal stabilization, variance clamp, own history | R7, D10 | RTG2 §49.5.7; SAL16 | widening γ_s/β_s, N_stab = 7: **ours**; anti-lag moved to R4 | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `stabilizePass` |
 | specular stabilization uses both reprojections, amount from TA | R7 | RTG2 p.831 | — | | |
-| pass order post-blur → stabilization | D15 | RTG2 Fig. 49-3 | — | | |
-| `data` packing (A fixed point, m) | D14 | our design | | | |
+| pass order post-blur → stabilization | D15 | RTG2 Fig. 49-3 | — | | `packages/denoiser-realtime/src/recurrent.ts` `RecurrentPipeline.encode` |
+| `data` packing (A fixed point, m) | D14 | our design | | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `packData`/`unpackA` (history fix updates it read-write) |
+
+### `denoiser-realtime` M2 additions (recurrent implementer, 2026-10-25; provisional, SPEC v0)
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| current-frame anti-lag detector: 3×3 mean of this frame's pre-blurred luminance and ĥ vs the reprojected history, threshold in standard errors (σ_cur = 3) + 2 % relative / 0.05 ĥ floor; A ← lerp(min(A, A_fast), A, sat(2 − r)) in the temporal pass | (addition to C-10) | idea "react to changes not explained by motion": RTG2 §49.5.7 / §49.11 prose; standard error of a mean: textbook statistics | **our design, measured**: dev-page light switch +2–3 dB over C-10 alone; floor at A_fast, not 0 (floor 0 cost 1.4–1.8 dB on static content) | | `src/shaders/recurrent.ts` `temporalPass` |
+| fast-history clamp window = γ·(spread / √N) (standard error of the 3×3 mean), γ = 1 | C-10, D8 | variance clipping SAL16 (window from neighbourhood statistics) | **measured deviation** from SPEC's γ = 2 spreads: test bed mean +0.37 dB, dev light switch 29.0 → 34.3 dB 12 frames after; `antiLagStandardError: false` restores SPEC | | `src/shaders/recurrent.ts` `historyFixPass` (c) |
+| radii: pre-blur 25 px, blur R_max 45 px (at 1080p) | D1, R-5 | SPEC ranges [0, 30], [10, 60] | **measured** (test bed, 7 paths): +0.10 / +0.17 dB over 15 / 30 | | `src/recurrent.ts` `resolveRecurrent` |
+| tap screen-offset clamp 2·max(R_max, R_pre) | R-4 | — | SPEC says 2·R_max; ours keeps the pre-blur alive when R_max is small | | `src/shaders/recurrent.ts` `kern{i}` |
+| Catmull-Rom gated on the 4 inner taps, clamped to their min/max (TA and stabilization) | C-8 | RTG2 §49.7 | same deviation as svgf (no 16-tap test) | | `src/shaders/recurrent.ts` `temporalPass`, `stabilizePass` |
+| neighbourhood validity in history fix / stabilization / detector = plane distance at τ_g(A = 0) | R4, R7 | RTG2 p.841 (plane distance) | normal test omitted in neighbourhoods (cost) | | `src/shaders/recurrent.ts` `planeOk` |
+| taps projected exactly from per-pixel clip-space axes (clip = c + kx·P·T + ky·P·B) | R-4 | standard projective algebra | — | | `src/shaders/recurrent.ts` `tapPixel` |
+| skeleton timing mode: every pass replaced by a trivial kernel with identical bindings | §10.3 | our design (tooling) | | | `src/shaders/recurrent.ts` `trivialPass` |
+| interim recurrent specular: surface motion only, R-8 cap, lobe kernel plane and weights, no virtual motion (M3) | R-7, R-8, §5.6 | as rows above | virtual motion, R-10..R-12 and the two-candidate stabilization are **not implemented** | | `src/shaders/recurrent.ts` `specCap{i}`, `kern{i}` |
+| dev page: 1-spp diffuse (cosine) and mirror hit distances in the synthetic scene; `still=1` | — | our design (dev only, not shipped) | | | `packages/denoiser-realtime/dev/scene.ts` |
 
 ### Shadows (M4, outline)
 
