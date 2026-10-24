@@ -38,6 +38,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Bench one denoiser per page load: in a page that benches several denoisers in a row,
   FFX shadows read 1.2 ms instead of 0.51 ms (alone). Eval-mode `gpuMs` (GPU kept busy
   by the references) agree with the solo bench. — testbed, 2026-10-25
+- Vite serves `src/` live: every headless run of a batch loads the current files, so
+  don't edit shaders while a `run-headless.mjs` batch is running (later runs would test
+  the edit). Use `--json=out.json` and summarize afterwards. — svgf, 2026-10-25
+- `URLSearchParams.get` returns the FIRST occurrence: appending `&path=pan` to a query
+  that already has `path=orbit` silently keeps `orbit`. — svgf, 2026-10-25
+- `run-headless.mjs` occasionally returns without results on one run of a batch (page
+  not attached yet); a rerun of that query works. Check the result count. — svgf, 2026-10-25
+- Other projects on this Mac run Vite servers too (e.g. `Denoiser-oidn-compare` holds
+  `[::1]:5240`). Bind and browse `127.0.0.1` explicitly (`--host 127.0.0.1 --strictPort`), and
+  check `lsof -nP -iTCP -sTCP:LISTEN | grep 52` before blaming your code for a stale page.
+  — orchestrator, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -57,6 +68,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   the 8 storage textures it requests. Long reference dispatches are chunked (32 spp per
   submit, sums in a storage buffer) so no single command buffer runs for seconds.
   — testbed, 2026-10-25
+- The default limit of 4 storage textures per stage bites test scenes too: a G-buffer +
+  signals + refs pass (10 outputs) has to be split. The dev page generates the same WGSL
+  3× with per-part `textureStore` stubs (`packages/denoiser-realtime/dev/scene.ts`). — svgf, 2026-10-25
+- À-trous at 3×3 taps is ALU-bound as much as bandwidth-bound on the M5 Pro: a per-tap
+  `acos`/`atan` (lobe-angle normal weight) cost +35 % per iteration. Compute per-center
+  constants once and compare in cosine space (sqrt((1−cos)/(1−cos θ0)) ≈ θ/θ0). — svgf, 2026-10-25
+- One thread per 3×3 stratum doing 9 reprojections is 2.5× slower than one thread per
+  pixel in a 9×9 workgroup with a shared-memory reduction (1.05 → 0.43 ms at 1080p). — svgf, 2026-10-25
+- Packing geometry for taps: an rg32uint (f32 depth + 12/12-bit oct normal + 8-bit
+  roughness) plus a separate r32uint depth slope read only at the center beat one
+  rgba32uint per tap (−25 % à-trous time). SPEC C-5 chose the same tap layout. — svgf, 2026-10-25
+- Store the standard deviation, not the variance, in an rgba16float alpha (SPEC S-2a);
+  when converting, every `var` use must become `σ*σ` — a missed one in the inner-tap loop
+  cost 1.2 dB and looked like a depth-weight regression. — svgf, 2026-10-25
 
 ## Conventions
 
@@ -112,6 +137,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   avoids most grazing-angle false rejections. In the slow orbit ~8 % of receivers have
   < 8 frames of valid history, real ones: behind the fence slats and at the screen edge
   (see `mode=eval&show=age`). — testbed, 2026-10-25
+- SVGF's feedback (à-trous iteration 0 as color history) compounds spatial blur over
+  frames: with a static camera PSNR *falls* over time, more so with lower α (α = 0.05:
+  39.6 → 34.6 dB in 30 frames). At 1080p on the dev scene `feedback: false` is +1.1 dB
+  with ~4 % more flicker. Defaults keep the paper's `true` (brief); see Questions for
+  Dennis. — svgf, 2026-10-25
+- SVGF luminance weight with the paper's per-sample variance is right for PSNR at 1 spp:
+  using the variance of the accumulated mean (sharper edges) left more noise and lost
+  0.7–2 dB. At relative noise σ ≈ 1 SVGF visibly softens hard shadow edges; that's the
+  method, not a bug. — svgf, 2026-10-25
+- A-SVGF with renderer gradients only fires on the frame where shading changes; an
+  "auto" gradient against the reprojected accumulated history keeps firing until history
+  catches up and recovered ~2× faster after a light switch on the dev scene. — svgf, 2026-10-25
+- Synthetic scenes: geometry beyond the far plane is "sky" to the denoiser; mark it sky
+  in the ground truth too, or the metric scores unfiltered pixels. — svgf, 2026-10-25
 
 ## Clean room
 
