@@ -107,7 +107,7 @@ occluder (§3, Eq. 4, p.163:3). The light is a Gaussian with standard deviation 
 metres (§4.1). The spatial filter standard deviation is (Eq. 13, p.163:4):
 
 ```
-β(x) = (1/k) · max( σ · (d1 / d2_max − 1),  1 / (μ · Ω_pix) )
+β(x) = (1/k) · (1/μ) · max( σ · (d1 / d2_max − 1),  1 / Ω_x^max )
 ```
 
 - `d2_max` is the occluder **closest to the receiver** (the sharpest penumbra wins).
@@ -244,7 +244,8 @@ Missing for NRD-class shadows:
 5. **Ratio estimator** path (two signals `S_N`, `U_N`, divide after filtering) for glossy
    receivers (H18).
 6. **Hit-distance preprocessing**: denoise or spread `h` so lit pixels next to a shadow
-   still know a blocker distance (see G2).
+   still know a blocker distance (M12 §6 p.163:7: unoccluded pixels take d1, d2 averaged
+   over a 5-px radius; see G2).
 7. **History design**: FFX feeds filter-pass-0 output back as history (recurrent). Our
    measurements show it compounds blur. Options: accumulate the raw signal (RTG1-13) or
    keep a separate stabilization history (RTG2-49 §49.5.7).
@@ -459,8 +460,8 @@ Missing for NRD-class specular:
    per-pixel ray length.
 7. **Demodulated input** (C1). FFX expects plain radiance and is biased dark by
    ≈ 0.04 (tonemapped) by design (luminance-weighted average).
-8. **Bias control**: our measured −0.04 bias comes from the average/clip path. NRD-class
-   filters avoid luminance-weighted averaging in the main path (RTG2-49 §49.5.1:
+8. **Bias control**: our measured −0.04 bias comes from the average/clip path. ReBLUR
+   avoids luminance-weighted averaging in its main path (RTG2-49 §49.5.1:
    redistribute outliers, do not suppress them).
 
 ---
@@ -570,7 +571,7 @@ Missing for NRD-class specular:
   use it, and whoever designs this pass should derive a fix independently from M12's
   "sharpest occluder wins" principle and document it.
 - **G3. Hit-distance normalization curve** (`h_max` as a function of view distance and
-  roughness). NRD prose says it exists, not what it is. Our design will need its own
+  roughness). Public sources (Z20 slide 9) say it exists, not what it is. Our design will need its own
   (e.g. `h_max = (a + b·|z_view|) · g(roughness)`, tuned on our test bed).
 - **G4. Virtual-motion confidence terms and the parallax accumulation constants**
   (RTG2-49 Listings 49-4/49-7, not read on purpose). The prose lists the properties only.
@@ -579,8 +580,7 @@ Missing for NRD-class specular:
   is filtered per channel, as luminance + chroma, or with which hit distance (first or
   last translucent hit).
 - **G6. Multi-light shadow denoising.** RTG2-46 needs one dominant light per pixel.
-  RTG1-19 runs per light. NRD prose calls single-pass multi-light theoretical. No shipped
-  scheme for many lights.
+  RTG1-19 runs per light. No shipped public scheme for many lights.
 - **G7. Specular footprint for α > ~0.25.** RTG1-19 switches to temporal + biased
   sampling. RTG2-49 handles it through dominant direction → diffuse. No source gives a
   closed-form screen-space footprint for rough GGX that includes elongation.
@@ -651,9 +651,8 @@ Missing for NRD-class specular:
   - L14 cone-angle formula. Printed as `atan(Eα²/(1−E))`, which looks dimensionally off
     for GGX; verify.
 - **Formulas from public talk pseudo-code** (Z20 slides 46–47, 58, 60) are accurate
-  transcriptions into our notation. These slides came from NVIDIA's ReBLUR author and
-  may match early NRD code. They are allowed sources (public talks), but the project
-  lead may prefer to implement only the stated properties and tune our own curves.
+  transcriptions into our notation. They are allowed sources (public talks); SPEC
+  implements only the stated properties and tunes its own curves (SPEC listing policy).
 - **Not read**: T15 (paywalled), Liu 2018 course, Salvi 2016, Hardie & Barner 1994,
   GTSO. Claims about them are only what the reading sources said.
 - **Clean-room incidents**: none involving NRD code. One patent-derived idea surfaced

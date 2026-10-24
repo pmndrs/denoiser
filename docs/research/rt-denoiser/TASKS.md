@@ -302,7 +302,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Shadows section in `packages/denoiser-realtime/README.md` (usage: `new ShadowDenoiser(device)`,
       `dispatch({ visibility, hitDistance, light }, guides, camera)`, options, M4 numbers); not written
       by the shadows agent because the README is being edited by the recurrent agent — found by shadows, owner `packages/denoiser-realtime`
-- [ ] Trim `sources/shadows-specular.md` (list with line numbers in `reviews/shadows-provenance.md`
+- [x] (orchestrator) Trim `sources/shadows-specular.md` (list with line numbers in `reviews/shadows-provenance.md`
       last section): delete the NRD-README multi-light sentence (l. 582–583, RULES §2), drop the
       "NRD prose says it exists" attribution (l. 573–574), cite M12 §6 for "spread h to lit pixels"
       (l. 246–247), fix the M12 Eq. 13 transcription (l. 110: 1/(kµ) outside the max, floor 1/Ω_x^max)
