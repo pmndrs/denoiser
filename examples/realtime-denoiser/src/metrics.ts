@@ -10,8 +10,10 @@
 //               error (bias), linear-luminance energy ratio, and temporal stability:
 //               the frame-to-frame change of the error e = val(out) - val(ref),
 //               motion-compensated (previous error fetched at the reprojected pixel,
-//               only where the history is valid). flicker = mean |e_t - e_{t-1}|,
-//               temporal PSNR = -10 log10(mean (e_t - e_{t-1})^2). Since
+//               only where the history is valid). flickerMc = mean |e_t - e_{t-1}|,
+//               temporal PSNR = -10 log10(mean (e_t - e_{t-1})^2). Also the
+//               fixed-pixel flicker of examples/ffx-denoiser / rt-capture compare.mjs
+//               (same pixel, channel-mean signed error), for comparable numbers. Since
 //               e_t - e_{t-1} = (out_t - out_{t-1}) - (ref_t - ref_{t-1}), this is the
 //               usual "temporal difference vs the reference's temporal difference".
 //   packLdr     tonemapped LDR copy of a texture for the CPU-side FLIP (flip.ts).
@@ -58,7 +60,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-export const SLOTS = 10;
+export const SLOTS = 11;
 export const REGIONS = ['all', 'penumbra', 'disoccluded', 'rough<0.15', 'rough<0.35', 'rough<0.6', 'rough>=0.6'] as const;
 
 export const SCORE_WGSL = /* wgsl */ `
@@ -135,6 +137,13 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
         let dn = en - textureLoad(t_prevEN, q, 0).rgb;
         s[7] = vec4f((abs(dd.x) + abs(dd.y) + abs(dd.z)) / 3.0, dot(dd, dd) / 3.0, (abs(dn.x) + abs(dn.y) + abs(dn.z)) / 3.0, 1.0);
         s[8].w = dot(dn, dn) / 3.0;
+      }
+      if (m.validPrev != 0u) {
+        // fixed-pixel flicker (examples/ffx-denoiser and tools/rt-capture/compare.mjs definition):
+        // |s_t - s_{t-1}| with s = mean over channels of e, same pixel, no motion compensation
+        let pd = textureLoad(t_prevED, pix, 0).rgb;
+        let pn = textureLoad(t_prevEN, pix, 0).rgb;
+        s[10] = vec4f(abs((ed.x + ed.y + ed.z) - (pd.x + pd.y + pd.z)) / 3.0, abs((en.x + en.y + en.z) - (pn.x + pn.y + pn.z)) / 3.0, 1.0, 0.0);
       }
     }
     textureStore(o_EN, pix, vec4f(en, 0.0));
@@ -230,6 +239,8 @@ export interface FrameScore {
   sumErrNoisy: number;
   nonFiniteInputs: number;
   nonFiniteDenoised: number;
+  /** fixed-pixel flicker sums: [sum |ds_den|, sum |ds_noisy|, count] */
+  fixedFlicker: number[];
 }
 
 export class Scorer {
@@ -289,6 +300,7 @@ export class Scorer {
       sumErrNoisy: s[38],
       nonFiniteInputs: s[36],
       nonFiniteDenoised: s[37],
+      fixedFlicker: [s[40], s[41], s[42]],
     };
   }
 }

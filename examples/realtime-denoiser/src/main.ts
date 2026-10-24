@@ -15,6 +15,7 @@
 //   &noise=inject [&k=2&ffRate=0.01&ffGain=20]   noise injected around the reference
 //                                             (exact ground truth; quick checks)
 //   &flip=0|1 &flipEvery=12   CPU LDR-FLIP on every flipEvery-th frame (eval)
+//   &ppd=<pixels per degree>  FLIP viewing condition (default W / 46.4, see PPD)
 //   &ageK=8                   "disoccluded" region = < ageK frames of valid history
 //   &n=100                    bench frames
 //   view only: &show=<texture> [&dscale=] puts a SceneSignals texture in panel 1;
@@ -49,6 +50,10 @@ const INJECT = q.get('noise') === 'inject'
 const FLIP = q.get('flip') !== '0';
 const FLIP_EVERY = Number(q.get('flipEvery') ?? 12);
 const AGE_K = Number(q.get('ageK') ?? 8);
+// FLIP viewing condition: by default the image spans a fixed 46.4 deg (a 0.6 m wide display
+// at 0.7 m), so the metric means the same at every resolution (1080p -> ~41 ppd).
+// &ppd=67 gives FLIP's standard condition (0.7 m from a 0.7 m wide 4K monitor).
+const PPD = Number(q.get('ppd') ?? W / 46.4);
 const SETTLE = 8; // frames after a reset excluded from the "settled" means
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
@@ -206,7 +211,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
         const sig = scene.signal(s);
         const prep = async (tex: GPUTexture) => {
           const u = unpackLdr(await packer.pack(tex, sig.ref, T.depth, sig.scalar), W, H);
-          return { prep: prepareFlip(u.rgb, W, H), mask: u.mask };
+          return { prep: prepareFlip(u.rgb, W, H, PPD), mask: u.mask };
         };
         const ref = await prep(sig.ref);
         const noisy = await prep(sig.noisy);
@@ -246,10 +251,12 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     };
     const tsum = [0, 0, 0, 0];
     let dn2 = 0, lumD = 0, lumR = 0, lumN = 0, errN = 0, nfIn = 0, nfDen = 0;
+    const ff = [0, 0, 0];
     for (const r of F) {
       for (let i = 0; i < 4; i++) tsum[i] += r.temporal[i];
       dn2 += r.sumDeNoisy2; lumD += r.lum.den; lumR += r.lum.ref; lumN += r.lum.noisy; errN += r.sumErrNoisy;
       nfIn += r.nonFiniteInputs; nfDen += r.nonFiniteDenoised;
+      for (let i = 0; i < 3; i++) ff[i] += r.fixedFlicker[i];
     }
     const all = pooled(0);
     const allCount = F.reduce((a, r) => a + r.regions[0][2], 0);
@@ -269,8 +276,12 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       biasNoisy: r4(allCount ? errN / allCount : NaN),
       energyDen: r4(lumR ? lumD / lumR - 1 : NaN),
       energyNoisy: r4(lumR ? lumN / lumR - 1 : NaN),
-      flickerNoisy: r4(tsum[3] ? tsum[2] / tsum[3] : NaN),
-      flickerDen: r4(tsum[3] ? tsum[0] / tsum[3] : NaN),
+      // fixed-pixel flicker, comparable with examples/ffx-denoiser and rt-capture compare.mjs
+      flickerNoisy: r4(ff[2] ? ff[1] / ff[2] : NaN),
+      flickerDen: r4(ff[2] ? ff[0] / ff[2] : NaN),
+      // motion-compensated temporal stability (valid-history pixels only)
+      flickerMcNoisy: r4(tsum[3] ? tsum[2] / tsum[3] : NaN),
+      flickerMcDen: r4(tsum[3] ? tsum[0] / tsum[3] : NaN),
       tpsnrNoisy: r4(psnr(dn2, tsum[3])),
       tpsnrDen: r4(psnr(tsum[1], tsum[3])),
       flipNoisy: r4(mean(p.flip.map((x) => x.noisy))),
@@ -278,13 +289,13 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       flipFrames: p.flip.map((x) => x.frame),
       gpuMs,
       nonFiniteInputs: nfIn, nonFiniteDenoised: nfDen,
-      // [psnrNoisy, psnrDen, flickerDen, psnrDenDisoccluded]
+      // [psnrNoisy, psnrDen, flickerMcDen, psnrDenDisoccluded]
       perFrame: F.map((r, f) => [noisy[f], den[f], r.temporal[3] ? r.temporal[0] / r.temporal[3] : NaN, psnr(r.regions[2][1], r.regions[2][2])].map(r4)),
     };
   }
   const summary = {
     mode: 'eval', path: path.id, width: W, height: H, frames: FRAMES, refSpp: REFSPP, inject: INJECT ?? null,
-    resets: [0, ...path.resets], ageK: AGE_K, flipEvery: FLIP ? FLIP_EVERY : 0, query: location.search,
+    resets: [0, ...path.resets], ageK: AGE_K, flipEvery: FLIP ? FLIP_EVERY : 0, flipPpd: +PPD.toFixed(2), query: location.search,
     demodulation: DEMODULATION, seconds: +((performance.now() - t0) / 1000).toFixed(1), flipSeconds: +(flipMs / 1000).toFixed(1),
     results,
   };
