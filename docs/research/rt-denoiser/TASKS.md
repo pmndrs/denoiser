@@ -117,7 +117,16 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       0.43–0.64 ms solo (FFX 0.50–0.73; `thin` 0.64 over the 0.6 target). Weak spot: first ~5 frames
       after a reset/disocclusion. `results/M4.md`; PROVENANCE rows marked "yes" need the second
       reviewer (RULES §8)._
-- [~] occlusion **T5 Occlusion** (AO/SO from normalized hit distance). _In progress (occlusion agent, 2026-10-25): test-bed `ao`/`so` signals + references, `OcclusionDenoiser` (recurrent occlusion-only mode, SVGF on the scalar), M5 results._
+- [x] occlusion (1dd7e70, 826d95a, e56a307, 4915d9a + docs) **T5 Occlusion** (AO/SO from normalized hit distance).
+      _Done, provisional (SPEC v0.1 §8 outline): `OcclusionDenoiser` (`src/occlusion.ts`; `filter: 'recurrent'`
+      = occlusion-only mode of the recurrent pipeline, kinds `ao`/`so`, radiance WGSL unchanged; `'svgf'` = SVGF on ĥ),
+      test-bed signals `ao`/`so` with per-sample-normalized references and a `contact` region, registry
+      `occlusion-recurrent|svgf|svgf-auto|radiance-alpha|accumulate-32|noisy`, replay derives ao/so from `*_hitt`.
+      1080p, 7 paths, pooled: AO recurrent 38.02 / SVGF 38.93 / A-SVGF auto 39.05 dB, SO 37.37 / 38.76 / 39.52;
+      **SVGF wins every path for both signals**; recurrent is the memory-lean option (57.5 vs 84 B/px AO).
+      Cost (fastest clock) AO 1.32 / 1.37 / 2.16 ms, AO + SO joint 2.39 / 2.99 / 5.27 ms. The recurrent
+      radiance alpha ("free" AO/SO) is 2.9 / 1.9 dB below the dedicated recurrent mode: free in cost,
+      not in quality. `results/M5.md`._
 
 ## Found along the way
 
@@ -395,6 +404,31 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Shadows: a real directional-light (sun) path or capture in the test bed (today only the
       `sh.light=directional` stand-in, M4 §10.7) — found by shadows, owner `examples/realtime-denoiser`
 
+- [ ] Occlusion (M5) vs SPEC v0.1 §8, deviations for the spec author (fast test bed, 7 paths, mean pooled
+      PSNR AO / SO; results/M5.md §4): (1) O-2 packing: one **r32float per signal** instead of one rgba16float
+      (ĥ_d, ĥ_s) pool (r16float / rg16float are not core storage formats; same 8 B/px for two signals, 4 for
+      one; r32float is unfilterable, so the history's Catmull-Rom uses 16 `textureLoad`s): 57.5 / 73.5 B/px
+      measured vs ≈ 62 estimated; (2) **no pre-blur pass**: the temporal pass normalizes the raw hit distance on
+      load (7 dispatches; ĥ is never pre-blurred anyway); (3) the history-fix fast window **clamps the slow ĥ**
+      (radiance only shortens A from ĥ): +0.85 / +0.35 dB; (4) **SO: the fast ĥ follows the virtual fetch** by
+      m·c_v (the radiance filter keeps it surface-reprojected): SO +0.9 dB, `pan` +2.5; (5) AO R_max 20 px
+      (§8 said radii unchanged = 45), R_min 2 px for both: +0.35 dB AO, contact +1.3; (6) **O-3 not adopted**:
+      h_scale stays a + b·d (1, 0.05) so the occlusion signal is the radiance filter's ĥ (`hitDistanceViewScale: 0`
+      gives O-3's world-space radius); (7) **SVGF added** as an occlusion filter (σ_l 1.5, 3 iterations, SO
+      α_min 0.3; the radiance defaults lose 0.5 / 1.8 dB at 1080p), and it beats the recurrent mode on every
+      path; (8) O-1 measured: the radiance alpha is a usable preview only (−2.9 / −1.9 dB vs the dedicated
+      recurrent mode); (9) O-4 not built. Default filter stays `'recurrent'` (SPEC) pending Dennis (question
+      below) — found by occlusion, owner spec-author (SPEC §8)
+- [ ] Recurrent occlusion-only mode is only ~35 % cheaper than recurrent radiance diffuse (1.32 vs 2.02 ms
+      at 1080p): geometry taps dominate. Untried levers: bilinear history instead of the 16-load Catmull-Rom
+      (temporal 0.47 ms), 4-tap blur, fast history as r32float for a single signal (−8 B/px) — found by
+      occlusion, owner whoever continues M5
+- [ ] Windows harness / native occlusion: no new capture buffer (ao/so are derived from `*_hitt`), so the
+      harness feeds `diffuse_hitt` / `specular_hitt` through native's own hit-distance normalization helper
+      with its own parameters. Native's normalized AO is then on a different curve than our test-bed
+      references (h/(h + 1 + 0.05·d), per-sample mean), so PSNR against our references is not a fair
+      comparison until probe P3 returns native's curve — found by occlusion, owner harness builder (report only)
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -416,6 +450,13 @@ harness builder runs them and returns images/metrics only.)_
       normalized hit distance of this capture spans roughly 0.2–0.8. Return the PSNR table and
       the range of normalized hit distance the helper produced in (a). Words/metrics only.
       — orchestrator
+
+- [ ] **P3: native occlusion's hit-distance curve, as data.** Capture: a synthetic plane (`gen-synthetic.mjs`,
+      `synthetic-static`-like) with constant `diffuse_hitt` = h per capture, h ∈ {0.1, 0.3, 1, 3, 10, 30, 0 (miss)},
+      at two camera distances (viewZ ≈ −2 and −20). Run `REBLUR_DIFFUSE_OCCLUSION` with default hit-distance
+      parameters, 32 frames; return the converged output value per (h, viewZ), and the same for
+      `REBLUR_SPECULAR_OCCLUSION` at roughness 0.3 and 0.8. Numbers only. With that table the test bed can render
+      references on native's curve (scene.ts `occNorm`) and compare `occlusion-*` against native fairly. — occlusion
 
 ## Questions for Dennis
 
@@ -441,3 +482,9 @@ _(only genuine blockers or taste calls; continue with a provisional best guess m
   (+0.6…+2.6 dB diffuse, FLIP −24…−44 %, no flicker cost). Recommendation stands; it is a
   defaults change for the package owner (Found along the way), no taste call left._ — results
 
+- **Default occlusion filter** (`OcclusionDenoiser`, T5). SPEC §8 / PLAN plan the recurrent occlusion-only
+  mode; measured (results/M5.md, 1080p, 7 paths) SVGF on ĥ wins every path: AO 38.93 vs 38.02 dB, SO 38.76 vs
+  37.37, at ~the same AO cost (1.37 vs 1.32 ms; SO 1.92 vs 1.32; joint 2.99 vs 2.39) but more memory (84 vs
+  57.5 B/px AO, 148 vs 73.5 both). A-SVGF auto is best (39.05 / 39.52) at 2.2–2.5 ms. Provisional: default left
+  `'recurrent'`; recommendation `'svgf'`. Also the AO look (SPEC §12 item 9): with a = 1 the rational curve
+  makes AO very soft on this scene. — occlusion
