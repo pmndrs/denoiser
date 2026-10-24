@@ -166,7 +166,7 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 | hit-distance weight | R-6, D4b | concept RTG2 p.841 | **our formula** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `tapWgsl` |
 | post-blur radius scaled by |blur − TA| | R6, D2c | RTG2 §49.5.6 | scaling function **ours** | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `blurPass(kinds, true)` |
 | temporal stabilization, variance clamp, own history | R7, D10 | RTG2 §49.5.7; SAL16 | widening γ_s/β_s, N_stab = 7: **ours**; anti-lag moved to R4 | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `stabilizePass` |
-| specular stabilization uses both reprojections, amount from TA | R7 | RTG2 p.831 | **not used (M3, measured)**: the virtual candidate (no validity test in R7, curvature-corrected, m·c_v from TA) cost 0.36–1.5 dB on `std540-orbit` replays and −1 dB on the live orbit; stabilization reprojects with surface motion only, m stays in `data` | | `src/shaders/recurrent.ts` `stabilizePass` |
+| specular stabilization uses both reprojections, amount from TA | R7 | RTG2 p.831 | **not used (M3, measured)**: the virtual candidate (no validity test in R7, curvature-corrected, m·c_v from TA) cost 0.36–1.5 dB on `std540-orbit` replays (removed together with storing m·c_v: live orbit +1.9 dB); stabilization reprojects with surface motion only, m stays in `data` | | `src/shaders/recurrent.ts` `stabilizePass` |
 | pass order post-blur → stabilization | D15 | RTG2 Fig. 49-3 | — | | `packages/denoiser-realtime/src/recurrent.ts` `RecurrentPipeline.encode` |
 | `data` packing (A fixed point, m) | D14 | our design | | | `packages/denoiser-realtime/src/shaders/recurrent.ts` `packData`/`unpackA` (history fix updates it read-write) |
 

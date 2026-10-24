@@ -1,0 +1,744 @@
+{
+ "rec-both-1": {
+  "query": "signal=both&mode=bench&filter=recurrent&specularFilter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.101
+   },
+   "pre_blur": {
+    "min": 0.746,
+    "median": 0.765
+   },
+   "temporal": {
+    "min": 1.2,
+    "median": 1.206
+   },
+   "mips": {
+    "min": 0.107,
+    "median": 0.111
+   },
+   "history_fix": {
+    "min": 0.47,
+    "median": 0.476
+   },
+   "blur": {
+    "min": 0.867,
+    "median": 0.875
+   },
+   "post_blur": {
+    "min": 0.459,
+    "median": 0.464
+   },
+   "stabilize": {
+    "min": 0.476,
+    "median": 0.481
+   },
+   "total": {
+    "min": 4.454,
+    "median": 4.637
+   }
+  }
+ },
+ "rec-both-2": {
+  "query": "signal=both&mode=bench&filter=recurrent&specularFilter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.101
+   },
+   "pre_blur": {
+    "min": 0.748,
+    "median": 0.767
+   },
+   "temporal": {
+    "min": 1.199,
+    "median": 1.205
+   },
+   "mips": {
+    "min": 0.107,
+    "median": 0.112
+   },
+   "history_fix": {
+    "min": 0.468,
+    "median": 0.476
+   },
+   "blur": {
+    "min": 0.868,
+    "median": 0.877
+   },
+   "post_blur": {
+    "min": 0.458,
+    "median": 0.464
+   },
+   "stabilize": {
+    "min": 0.475,
+    "median": 0.482
+   },
+   "total": {
+    "min": 4.432,
+    "median": 4.64
+   }
+  }
+ },
+ "rec-diff-1": {
+  "query": "signal=diffuse&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.102
+   },
+   "pre_blur": {
+    "min": 0.511,
+    "median": 0.529
+   },
+   "temporal": {
+    "min": 0.505,
+    "median": 0.514
+   },
+   "mips": {
+    "min": 0.078,
+    "median": 0.081
+   },
+   "history_fix": {
+    "min": 0.308,
+    "median": 0.32
+   },
+   "blur": {
+    "min": 0.351,
+    "median": 0.36
+   },
+   "post_blur": {
+    "min": 0.216,
+    "median": 0.219
+   },
+   "stabilize": {
+    "min": 0.31,
+    "median": 0.316
+   },
+   "total": {
+    "min": 2.391,
+    "median": 2.568
+   }
+  }
+ },
+ "rec-diff-2": {
+  "query": "signal=diffuse&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.098,
+    "median": 0.101
+   },
+   "pre_blur": {
+    "min": 0.502,
+    "median": 0.518
+   },
+   "temporal": {
+    "min": 0.5,
+    "median": 0.508
+   },
+   "mips": {
+    "min": 0.077,
+    "median": 0.079
+   },
+   "history_fix": {
+    "min": 0.308,
+    "median": 0.314
+   },
+   "blur": {
+    "min": 0.349,
+    "median": 0.359
+   },
+   "post_blur": {
+    "min": 0.216,
+    "median": 0.218
+   },
+   "stabilize": {
+    "min": 0.308,
+    "median": 0.313
+   },
+   "total": {
+    "min": 2.37,
+    "median": 2.534
+   }
+  }
+ },
+ "rec-hybrid-1": {
+  "query": "signal=both&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.187
+   },
+   "diffuse/pre_blur": {
+    "min": 0.503,
+    "median": 0.52
+   },
+   "diffuse/temporal": {
+    "min": 0.501,
+    "median": 0.507
+   },
+   "diffuse/mips": {
+    "min": 0.078,
+    "median": 0.079
+   },
+   "diffuse/history_fix": {
+    "min": 0.308,
+    "median": 0.314
+   },
+   "diffuse/blur": {
+    "min": 0.352,
+    "median": 0.36
+   },
+   "diffuse/post_blur": {
+    "min": 0.216,
+    "median": 0.218
+   },
+   "diffuse/stabilize": {
+    "min": 0.306,
+    "median": 0.313
+   },
+   "specular/gradient_create": {
+    "min": 0.465,
+    "median": 0.473
+   },
+   "specular/gradient_atrous_0": {
+    "min": 0.099,
+    "median": 0.1
+   },
+   "specular/gradient_atrous_1": {
+    "min": 0.09,
+    "median": 0.091
+   },
+   "specular/gradient_atrous_2": {
+    "min": 0.074,
+    "median": 0.075
+   },
+   "specular/gradient_atrous_3": {
+    "min": 0.059,
+    "median": 0.06
+   },
+   "specular/gradient_atrous_4": {
+    "min": 0.058,
+    "median": 0.059
+   },
+   "specular/gradient_lambda": {
+    "min": 0.038,
+    "median": 0.038
+   },
+   "specular/temporal": {
+    "min": 0.439,
+    "median": 0.45
+   },
+   "specular/variance": {
+    "min": 0.376,
+    "median": 0.397
+   },
+   "specular/atrous_0": {
+    "min": 0.359,
+    "median": 0.363
+   },
+   "specular/atrous_1": {
+    "min": 0.359,
+    "median": 0.362
+   },
+   "specular/atrous_2": {
+    "min": 0.356,
+    "median": 0.359
+   },
+   "specular/atrous_3": {
+    "min": 0.352,
+    "median": 0.356
+   },
+   "specular/atrous_4": {
+    "min": 0.334,
+    "median": 0.337
+   },
+   "total": {
+    "min": 5.974,
+    "median": 6.194
+   }
+  }
+ },
+ "rec-hybrid-2": {
+  "query": "signal=both&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.186
+   },
+   "diffuse/pre_blur": {
+    "min": 0.504,
+    "median": 0.519
+   },
+   "diffuse/temporal": {
+    "min": 0.501,
+    "median": 0.506
+   },
+   "diffuse/mips": {
+    "min": 0.077,
+    "median": 0.078
+   },
+   "diffuse/history_fix": {
+    "min": 0.305,
+    "median": 0.312
+   },
+   "diffuse/blur": {
+    "min": 0.351,
+    "median": 0.358
+   },
+   "diffuse/post_blur": {
+    "min": 0.216,
+    "median": 0.217
+   },
+   "diffuse/stabilize": {
+    "min": 0.304,
+    "median": 0.311
+   },
+   "specular/gradient_create": {
+    "min": 0.463,
+    "median": 0.473
+   },
+   "specular/gradient_atrous_0": {
+    "min": 0.099,
+    "median": 0.1
+   },
+   "specular/gradient_atrous_1": {
+    "min": 0.09,
+    "median": 0.091
+   },
+   "specular/gradient_atrous_2": {
+    "min": 0.074,
+    "median": 0.075
+   },
+   "specular/gradient_atrous_3": {
+    "min": 0.059,
+    "median": 0.059
+   },
+   "specular/gradient_atrous_4": {
+    "min": 0.058,
+    "median": 0.058
+   },
+   "specular/gradient_lambda": {
+    "min": 0.037,
+    "median": 0.038
+   },
+   "specular/temporal": {
+    "min": 0.438,
+    "median": 0.448
+   },
+   "specular/variance": {
+    "min": 0.379,
+    "median": 0.395
+   },
+   "specular/atrous_0": {
+    "min": 0.36,
+    "median": 0.363
+   },
+   "specular/atrous_1": {
+    "min": 0.358,
+    "median": 0.361
+   },
+   "specular/atrous_2": {
+    "min": 0.354,
+    "median": 0.358
+   },
+   "specular/atrous_3": {
+    "min": 0.352,
+    "median": 0.355
+   },
+   "specular/atrous_4": {
+    "min": 0.335,
+    "median": 0.337
+   },
+   "total": {
+    "min": 5.996,
+    "median": 6.175
+   }
+  }
+ },
+ "rec-skel-1": {
+  "query": "signal=both&mode=bench&filter=recurrent&specularFilter=recurrent&skeleton=1",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.103
+   },
+   "pre_blur": {
+    "min": 0.227,
+    "median": 0.243
+   },
+   "temporal": {
+    "min": 0.152,
+    "median": 0.166
+   },
+   "mips": {
+    "min": 0.086,
+    "median": 0.088
+   },
+   "history_fix": {
+    "min": 0.086,
+    "median": 0.096
+   },
+   "blur": {
+    "min": 0.05,
+    "median": 0.053
+   },
+   "post_blur": {
+    "min": 0.062,
+    "median": 0.066
+   },
+   "stabilize": {
+    "min": 0.087,
+    "median": 0.094
+   },
+   "total": {
+    "min": 0.853,
+    "median": 0.926
+   }
+  }
+ },
+ "rec-skel-2": {
+  "query": "signal=both&mode=bench&filter=recurrent&specularFilter=recurrent&skeleton=1",
+  "timings": {
+   "prepass": {
+    "min": 0.098,
+    "median": 0.102
+   },
+   "pre_blur": {
+    "min": 0.227,
+    "median": 0.24
+   },
+   "temporal": {
+    "min": 0.153,
+    "median": 0.166
+   },
+   "mips": {
+    "min": 0.086,
+    "median": 0.087
+   },
+   "history_fix": {
+    "min": 0.086,
+    "median": 0.091
+   },
+   "blur": {
+    "min": 0.05,
+    "median": 0.052
+   },
+   "post_blur": {
+    "min": 0.061,
+    "median": 0.064
+   },
+   "stabilize": {
+    "min": 0.086,
+    "median": 0.091
+   },
+   "total": {
+    "min": 0.852,
+    "median": 0.898
+   }
+  }
+ },
+ "rec-spec-1": {
+  "query": "signal=specular&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.101
+   },
+   "pre_blur": {
+    "min": 0.339,
+    "median": 0.351
+   },
+   "temporal": {
+    "min": 0.917,
+    "median": 0.92
+   },
+   "mips": {
+    "min": 0.076,
+    "median": 0.078
+   },
+   "history_fix": {
+    "min": 0.311,
+    "median": 0.323
+   },
+   "blur": {
+    "min": 0.405,
+    "median": 0.412
+   },
+   "post_blur": {
+    "min": 0.261,
+    "median": 0.262
+   },
+   "stabilize": {
+    "min": 0.378,
+    "median": 0.383
+   },
+   "total": {
+    "min": 2.801,
+    "median": 2.951
+   }
+  }
+ },
+ "rec-spec-2": {
+  "query": "signal=specular&mode=bench&filter=recurrent",
+  "timings": {
+   "prepass": {
+    "min": 0.099,
+    "median": 0.101
+   },
+   "pre_blur": {
+    "min": 0.337,
+    "median": 0.347
+   },
+   "temporal": {
+    "min": 0.913,
+    "median": 0.915
+   },
+   "mips": {
+    "min": 0.076,
+    "median": 0.078
+   },
+   "history_fix": {
+    "min": 0.308,
+    "median": 0.318
+   },
+   "blur": {
+    "min": 0.402,
+    "median": 0.412
+   },
+   "post_blur": {
+    "min": 0.26,
+    "median": 0.262
+   },
+   "stabilize": {
+    "min": 0.378,
+    "median": 0.383
+   },
+   "total": {
+    "min": 2.789,
+    "median": 2.935
+   }
+  }
+ },
+ "svgf-both-1": {
+  "query": "signal=both&mode=bench",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.187
+   },
+   "temporal": {
+    "min": 0.659,
+    "median": 0.68
+   },
+   "variance": {
+    "min": 0.483,
+    "median": 0.51
+   },
+   "atrous_0": {
+    "min": 0.552,
+    "median": 0.556
+   },
+   "atrous_1": {
+    "min": 0.549,
+    "median": 0.554
+   },
+   "atrous_2": {
+    "min": 0.543,
+    "median": 0.547
+   },
+   "atrous_3": {
+    "min": 0.539,
+    "median": 0.542
+   },
+   "atrous_4": {
+    "min": 0.49,
+    "median": 0.494
+   },
+   "total": {
+    "min": 4.021,
+    "median": 4.213
+   }
+  }
+ },
+ "svgf-both-2": {
+  "query": "signal=both&mode=bench",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.187
+   },
+   "temporal": {
+    "min": 0.664,
+    "median": 0.686
+   },
+   "variance": {
+    "min": 0.484,
+    "median": 0.51
+   },
+   "atrous_0": {
+    "min": 0.551,
+    "median": 0.556
+   },
+   "atrous_1": {
+    "min": 0.55,
+    "median": 0.555
+   },
+   "atrous_2": {
+    "min": 0.543,
+    "median": 0.548
+   },
+   "atrous_3": {
+    "min": 0.539,
+    "median": 0.544
+   },
+   "atrous_4": {
+    "min": 0.491,
+    "median": 0.495
+   },
+   "total": {
+    "min": 4.022,
+    "median": 4.233
+   }
+  }
+ },
+ "svgfauto-both-1": {
+  "query": "signal=both&mode=bench&antiLag=auto",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.187
+   },
+   "gradient_create": {
+    "min": 0.588,
+    "median": 0.601
+   },
+   "gradient_atrous_0": {
+    "min": 0.197,
+    "median": 0.2
+   },
+   "gradient_atrous_1": {
+    "min": 0.182,
+    "median": 0.184
+   },
+   "gradient_atrous_2": {
+    "min": 0.146,
+    "median": 0.149
+   },
+   "gradient_atrous_3": {
+    "min": 0.117,
+    "median": 0.119
+   },
+   "gradient_atrous_4": {
+    "min": 0.115,
+    "median": 0.116
+   },
+   "gradient_lambda": {
+    "min": 0.069,
+    "median": 0.071
+   },
+   "temporal": {
+    "min": 0.704,
+    "median": 0.735
+   },
+   "variance": {
+    "min": 0.513,
+    "median": 0.549
+   },
+   "atrous_0": {
+    "min": 0.551,
+    "median": 0.556
+   },
+   "atrous_1": {
+    "min": 0.55,
+    "median": 0.555
+   },
+   "atrous_2": {
+    "min": 0.543,
+    "median": 0.548
+   },
+   "atrous_3": {
+    "min": 0.537,
+    "median": 0.544
+   },
+   "atrous_4": {
+    "min": 0.489,
+    "median": 0.494
+   },
+   "total": {
+    "min": 5.537,
+    "median": 5.775
+   }
+  }
+ },
+ "svgfauto-both-2": {
+  "query": "signal=both&mode=bench&antiLag=auto",
+  "timings": {
+   "prepass": {
+    "min": 0.183,
+    "median": 0.187
+   },
+   "gradient_create": {
+    "min": 0.591,
+    "median": 0.602
+   },
+   "gradient_atrous_0": {
+    "min": 0.197,
+    "median": 0.2
+   },
+   "gradient_atrous_1": {
+    "min": 0.183,
+    "median": 0.185
+   },
+   "gradient_atrous_2": {
+    "min": 0.148,
+    "median": 0.149
+   },
+   "gradient_atrous_3": {
+    "min": 0.117,
+    "median": 0.119
+   },
+   "gradient_atrous_4": {
+    "min": 0.115,
+    "median": 0.117
+   },
+   "gradient_lambda": {
+    "min": 0.069,
+    "median": 0.071
+   },
+   "temporal": {
+    "min": 0.707,
+    "median": 0.735
+   },
+   "variance": {
+    "min": 0.512,
+    "median": 0.547
+   },
+   "atrous_0": {
+    "min": 0.55,
+    "median": 0.555
+   },
+   "atrous_1": {
+    "min": 0.549,
+    "median": 0.555
+   },
+   "atrous_2": {
+    "min": 0.543,
+    "median": 0.547
+   },
+   "atrous_3": {
+    "min": 0.539,
+    "median": 0.543
+   },
+   "atrous_4": {
+    "min": 0.489,
+    "median": 0.494
+   },
+   "total": {
+    "min": 5.565,
+    "median": 5.788
+   }
+  }
+ }
+}

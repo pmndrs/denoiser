@@ -194,8 +194,8 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
  * by the caller's pre-integrated specular term (CAPTURE-FORMAT), hit distance,
  * and `guides.roughness` (required). Surface-motion reprojection with a
  * roughness / N.V / parallax-dependent history cap and roughness-aware spatial
- * weights. (`filter: 'recurrent'` for specular is interim until M3: surface
- * motion only, no virtual motion.)
+ * weights. `filter: 'recurrent'` (provisional) adds virtual-motion reprojection
+ * blended with surface motion (SPEC R-9..R-12).
  */
 export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs> {
   readonly name: string;
@@ -244,7 +244,8 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
  * processes both signals per thread (SPEC §4.1, §5.1) unless their filters or
  * structural options differ; then they run separately and timings are prefixed
  * `diffuse/` and `specular/`. `{ filter: 'recurrent' }` currently means recurrent
- * diffuse + SVGF (antiLag 'auto') specular (provisional until M3); add
+ * diffuse + SVGF (antiLag 'auto') specular (provisional; recurrent specular measured
+ * below A-SVGF on 6/7 test-bed paths, results/M2-M3.md); add
  * `specular: { filter: 'recurrent' }` for both recurrent in shared dispatches.
  */
 export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuseSpecularInputs> {
@@ -259,9 +260,9 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
   constructor(device: GPUDevice, options: DiffuseSpecularDenoiserOptions = {}) {
     const { diffuse: dOpts, specular: sOpts, ...shared } = options;
     const rd = resolve({ ...shared, ...dOpts } as Partial<SpecularSvgfOptions>);
-    // Until recurrent specular has virtual motion (M3), `filter: 'recurrent'` denoises
-    // specular with SVGF + antiLag 'auto' (measured best on the test bed); pass
-    // `specular: { filter: 'recurrent' }` for the interim recurrent specular (joint dispatch).
+    // `filter: 'recurrent'` denoises specular with SVGF + antiLag 'auto' (measured best on
+    // the test bed, results/M2-M3.md; the default is Dennis's call, SPEC §12); pass
+    // `specular: { filter: 'recurrent' }` for recurrent specular in shared dispatches.
     const recurrentShared = shared.filter === 'recurrent' && !sOpts?.filter;
     const rs = resolve((recurrentShared
       ? { filter: 'svgf', antiLag: 'auto', remodulate: shared.remodulate, timestamps: shared.timestamps, ...sOpts }

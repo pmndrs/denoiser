@@ -97,11 +97,19 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 - [~] recurrent (e5e3932, 1ecc596 + docs) **T2 Recurrent diffuse** (pre-blur → temporal → history fix → blur → post-blur →
       stabilization, anti-lag). _Implemented, provisional (SPEC v0): `filter: 'recurrent'`
-      on `DiffuseDenoiser`. Test bed 1080p: beats A-SVGF 'auto' on 6/7 paths (+0.06…+1.12 dB),
-      level on `object`; weaker in disoccluded regions. 2.92 ms at 1080p (diffuse), over
+      on `DiffuseDenoiser`. ~~Test bed 1080p: beats A-SVGF 'auto' on 6/7 paths~~ (that compared
+      against feedback-on SVGF). Same-page rerun vs today's defaults (results/M2-M3.md): recurrent
+      diffuse 38.44 dB mean vs SVGF 39.00 / A-SVGF auto 39.27, wins only `glossy`; weaker in disoccluded regions. 2.92 ms at 1080p (diffuse), over
       budget for diffuse + specular (5.22 ms). Left open: registry entry (below), budget,
       M2 go/no-go vs native._
-- [~] recurrent-spec **T3 Recurrent specular** (virtual motion, lobe kernels), then the joint budget.
+- [x] recurrent-spec (a787b20, 25c80aa, 1b49e75, 6fa9274 + results) **T3 Recurrent specular** (virtual motion, lobe kernels), then the joint budget.
+      _Implemented, provisional (SPEC v0/v0.1): virtual motion with curvature-corrected distance,
+      confidence, clamp, α-space blend; M1's mirror over-blur and glossy-floor ghosting fixed
+      (`light` mirrors 34.4 → 40.8 dB, `glossy` r < 0.35 35.7 vs A-SVGF 34.8). But specular is
+      below A-SVGF auto on 6/7 paths (34.41 vs 35.32 dB mean, wins `glossy` +0.17), above plain
+      SVGF on 4/7. Joint recurrent 5.41 → 4.44 ms (target 4; `blurTaps: 4` = 4.05 ms at −0.07 dB),
+      105.5 B/px. Joint default left as is (recurrent diffuse + A-SVGF specular): Dennis decides.
+      Details: results/M2-M3.md._
 - [x] shadows (27eab97 … 86e0262) **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback).
       _Done, provisional (SPEC v0 §7): `ShadowDenoiser` (`src/shadow.ts`, `src/shaders/shadow.ts`),
       `ShadowInputs.light` (core, additive), registry id `shadows` (`sh.<option>` settings). 1080p, 7 paths:
@@ -236,7 +244,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `git archive` copy (examples/realtime-denoiser/vite.config.ts); use it for results runs while
       someone edits the package. — found by results, owner any agent (FYI)
 
-- [ ] Register `recurrent` in `tools/rt-capture/src/denoisers.ts` (test bed + replay): the
+- [x] (0715551, recurrent-spec: `recurrent` = both recurrent, `recurrent-svgfspec`, `recurrent-diffuse`, `recurrent-specular`; settings `r.` / `t.` / `d.` / `s.`) Register `recurrent` in `tools/rt-capture/src/denoisers.ts` (test bed + replay): the
       SVGF pattern works unchanged, options with `filter: 'recurrent'`: (1) `recurrent-diffuse`:
       `perSignal((d, _s, st) => new DiffuseDenoiser(d, { filter: 'recurrent', ...recOpts(st) }))`;
       (2) `recurrent`: the `svgfJoint` shape with `new DiffuseSpecularDenoiser(device,
@@ -265,7 +273,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (`data` keeps it in 4 bits; m shrinks to 8 bits) instead of re-running C-7; (8)
       Catmull-Rom gated on the 4 inner taps (as svgf); (9) neighbourhood validity in R4/R7/
       detector = plane distance at τ_g(A = 0), no normal test — found by recurrent, owner spec-author (SPEC.md §3.5, §5)
-- [ ] Recurrent budget: 2.92 ms diffuse, 5.22 ms diffuse + specular in shared dispatches
+- [x] (recurrent-spec, 25c80aa + 1b49e75: 4.44 ms joint, lever table in results/M2-M3.md §4; (d) tiles and branchless taps paid most, (a) became free with tiles, (c) f16 not kept, (b)/(e) not done) Recurrent budget: 2.92 ms diffuse, 5.22 ms diffuse + specular in shared dispatches
       (1080p, M5 Pro, uncontended) vs ≤ 4 ms; skeleton 0.96 ms. Every pass costs 0.33–0.53 ms
       (diffuse) above a 0.04–0.24 ms skeleton; the second signal adds ~75 % (separate kernel
       per signal in R1/R5/R6). Measured levers left: (a) history fix — the mip-repair code
@@ -275,7 +283,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       for the 3×3 neighbourhoods (R2 detector, R4, R7); (e) half-res fast history. Branchless
       taps (all loads in flight) was the biggest single win so far (temporal −0.18, blur
       −0.16 ms) — found by recurrent, owner T2/T3
-- [ ] T3 (recurrent specular) starting point: `src/shaders/recurrent.ts` already handles
+- [x] (a787b20, recurrent-spec) T3 (recurrent specular) starting point: `src/shaders/recurrent.ts` already handles
       `kind: 'specular'` in every pass (lobe kernel plane R-4 with elongation, f_r / c_h radius
       factors, roughness weight, R-8 surface cap `specCap`, firefly skip below r = 0.25,
       mip-repair start level ρ = r); missing: virtual motion (R-9..R-12, `m` in `data` is
@@ -316,7 +324,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `shaders/shadow.ts` comments "floored at one pixel" (M12's floor is 1/(kµ·Ω_x^max), 1 px is ours) and
       the two merged comments on line 58; row SH-6: σ ∝ E is H18 §4.1, not §4.2; optionally cite RTG1-13
       Eq. 11 p.170 as precedent for the raw-only history — found by shadows provenance reviewer, owner shadows
-- [ ] **Re-measure recurrent diffuse against today's SVGF defaults, in one page.** The README /
+- [x] (recurrent-spec, results/M2-M3.md §2: confirmed in one page — recurrent diffuse 38.44 vs SVGF 39.00 / A-SVGF 39.27, wins 1/7; specular 34.41 vs 34.09 / 35.32; README and T2 updated) **Re-measure recurrent diffuse against today's SVGF defaults, in one page.** The README /
       T2 claim "recurrent beats A-SVGF on 6/7 paths" was measured against `feedback: true` SVGF
       (its SVGF column equals M1's feedback-on numbers). Against M1 §4's `feedback: false` runs
       (same preset: 1080p, 96 frames, blue noise), SVGF wins 6 of 7: recurrent − SVGF = orbit −0.83,
@@ -325,11 +333,11 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `signal=diffuse&mode=eval&preset=full&denoiser=svgf,svgf-auto,recurrent-diffuse` on all 7 paths
       (feedback off is the default now), then update README and T2. Main input to the M2 go/no-go
       (SPEC v0.1 §12 item 1) — found by spec-author, owner T2 / results
-- [ ] README (`packages/denoiser-realtime`) stale numbers: recurrent memory is 105.5 B/px both
+- [x] (recurrent-spec: README recurrent section rewritten with the same-page results, 105.5 / 73.5 B/px, 4.44 ms) README (`packages/denoiser-realtime`) stale numbers: recurrent memory is 105.5 B/px both
       signals / 73.5 diffuse since 25c80aa (the prepass skips the depth slope for recurrent-only
       pipelines), not 109.5 / 77.5; joint recurrent is 5.41 ms after 25c80aa, not 5.22 — found by
       spec-author, owner `packages/denoiser-realtime`
-- [ ] PROVENANCE stale rows (M2 additions, R-4 code column): "taps projected exactly from per-pixel
+- [x] (6fa9274, recurrent-spec) PROVENANCE stale rows (M2 additions, R-4 code column): "taps projected exactly from per-pixel
       clip-space axes (clip = c + kx·P·T + ky·P·B)" — the code uses the affine screen Jacobian since
       1ecc596 (`tapPixel`, `kern{i}` in `src/shaders/recurrent.ts`); "interim recurrent specular …
       virtual motion not implemented" is stale since a787b20; the R-9..R-12 rows have no code column —
@@ -340,6 +348,34 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `replay-table.mjs`; re-scored shadows (snap on/off) and diffuse/specular at 1080p. Rank on pooled from now
       on. Findings: uniform snap is −0.06 dB pooled (but −10 % FLIP); ours still beats FFX everywhere live —
       found by spec-author (SPEC §12 item 6c), owner metrics agent
+
+- [ ] Recurrent specular (M3) vs SPEC v0/v0.1, measured deviations for the spec author (1080p
+      test bed, specular PSNR glossy / orbit unless noted): (1) curvature correction of the
+      virtual distance d_v = h/(1 + 2κh), κ from the 4 axis neighbours (D12c was "later"):
+      glossy +1.0 dB (mirrors 30.5 → 32.1); (2) stabilization uses surface motion only — the R7
+      virtual candidate (no validity test) cost 0.36–1.5 dB on replays; removing it together with
+      storing m·c_v: live orbit 30.37 → 32.23, glossy 33.60 → 34.56; (3) virtual clamp always applied, window γ(1 + 2c_v)σ, γ = 1 (SPEC: lerp
+      between a γ = 2 clamp and no clamp by c_v): +0.07 / +0.07; (4) specular current-frame
+      detector floor A_fast·f_r and anti-lag / detector mean centred on the pixel's own value as
+      r → 0 (μ = lerp(own, 3×3 mean, f_r)): `light` mirrors 34.8 → 40.7 dB, orbit +0.6;
+      (5) R_min·f_r for specular, specular R_max 30 px (diffuse 45): +0.1…+0.7 disoccluded;
+      (6) virtual taps: plane test against {Xp, np} only, bilinear (Catmull-Rom +0.04 dB for
+      0.13 ms); fast luminance follows the blended reprojection, fast ĥ stays surface; the
+      detector compares against the blended history; (7) tap counts: post-blur 4 (both),
+      pre-blur 4 (specular) — neutral, −0.5 ms; (8) recurrent-only reprojection (linear
+      unprojection, plane {Xp, np}, no pairwise normal average; SPEC C-7): neutral, −0.11 ms;
+      (9) stabilization history bilinear for diffuse (identical), Catmull-Rom kept for specular.
+      Tried and dropped with numbers in results/M2-M3.md §5 — found by recurrent-spec, owner spec-author (SPEC §5.6, §5.11)
+- [ ] Recurrent budget left: 4.44 ms joint vs ≤ 4 ms. Measured, not default: `blurTaps: 4` →
+      4.05 ms (−0.07 dB diffuse, +5 % flicker); `shader-f16` taps −0.11 ms but −0.2 dB on HDR
+      input. Not tried: fold the (now 0.10 ms) prepass into pre-blur; half-res fast history
+      (also the memory cut 105.5 → 93.5 B/px); temporal is the largest pass (1.20 ms, of which
+      the specular virtual fetch ≈ 0.45) — found by recurrent-spec, owner T2/T3 (whoever continues)
+- [ ] Recurrent specular's remaining gap to A-SVGF auto is at mid/high roughness on
+      static-camera paths (`light` / `object` r < 0.6: −0.9 / −1.8 dB) and in flicker under motion
+      (+15…40 %); ~20 knobs moved it ≤ ±0.2 dB (results/M2-M3.md §5). Candidates not tried: a
+      variance-guided (measured, not predicted) luminance weight in the blur, short-history +
+      wide spatial mode for r ≥ 0.35 — found by recurrent-spec, owner unassigned
 
 ## Probes for the Windows harness
 
@@ -366,6 +402,14 @@ harness builder runs them and returns images/metrics only.)_
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
+
+- **Joint default for `filter: 'recurrent'`** (SPEC §12 item 1). Same-page 1080p test bed
+  (results/M2-M3.md): diffuse recurrent 38.44 / SVGF 39.00 / A-SVGF auto 39.27 dB; specular
+  34.41 / 34.09 / 35.32; joint cost 4.44 (both recurrent) / 4.02 (SVGF) / 5.55 (A-SVGF auto) /
+  5.98 ms (today's `filter: 'recurrent'` default = recurrent diffuse + A-SVGF specular, which
+  `antiLag: 'auto'` SVGF on both signals beats on quality and cost). Memory 105.5 B/px vs SVGF
+  ~132. Provisional: left unchanged; options are SVGF everywhere (cheapest, best diffuse),
+  A-SVGF auto (best quality), or recurrent (best memory, budget-closest with `blurTaps: 4`). — recurrent-spec
 
 - **SPEC v0.1 review list.** The taste calls the implementations raised are collected in
   SPEC.md §0.2 (short) and §12 (with numbers). The biggest: M2 go/no-go, since recurrent

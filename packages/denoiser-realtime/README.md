@@ -170,77 +170,79 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
 // rgb = denoised (demodulated); a = denoised normalized hit distance ĥ = h/(h + 1 + 0.05·depth), an AO estimate
 ```
 
-- **Diffuse** is the M2 deliverable. **Specular** with `filter: 'recurrent'` is interim
-  (surface motion only, no virtual motion until M3) and measures below SVGF, so
-  `DiffuseSpecularDenoiser({ filter: 'recurrent' })` runs recurrent diffuse + SVGF
-  (`antiLag: 'auto'`) specular; `specular: { filter: 'recurrent' }` puts both in shared
-  dispatches.
+- **Diffuse** (M2) and **specular** (M3) are implemented; both are **provisional** and, on
+  the test bed, **below today's SVGF defaults** (see results). Specular adds virtual
+  (reflected-image) reprojection with a curvature-corrected distance, confidence, clamp and an
+  α-space blend with surface motion (SPEC R-9…R-12, D12c).
+- `DiffuseSpecularDenoiser({ filter: 'recurrent' })` runs recurrent diffuse + SVGF
+  (`antiLag: 'auto'`) specular (unchanged default, Dennis decides; SPEC §12 item 1);
+  `specular: { filter: 'recurrent' }` puts both in shared dispatches.
 - The output texture rotates between internal buffers (valid until the next dispatch,
   per the TemporalDenoiser contract).
 - Options (defaults): `hitDistanceScale` [1], `hitDistanceViewScale` [0.05],
   `maxRadiance` [1e4], `preBlurRadius` [25 diffuse / 10 specular px @1080p],
-  `blurRadius` [45 px @1080p], `minBlurRadius` [1], `maxAccumulatedFrames` [31],
-  `fastFrames` [3], `historyFixFrames` [3], `historyFixDepthTolerance` [0.02],
-  `historyFixMinWeight` [0.25], `fireflyThreshold` [1.5], `antiLag` [true],
-  `antiLagSigma` [1], `antiLagStandardError` [true], `antiLagExcess` [0.5],
+  `blurRadius` [45 diffuse / 30 specular px @1080p], `minBlurRadius` [1],
+  `specularMinRadiusScale` [1: the floor scales with f_r, none on mirrors], `preBlurTaps`
+  [8 diffuse / 4 specular], `blurTaps` [8], `postBlurTaps` [4] (4 or 8, compiled in),
+  `maxAccumulatedFrames` [31], `fastFrames` [3], `historyFixFrames` [3],
+  `historyFixDepthTolerance` [0.02], `historyFixMinWeight` [0.25], `fireflyThreshold` [1.5],
+  `antiLag` [true], `antiLagSigma` [1], `antiLagStandardError` [true], `antiLagExcess` [0.5],
   `antiLagHitTolerance` [0.2], `antiLagCurrentSigma` [3], `antiLagCurrentHitTolerance`
   [0.05], `stabilizationFrames` [7], `planeDistance` [0.01], `lobeFraction` [0.75],
-  `specularHistoryScale` [1], `remodulate` [false], `timestamps` [true].
+  `specularHistoryScale` [1], `virtualMotion` [true], `virtualClampSigma` [1],
+  `virtualAngleScale` [0.5], `virtualHitTolerance` [0.05], `virtualHitToleranceRoughness`
+  [0.25], `remodulate` [false], `timestamps` [true].
 
 | pass | reads → writes | formats |
 |---|---|---|
-| `prepass` (shared) | guides → packed geometry | rg32uint ×2, r32uint |
-| `pre_blur` | radiance (sanitized), hit distance → 8-tap static disk on the tangent plane, radius clamped by last frame's denoised hit distance; ĥ unfiltered | rgba16float |
-| `temporal` | + reprojected history (Catmull-Rom / custom bilinear) → acc = lerp(H, pre, 1/(1+A)); fast history (A ≤ 3); A + 2×2 validity packed in `data`; current-frame anti-lag detector | rgba16float ×2, rgba16float (fast), r32uint |
+| `prepass` (shared) | guides → packed geometry (no depth slope for recurrent-only denoisers) | rg32uint ×2 |
+| `pre_blur` | radiance (sanitized), hit distance → static disk on the tangent / lobe plane, radius clamped by last frame's denoised hit distance; ĥ unfiltered | rgba16float |
+| `temporal` | + reprojected history (Catmull-Rom / custom bilinear) → acc = lerp(H, pre, 1/(1+A)); specular: surface + virtual candidates blended in α by F_dom·[valid]; fast history (A ≤ 3); A + 2×2 validity + m packed in `data`; current-frame anti-lag detector (10×10 shared tile) | rgba16float ×2, rgba16float (fast), r32uint |
 | `mips` | acc → 3-level atlas (non-sky averages), depth atlas, one 16×16 shared-memory dispatch | rgba16float (rotation buffer), r32float |
-| `history_fix` | mip repair where A < 3, rank anti-firefly, fast-history clamp + A reduction (`data` read-write) | rgba16float, r32uint rw |
-| `blur` | rotated 8-tap disk, radius 45/(1+A) px, clamped by hit distance; geometry · normal · ĥ weights | rgba16float |
-| `post_blur` | unrotated, radius × lerp(0.5, 2, δ/0.3) → next frame's history | rgba16float |
-| `stabilize` | own history, 3×3 clamp widening with A → output | rgba16float (+ remodulated outputs) |
+| `history_fix` | mip repair where A < 3, rank anti-firefly, fast-history clamp + A reduction (`data` read-write; shared tile) | rgba16float, r32uint rw |
+| `blur` | rotated 8-tap disk, radius R_max/(1+A), clamped by hit distance; geometry · normal · ĥ (· roughness) weights | rgba16float |
+| `post_blur` | unrotated 4-tap disk, radius × lerp(0.5, 2, δ/0.3) → next frame's history | rgba16float |
+| `stabilize` | own history (bilinear diffuse / Catmull-Rom specular), 3×3 clamp widening with A → output | rgba16float (+ remodulated outputs) |
 
-Memory (diffuse + specular): 4 rgba16float rotation buffers per signal, fast history
-×2, `data` ×2, depth atlas, geometry: 105.5 B/px as in SPEC §10.1, plus the shared
-prepass's 4 B/px depth-slope texture = 109.5 B/px; diffuse only 77.5 B/px.
+Memory (diffuse + specular): 4 rgba16float rotation buffers per signal, fast history ×2,
+`data` ×2, depth atlas, geometry ×2: **105.5 B/px** (target ≤ 100; half-res fast history would
+give 93.5, not implemented); diffuse only 73.5 B/px.
 
-### Results (provisional)
+### Results (provisional; full tables in `docs/research/rt-denoiser/results/M2-M3.md`)
 
 **Test bed** (`examples/realtime-denoiser`, path-traced one-bounce GI and GGX specular,
-256-spp references, blue-noise sampling), 1920×1080, 96 frames per path, PSNR in dB on
-tonemapped demodulated values (mean over frames), registry entries `svgf`, `svgf-auto`
-and a local `recurrent` entry (see TASKS):
+256-spp references, blue-noise sampling), 1920×1080, 96 frames per path, all three filters in
+the **same page** with today's defaults (SVGF `feedback: false`), PSNR in dB on tonemapped
+demodulated values (mean of per-frame dB; pooled in the results doc):
 
-| diffuse | SVGF | A-SVGF auto | recurrent | disocc. (auto / rec.) | flicker (auto / rec.) | energy (auto / rec.) |
+| path | diffuse SVGF | A-SVGF auto | recurrent | specular SVGF | A-SVGF auto | recurrent |
 |---|---|---|---|---|---|---|
-| orbit | 38.23 | 39.23 | **39.85** | 37.93 / 36.59 | 0.0027 / 0.0037 | −2.8 % / −1.1 % |
-| pan | 37.90 | 38.64 | **39.05** | 37.83 / 36.71 | 0.0071 / 0.0081 | −2.6 % / −1.0 % |
-| light | 38.03 | 39.11 | **39.97** | – | 0.0009 / 0.0006 | −2.8 % / −1.0 % |
-| thin | 33.83 | 34.12 | **34.18** | 37.99 / 37.68 | 0.0050 / 0.0058 | −2.6 % / −1.1 % |
-| glossy | 37.91 | 38.62 | **39.74** | 35.90 / 36.05 | 0.0023 / 0.0027 | −2.5 % / −1.1 % |
-| cut | 37.38 | 38.15 | **39.10** | 37.98 / 36.59 | 0.0031 / 0.0041 | −3.1 % / −1.1 % |
-| object | 36.41 | **37.09** | 37.07 | 36.90 / 34.33 | 0.0015 / 0.0013 | −2.9 % / −1.2 % |
+| orbit | 40.68 | **41.01** | 39.90 | 32.37 | **33.80** | 32.85 |
+| pan | 40.12 | **40.46** | 39.06 | 35.90 | **37.24** | 35.66 |
+| light | 40.62 | **40.99** | 39.99 | 35.11 | **35.29** | 34.40 |
+| thin | 34.41 | **34.47** | 34.17 | 35.41 | **35.93** | 35.44 |
+| glossy | 39.50 | 39.72 | **39.73** | 31.65 | 34.63 | **34.80** |
+| cut | 39.77 | **40.07** | 39.16 | 33.80 | **35.21** | 34.14 |
+| object | 37.89 | **38.17** | 37.09 | 34.37 | **35.10** | 33.57 |
+| mean | 39.00 | **39.27** | 38.44 | 34.09 | **35.32** | 34.41 |
 
-Recurrent diffuse beats A-SVGF on 6 of 7 paths (+0.06 to +1.12 dB) and loses less
-energy; it is weaker in freshly disoccluded regions (−1 to −2.6 dB) and flickers a
-little more under camera motion. Interim recurrent specular (surface motion only) is
-0.5–3 dB below A-SVGF on every path (hence the SVGF default above).
+Recurrent loses to A-SVGF `auto` on 6/7 paths for both signals (wins `glossy`), and to plain
+SVGF on diffuse (6/7); recurrent specular beats plain SVGF on 4/7. It is weaker in disoccluded
+regions (−1.2 dB diffuse) and after light changes (diffuse back within 0.5 dB after 11 frames
+vs 5 for A-SVGF). No NaNs in any run.
 
-**Dev page** (synthetic scene: direct point lights with hard shadows, exact truth +
-injected noise; 120 frames orbit + cut): recurrent 38.41 dB vs SVGF 40.48 / A-SVGF
-41.62. A light switching on (static camera): 12 frames later recurrent 34.2 dB, SVGF
-38.0, A-SVGF 40.4. Hard direct-light shadow edges and abrupt lighting changes are the
-recurrent blur's worst case (no luminance weight; the history moves at most 1/(1+A) per
-frame); no NaNs in any run.
-
-**GPU time** at 1080p (dev page, M5 Pro, min of 400 frames, uncontended; median within 8 %):
+**GPU time** at 1080p (dev page, M5 Pro, min of 400 frames, uncontended; median within 5 %):
 
 | | prepass | pre_blur | temporal | mips | history_fix | blur | post_blur | stabilize | total |
 |---|---|---|---|---|---|---|---|---|---|
-| `DiffuseDenoiser` recurrent | 0.18 | 0.48 | 0.53 | 0.08 | 0.51 | 0.33 | 0.40 | 0.40 | **2.92 ms** |
-| diffuse + specular, shared dispatches | 0.18 | 0.82 | 0.84 | 0.11 | 0.79 | 0.83 | 0.83 | 0.79 | **5.22 ms** |
-| skeleton (trivial kernels, same bindings), diffuse + specular | 0.18 | 0.24 | 0.16 | 0.09 | 0.09 | 0.05 | 0.06 | 0.09 | 0.96 ms |
+| `DiffuseDenoiser` recurrent | 0.10 | 0.50 | 0.50 | 0.08 | 0.31 | 0.35 | 0.22 | 0.31 | **2.38 ms** |
+| `SpecularDenoiser` recurrent | 0.10 | 0.34 | 0.92 | 0.08 | 0.31 | 0.40 | 0.26 | 0.38 | **2.79 ms** |
+| diffuse + specular, shared dispatches | 0.10 | 0.75 | 1.20 | 0.11 | 0.47 | 0.87 | 0.46 | 0.48 | **4.44 ms** |
+| skeleton (trivial kernels, same bindings), diffuse + specular | 0.10 | 0.23 | 0.15 | 0.09 | 0.09 | 0.05 | 0.06 | 0.09 | 0.85 ms |
 
-`DiffuseSpecularDenoiser({ filter: 'recurrent' })` (recurrent diffuse + A-SVGF specular)
-is 6.48 ms. Over the 4 ms target for diffuse + specular; see TASKS for the levers.
+`blurTaps: 4` gives 4.05 ms (−0.07 dB diffuse, +5 % flicker). For comparison, joint SVGF is
+4.02 ms, joint A-SVGF `auto` 5.55 ms, and `DiffuseSpecularDenoiser({ filter: 'recurrent' })`
+(recurrent diffuse + A-SVGF specular) 5.98 ms.
 
 ## Dev page
 
