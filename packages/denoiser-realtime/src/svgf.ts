@@ -64,6 +64,13 @@ export interface SvgfOptions {
   /** Spatial variance boost for young history: x (1 + boost (1 - n / rampFrames)). Default 3 (A-SVGF code). */
   spatialVarianceBoost?: number;
   /**
+   * Largest radius of the young-history spatial variance estimate (SVGF: 3 = 7x7 when
+   * n < 2, else 5x5). Default (-1): 3, but 1 (3x3) for specular with anti-lag v2, whose
+   * anti-lag keeps many specular histories below 4 frames under camera motion: 3x3 was
+   * +0.07 dB pooled and cheaper there (results/M1.md §12).
+   */
+  spatialVarianceRadius?: number;
+  /**
    * A-SVGF anti-lag (gradient-driven alpha). 'auto' estimates the temporal
    * gradient from the signal itself; 'gradient' uses renderer-supplied gradient
    * samples (`inputs.gradient`, see README). Default 'off'.
@@ -139,6 +146,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     luminanceVariance: o.luminanceVariance ?? 'sample',
     varianceRampFrames: o.varianceRampFrames ?? 4,
     spatialVarianceBoost: o.spatialVarianceBoost ?? 3,
+    spatialVarianceRadius: o.spatialVarianceRadius === undefined ? -1 : Math.max(0, Math.round(o.spatialVarianceRadius)),
     antiLag,
     antiLagNoiseFloor: o.antiLagNoiseFloor ?? -1,
     antiLagVersion,
@@ -288,6 +296,8 @@ export class SvgfPipeline {
       | (this.opts.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
       | (o.specularNormalWeight === 'power' ? P_SPEC_NORMAL_POWER : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
+    i32[20] = o.spatialVarianceRadius >= 0 ? o.spatialVarianceRadius
+      : this.opts.antiLag !== 'off' && this.opts.antiLagVersion !== 1 && s.kind === 'specular' ? 1 : 3;
     this.device.queue.writeBuffer(s.params, 0, f);
   }
 

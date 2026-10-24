@@ -52,6 +52,7 @@ struct Params {
   rampFrames: f32, varBoost: f32, specScale: f32, specKappa: f32,
   lobeFraction: f32, gradNoiseK: f32, radiusScale: f32, flags: u32,
   gradRadius: i32, gradDown: i32, gradDims: vec2i,
+  varRadius: i32, pad0: i32, pad1: i32, pad2: i32,
 }
 const P_CATMULL = ${P_CATMULL}u;
 const P_ANTILAG = ${P_ANTILAG}u;
@@ -323,7 +324,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   // Optional (our variant): variance of the accumulated mean.
   if ((P${i}.flags & P_VAR_OF_MEAN) != 0u) { varT${i} *= max(P${i}.alpha / (2.0 - P${i}.alpha), 1.0 / max(a${i}.a, 1.0)); }
   let t${i} = clamp((a${i}.a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
-  let rad${i} = select(select(2, 3, a${i}.a < 2.0), 0, t${i} >= 1.0);
+  let rad${i} = min(select(select(2, 3, a${i}.a < 2.0), 0, t${i} >= 1.0), P${i}.varRadius);
   var sc${i} = a${i}.rgb;
   var sm${i} = m${i};
   var sw${i} = 1.0;`).join('')}
