@@ -306,15 +306,15 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       at A = 0, uniform snap, W_px² history cap, Catmull-Rom on visibility, g = h/(D−h) stored
       instead of W_eff, radius 0.75·W, anisotropy off (measured worse), tiles folded into
       temporal, 40 B/px — found by shadows, owner spec-author (SPEC.md §7)
-- [ ] Shadows: first frames after a reset/disocclusion are ~3 dB below FFX (std1080-orbit frame
+- [x] (shadows-v2, 72abd13; results/M4.md §10: std1080-orbit 35.42 vs FFX 35.40, frame 0 34.3 vs 34.8, disoccluded 34.68 vs 32.91 live) Shadows: first frames after a reset/disocclusion are ~3 dB below FFX (std1080-orbit frame
       0: 31.6 vs 34.8 dB); a wider kernel for young histories lost. Try more taps (or a third
       pass) only where A < 3, or a variance-guided weight there — found by shadows, owner T4 follow-up
-- [ ] Shadows cost on penumbra-heavy views (`thin` 0.64 ms vs ≤ 0.6): temporal writes two
+- [x] (shadows-v2, M4 §10.4: `thin` 0.59 ms fastest, same as v1 within noise; pass 0 reads the r32float copy; one-copy and f16 not done, reasons there) Shadows cost on penumbra-heavy views (`thin` 0.64 ms vs ≤ 0.6): temporal writes two
       unfiltered r32float copies (T and out) that only inactive tiles need; pass 2 could read the
       history for taps landing in inactive tiles and drop one copy; `shader-f16` — found by shadows, owner T4 follow-up
-- [ ] Shadows: directional-light path untested on images (no capture has a directional light);
+- [~] (shadows-v2, 67bcfd6, M4 §10.7: stand-in test `sh.light=directional` behaves; a real sun capture is still open, owner `examples/realtime-denoiser`) Shadows: directional-light path untested on images (no capture has a directional light);
       add a sun to a test-bed path or a synthetic capture — found by shadows, owner `examples/realtime-denoiser`
-- [ ] Shadows section in `packages/denoiser-realtime/README.md` (usage: `new ShadowDenoiser(device)`,
+- [x] (shadows-v2, 808177e) Shadows section in `packages/denoiser-realtime/README.md` (usage: `new ShadowDenoiser(device)`,
       `dispatch({ visibility, hitDistance, light }, guides, camera)`, options, M4 numbers); not written
       by the shadows agent because the README is being edited by the recurrent agent — found by shadows, owner `packages/denoiser-realtime`
 - [x] (orchestrator) Trim `sources/shadows-specular.md` (list with line numbers in `reviews/shadows-provenance.md`
@@ -322,7 +322,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       "NRD prose says it exists" attribution (l. 573–574), cite M12 §6 for "spread h to lit pixels"
       (l. 246–247), fix the M12 Eq. 13 transcription (l. 110: 1/(kµ) outside the max, floor 1/Ω_x^max)
       — found by shadows provenance reviewer, owner orchestrator (`sources/`)
-- [ ] Shadows provenance hygiene (non-blocking): record `maxScaleHistory` = 7, `maxRadius` = 48 px and
+- [x] (shadows-v2, 03679f9, M4 §10.6: all three measured flat, rationale recorded; comments fixed in 72abd13) Shadows provenance hygiene (non-blocking): record `maxScaleHistory` = 7, `maxRadius` = 48 px and
       the pass-2 rotation offset 2 − φ as "our design" in PROVENANCE (or tune them); fix the
       `shaders/shadow.ts` comments "floored at one pixel" (M12's floor is 1/(kµ·Ω_x^max), 1 px is ours) and
       the two merged comments on line 58; row SH-6: σ ∝ E is H18 §4.1, not §4.2; optionally cite RTG1-13
@@ -379,9 +379,21 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (+15…40 %); ~20 knobs moved it ≤ ±0.2 dB (results/M2-M3.md §5). Candidates not tried: a
       variance-guided (measured, not predicted) luminance weight in the blur, short-history +
       wide spatial mode for r ≥ 0.35 — found by recurrent-spec, owner unassigned
-- [~] shadows-v2 (shadows agent, 2026-10-25 night): fresh-history quality (young-history ideas measured
-      one by one), `thin` cost ≤ 0.6 ms, uniform-snap evidence, provenance hygiene (the three
-      constants, comments), directional-light check, results/M4.md "v2", README shadows section — owner shadows
+- [x] shadows-v2 (shadows agent, 2026-10-25 night; 72abd13, 090db19, 67bcfd6, 55d0827, c6734c6, 808177e, 03679f9):
+      provisional (SPEC not reviewed). New defaults: kernel radius = mean of the occluder-sized and the
+      H18 noise-sized radius (`noiseBlend` 0.5, `noiseRadius` 32), geometry-weighted 5×5 mean in the
+      spatial input of fresh pixels (`youngMean` 0.75, `youngSpan` 1). 1080p live, 7 paths, pooled:
+      37.11 / penumbra 28.57 / disoccluded 34.68 (v1 36.55 / 28.11 / 33.19; FFX 31.20 / 23.50 / 32.91);
+      0.48–0.59 ms (FFX 0.50–0.61). Uniform snap kept on (FLIP), but off is now +0.18 dB pooled
+      (§10.5, taste call). Gaps: std1080-orbit frames 0–2 still 0.2–0.5 dB below FFX; `light` −0.10
+      vs v1 — owner shadows
+- [ ] SPEC §7 v2 deviations (results/M4.md §10): SH-5 radius = ½ occluder-sized + ½ H18-sized (E in
+      the geometry byte), SH-4 fresh-pixel 5×5 mean in the spatial input (A = 0 only), pass 0 reads the
+      unfiltered r32float copy, `uniformSnap: 'change'` option, the three constants' rationale; §12
+      item 6 numbers (6a mostly resolved, 6b at target, 6c snap now costs −0.18 dB) — found by shadows,
+      owner spec-author (SPEC.md §7, §12)
+- [ ] Shadows: a real directional-light (sun) path or capture in the test bed (today only the
+      `sh.light=directional` stand-in, M4 §10.7) — found by shadows, owner `examples/realtime-denoiser`
 
 ## Probes for the Windows harness
 

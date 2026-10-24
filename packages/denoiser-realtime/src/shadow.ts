@@ -85,7 +85,12 @@ export interface ShadowDenoiserOptions {
   anisotropy?: boolean;
   /** Cap of the anisotropic stretch. Default 4. */
   anisotropyMax?: number;
-  /** Where all 25 raw samples of the 5x5 window agree, the history takes their value exactly (no residual lag in lit / umbra areas). Default true. */
+  /**
+   * Where all 25 raw samples of the 5x5 window agree, the history takes their value exactly (no
+   * residual lag in lit / umbra areas). 'change': only where the history sits outside the clamp
+   * window (after a change such as a light flip). Default true (best FLIP; off is +0.18 dB pooled,
+   * results/M4.md §10.5: a taste call).
+   */
   uniformSnap?: boolean | 'change';
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
   catmullRom?: boolean;

@@ -105,6 +105,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   dump every pass's WGSL for the old and new code over the configurations, and `diff`; then one
   short eval on two `git archive` snapshots comparing `perFrame` arrays. — occlusion, 2026-10-25
 
+- A comment containing backticks inside a WGSL template literal (`` /* wgsl */ `...` ``) ends the
+  template: the TS module fails to transform, Vite logs a PARSE_ERROR, and every headless page
+  just hangs until its timeout. After editing a shader generator, `curl` the served module or
+  run `tsc --noEmit` before starting a batch. — shadows, 2026-10-25
+- Idle orphaned headless Chromes (0 % CPU) and hung `run-headless` pages of other agents look
+  "busy" to a `pgrep`-based quiet-GPU wait, which then never starts. Count a job as busy only if
+  its process tree uses CPU (`ps -o pid=,ppid=,pcpu=` and sum the subtree). In a bench round,
+  the first page tends to land in the slow clock state (shadows `tiles` 0.007 instead of
+  0.005 ms): lead every round with a throwaway warm-up page. — shadows, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -337,6 +347,21 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - "AO for free from the radiance filter's alpha" is free in cost, not in quality: the radiance
   pipeline's ĥ inherits radiance-tuned radii, a history shortened by luminance anti-lag, and no
   ĥ clamp; a dedicated occlusion pass on the same rays is clearly better (results/M5.md). — occlusion, 2026-10-25
+
+- Shadows on 1-spp blue noise: the error right after a reset was mostly **pixel-scale noise** in
+  the outer half of penumbrae (box-filter the signed error: 3×3-filtered 37 dB vs 33 dB full),
+  where lit samples carry no occluder distance and a tile minimum sets the radius. Wider kernels
+  or more taps didn't help. Sizing by Heitz 2018's noise estimate E did, and **the mean of the
+  occluder-sized and the E-sized radius beat either alone** everywhere (+0.56 dB pooled at
+  1080p, +1.1 dB on a reset window). Look at where the error lives (by reference band, by spatial
+  frequency) before tuning radii. — shadows, 2026-10-25
+- Reset-window replays (16 frames from a reset) and 96-frame live paths disagree on
+  young-history tricks: anything keyed on "short history" wins on the replays and loses live,
+  because history caps (W_px²) and anti-lag restarts keep many penumbra pixels short-lived
+  forever. Key fresh-pixel treatments on A = 0 (truly new), and screen on both. — shadows, 2026-10-25
+- A per-pixel scalar the spatial pass needs can ride in a spare byte of the packed geometry
+  texture (shadows: the 8-bit roughness slot carries the noise estimate E). Its previous-frame
+  value comes for free with the reprojection taps, which already load that texture. — shadows, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
