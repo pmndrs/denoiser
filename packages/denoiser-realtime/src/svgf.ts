@@ -263,7 +263,7 @@ export class SvgfSignal {
       runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, makeBindGroup(d, this.layouts.gcreate, [
         gp.frame, this.params, frame.radiance, gp.geoCur, gp.geoPrev, motion, mz, accumPrev,
         frame.gradient ?? gp.dummy32, g0a, g1a, gp.geoGrad,
-      ]), ggx, ggy);
+      ]), Math.ceil(W / 9), Math.ceil(H / 9));
       let src = [g0a, g1a], dst = [g0b, g1b];
       for (let i = 0; i < o.gradientIterations; i++) {
         runPass(enc, timer, name(`gradient_atrous_${i}`), this.pipes.gatrous, makeBindGroup(d, this.layouts.gatrous, [

@@ -56,23 +56,26 @@ ${GPARAMS_WGSL}
 @group(0) @binding(11) var geoGrad: texture_2d<u32>;
 ${REPROJECT_WGSL}
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) gid: vec3u) {
-  let s = vec2i(gid.xy);
-  if (s.x >= P.gradDims.x || s.y >= P.gradDims.y) { return; }
-  var sumL = 0.0; var sumL2 = 0.0; var cnt = 0.0;
-  var sumC = 0.0; var sumH = 0.0; var cntH = 0.0;
-  var zc = 0.0; var dzc = 0.0;
-  for (var yy = 0; yy < P.gradDown; yy++) {
-    for (var xx = 0; xx < P.gradDown; xx++) {
-      let p = s * P.gradDown + vec2i(xx, yy);
-      if (!inside(p)) { continue; }
-      var g = geoTap(geoCur, p);
+// One thread per pixel in 9x9 workgroups (3x3 strata each); every pixel does
+// its own reprojection, then one thread per stratum reduces its 9 pixels from
+// workgroup memory (9x more parallel than a thread per stratum).
+var<workgroup> wL: array<vec4f, 81>;   // l, l^2, valid, l_hist (auto: only where history)
+var<workgroup> wH: array<vec4f, 81>;   // history valid, z, |dz|, 0
+
+@compute @workgroup_size(9, 9)
+fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u) {
+  let p = vec2i(gid.xy);
+  let li = lid.y * 9u + lid.x;
+  var a = vec4f(0.0);
+  var b = vec4f(0.0);
+  if (inside(p)) {
+    let g0 = geoTap(geoCur, p);
+    if (g0.z > 0.0) {
+      var g = g0;
       g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
-      if (g.z <= 0.0) { continue; }
       let l = luma(max(textureLoad(inputTex, p, 0).rgb, vec3f(0.0)));
-      sumL += l; sumL2 += l * l; cnt += 1.0;
-      if (zc == 0.0 || (xx == 1 && yy == 1)) { zc = g.z; dzc = max(abs(g.grad.x), abs(g.grad.y)); }
+      a = vec4f(l, l * l, 1.0, 0.0);
+      b = vec4f(0.0, g.z, max(abs(g.grad.x), abs(g.grad.y)), 0.0);
       ${fromInput ? '' : /* wgsl */ `
       if (!hasFlag(FRAME_RESET)) {
         let r = reproject(p, g, P.planeTol, P.normalTol);
@@ -81,9 +84,30 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
           for (var i = 0; i < 4; i++) {
             if (r.w[i] > 0.0) { h += luma(textureLoad(accumPrev, r.base + TAP_OFFS[i], 0).rgb) * r.w[i]; }
           }
-          sumH += h / r.sumW; sumC += l; cntH += 1.0;
+          a.w = h / r.sumW;
+          b.x = 1.0;
         }
       }`}
+    }
+  }
+  wL[li] = a;
+  wH[li] = b;
+  workgroupBarrier();
+  if (lid.x % 3u != 0u || lid.y % 3u != 0u) { return; }
+  let s = p / 3;
+  if (s.x >= P.gradDims.x || s.y >= P.gradDims.y) { return; }
+  var sumL = 0.0; var sumL2 = 0.0; var cnt = 0.0;
+  var sumC = 0.0; var sumH = 0.0; var cntH = 0.0;
+  var zc = 0.0; var dzc = 0.0;
+  for (var yy = 0u; yy < 3u; yy++) {
+    for (var xx = 0u; xx < 3u; xx++) {
+      let j = (lid.y + yy) * 9u + lid.x + xx;
+      let va = wL[j];
+      let vb = wH[j];
+      if (va.z <= 0.0) { continue; }
+      sumL += va.x; sumL2 += va.y; cnt += 1.0;
+      if (zc == 0.0 || (xx == 1u && yy == 1u)) { zc = vb.y; dzc = vb.z; }
+      if (vb.x > 0.0) { sumH += va.w; sumC += va.x; cntH += 1.0; }
     }
   }
   var g1 = vec4f(0.0);

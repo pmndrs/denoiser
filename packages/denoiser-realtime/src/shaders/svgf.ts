@@ -81,18 +81,23 @@ fn finite3(c: vec3f) -> vec3f {
 function weightsWgsl(kind: SignalKind): string {
   const normal = kind === 'diffuse'
     ? /* wgsl */ `
+fn setCenter(g: Geo) { }
 fn wNormal(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), P.sigmaN); }`
     : /* wgsl */ `
 // Specular: reject beyond the GGX lobe half-angle theta_L(alpha) (SPEC R-1,
-// our derivation) + 1 deg, linear falloff (shape from GTC 2020 slide 46); or
-// SVGF's power form (SPEC S-3).
+// our derivation) + 1 deg, falloff linear in the angle (shape from GTC 2020
+// slide 46); or SVGF's power form (SPEC S-3). Per-center constants are set once
+// (setCenter); per tap the angle ratio is sqrt((1 - cos) / (1 - cos theta0)),
+// which equals theta / theta0 to second order and avoids acos per tap.
+var<private> cosLimit: f32 = 0.0;
+fn setCenter(g: Geo) {
+  let a = g.rough * g.rough;
+  cosLimit = cos(atan(a * sqrt(P.lobeFraction / (1.0 - P.lobeFraction))) + 0.0174533);
+}
 fn wNormal(g: Geo, gq: Geo) -> f32 {
   let d = dot(g.n, gq.n);
   if (pflag(P_SPEC_NORMAL_POWER)) { return pow(max(0.0, d), P.sigmaN); }
-  let a = g.rough * g.rough;
-  let theta0 = atan(a * sqrt(P.lobeFraction / (1.0 - P.lobeFraction))) + 0.0174533;
-  let ang = acos(clamp(d, -1.0, 1.0));
-  return clamp(1.0 - ang / theta0, 0.0, 1.0);
+  return clamp(1.0 - sqrt(max(0.0, 1.0 - d) / max(1.0 - cosLimit, 1e-7)), 0.0, 1.0);
 }`;
   const spec = kind === 'specular' ? /* wgsl */ `
 // RTG ch. 32 eq. 14-15: f_w(a, b, x) = 1 - smoothstep(a, b, x)
@@ -291,6 +296,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let a = textureLoad(accumCur, p, 0);
   let m = textureLoad(momentsCur, p, 0).rg;
   let g = geoCenter(p);
+  setCenter(g);
   if (g.z <= 0.0) { textureStore(outPing, p, vec4f(0.0)); return; }
   var varT = max(0.0, m.y - m.x * m.x);
   // Optional (our variant): variance of the accumulated mean instead of the
@@ -375,6 +381,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (!inside(p)) { return; }
   let c = textureLoad(srcTex, p, 0);
   let g = geoCenter(p);
+  setCenter(g);
   if (g.z <= 0.0) {
     ${store('c.rgb', 'c.a')}
     ${hist('c.rgb')}
