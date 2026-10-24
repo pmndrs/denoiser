@@ -185,17 +185,31 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 | interim recurrent specular: surface motion only, R-8 cap, lobe kernel plane and weights, no virtual motion (M3) | R-7, R-8, §5.6 | as rows above | virtual motion, R-10..R-12 and the two-candidate stabilization are **not implemented** | | `src/shaders/recurrent.ts` `specCap{i}`, `kern{i}` |
 | dev page: 1-spp diffuse (cosine) and mirror hit distances in the synthetic scene; `still=1` | — | our design (dev only, not shipped) | | | `packages/denoiser-realtime/dev/scene.ts` |
 
-### Shadows (M4, outline)
+### Shadows (M4)
+
+_Implemented 2026-10-25 by the shadows agent (implementer, RULES §8: no NRD code, README or
+port opened; `sources/shadows-specular.md` read, every primary source below re-read by the
+implementer: M12 §3–4 Eq. 4/11–13 and §6, H18 §4.1–4.2, RTG1-25 §25.2.1 p.443, TR19 slide 72).
+Rows marked "yes" still need the second reviewer the register asks for, because their
+pointer came from `sources/shadows-specular.md`. Host: `packages/denoiser-realtime/src/shadow.ts`;
+results: [results/M4.md](results/M4.md)._
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| penumbra footprint R·h/(D−h), h·tanθ | SH-2 | M12 Eq. 13 (§3–4, constants §6) | rewrite for hit distance: our derivation | yes | |
-| nearest occluder wins (tile W_min) | SH-3 | principle: M12 (`d2_max`) | **our design**; patent-described remedy explicitly not used | yes | |
-| penumbra tiles / skip | SH-3 | TR19 slide 72; FFX docs | — | yes | |
-| temporal without blur feedback, 5×5 clamp | SH-4 | RTG1-25 §25.2.1 (5×5 Salvi clamp); FFX drift measured in `docs/specs/temporal.md` | — | yes | |
-| anisotropic stretch along projected light | SH-5 | RTG2-24 p.389 (grazing light lengthens penumbrae); RTG1-19 / TR19 show anisotropy only as figures | **our derivation** | yes | |
-| noise-driven fallback | SH-6 | H18 §4.1–4.2 | — | yes | |
-| renderer contract (unjittered origins, golden-ratio blue noise) | SH-7 | TR19 slides 55–62; RTG2-24 §24.7.2 | — | yes | |
+| penumbra footprint R·h/(D−h), h·tanθ | SH-2 | M12 Eq. 4 (`s = d1/d2 − 1`) and Eq. 13 (filter width ∝ σ·(d1/d2_max − 1), pixel floor; constants §6) | rewritten for a hit distance: d1/d2 − 1 = h/(D − h) (our algebra); light radius instead of M12's Gaussian σ; kernel radius = 0.75·W (tuned, M4.md §3), pixel floor 1 px | yes (primary re-read by implementer) | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (gS = h/(D−h), accumulated over occluded samples), `spatial` (Rw) |
+| nearest occluder wins (3×3-tile minimum, also for pixels with their own estimate) | SH-3 | principle: M12 `d2_max` (the occluder closest to the receiver sets the width); M12 §6 gives unoccluded pixels the d1/d2 averaged over a 5-px radius | **our design**: min over 8×8 tiles (3×3 neighbourhood) instead of a 5-px average; the patent-described remedy in shadows-specular.md G2 not used (its text was never read) | yes | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (tile stats), `SHADOW_TILES_WGSL`, `spatial` (`SF_MERGE_MIN`) |
+| penumbra tiles / skip (indirect dispatch over a tile list) | SH-3 | TR19 slide 72 ("penumbra mask", slide title + figure); H18 §4.1 (no filtering cost outside penumbrae) | tile = 8×8, active if the 3×3 tiles hold a fractional history or disagreeing raw samples (our criterion) | yes (primary re-read) | `packages/denoiser-realtime/src/shaders/shadow.ts` `SHADOW_TILES_WGSL`, `dispatchWorkgroupsIndirect` in `shadow.ts` |
+| temporal on raw visibility, no spatial output fed back | SH-4 | RTG1-25 §25.2.1 p.443 (scalar shadow filter derived from SVGF, Karis-style box clamp sized by Salvi's variance over 5×5); FFX drift measured in `docs/specs/temporal.md` | history = raw visibility only (our design); clamp window 0.4σ + 0.05 instead of 1σ (≈ 2 standard errors of the 25-sample mean, tuned) | yes (primary re-read) | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` |
+| anti-lag: a history the clamp moved restarts at the current frame | — | **our design** (clamp-toward-current idea, RTG2 p.830 / SPEC C-10; restart to A = 0 measured, M4.md §3) | | | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`antiLag`, `antiLagHistory`) |
+| uniform 5×5 window → exact history value | — | **our design** | | | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`SF_SNAP`) |
+| history cap from penumbra width in pixels (A ≤ W_px²) | — | **our design** (repeated reprojection resampling blurs ~√A px) | | | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`historyScale`) |
+| Catmull-Rom history fetch, clamped to the 2×2 taps | C-8 | shared core / RTG2 §49.7 prose (see the core rows above) | used for visibility only; scalar channels stay bilinear | | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`sampleCatmullRom`) |
+| reprojection: affine tap positions, plane = current normal | C-6/C-7 | shared core rows above (RTG2 §49.6 prose) | plane distance linear in the tap pixel (as the recurrent kernels do), current normal instead of the pairwise average, backfacing via unnormalized octahedral sign (our simplifications, −0.03 dB, −0.1 ms) | | `packages/denoiser-realtime/src/shaders/shadow.ts` `reprojFast` |
+| spatial: 2 passes, 8-tap disk on the tangent plane, rotated per pixel, second pass half radius | SH-5 | SPEC R-3 / D3b (VOG79; RTG2 §49.5.5 prose; RTG2-24 §24.7.2) | radius × lerp(1, 0.5, A/A_cap); weights: plane distance (2 %) and normal (30°) in SPEC's W(x) shape; affine screen Jacobian of the kernel axes (our approximation) | yes (RTG2-24 via shadows-specular.md, already listed under D3b) | `packages/denoiser-realtime/src/shaders/shadow.ts` `shadowSpatialWgsl` |
+| self-shadowing terminator (light partly below the horizon, h = 0) | — | **our design**: analytic test n·l < sin(angular radius of the light), 16-px radius there (visibility follows n·l) | | | `packages/denoiser-realtime/src/shaders/shadow.ts` `spatial` |
+| anisotropic stretch along the projected light direction by 1/(n·l) | SH-5 | M12 Eq. 11–12: filter distances measured along the plane parallel to the light (our reading: on the receiver plane this stretches the kernel by 1/(n·l)); RTG2-24 p.389 (grazing light lengthens penumbrae) | option `anisotropy`, **off**: −0.3 to −2.7 dB on the test bed (M4.md §3) | yes | `packages/denoiser-realtime/src/shaders/shadow.ts` `spatial` (`SF_ANISO`) |
+| noise-driven fallback (no hit distance or no light) | SH-6 | H18 §4.2 Eq. 29 (total variation of the second derivative along n = 4 lines through x; σ ∝ E) | on the 5×5 shared tile without the random offset; accumulated over time instead of the paper's 3×3 box; radius = 24 px × E (tuned) | yes (primary re-read) | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`SF_NOISE`), `spatial` |
+| renderer contract (unjittered origins, golden-ratio blue noise) | SH-7 | TR19 slides 55–62; RTG2-24 §24.7.2 | documented only (the test bed renders without jitter, blue noise per M1.md §2) | yes | — |
 
 ### Occlusion (M5, outline)
 

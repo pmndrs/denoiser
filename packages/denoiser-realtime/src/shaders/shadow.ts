@@ -1,4 +1,5 @@
-// Shadow denoiser passes (SPEC v0 §7, M4; provisional until SPEC review).
+// Shadow denoiser passes (SPEC v0 §7, M4; provisional until SPEC review). Clean room:
+// written from the papers below; no NRD code, README or port was read.
 //
 //   temporal  (8x8 tiles) pack geometry, reproject + accumulate RAW visibility, clamp the
 //             history to the 5x5 neighbourhood of raw visibility, accumulate the penumbra
@@ -33,6 +34,12 @@
 // - Noise-driven radius when there is no hit distance / light: Heitz et al. 2018 Sec. 4.2,
 //   Eq. 29 (total variation of the second derivative along 4 lines; here on the 5x5 shared
 //   tile, no random offset), accumulated over time instead of the paper's 3x3 box.
+// - Our designs (tuned on the test bed, docs/research/rt-denoiser/results/M4.md §3): clamp
+//   window 0.4 sigma (about 2 standard errors of the 5x5 mean; SPEC's 1 sigma never fires on
+//   binary samples), anti-lag restart at the current frame when the clamp moves the history,
+//   exact value when all 25 samples agree, history cap ~ (penumbra width in px)^2 against
+//   reprojection blur, analytic terminator radius (light partly below the horizon), affine
+//   reprojection taps (plane distance linear in the tap pixel).
 // - Disk taps and rotation: SPEC R-3 / D3b (golden-angle spiral, Vogel 1979; animated 4x4
 //   Bayer rotation, Zhdan, Ray Tracing Gems II ch. 49 Sec. 49.5.5 prose; golden-ratio
 //   animation, Wolfe, RTG II ch. 24 Sec. 24.7.2).
