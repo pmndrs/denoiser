@@ -41,6 +41,15 @@
 //   detector in the temporal pass; affine (screen-Jacobian) tap placement and plane
 //   distance linear in the tap pixel; stabilization reuses the temporal pass's 2x2
 //   validity (stored in data); branchless taps and neighbourhoods.
+// - Specular (M3): virtual (reflected-image) motion R-9..R-12 from RTG2 §49.8.2 prose
+//   (virtual image: RTG1 ch. 25 p.451, Stachowiak 2015 slide 67), curvature-corrected
+//   virtual distance with the mirror equation (RTG1 ch. 32 §32.4.3, D12c); confidence,
+//   clamp and alpha-space blend are our designs. Measured M3 changes: virtual clamp
+//   always on (window widening with confidence); specular anti-lag / detector mean
+//   centred on the pixel as roughness -> 0 and detector floor A_fast f_r (clean mirror
+//   input); f_r-scaled minimum radius; no virtual candidate in stabilization; 4-tap
+//   post-blur (both) and pre-blur (specular); 10x10 shared tiles for the 3x3
+//   neighbourhoods; cheaper recurrent-only reprojection (REPROJECT_R).
 import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REPROJECT_WGSL } from './common';
 

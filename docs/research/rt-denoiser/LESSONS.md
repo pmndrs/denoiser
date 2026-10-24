@@ -90,6 +90,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - The scratchpad folder can be shared with other sessions' files; work in your own subfolder.
   — shadows, 2026-10-25
 
+- A full-resolution look at a test-bed frame: the view-mode panels are ≤ 640 px canvases.
+  Replay a standard capture with `mode=replay&capture=std540-orbit&denoiser=<id>&output=<name>&<settings>`
+  (seconds) and crop with `crops.mjs crop ... --cols <name>,svgf-auto,ref --err 6`; `compare.mjs`
+  on the same outputs gives numbers. `output=` keeps several configs of one id apart. — recurrent-spec, 2026-10-25
+- WGSL compile errors of generated passes: `device.createShaderModule(...).getCompilationInfo()`
+  in a headless page on the test-bed origin, importing the pass generators by `/@fs/<abs path>`
+  (a 30-line script; much faster than reading "Invalid ShaderModule" from a run). — recurrent-spec, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -158,6 +166,22 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `atomicOr` of flags in workgroup memory, written once by thread 0, replace a separate
   tile-classification pass; the indirect list then needs only a tiny per-tile pass
   (`enc.clearBuffer(args, 0, 4)` resets the count, y = z = 1 written once at configure). — shadows, 2026-10-25
+
+- Workgroup-shared 10×10 tiles for 3×3 neighbourhoods (each texel loaded and decoded once
+  per 8×8 workgroup, `loadTile()` before any early return) cut the recurrent history fix
+  0.82 → 0.47 ms and temporal −0.2 ms for both signals at 1080p, with identical output. After
+  that the "rarely executed" mip-repair code cost nothing any more (the earlier 0.24 ms was
+  register pressure from the 8 decoded neighbours). — recurrent-spec, 2026-10-25
+- A `for k in 0..4 { if (w <= 0) { continue; } load }` 2×2 history fetch is a branch per tap:
+  unrolled with clamped coordinates and `select`-ed min/max it made stabilization 0.78 → 0.56 ms. — recurrent-spec, 2026-10-25
+- Disabled-by-uniform code still costs: an optional luminance weight (k = 0 → weight 1) and an
+  unused virtual stabilization candidate added +0.1 ms to each of blur / post-blur /
+  stabilize. Remove dead ends instead of leaving them behind a flag. — recurrent-spec, 2026-10-25
+- `shader-f16` kernel taps on the M5 Pro: f16 sums + weights −0.07 ms per 8-tap pass but
+  −0.2 dB on HDR (direct-light) input; f16 weights with f32 sums were *slower* (conversions).
+  Not worth it here. — recurrent-spec, 2026-10-25
+- Kernel passes are tap-ALU bound: a 4-tap post-blur halved it (0.87 → 0.46 ms joint), the
+  per-pixel kernel setup is minor. — recurrent-spec, 2026-10-25
 
 ## Conventions
 
@@ -264,6 +288,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   prepass 0.10 ms without the depth slope; a787b20: specular per-path dB). `git log
   --format=%B -- packages/denoiser-realtime` is part of the reading list when updating SPEC or a
   resource table. — spec-author, 2026-10-25
+
+- Clean (mirror-like) specular breaks neighbourhood-statistics tricks tuned on noisy
+  diffuse: clamping the slow value to the 3×3 *mean* ± a standard-error window blurs every
+  reflected edge (mirror bin 34.8 vs 40.7 dB on a static camera). Centre such windows on the
+  pixel's own value as roughness → 0. — recurrent-spec, 2026-10-25
+- Virtual-motion reprojection: on a flat glossy floor it is the big win (+2.7 dB, r < 0.35:
+  +5 dB); on curved mirrors the flat-reflector distance smears; the mirror equation with
+  curvature from neighbouring normals fixes most of it (+1 dB). A virtual candidate without
+  a validity test in the stabilization pass cost 0.4–1.5 dB: keep virtual fetches where a
+  plane test and a confidence exist. — recurrent-spec, 2026-10-25
+- Recurrent specular vs A-SVGF 'auto': at mid/high roughness with a static camera A-SVGF's
+  short history + 5-level variance-guided à-trous beats the recurrent blur by 1–2 dB; no
+  radius / tap / anti-lag / firefly / luminance-weight knob moved it more than ±0.2 dB
+  (results/M2-M3.md). It is structural, not a tuning gap. — recurrent-spec, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
