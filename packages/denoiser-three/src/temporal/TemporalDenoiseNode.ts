@@ -12,7 +12,13 @@
 //   - the denoised GPUTexture is copied (GPU->GPU, same device, no CPU) into a
 //     three StorageTexture that the node exposes as a regular texture node.
 //     (The copy is needed because denoisers own their output and may ping-pong
-//     it between frames, which a three texture can't follow.)
+//     it between frames, which a three texture can't follow.) Outputs that
+//     can't be copied as is (another format, e.g. r32float visibility, or no
+//     COPY_SRC usage) go through a one-dispatch compute blit instead.
+//   - denoisers with several outputs (e.g. diffuse + specular from one
+//     dispatch) get one StorageTexture each: subclasses pass `outputCount` and
+//     override `dispatchDenoiser()`; `getOutputNode(i)` is a texture node of
+//     output i.
 import type { FrameCamera, FrameGuides, TemporalDenoiser } from '@pmndrs/denoiser-core';
 import { nodeObject, passTexture } from 'three/tsl';
 import {
@@ -78,10 +84,12 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
   private readonly options: TemporalDenoiseNodeOptions;
   private readonly cameraHistory = new CameraHistory();
 
+  private readonly outputCount: number;
   private _renderer: WebGPURenderer | null = null;
   private _denoiser: TemporalDenoiser<I> | null = null;
-  private _output: StorageTexture | null = null;
-  private _textureNode: Node | null = null;
+  private _outputs: (StorageTexture | null)[];
+  private _outputNodes: (Node | null)[];
+  private _blit: OutputBlit | null = null;
   private _width = 0;
   private _height = 0;
   private _needsReset = true;
@@ -93,6 +101,7 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
    *   (e.g. `{ visibility }`, `{ radiance, hitDistance }`)
    * @param guides - depth / world normal / motion (+ roughness, albedo) nodes
    * @param camera - the scene camera
+   * @param outputCount - number of output textures (subclasses with several outputs)
    */
   constructor(
     create: (device: GPUDevice) => TemporalDenoiser<I>,
@@ -100,6 +109,7 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     guides: TemporalGuideNodes,
     camera: Camera,
     options: TemporalDenoiseNodeOptions = {},
+    outputCount = 1,
   ) {
     super('vec4');
     this.create = create;
@@ -107,6 +117,9 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     this.guideNodes = guides;
     this.camera = camera;
     this.options = options;
+    this.outputCount = outputCount;
+    this._outputs = new Array(outputCount).fill(null);
+    this._outputNodes = new Array(outputCount).fill(null);
     this.updateBeforeType = NodeUpdateType.FRAME;
   }
 
@@ -131,8 +144,7 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     for (const [k, n] of Object.entries(this.guideNodes)) if (n) props[`guide_${k}`] = n;
 
     // Real size is taken from the guide textures on the first frame.
-    this._textureNode ??= passTexture(this as never, this.outputTexture) as unknown as Node;
-    return this._textureNode;
+    return this.getOutputNode(0);
   }
 
   /**
@@ -141,13 +153,37 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
    * consumers that keep a reference, e.g. `ssrNode.setHistory(node.outputTexture, velocity)`.
    */
   get outputTexture(): Texture {
-    if (!this._output) this._output = this._makeOutput(1, 1);
-    return this._output;
+    return this.getOutputTexture(0);
   }
 
-  private _makeOutput(width: number, height: number): StorageTexture {
+  /** @internal Output 0, or null before the first frame (example test hooks read it). */
+  get _output(): StorageTexture | null { return this._outputs[0]; }
+
+  /** Output `index` as a three Texture (rgba16float, stable instance; see `outputTexture`). */
+  getOutputTexture(index: number): Texture {
+    if (index < 0 || index >= this.outputCount) throw new Error(`denoiser/three: output ${index} out of range (${this.outputCount})`);
+    return this._outputs[index] ??= this._makeOutput(1, 1, index);
+  }
+
+  /**
+   * Output `index` as a TSL texture node. Using it in a graph (alone or next to
+   * this node) runs the denoiser, so secondary outputs work on their own.
+   */
+  getOutputNode(index: number): Node {
+    return this._outputNodes[index] ??= passTexture(this as never, this.getOutputTexture(index)) as unknown as Node;
+  }
+
+  /**
+   * Runs the denoiser for one frame and returns its output texture(s), in output
+   * order. Override for denoisers with extra inputs (non-texture) or several outputs.
+   */
+  protected dispatchDenoiser(denoiser: TemporalDenoiser<I>, inputs: Record<string, GPUTexture>, guides: FrameGuides, camera: FrameCamera): GPUTexture[] {
+    return [denoiser.dispatch(inputs as I, guides, camera)];
+  }
+
+  private _makeOutput(width: number, height: number, index = 0): StorageTexture {
     const out = new StorageTexture(width, height);
-    out.name = `${this._denoiser?.name ?? 'temporal-denoise'}-output`;
+    out.name = `${this._denoiser?.name ?? 'temporal-denoise'}-output${index ? index : ''}`;
     out.type = HalfFloatType;
     out.format = RGBAFormat;
     out.colorSpace = NoColorSpace;
@@ -156,10 +192,13 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     return out;
   }
 
-  private _allocateOutput(width: number, height: number) {
-    const out = this._output ?? (this._output = this._makeOutput(width, height));
-    (out as unknown as { setSize(w: number, h: number): void }).setSize(width, height); // no-op when unchanged; disposes the old GPU texture otherwise
-    this._renderer!.initTexture(out);
+  private _allocateOutputs(width: number, height: number) {
+    for (let i = 0; i < this.outputCount; i++) {
+      const out = this._outputs[i] ?? (this._outputs[i] = this._makeOutput(width, height, i));
+      (out as unknown as { setSize(w: number, h: number): void }).setSize(width, height); // no-op when unchanged; disposes the old GPU texture otherwise
+      this._renderer!.initTexture(out);
+    }
+    this._blit?.clear();
   }
 
   /** Projection for reprojection: camera projection minus any view-offset jitter. */
@@ -223,7 +262,7 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
       denoiser.configure({ width: w, height: h }); // drops history
       this._width = w; this._height = h;
       this.cameraHistory.reset();
-      this._allocateOutput(w, h);
+      this._allocateOutputs(w, h);
       this._needsReset = false;
     }
     if (this._needsReset) {
@@ -235,12 +274,20 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
     const cam: FrameCamera = this.cameraHistory.update(this.camera, { unjitteredProjection: this._projection() });
     // dispatch() records + submits its own work (denoiser contract); the copy
     // below is submitted after it on the same queue.
-    const result = denoiser.dispatch(inputs as I, guides, cam);
+    const results = this.dispatchDenoiser(denoiser, inputs, guides, cam);
 
     const device = denoiser.device;
-    const dst = getGPUTexture(renderer, this.outputTexture);
     const enc = device.createCommandEncoder({ label: `${denoiser.name} output copy` });
-    enc.copyTextureToTexture({ texture: result }, { texture: dst }, { width: w, height: h });
+    for (let i = 0; i < this.outputCount; i++) {
+      const src = results[i];
+      if (!src) continue;
+      const dst = getGPUTexture(renderer, this.getOutputTexture(i));
+      if (src.format === dst.format && (src.usage & GPUTextureUsage.COPY_SRC)) {
+        enc.copyTextureToTexture({ texture: src }, { texture: dst }, { width: w, height: h });
+      } else {
+        (this._blit ??= new OutputBlit(device)).record(enc, src, dst);
+      }
+    }
     device.queue.submit([enc.finish()]);
     this.options.onDispatch?.(denoiser as unknown as TemporalDenoiser<never>);
     return undefined;
@@ -249,8 +296,11 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
   dispose(): void {
     this._denoiser?.dispose();
     this._denoiser = null;
-    this._output?.dispose();
-    this._output = null;
+    for (const o of this._outputs) o?.dispose();
+    this._outputs.fill(null);
+    this._outputNodes.fill(null);
+    this._blit?.clear();
+    this._blit = null;
     super.dispose();
   }
 }
@@ -277,4 +327,67 @@ export function temporalDenoise<I extends object>(
 export type TemporalDenoiseNodeObject<I extends object = object> = TemporalDenoiseNode<I> & Node<'vec4'>;
 export function denoiseNodeObject<I extends object>(node: TemporalDenoiseNode<I>): TemporalDenoiseNodeObject<I> {
   return nodeObject(node) as unknown as TemporalDenoiseNodeObject<I>;
+}
+
+/**
+ * Copies a denoiser output into a node's rgba16float StorageTexture when a plain
+ * texture copy can't (different format, e.g. r32float visibility, or no
+ * COPY_SRC usage): one compute dispatch, `textureLoad` -> `textureStore`, so a
+ * single-channel output arrives as (r, 0, 0, 1) like any sampled r texture.
+ */
+class OutputBlit {
+  private readonly layout: GPUBindGroupLayout;
+  private readonly pipeline: GPUComputePipeline;
+  private readonly groups = new Map<GPUTexture, { dst: GPUTexture; group: GPUBindGroup }>();
+
+  constructor(private readonly device: GPUDevice) {
+    this.layout = device.createBindGroupLayout({
+      label: 'denoiser/three output blit',
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, texture: { sampleType: 'unfilterable-float' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: 'write-only', format: 'rgba16float' } },
+      ],
+    });
+    this.pipeline = device.createComputePipeline({
+      label: 'denoiser/three output blit',
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.layout] }),
+      compute: {
+        entryPoint: 'main',
+        module: device.createShaderModule({
+          label: 'denoiser/three output blit',
+          code: /* wgsl */ `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var dst: texture_storage_2d<rgba16float, write>;
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let size = min(textureDimensions(dst), textureDimensions(src));
+  if (id.x >= size.x || id.y >= size.y) { return; }
+  textureStore(dst, id.xy, textureLoad(src, id.xy, 0));
+}`,
+        }),
+      },
+    });
+  }
+
+  record(enc: GPUCommandEncoder, src: GPUTexture, dst: GPUTexture) {
+    let g = this.groups.get(src);
+    if (!g || g.dst !== dst) {
+      g = {
+        dst,
+        group: this.device.createBindGroup({
+          layout: this.layout,
+          entries: [{ binding: 0, resource: src.createView() }, { binding: 1, resource: dst.createView() }],
+        }),
+      };
+      this.groups.set(src, g);
+      if (this.groups.size > 16) this.groups.delete(this.groups.keys().next().value!); // outputs rotate among a few buffers
+    }
+    const pass = enc.beginComputePass({ label: 'denoiser/three output blit' });
+    pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, g.group);
+    pass.dispatchWorkgroups(Math.ceil(dst.width / 8), Math.ceil(dst.height / 8));
+    pass.end();
+  }
+
+  clear() { this.groups.clear(); }
 }

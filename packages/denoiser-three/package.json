@@ -35,7 +35,8 @@
     },
     "dependencies": {
         "@pmndrs/denoiser-core": "workspace:*",
-        "@pmndrs/denoiser-ffx": "workspace:*"
+        "@pmndrs/denoiser-ffx": "workspace:*",
+        "@pmndrs/denoiser-realtime": "workspace:*"
     },
     "devDependencies": {
         "@rollup/plugin-commonjs": "^29.0.3",

@@ -4,7 +4,7 @@ import typescript from '@rollup/plugin-typescript';
 import path from 'node:path';
 
 // Dependencies stay external — consumers (and the `denoiser` preset) resolve them.
-const external = ['@pmndrs/denoiser-core', '@pmndrs/denoiser-ffx', 'three', /^three\//];
+const external = ['@pmndrs/denoiser-core', '@pmndrs/denoiser-ffx', '@pmndrs/denoiser-realtime', 'three', /^three\//];
 
 export default {
     input: './src/index.ts',
