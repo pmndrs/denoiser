@@ -36,6 +36,11 @@
 //   min-combined luminance / ĥ detectors in history fix, rank-based firefly
 //   clamp, A packed as fixed point in an r32uint, mip atlas, stabilization
 //   clamp widening with A, post-blur radius function.
+// - Our measured deviations from SPEC v0 (TASKS "Found along the way"): fast-history
+//   clamp window from the standard error of the 3x3 mean; a current-frame anti-lag
+//   detector in the temporal pass; affine (screen-Jacobian) tap placement and plane
+//   distance linear in the tap pixel; stabilization reuses the temporal pass's 2x2
+//   validity (stored in data); branchless taps and neighbourhoods.
 import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REPROJECT_WGSL } from './common';
 

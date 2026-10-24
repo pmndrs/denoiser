@@ -128,6 +128,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   the recurrent kernel clamps tap offsets to 2·R_max, so a sweep with `blurRadius≈0`
   also collapsed the pre-blur onto the centre pixel (identical numbers with and without
   pre-blur). Clamp to 2·max(R_max, R_pre). — recurrent, 2026-10-25
+- Neighbourhood / tap loads behind `if (geometry ok) { load value }` serialize two loads
+  per tap (latency-bound on the M5 Pro). Clamp the coordinate, load both unconditionally,
+  and zero the weight with `select`: same output, recurrent temporal 0.74 → 0.56 ms and
+  blur 0.50 → 0.34 ms at 1080p. — recurrent, 2026-10-25
+- Rarely executed code still costs: the recurrent history fix's mip-repair loop runs only
+  where A < 3, yet compiling it in costs 0.24 ms of the pass's 0.51 ms (register pressure /
+  occupancy); unrolling it branchless did not help. Measure by stubbing the call out. — recurrent, 2026-10-25
+- Per-tap ALU of the recurrent kernels: plane distance from the centre's plane is linear in
+  the tap pixel for a fixed tap depth (perspective dot(n, X_q) = z·(a0 + ax·qx + ay·qy)), and
+  the kernel axes projected once give an affine screen Jacobian: same PSNR, ~0.1 ms per
+  kernel pass less than full per-tap unproject / projection. — recurrent, 2026-10-25
 
 ## Conventions
 
@@ -246,6 +257,17 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   flicker cost; under `antiLag: 'auto'` α_min ≤ 0.1 is inert (λ keeps 1/n ≥ ~0.1), so
   sweep α only with anti-lag off; plain SVGF with low α_min ghosts specular (orbit
   −2.8 dB at 0.1). — results, 2026-10-25
+- A "fast history" anti-lag (clamp the slow value to the fast EMA's μ ± γσ) can only move
+  the slow value as fast as the fast EMA, minus a γσ offset: on the dev page a light switch
+  recovered to 26 dB after 12 frames (SVGF 37). Using the standard error of the 3×3 mean
+  (σ/√N) as the window, plus a current-frame detector (3×3 mean of this frame's pre-blurred
+  signal vs the reprojected history, in standard errors) gets 34 dB; when such a detector
+  fires, shorten A to A_fast, not 0 (0 cost 1.4–1.8 dB on static content: blur bleeding
+  at A = 0). — recurrent, 2026-10-25
+- The dev page (direct point lights, hard shadows, exact truth) ranks the recurrent blur
+  ~2 dB below SVGF; the test bed's path-traced GI ranks it 0.5–1 dB above A-SVGF. Without a
+  luminance weight the recurrent blur smears hard direct-light edges; tune it on the test
+  bed / captures. — recurrent, 2026-10-25
 
 ## Clean room
 

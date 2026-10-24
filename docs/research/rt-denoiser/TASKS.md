@@ -93,8 +93,12 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M2–M5 (start after M1 numbers exist; against SPEC v0, provisional until reviewed)
 
-- [~] recurrent **T2 Recurrent diffuse** (pre-blur → temporal → history fix → blur → post-blur →
-      stabilization, anti-lag).
+- [~] recurrent (e5e3932, 1ecc596 + docs) **T2 Recurrent diffuse** (pre-blur → temporal → history fix → blur → post-blur →
+      stabilization, anti-lag). _Implemented, provisional (SPEC v0): `filter: 'recurrent'`
+      on `DiffuseDenoiser`. Test bed 1080p: beats A-SVGF 'auto' on 6/7 paths (+0.06…+1.12 dB),
+      level on `object`; weaker in disoccluded regions. 2.92 ms at 1080p (diffuse), over
+      budget for diffuse + specular (5.22 ms). Left open: registry entry (below), budget,
+      M2 go/no-go vs native._
 - [ ] **T3 Recurrent specular** (virtual motion, lobe kernels).
 - [ ] **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback).
 - [ ] **T5 Occlusion** (AO/SO from normalized hit distance).
@@ -217,6 +221,56 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] `RT_REALTIME_SRC=<dir>` on the test-bed Vite server pins `denoiser/realtime` to a frozen
       `git archive` copy (examples/realtime-denoiser/vite.config.ts); use it for results runs while
       someone edits the package. — found by results, owner any agent (FYI)
+
+- [ ] Register `recurrent` in `tools/rt-capture/src/denoisers.ts` (test bed + replay): the
+      SVGF pattern works unchanged, options with `filter: 'recurrent'`: (1) `recurrent-diffuse`:
+      `perSignal((d, _s, st) => new DiffuseDenoiser(d, { filter: 'recurrent', ...recOpts(st) }))`;
+      (2) `recurrent`: the `svgfJoint` shape with `new DiffuseSpecularDenoiser(device,
+      { filter: 'recurrent', ...recOpts(st) })` (= recurrent diffuse + SVGF `antiLag: 'auto'`
+      specular until M3; `specular: { filter: 'recurrent' }` for both recurrent in shared
+      dispatches), single-signal fallback to `DiffuseDenoiser` / `SpecularDenoiser` with the same
+      options. Settings: every `RecurrentOptions` key is numeric or boolean (README); a
+      working mapper used for T2 (`r.<key>=v`, `t.<tune>=v`) is in the T2 report. Diffuse
+      `hitDistance` is optional but feeds the radius clamp and ĥ (AO). The output texture
+      rotates between internal buffers (valid until the next dispatch) — don't cache it
+      across frames — found by recurrent, owner `tools/rt-capture`
+- [ ] Recurrent vs SPEC v0, measured deviations for the spec author (test bed `fast` preset,
+      7 paths, mean PSNR; SPEC defaults = 36.94 dB): (1) fast-history clamp window = γ·σ/√N
+      (standard error of the 3×3 mean) with γ = 1 instead of γ = 2 spreads: +0.37 dB and
+      dev-page light switch 29.0 → 34.3 dB 12 frames after (SPEC form alone recovers at the
+      fast EMA's speed minus a γσ offset); (2) added a current-frame detector in TA (3×3 mean
+      of this frame's pre-blurred lum/ĥ vs reprojected history, threshold 3 standard errors,
+      A ← lerp(min(A, A_fast), A, sat(2 − r))): dev switch +2–3 dB, test bed ±0.03; a floor of
+      0 instead of A_fast cost 1.4–1.8 dB on static scenes; (3) radii pre-blur 25 px (D1: 15) and
+      R_max 45 px (R-5: 30): +0.10 / +0.17 dB; (4) A_cap: 15 vs 31 vs 63 = +0.11 / 0 / −0.02
+      with SPEC anti-lag, −0.04 for 31 vs 15 with ours: kept 31; N_stab 3/7/15 ≈ flat, kept 7;
+      (5) taps placed with the screen Jacobian of the kernel plane (affine) instead of
+      projecting each world tap (R-4), plane distance as a linear function of the tap pixel;
+      identical PSNR, part of 3.86 → 2.92 ms; (6) pre-blur's D1b guide uses a 5 % relative
+      depth check instead of the plane test; (7) stabilization reuses TA's 2×2 validity
+      (`data` keeps it in 4 bits; m shrinks to 8 bits) instead of re-running C-7; (8)
+      Catmull-Rom gated on the 4 inner taps (as svgf); (9) neighbourhood validity in R4/R7/
+      detector = plane distance at τ_g(A = 0), no normal test — found by recurrent, owner spec-author (SPEC.md §3.5, §5)
+- [ ] Recurrent budget: 2.92 ms diffuse, 5.22 ms diffuse + specular in shared dispatches
+      (1080p, M5 Pro, uncontended) vs ≤ 4 ms; skeleton 0.96 ms. Every pass costs 0.33–0.53 ms
+      (diffuse) above a 0.04–0.24 ms skeleton; the second signal adds ~75 % (separate kernel
+      per signal in R1/R5/R6). Measured levers left: (a) history fix — the mip-repair code
+      alone costs 0.24 ms though few pixels run it (register pressure; unrolling didn't
+      help): move it to a tile-classified indirect dispatch or into the mips pass; (b)
+      fuse prepass into R1 (−0.18); (c) `shader-f16` arithmetic; (d) workgroup-shared tiles
+      for the 3×3 neighbourhoods (R2 detector, R4, R7); (e) half-res fast history. Branchless
+      taps (all loads in flight) was the biggest single win so far (temporal −0.18, blur
+      −0.16 ms) — found by recurrent, owner T2/T3
+- [ ] T3 (recurrent specular) starting point: `src/shaders/recurrent.ts` already handles
+      `kind: 'specular'` in every pass (lobe kernel plane R-4 with elongation, f_r / c_h radius
+      factors, roughness weight, R-8 surface cap `specCap`, firefly skip below r = 0.25,
+      mip-repair start level ρ = r); missing: virtual motion (R-9..R-12, `m` in `data` is
+      written as 0), the two-candidate stabilization, specular-specific fast history. Interim
+      surface-only recurrent specular is 0.5–3 dB below A-SVGF on the test bed (README) — found by recurrent, owner T3
+- [ ] Dev page vs test bed disagree for the recurrent filter: the dev page's direct point
+      lights with hard shadows favour SVGF (luminance-weighted à-trous) by ~2 dB, the test
+      bed's path-traced GI favours recurrent by ~0.5–1 dB. Tune recurrent on the test bed (or
+      captures), sanity-check on the dev page — found by recurrent, owner T1.5 / T3
 
 ## Probes for the Windows harness
 
