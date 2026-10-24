@@ -264,14 +264,18 @@ registerDenoiser({
 // ---- shadows (denoiser/realtime ShadowDenoiser) -------------------------------------
 
 /**
- * ShadowDenoiser options from settings: `sh.<option>=v` (numbers or true/false). Two input
- * switches for experiments: `sh.light=none` (no light: noise-driven radius) and
- * `sh.hit=none` (drop the occluder distance).
+ * ShadowDenoiser options from settings: `sh.<option>=v` (numbers or true/false). Input
+ * switches for experiments: `sh.light=none` (no light: noise-driven radius),
+ * `sh.light=directional` (the sphere light handed over as a directional light toward its
+ * centre from the world origin, angular radius asin(R / |position|) x `sh.dirScale`, default
+ * 1: tests the directional code path on sphere-lit images) and `sh.hit=none` (drop the
+ * occluder distance).
  */
+const SHADOW_INPUT_KEYS = new Set(['sh.light', 'sh.hit', 'sh.dirScale']);
 export function shadowOptions(st: Record<string, string>): ShadowDenoiserOptions {
   const o: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(st)) {
-    if (k === 'sh.light' || k === 'sh.hit') continue;
+    if (SHADOW_INPUT_KEYS.has(k)) continue;
     if (k.startsWith('sh.')) o[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number(v);
   }
   return o as ShadowDenoiserOptions;
@@ -291,6 +295,8 @@ registerDenoiser({
     const den = new ShadowDenoiser(device, shadowOptions(ctx.settings));
     den.configure({ width: ctx.width, height: ctx.height });
     const noLight = ctx.settings['sh.light'] === 'none';
+    const asDirectional = ctx.settings['sh.light'] === 'directional';
+    const dirScale = Number(ctx.settings['sh.dirScale'] ?? 1);
     const noHit = ctx.settings['sh.hit'] === 'none';
     return {
       signals: ['visibility'],
@@ -298,8 +304,13 @@ registerDenoiser({
         const inp = frame.inputs.visibility;
         if (!inp) throw new Error('shadows: capture has no visibility input');
         // per-frame lights (test bed extras, CAPTURE-FORMAT v1 proposal) before the capture's
-        const light = noLight ? undefined
+        let light = noLight ? undefined
           : shadowLightOf(frame.meta?.lights as CaptureLight[] | undefined) ?? shadowLightOf(frame.manifest.lights);
+        if (asDirectional && light?.type === 'sphere') {
+          const [x, y, z] = light.position;
+          const d = Math.hypot(x, y, z);
+          light = { type: 'directional', direction: [x / d, y / d, z / d], angularRadius: Math.asin(Math.min(light.radius / d, 1)) * dirScale };
+        }
         return {
           visibility: den.dispatch({
             visibility: inp.visibility, ...(inp.hitDistance && !noHit ? { hitDistance: inp.hitDistance } : {}),
