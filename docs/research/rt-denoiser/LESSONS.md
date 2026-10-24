@@ -114,6 +114,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   its process tree uses CPU (`ps -o pid=,ppid=,pcpu=` and sum the subtree). In a bench round,
   the first page tends to land in the slow clock state (shadows `tiles` 0.007 instead of
   0.005 ms): lead every round with a throwaway warm-up page. — shadows, 2026-10-25
+- Killed headless runs leave orphaned Chromes (parent pid 1, idle). They stall quiet-GPU checks
+  and eat memory. Sweep only orphans with our temp profiles: `ps -axo pid,ppid,command | awk '$2==1
+  && /Google Chrome/ && /--headless/ && /user-data-dir=.*rt-headless/ && !/Helper/ {print $1}' | xargs kill`.
+  Never kill a Chrome whose parent is alive (another agent's run) or Dennis's own Chrome.
+  — orchestrator, 2026-10-25
 
 ## WebGPU / WGSL
 
