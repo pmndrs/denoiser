@@ -1,0 +1,19 @@
+{
+  "name": "realtime-denoiser",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Test bed for the clean-room real-time denoisers (denoiser/realtime): analytic WGSL tracer with diffuse GI / specular / shadow signals, converged references, stress paths, PSNR / FLIP / temporal metrics.",
+  "scripts": {
+    "dev": "vite --port 5220 --strictPort --host 127.0.0.1",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@pmndrs/denoiser-ffx": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.71",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}

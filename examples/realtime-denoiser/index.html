@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Real-time denoiser test bed</title>
+  <style>
+    .dn-page { max-width: 1400px; }
+    h2 { font-size: 1.05rem; margin: 1.5rem 0 0.4rem; }
+    .panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 1980px; }
+    figure { margin: 0; min-width: 0; }
+    canvas { display: block; width: 100%; height: auto; background: #000; border: 1px solid var(--dn-border); border-radius: 8px; }
+    figcaption { margin-top: 6px; text-align: center; font-size: 0.9rem; color: var(--dn-text); }
+    figcaption small { display: block; color: var(--dn-muted); font-size: 0.78rem; }
+    .panels + .dn-panel { margin-top: 1rem; }
+    .explain { max-width: 90ch; color: var(--dn-muted); font-size: 0.92rem; }
+    .explain p, .explain li { margin: 0 0 8px; }
+    .explain ul { padding-left: 20px; margin: 0 0 8px; }
+    .explain b, .explain code { color: var(--dn-text); }
+    @media (max-width: 760px) {
+      .panels { grid-template-columns: 1fr; gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+<main class="dn-page">
+  <header class="dn-head">
+    <h1>Real-time denoiser test bed</h1>
+    <p class="dn-lede">Analytic WGSL ray tracer: 1-spp diffuse GI, specular and shadow signals with converged references, scripted stress paths and metrics, for the clean-room <code>denoiser/realtime</code> work.</p>
+  </header>
+  <nav class="dn-panel" id="nav" aria-label="signal, denoiser, path and mode"></nav>
+
+  <div class="panels">
+    <figure><canvas class="panel"></canvas><figcaption>noisy 1 spp<small>demodulated input</small></figcaption></figure>
+    <figure><canvas class="panel"></canvas><figcaption>denoised<small>denoiser output</small></figcaption></figure>
+    <figure><canvas class="panel"></canvas><figcaption>reference<small>same estimator, many samples, same frame</small></figcaption></figure>
+  </div>
+  <section class="dn-panel" aria-label="controls">
+    <div class="dn-group">
+      <span class="dn-label">Playback</span>
+      <div class="dn-row">
+        <button class="dn-btn" id="pause" type="button">Pause</button>
+        <button class="dn-btn" id="restart" type="button">Restart path</button>
+        <span class="dn-readout" id="frameinfo"></span>
+      </div>
+    </div>
+    <div class="dn-group">
+      <span class="dn-label">Path</span>
+      <span class="dn-readout" id="pathinfo"></span>
+    </div>
+  </section>
+
+  <section class="explain">
+    <h2>What this is</h2>
+    <p>Every frame the tracer writes the buffers of <code>docs/research/rt-denoiser/CAPTURE-FORMAT.md</code>: depth, viewZ, normal, roughness, motion (+ 2.5D <code>motion_z</code>), albedo, f0, and three demodulated 1-sample signals with hit distances: <b>diffuse</b> (cosine-sampled one-bounce GI), <b>specular</b> (GGX VNDF, divided by Karis 2014's analytic env-BRDF) and <b>shadows</b> (one ray toward a sphere light, plus occluder distance). The reference panel is the same estimator with many samples per pixel.</p>
+    <p>URL options are documented at the top of <code>src/main.ts</code>; <code>mode=eval</code> writes JSON metrics to <code>window.__rt</code> and <code>run-headless.mjs</code> collects them.</p>
+  </section>
+  <pre id="status" class="dn-status"></pre>
+</main>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
