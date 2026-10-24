@@ -31,6 +31,13 @@ import type { FfxGuideOptions } from './ffx';
 export interface RealtimeGuideOptions extends FfxGuideOptions {
   /** Surface albedo (rgb), for `remodulate: true` on diffuse without a `demodulation` input. */
   albedo?: TextureNodeLike;
+  /**
+   * Optional linear view-space z (three.js view space, negative in front): a texture node's .r or a
+   * float node. The denoisers then skip linearizing `depth`.
+   */
+  viewZ?: TextureNodeLike;
+  /** Optional 2.5D motion (viewZprev - viewZ) for moving objects: a texture node's .r or a float node. */
+  motionZ?: TextureNodeLike;
 }
 
 /** A light value, or a function read every frame (lights move). */
@@ -123,6 +130,8 @@ function guidesOf(o: RealtimeGuideOptions, roughness?: TextureNodeLike): Tempora
   const g: TemporalGuideNodes = { depth: o.depth, normal: worldNormalTexture(o.normal, o), motion: o.velocity };
   if (roughness) g.roughness = roughnessTexture(roughness, o.resolutionScale ?? 1);
   if (o.albedo) g.albedo = o.albedo;
+  if (o.viewZ) g.viewZ = scalarTexture(o.viewZ, o.resolutionScale ?? 1, false);
+  if (o.motionZ) g.motionZ = scalarTexture(o.motionZ, o.resolutionScale ?? 1, false);
   return g;
 }
 

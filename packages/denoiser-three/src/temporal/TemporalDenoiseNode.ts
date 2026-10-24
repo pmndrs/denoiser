@@ -41,6 +41,10 @@ export interface TemporalGuideNodes {
   /** Perceptual roughness in .r (specular denoisers). */
   roughness?: TextureNodeLike;
   albedo?: TextureNodeLike;
+  /** Optional linear view-space z in .r (three.js view space: negative in front; see FrameGuides.viewZ). */
+  viewZ?: TextureNodeLike;
+  /** Optional 2.5D motion, viewZprev - viewZ in .r (see FrameGuides.motionZ). */
+  motionZ?: TextureNodeLike;
 }
 
 export interface TemporalDenoiseNodeOptions {
@@ -244,10 +248,11 @@ export class TemporalDenoiseNode<I extends object = object> extends TempNode {
       if (!r) return undefined;
       guides.roughness = r;
     }
-    if (this.guideNodes.albedo) {
-      const a = this._gpu(this.guideNodes.albedo, 'albedo');
-      if (!a) return undefined;
-      guides.albedo = a;
+    for (const k of ['albedo', 'viewZ', 'motionZ'] as const) {
+      if (!this.guideNodes[k]) continue;
+      const t = this._gpu(this.guideNodes[k], k);
+      if (!t) return undefined;
+      guides[k] = t;
     }
     const inputs: Record<string, GPUTexture> = {};
     for (const [k, n] of Object.entries(this.inputNodes)) {
