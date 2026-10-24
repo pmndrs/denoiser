@@ -237,13 +237,23 @@ results: [results/M4.md](results/M4.md). v2 (same night, same agent, same role):
 | `maxRadius` = 48 px at 1080p (cap of each kernel axis) | SH-5 | **our design** | safety cap on the taps' texture-cache footprint for very wide penumbrae; inert on the test bed (24 / 48 / 96 px identical, M4 §10.6) | | `packages/denoiser-realtime/src/shaders/shadow.ts` `shadowSpatialWgsl` (`maxRadiusPx`) |
 | pass-2 rotation offset 2 − φ ≈ 0.382 turn (`pass1Phase`) | SH-5 | **our choice**: the golden angle (Vogel 1979's spiral step), complementing the per-frame golden-ratio animation (RTG2-24 §24.7.2), so pass 2's angle never repeats pass 1's in the same or the next frame | measured flat: 0 / 0.25 / 0.382 / 0.5 within 0.012 dB; 0.5 ≡ 0 (antipodal disk) (M4 §10.6) | | `packages/denoiser-realtime/src/shaders/shadow.ts` `shadowSpatialWgsl` |
 
-### Occlusion (M5, outline)
+### Occlusion (M5)
+
+_Implemented 2026-10-25 by the occlusion agent (implementer, RULES §8: no NRD code, README or
+port opened). Host: `packages/denoiser-realtime/src/occlusion.ts`; results:
+[results/M5.md](results/M5.md). Provisional (SPEC v0.1 §8 is an outline)._
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| AO/SO = denoised normalized hit distance | O-1 | GTC20 s.9, s.54, s.63 | falloff from F-3 (ours) | | |
-| occlusion-only packing (ĥ_d, ĥ_s) | O-2 | our design | | | |
-| SO from AO (optional) | O-4 | FB §4.10.2 Listing 26 | — | yes | |
+| AO/SO = denoised normalized hit distance | O-1 | GTC20 s.9, s.54, s.63 | falloff from F-3 (ours). Measured (M5): the recurrent radiance output's alpha is a usable but clearly worse AO/SO than a dedicated occlusion filter | | `src/recurrent.ts` (output alpha); registry `occlusion-radiance-alpha` |
+| occlusion-only mode of the recurrent pipeline: same passes, radiance channels dropped | O-2 | pipeline rows above (RTG2 §49.3–49.5 prose, GTC20) | **our design**: kinds `ao` / `so`, one r32float per signal instead of O-2's packed (ĥ_d, ĥ_s) rgba16float (same bytes for two signals, half for one); no pre-blur pass: the temporal pass normalizes the raw hit distance on load (ĥ is never pre-blurred, GTC20 s.60) | | `src/shaders/recurrent.ts` (`isOccKind`, `VT`/`LD`/`ST` helpers), `src/recurrent.ts` (`occ`) |
+| ĥ-only anti-lag; slow ĥ clamped into the fast-history window | O-2, C-10 | C-10 row above (clamp toward a faster history: RTG2 p.830) | **our design**: the detector and history-fix window run on ĥ (no luminance); the clamp moves the slow ĥ itself (`occClamp`, +0.85 dB AO on the fast test bed) | | `src/shaders/recurrent.ts` `histFixOcc`, `detector` |
+| SO: fast ĥ follows the virtual reprojection, weighted by m·c_v | R-9…R-12 | virtual-motion rows above | **our design** (the radiance filter keeps the fast ĥ surface-reprojected; for SO the clamp target must move with the reflection): SO +0.9 dB, `pan` +2.5 dB | | `src/shaders/recurrent.ts` `temporalSpecular` |
+| Catmull-Rom history from 16 `textureLoad`s (r32float is unfilterable in core WebGPU) | C-8 | RTG2 §49.7 prose; standard Catmull-Rom weights | our code | | `src/shaders/recurrent.ts` `CATMULL_ROM_LOAD` |
+| occlusion radius defaults: AO R_max 20 px, R_min 2 px | R-5 | R-5 row above | **tuned on the test bed** (fast preset, 7 paths) | | `src/recurrent.ts` `writeParams`, `src/occlusion.ts` |
+| SVGF on ĥ written as a gray image | §8 (new) | S1 (unchanged SVGF) | normalization pass ours (F-3); occlusion defaults σ_l = 1.5, 3 à-trous iterations, SO α_min 0.3: **tuned on the test bed** | | `src/occlusion.ts`, `src/shaders/occlusion.ts` |
+| test-bed AO/SO references: mean of per-sample normalized hit distances | — | **our design** (the curve is nonlinear, so the reference normalizes each sample) | | | `examples/realtime-denoiser/src/scene.ts` `ref_ao`, `ref_so`, `OCC_WGSL` |
+| SO from AO (optional) | O-4 | FB §4.10.2 Listing 26 | not built | yes | |
 
 ## Open provenance items
 
