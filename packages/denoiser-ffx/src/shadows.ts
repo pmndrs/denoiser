@@ -27,7 +27,8 @@ export interface FfxShadowDenoiserOptions {
 }
 
 const PARAMS_SIZE = 256;
-const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+// Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
+const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
 
 export class FfxShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   readonly name = 'ffx-shadows';
@@ -114,7 +115,7 @@ export class FfxShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.height = height;
     const d = this.device;
     const tex = (label: string, format: GPUTextureFormat, extra = 0) =>
-      d.createTexture({ label: `ffx-shadows ${label}`, size: [width, height], format, usage: STORAGE_TEX | extra });
+      d.createTexture({ label: `ffx-shadows ${label}`, size: [width, height], format, usage: storageTex() | extra });
     const tilesX = Math.ceil(width / 8);
     // shadow mask: one u32 per 8x4 tile; metadata: one u32 per 8x8 thread group
     this.shadowMask = d.createBuffer({ label: 'ffx-shadows mask', size: 4 * tilesX * Math.ceil(height / 4), usage: GPUBufferUsage.STORAGE });

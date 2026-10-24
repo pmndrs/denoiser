@@ -44,7 +44,8 @@ export interface FfxReflectionDenoiserOptions {
 }
 
 const PARAMS_SIZE = 256;
-const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+// Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
+const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
 
 export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   readonly name = 'ffx-reflections';
@@ -140,7 +141,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     const d = this.device;
     const RA = GPUTextureUsage.RENDER_ATTACHMENT;
     const tex = (label: string, format: GPUTextureFormat, extra = 0, w = width, h = height) =>
-      d.createTexture({ label: `ffx-reflections ${label}`, size: [w, h], format, usage: STORAGE_TEX | RA | extra });
+      d.createTexture({ label: `ffx-reflections ${label}`, size: [w, h], format, usage: storageTex() | RA | extra });
     const pair = (label: string, format: GPUTextureFormat, extra = 0, w = width, h = height) =>
       [tex(`${label}0`, format, extra, w, h), tex(`${label}1`, format, extra, w, h)];
     this.depth = pair('depth', 'r32float');
