@@ -114,6 +114,7 @@ async function main() {
     historyFilter: (q.get('history') ?? 'bilinear') as 'catmull-rom' | 'bilinear',
     ...(q.has('lumVar') ? { luminanceVariance: q.get('lumVar') as 'sample' | 'mean' } : {}),
     ...(q.has('sigmaL') ? { sigmaLuminance: num('sigmaL', 4) } : {}),
+    ...(q.get('remod') === '1' ? { remodulate: true } : {}),
     ...(q.has('specNormal') ? { specularNormalWeight: q.get('specNormal') as 'lobe' | 'power' } : {}),
     ...(q.has('radius') ? { radiusScale: num('radius', 1) } : {}),
     ...(q.has('specScale') ? { specularHistoryScale: num('specScale', 1) } : {}),
@@ -181,6 +182,7 @@ async function main() {
   (both ?? single)!.configure({ width: W, height: H });
   const guides: FrameGuides = {
     depth: tex.Depth, normal: tex.Normal, motion: tex.Motion,
+    ...(q.get('remod') === '1' ? { albedo: tex.Mat } : {}),
     ...(useViewZ ? { viewZ: tex.ViewZ } : {}),
     ...(useMotionZ ? { motionZ } : {}),
   };

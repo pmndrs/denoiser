@@ -88,7 +88,7 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
 
   dispatch(inputs: RealtimeDiffuseInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     const frame: SignalFrame = { radiance: inputs.radiance, demodulation: inputs.demodulation ?? guides.albedo, gradient: inputs.gradient };
-    this.base.run(this.name, guides, camera, [['radiance', inputs.radiance]], (enc, timer, gp) => {
+    this.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['albedo', guides.albedo], ['demodulation', inputs.demodulation]], (enc, timer, gp) => {
       this.signal.encode(enc, timer, gp, [frame], guides.motion, guides.motionZ, '');
     });
     this.signal.endFrame();
@@ -137,7 +137,7 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
   dispatch(inputs: RealtimeSpecularInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     if (!guides.roughness) throw new Error(`${this.name}: guides.roughness is required`);
     const frame: SignalFrame = { radiance: inputs.radiance, demodulation: inputs.demodulation, gradient: inputs.gradient };
-    this.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance]], (enc, timer, gp) => {
+    this.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance], ['demodulation', inputs.demodulation]], (enc, timer, gp) => {
       this.signal.encode(enc, timer, gp, [frame], guides.motion, guides.motionZ, '');
     });
     this.signal.endFrame();
@@ -208,6 +208,7 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
     const fs: SignalFrame = { radiance: si.radiance, demodulation: si.demodulation, gradient: si.gradient };
     this.base.run(this.name, guides, camera, [
       ['diffuse.radiance', di.radiance], ['specular.radiance', si.radiance], ['specular.hitDistance', si.hitDistance],
+      ['albedo', guides.albedo], ['diffuse.demodulation', di.demodulation], ['specular.demodulation', si.demodulation],
     ], (enc, timer, gp) => {
       if (this.pipes.length === 1) {
         this.pipes[0].encode(enc, timer, gp, [fd, fs], guides.motion, guides.motionZ, '');

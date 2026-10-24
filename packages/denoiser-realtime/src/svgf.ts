@@ -288,6 +288,11 @@ export class SvgfPipeline {
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frames: SignalFrame[],
     motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string) {
     const o = this.opts;
+    this.sigs.forEach((s, i) => {
+      if (s.opts.remodulate && !frames[i].demodulation) {
+        throw new Error(`${s.label}: remodulate needs inputs.demodulation${s.kind === 'diffuse' ? ' (or guides.albedo)' : ''}`);
+      }
+    });
     const W = this.width, H = this.height;
     const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
     const name = (n: string) => prefix + n;
