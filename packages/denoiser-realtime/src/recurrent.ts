@@ -301,7 +301,8 @@ export class RecurrentPipeline {
     const u = new Uint32Array(f.buffer);
     const res = this.height / 1080;
     const pre = o.preBlurRadius ?? (isSpecKind(s.kind) ? 10 : 25);
-    const blur = o.blurRadius ?? (isSpecKind(s.kind) ? 30 : 45);
+    // occlusion AO: 20 px (test bed, fast preset: 45 → 20 = +0.23 dB, contact +1.3 dB; T5)
+    const blur = o.blurRadius ?? (isSpecKind(s.kind) ? 30 : s.kind === 'ao' ? 20 : 45);
     f.set([
       o.hitDistanceScale, o.hitDistanceViewScale, o.maxRadiance, pre * res,
       blur * res, o.minBlurRadius, o.maxAccumulatedFrames, o.fastFrames,

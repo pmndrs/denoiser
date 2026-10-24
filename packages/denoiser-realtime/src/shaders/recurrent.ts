@@ -519,7 +519,10 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
             let thL = thetaL(alpha, P${i}.lobeFraction);
             cv = v.vg * Wt(angN / (P${i}.virtAngle * thL + 0.0174533))
                * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
-               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * g.rough));
+               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * g.rough));${isOccKind(kind) ? `
+            // occlusion: ĥ is the signal and history fix clamps it to the fast ĥ, so the fast ĥ
+            // follows the virtual reprojection as far as it is trusted (hF above is already sized)
+            fPrev.y = mix(fPrev.y, v.Fv[${2 * sl + 1}], m * cv);` : ''}
             // R-11: clamp to this frame's 3x3 mean +- gamma sigma, the harder the lower the confidence
             ${isOccKind(kind) ? `let mu = m1_${i}.y / nn;
             let sd = sqrt(max(m2_${i}.y / nn - mu * mu, 0.0));` : `let mu = vec4f(c1_${i}, m1_${i}.y) / nn;

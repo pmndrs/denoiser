@@ -60,15 +60,24 @@ type Kind = 'diffuse' | 'specular';
 
 /** Resolved options: the filter's own plus the curve. */
 export type ResolvedOcclusion = { filter: 'recurrent'; signals: Kind[]; o: ResolvedRecurrent }
-  | { filter: 'svgf'; signals: Kind[]; o: ResolvedOptions; hitDistanceScale: number; hitDistanceViewScale: number };
+  | { filter: 'svgf'; signals: Kind[]; o: ResolvedOptions; perSignal: ResolvedOptions[]; hitDistanceScale: number; hitDistanceViewScale: number };
 
 function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion {
   const { signal = 'diffuse', filter = 'recurrent', ...rest } = options as OcclusionCommon & { filter?: string };
   const signals: Kind[] = signal === 'both' ? ['diffuse', 'specular'] : [signal];
-  if (filter === 'recurrent') return { filter, signals, o: resolveRecurrent({ ...(rest as Partial<RecurrentOptions>), remodulate: false }) };
+  if (filter === 'recurrent') {
+    const r = rest as Partial<RecurrentOptions>;
+    // occlusion defaults (test bed, T5): minimum blur radius 2 px (radiance: 1)
+    return { filter, signals, o: resolveRecurrent({ ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
+  }
   if (filter !== 'svgf') throw new Error(`OcclusionDenoiser: unknown filter '${filter}'`);
   const { hitDistanceScale = 1, hitDistanceViewScale = 0.05, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
-  return { filter, signals, o: resolveOptions({ ...svgf, remodulate: false }), hitDistanceScale, hitDistanceViewScale };
+  // occlusion defaults (test bed, fast preset, 7 paths; T5 / results/M5.md): a tighter luminance
+  // weight and 3 à-trous iterations (AO 36.12 -> 37.93 dB, SO 34.78 -> 36.24 vs the radiance
+  // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default)
+  const base = { sigmaLuminance: 1.5, atrousIterations: 3, ...svgf, remodulate: false };
+  const perSignal = signals.map((k) => resolveOptions(k === 'specular' && svgf.temporalAlpha === undefined ? { ...base, temporalAlpha: 0.3 } : base));
+  return { filter, signals, o: perSignal[0], perSignal, hitDistanceScale, hitDistanceViewScale };
 }
 
 /**
@@ -156,7 +165,7 @@ export class OcclusionDenoiser implements TemporalDenoiser<OcclusionInputs> {
       this.rec = new RecurrentPipeline(device, r.signals.map((k) => ({ kind: k === 'diffuse' ? 'ao' : 'so', opts: r.o })), this.name);
       passes = RECURRENT_PASSES.length;
     } else {
-      this.svgf = new SvgfPipeline(device, r.signals.map((k) => ({ kind: k, opts: r.o })), this.name);
+      this.svgf = new SvgfPipeline(device, r.signals.map((k, i) => ({ kind: k, opts: r.perSignal[i] })), this.name);
       this.norm = new HitDistanceNormalizer(device, 'geo', `${this.name} normalize`);
       this.norm.setCurve(r.hitDistanceScale, r.hitDistanceViewScale);
       passes = 3 + r.o.atrousIterations + (r.o.antiLag !== 'off' ? 2 + r.o.gradientIterations : 0);
