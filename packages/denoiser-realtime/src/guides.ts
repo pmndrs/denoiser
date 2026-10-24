@@ -59,23 +59,7 @@ export class GuidePass {
 
   /** Writes the frame uniform and records the prepass. */
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, guides: FrameGuides, camera: FrameCamera, reset: boolean) {
-    const V = mat4(camera.view), P = mat4(camera.projection);
-    const Vp = mat4(camera.prevView), Pp = mat4(camera.prevProjection);
-    const f = new Float32Array(FRAME_SIZE / 4);
-    const u = new Uint32Array(f.buffer);
-    f.set(invert(P), 0);
-    f.set(invert(V), 16);
-    f.set(V, 32);
-    f.set(Vp, 48);
-    f.set(invert(Pp), 64);
-    f.set(invert(Vp), 80);
-    f[96] = this.width; f[97] = this.height; f[98] = 1 / this.width; f[99] = 1 / this.height;
-    f.set(camera.position ?? eyeFromView(V), 100); f[103] = camera.near;
-    f.set(eyeFromView(Vp), 104); f[107] = camera.far;
-    u[108] = (reset ? FRAME_RESET : 0) | (guides.viewZ ? FRAME_HAS_VIEWZ : 0)
-      | (guides.motionZ ? FRAME_HAS_MOTIONZ : 0) | (guides.roughness ? FRAME_HAS_ROUGHNESS : 0);
-    u[109] = this.frameIndex++;
-    this.device.queue.writeBuffer(this.frame, 0, f);
+    writeFrameUniform(this.device, this.frame, this.width, this.height, this.frameIndex++, guides, camera, reset);
 
     const kind = isDepthFormat(guides.depth.format) ? 'depth' : 'float';
     const depthView = kind === 'depth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
@@ -100,4 +84,31 @@ export class GuidePass {
     this.dummy.destroy();
     this.dummy32.destroy();
   }
+}
+
+/**
+ * Fills a `Frame` uniform (shaders/common.ts FRAME_WGSL) for this frame. Shared by
+ * GuidePass and by filters that pack their own geometry (e.g. ShadowDenoiser).
+ */
+export function writeFrameUniform(
+  device: GPUDevice, buffer: GPUBuffer, width: number, height: number, frameIndex: number,
+  guides: FrameGuides, camera: FrameCamera, reset: boolean,
+) {
+  const V = mat4(camera.view), P = mat4(camera.projection);
+  const Vp = mat4(camera.prevView), Pp = mat4(camera.prevProjection);
+  const f = new Float32Array(FRAME_SIZE / 4);
+  const u = new Uint32Array(f.buffer);
+  f.set(invert(P), 0);
+  f.set(invert(V), 16);
+  f.set(V, 32);
+  f.set(Vp, 48);
+  f.set(invert(Pp), 64);
+  f.set(invert(Vp), 80);
+  f[96] = width; f[97] = height; f[98] = 1 / width; f[99] = 1 / height;
+  f.set(camera.position ?? eyeFromView(V), 100); f[103] = camera.near;
+  f.set(eyeFromView(Vp), 104); f[107] = camera.far;
+  u[108] = (reset ? FRAME_RESET : 0) | (guides.viewZ ? FRAME_HAS_VIEWZ : 0)
+    | (guides.motionZ ? FRAME_HAS_MOTIONZ : 0) | (guides.roughness ? FRAME_HAS_ROUGHNESS : 0);
+  u[109] = frameIndex;
+  device.queue.writeBuffer(buffer, 0, f);
 }
