@@ -20,7 +20,7 @@ import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
 import {
   blurPass, historyFixPass, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG, RP_NO_FIREFLY,
-  RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass, trivialPass,
+  RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass, trivialPass,
   type RecurrentKind,
 } from './shaders/recurrent';
 
@@ -39,10 +39,12 @@ export interface RecurrentOptions {
   maxRadiance?: number;
   /** Pre-blur radius in px at 1080p (SPEC D1: 15; tuned on the test bed). Default 25 (diffuse), 10 (specular). */
   preBlurRadius?: number;
-  /** Blur radius at A = 0 in px at 1080p (R_max, SPEC R-5: 30; tuned on the test bed). Default 45. */
+  /** Blur radius at A = 0 in px at 1080p (R_max, SPEC R-5: 30; tuned on the test bed). Default 45 (diffuse), 30 (specular). */
   blurRadius?: number;
   /** Minimum blur radius in px (SPEC R-5). Default 1. */
   minBlurRadius?: number;
+  /** Blur radius falls as (1 + A)^-p with history length (SPEC R-5 / GTC20: p = 1). Default 1. */
+  blurRadiusHistoryPower?: number;
   /** History length cap A_cap (frames - 1, SPEC C-9). Default 31. */
   maxAccumulatedFrames?: number;
   /** Fast-history cap A_fast (SPEC C-10). Default 3. */
@@ -81,6 +83,24 @@ export interface RecurrentOptions {
   lobeFraction?: number;
   /** Specular surface-motion history scale k_s (SPEC R-8). Default 1. */
   specularHistoryScale?: number;
+  /** Specular virtual-motion (reflected-image) reprojection, blended with surface motion (SPEC R-9..R-12). Default true. */
+  virtualMotion?: boolean;
+  /** Virtual-history clamp window γ (σ of this frame's 3x3, SPEC R-11: 2), widened × (1 + 2·confidence) (tune.virtWiden). Default 1. */
+  virtualClampSigma?: number;
+  /** Virtual confidence normal tolerance, × lobe half-angle (SPEC R-10). Default 0.5. */
+  virtualAngleScale?: number;
+  /** Virtual confidence ĥ tolerance a + b·roughness (SPEC R-10): a. Default 0.05. */
+  virtualHitTolerance?: number;
+  /** b in the tolerance above. Default 0.25. */
+  virtualHitToleranceRoughness?: number;
+  /**
+   * Luminance weight in blur / post-blur (our addition): tolerance on the relative luminance
+   * difference = k · f_r(roughness) / sqrt(1 + A) (the expected relative noise; mirrors have
+   * clean input, so their reflections keep their edges); 0 disables. Default 0.
+   */
+  luminanceWeight?: number;
+  /** Specular minimum blur radius: minBlurRadius · lerp(1, f_r(roughness), s) (0 = SPEC's constant floor; 1 = no floor on mirrors). Default 1. */
+  specularMinRadiusScale?: number;
   /** Multiply the output by the demodulation factor into separate textures. Default false. */
   remodulate?: boolean;
   /** Per-pass GPU timestamps into `gpuTimings` when supported. Default true. */
@@ -96,10 +116,18 @@ export interface RecurrentTune {
   hitTolLo: number; hitTolHi: number; hitTolTight: number;
   postLo: number; postHi: number; postDelta: number;
   stabGammaLo: number; stabGammaHi: number; stabBeta: number;
+  /** amount of virtual motion m = F_dom^virtPow; virtual distance from fast ĥ (0) .. slow history ĥ (1); curvature scale */
+  virtPow: number; virtHitSrc: number; virtCurv: number; stabVirt: number;
+  /** virtual motion gated by the surface candidate's parallax loss (0/1); virtual clamp window widening with confidence (0 = SPEC R-11 form) */
+  virtGate: number; virtWiden: number;
+  /** specular current-frame detector floor A_fast × lerp(1, f_r, detRough) */
+  detRough: number;
+  /** specular anti-lag / detector mean: own pixel (mirrors) .. 3x3 mean (f_r = 1), 0 = always the 3x3 mean */
+  specCentre: number;
 }
 
-export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius'>> & {
-  preBlurRadius?: number; tune: RecurrentTune;
+export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius'>> & {
+  preBlurRadius?: number; blurRadius?: number; tune: RecurrentTune;
 };
 
 export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRecurrent {
@@ -108,8 +136,9 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     hitDistanceViewScale: o.hitDistanceViewScale ?? 0.05,
     maxRadiance: o.maxRadiance ?? 1e4,
     preBlurRadius: o.preBlurRadius,
-    blurRadius: o.blurRadius ?? 45,
+    blurRadius: o.blurRadius,
     minBlurRadius: o.minBlurRadius ?? 1,
+    blurRadiusHistoryPower: o.blurRadiusHistoryPower ?? 1,
     maxAccumulatedFrames: o.maxAccumulatedFrames ?? 31,
     fastFrames: o.fastFrames ?? 3,
     historyFixFrames: o.historyFixFrames ?? 3,
@@ -127,6 +156,13 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     planeDistance: o.planeDistance ?? 0.01,
     lobeFraction: o.lobeFraction ?? 0.75,
     specularHistoryScale: o.specularHistoryScale ?? 1,
+    virtualMotion: o.virtualMotion ?? true,
+    virtualClampSigma: o.virtualClampSigma ?? 1,
+    virtualAngleScale: o.virtualAngleScale ?? 0.5,
+    virtualHitTolerance: o.virtualHitTolerance ?? 0.05,
+    virtualHitToleranceRoughness: o.virtualHitToleranceRoughness ?? 0.25,
+    specularMinRadiusScale: o.specularMinRadiusScale ?? 1,
+    luminanceWeight: o.luminanceWeight ?? 0,
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
     skeleton: o.skeleton ?? false,
@@ -135,6 +171,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
       postLo: 0.5, postHi: 2.0, postDelta: 0.3,
       stabGammaLo: 1, stabGammaHi: 3, stabBeta: 0.02,
+      virtPow: 1, virtHitSrc: 0, virtCurv: 1, stabVirt: 0, virtGate: 0, virtWiden: 2, detRough: 1, specCentre: 1,
       ...o.tune,
     },
   };
@@ -167,7 +204,7 @@ class SignalState {
 function flagsOf(o: ResolvedRecurrent, hasHit: boolean) {
   return (hasHit ? RP_HAS_HIT : 0) | (o.remodulate ? RP_REMODULATE : 0) | (o.antiLag ? 0 : RP_NO_ANTILAG)
     | (o.fireflyThreshold > 0 ? 0 : RP_NO_FIREFLY) | (o.historyFixFrames > 0 ? 0 : RP_NO_HISTORY_FIX)
-    | (o.stabilizationFrames > 0 ? 0 : RP_NO_STABILIZE);
+    | (o.stabilizationFrames > 0 ? 0 : RP_NO_STABILIZE) | (o.virtualMotion ? 0 : RP_NO_VIRTUAL);
 }
 
 /** Options that change the pass structure (signals in one pipeline must agree). */
@@ -244,9 +281,10 @@ export class RecurrentPipeline {
     const u = new Uint32Array(f.buffer);
     const res = this.height / 1080;
     const pre = o.preBlurRadius ?? (s.kind === 'diffuse' ? 25 : 10);
+    const blur = o.blurRadius ?? (s.kind === 'diffuse' ? 45 : 30);
     f.set([
       o.hitDistanceScale, o.hitDistanceViewScale, o.maxRadiance, pre * res,
-      o.blurRadius * res, o.minBlurRadius, o.maxAccumulatedFrames, o.fastFrames,
+      blur * res, o.minBlurRadius, o.maxAccumulatedFrames, o.fastFrames,
       o.historyFixFrames, o.historyFixDepthTolerance, o.historyFixMinWeight, o.fireflyThreshold,
       o.antiLagSigma, o.antiLagExcess, o.antiLagHitTolerance, Math.max(o.stabilizationFrames, 0),
       t.stabGammaLo, t.stabGammaHi, t.stabBeta, o.planeDistance,
@@ -256,11 +294,15 @@ export class RecurrentPipeline {
     ]);
     u[31] = flagsOf(o, false);
     f[32] = o.antiLagCurrentSigma; f[33] = o.antiLagCurrentHitTolerance; f[34] = o.antiLagStandardError ? 1 : 0;
+    f[35] = o.virtualClampSigma; f[36] = o.virtualAngleScale; f[37] = o.virtualHitTolerance; f[38] = o.virtualHitToleranceRoughness;
+    f[39] = o.specularMinRadiusScale;
+    f[40] = t.virtPow; f[41] = t.virtHitSrc; f[42] = t.virtCurv; f[43] = t.stabVirt;
+    f[44] = t.virtGate; f[45] = t.virtWiden; f[46] = t.detRough; f[47] = o.luminanceWeight; f[48] = t.specCentre; f[49] = o.blurRadiusHistoryPower;
     this.hitFlags.delete(s);
     this.device.queue.writeBuffer(s.params, 0, f);
   }
 
-  private writeFrame(projection: ArrayLike<number>) {
+  private writeFrame(projection: ArrayLike<number>, prevProjection: ArrayLike<number>) {
     const f = new Float32Array(RF_SIZE / 4);
     const P = projection;
     for (let i = 0; i < 16; i++) f[i] = P[i];
@@ -268,6 +310,7 @@ export class RecurrentPipeline {
     f.set([1 / P[0], 1 / P[5], P[8], P[9]], 16);
     f.set([P[12], P[13], ortho ? 1 : 0, 2 / (P[5] * this.height)], 20);
     f[24] = (this.frameIndex * 0.6180339887) % 1;
+    for (let i = 0; i < 16; i++) f[28 + i] = prevProjection[i];
     this.device.queue.writeBuffer(this.rframe, 0, f);
   }
 
@@ -295,14 +338,15 @@ export class RecurrentPipeline {
   }
 
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frames: RecurrentFrame[],
-    motion: GPUTexture, motionZ: GPUTexture | undefined, projection: ArrayLike<number>, prefix: string) {
+    motion: GPUTexture, motionZ: GPUTexture | undefined, projection: ArrayLike<number>, prevProjection: ArrayLike<number>,
+    prefix: string) {
     this.sigs.forEach((s, i) => {
       if (s.opts.remodulate && !frames[i].demodulation) {
         throw new Error(`${s.label}: remodulate needs inputs.demodulation${s.kind === 'diffuse' ? ' (or guides.albedo)' : ''}`);
       }
       this.setHitFlag(s, !!frames[i].hitDistance);
     });
-    this.writeFrame(projection);
+    this.writeFrame(projection, prevProjection);
     const W = this.width, H = this.height;
     const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
     const name = (n: string) => prefix + n;

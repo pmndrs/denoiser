@@ -53,10 +53,11 @@ export const RP_NO_ANTILAG = 4;
 export const RP_NO_FIREFLY = 8;
 export const RP_NO_HISTORY_FIX = 16;
 export const RP_NO_STABILIZE = 32;
+export const RP_NO_VIRTUAL = 64;
 
 /** Uniform sizes in bytes. */
-export const RP_SIZE = 36 * 4;
-export const RF_SIZE = 28 * 4;
+export const RP_SIZE = 52 * 4;
+export const RF_SIZE = 44 * 4;
 
 /** Slot in the packed data / fast-history channels: diffuse 0, specular 1. */
 export const slotOf = (k: RecurrentKind) => (k === 'diffuse' ? 0 : 1);
@@ -68,6 +69,7 @@ struct RFrame {
   unp2: vec4f,       // P12, P13, ortho (0/1), 2/(P5 H) (world size of a pixel per unit depth)
   rot: f32,          // golden-ratio rotation offset of this frame (SPEC D3b)
   pad0: f32, pad1: f32, pad2: f32,
+  prevProj: mat4x4f, // previous projection (unjittered), previous view -> clip (virtual motion, R-9)
 }
 struct RParams {
   hitA: f32, hitB: f32, maxRadiance: f32, preRadius: f32,
@@ -78,7 +80,11 @@ struct RParams {
   geoTolLo: f32, geoTolHi: f32, normalTight: f32, lobeFraction: f32,
   postLo: f32, postHi: f32, postDelta: f32, hitTolLo: f32,
   hitTolHi: f32, hitTolTight: f32, specScale: f32, flags: u32,
-  lagCurSigma: f32, lagCurHitTol: f32, lagStdErr: f32, pad1: f32,
+  lagCurSigma: f32, lagCurHitTol: f32, lagStdErr: f32, virtGamma: f32,
+  virtAngle: f32, virtHitLo: f32, virtHitHi: f32, specMinRadius: f32,
+  virtPow: f32, virtHitSrc: f32, virtCurv: f32, stabVirt: f32,
+  virtGate: f32, virtWiden: f32, detRough: f32, lumK: f32,
+  specCentre: f32, radiusPow: f32, pad7: f32, pad8: f32,
 }
 const RP_HAS_HIT = ${RP_HAS_HIT}u;
 const RP_REMODULATE = ${RP_REMODULATE}u;
@@ -86,6 +92,7 @@ const RP_NO_ANTILAG = ${RP_NO_ANTILAG}u;
 const RP_NO_FIREFLY = ${RP_NO_FIREFLY}u;
 const RP_NO_HISTORY_FIX = ${RP_NO_HISTORY_FIX}u;
 const RP_NO_STABILIZE = ${RP_NO_STABILIZE}u;
+const RP_NO_VIRTUAL = ${RP_NO_VIRTUAL}u;
 `;
 
 // Helpers shared by every recurrent pass (need F, RF in scope).
@@ -109,6 +116,19 @@ fn viewPosAt(uv: vec2f, d: f32) -> vec3f {
 fn pixSize(d: f32) -> f32 { return select(d, 1.0, isOrtho()) * RF.unp2.w; }
 // GGX lobe half-angle containing fraction E of the projected microfacet area (SPEC R-1, our derivation).
 fn thetaL(alpha: f32, E: f32) -> f32 { return atan(alpha * sqrt(E / (1.0 - E))); }
+// Dominant-direction factor (SPEC R-2, Lagarde & de Rousiers 2014 Listing 22, fed with GGX alpha).
+fn domFactor(alpha: f32) -> f32 { return (1.0 - alpha) * (sqrt(1.0 - alpha) + alpha); }
+// R-9: uv in the previous frame of the virtual (reflected) image of a surface point:
+// X_virt = X + normalize(X - camPos) * h * F_dom (world space; static reflected world).
+// Returns (-1, -1) behind the previous camera.
+fn virtualPrevUV(world: vec3f, hDist: f32, fdom: f32) -> vec2f {
+  let wv = world + normalize(world - F.camPos) * (hDist * fdom);
+  let clip = RF.prevProj * (F.prevView * vec4f(wv, 1.0));
+  if (!(clip.w > 1e-6)) { return vec2f(-1.0); }
+  let ndc = clip.xy / clip.w;
+  return vec2f(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
+}
+fn onScreen(uv: vec2f) -> bool { return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)); }
 fn viewNormal(n: vec3f) -> vec3f { return normalize((F.view * vec4f(n, 0.0)).xyz); }
 // Orthonormal basis (Duff et al. 2017).
 fn onbT(n: vec3f) -> vec3f {
@@ -165,7 +185,7 @@ struct Kern {
   jx: vec2f, jy: vec2f,   // screen-space (pixel) images of the kernel axes T*R, B*R at the centre
   pl: Plane,
   invGeoTol: f32, invOneMinusCos: f32, invHitTol: f32, invRoughTol: f32,
-  hh: f32, rough: f32,
+  hh: f32, rough: f32, lc: f32, invLumTol: f32,
 }
 // R-3: 8 taps in 4 antipodal pairs (golden-angle spiral, radii sqrt((i + 0.5)/4)).
 const DISK = array<vec2f, 8>(
@@ -254,13 +274,15 @@ fn kern${i}(g: Geo, X: vec3f, nv: vec3f, R: f32, An: f32, hh: f32) -> Kern {
   k.invRoughTol = 1.0 / (0.05 + 0.25 * g.rough);
   k.hh = hh;
   k.rough = g.rough;
+  k.lc = 0.0;
+  k.invLumTol = 0.0;
   return k;
 }
 `;
 }
 
 /** One unrolled kernel tap for signal i. */
-function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean; hitWeight: boolean; load: (q: string) => string; rgbOnly: boolean }) {
+function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean; hitWeight: boolean; load: (q: string) => string; rgbOnly: boolean; lumWeight?: boolean }) {
   const off = o.rotate ? `rot * DISK[${t}]` : `DISK[${t}]`;
   const acc = o.rgbOnly ? '.rgb' : '';
   // Branchless: both loads issue together (latency-bound otherwise); rejected taps get w = 0.
@@ -271,7 +293,8 @@ function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean
       let gq = geoTap(geoCur, q);
       let s = ${o.load('q')};
       var w = select(0.0, tapGeoW(k${i}, g.n, gq, q), q0.x >= 0 && gq.z > 0.0);${o.hitWeight ? `
-      w *= Wt(abs(s.a - k${i}.hh) * k${i}.invHitTol);` : ''}${kind === 'specular' ? `
+      w *= Wt(abs(s.a - k${i}.hh) * k${i}.invHitTol);` : ''}${o.lumWeight ? `
+      { let lq = luma(s.rgb); w *= Wt(abs(lq - k${i}.lc) * k${i}.invLumTol / max(max(lq, k${i}.lc), 1e-3)); }` : ''}${kind === 'specular' ? `
       w *= Wt(abs(gq.rough - k${i}.rough) * k${i}.invRoughTol);` : ''}
       sum${i} += s${acc} * w;
       sw${i} += w;
@@ -369,6 +392,116 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 // ---- R2 temporal accumulation (SPEC §5.5, C-6..C-10) ----------------------------
 
+
+// Current-frame anti-lag detector (our addition to C-10, measured: the fast history
+// alone reacts at its own EMA speed): 3x3 mean of this frame's pre-blurred luminance
+// and ĥ vs the reprojected history Hd, in units of the mean's standard error.
+// Reduces the variable `a` in place (SPEC C-10 reduction form).
+const detector = (i: number, a: string, Hd: string, floor = `P${i}.aFast`, meanW = '') => /* wgsl */ `
+      if ((P${i}.flags & RP_NO_ANTILAG) == 0u && P${i}.lagCurSigma > 0.0 && nn >= 4.0) {
+        let m3 = m1_${i} / nn;
+        let se = sqrt(max(m2_${i} / nn - m3 * m3, vec2f(0.0)) / nn);
+        let mu = ${meanW ? `mix(vec2f(luma(pc${i}.rgb), pc${i}.a), m3, ${meanW})` : 'm3'};
+        let lh = luma(${Hd}.rgb);
+        let rI = abs(mu.x - lh) / (P${i}.lagCurSigma * se.x + 0.02 * max(lh, mu.x) + 1e-4);
+        let rH = abs(mu.y - ${Hd}.a) / (P${i}.lagCurSigma * se.y + P${i}.lagCurHitTol);
+        ${a} = mix(min(${a}, ${floor}), ${a}, clamp(2.0 - max(rI, rH), 0.0, 1.0));
+      }`;
+
+// R2 per-signal body, diffuse (SPEC §5.5).
+const temporalDiffuse = (i: number, sl: number) => /* wgsl */ `
+  {
+    let pre = pc${i};
+    var a = 0.0;
+    if (hasHist) {
+      a = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // C-9: A = frames in the output - 1
+      ${detector(i, 'a', `H${i}`)}
+    }
+    let acc = mix(H${i}, pre, 1.0 / (1.0 + a));     // RTG2 Eq. 49.1, rgb and ĥ
+    textureStore(outAcc${i}, p, acc);
+    A[${sl}] = a;
+    // C-10 fast history: luminance and ĥ of the pre-blurred input, short cap.
+    let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
+    let fPrev = vec2f(Fh[${2 * sl}], Fh[${2 * sl + 1}]);
+    let fNew = mix(fPrev, vec2f(luma(pre.rgb), pre.a), fw);
+    fastOut[${2 * sl}] = fNew.x;
+    fastOut[${2 * sl + 1}] = fNew.y;
+  }`;
+
+// R2 per-signal body, specular (SPEC §5.6, R-7..R-12): surface and virtual history
+// candidates, virtual confidence and clamp, blended in alpha space by the amount of
+// virtual motion m = F_dom(alpha).
+const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
+  {
+    let pre = pc${i};
+    var a = 0.0;
+    var acc = pre;
+    var fPrev = vec2f(Fh[${2 * sl}], Fh[${2 * sl + 1}]);
+    if (hasHist) {
+      let aS = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // A_s after the +1 of C-9 (D12d)
+      let alpha = g.rough * g.rough;
+      let fdom = domFactor(alpha);
+      var Hv = H${i};
+      var cv = 0.0;
+      var m = 0.0;
+      if ((P${i}.flags & RP_NO_VIRTUAL) == 0u) {
+        // R-9: this frame's fast hit distance (surface-reprojected fast history + this frame's ĥ)
+        let hF = mix(fPrev.y, pre.a, 1.0 / (1.0 + min(aS, P${i}.aFast)));
+        var hV = hDenorm${i}(mix(hF, H${i}.a, P${i}.virtHitSrc), g.z);
+        // D12c: curved reflector, mirror equation 1/d_o + 1/d_i = 2 kappa (thin lens, RTG1 ch. 32 §32.4.3):
+        // the virtual image of a point at distance h lies at h / (1 + 2 kappa h) (convex: closer)
+        let kappa = curvSum / max(nn - 1.0, 1.0) * P${i}.virtCurv;
+        hV = hV / max(1.0 + 2.0 * kappa * hV, 0.05);
+        let uvV = virtualPrevUV(r.world, hV, fdom);
+        if (onScreen(uvV)) {
+          let v = virt${i}(g, r.expPrev, uvV);
+          if (v.vg > 0.0) {
+            m = pow(fdom, P${i}.virtPow);   // R-12: amount of virtual motion
+            Hv = v.H;
+            // virtual-reprojected fast luminance; fast ĥ stays surface-reprojected (it sizes R-9)
+            fPrev.x = mix(fPrev.x, v.Fv[${2 * sl}], m);
+            // R-10 confidence: footprint validity x normal x roughness x fast-ĥ agreement
+            let nb = select(g.n, normalize(v.n), dot(v.n, v.n) > 1e-8);
+            let angN = acos(clamp(dot(g.n, nb), -1.0, 1.0));
+            let thL = thetaL(alpha, P${i}.lobeFraction);
+            cv = v.vg * Wt(angN / (P${i}.virtAngle * thL + 0.0174533))
+               * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
+               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * g.rough));
+            // R-11: clamp to this frame's 3x3 mean +- gamma sigma, the harder the lower the confidence
+            let mu = vec4f(c1_${i}, m1_${i}.y) / nn;
+            let sd = sqrt(max(vec4f(c2_${i}, m2_${i}.y) / nn - mu * mu, vec4f(0.0)));
+            // our variant: always clamped, window widening with confidence (mirror input is clean, so a tight clamp is free there)
+            let gv = P${i}.virtGamma * (1.0 + P${i}.virtWiden * cv);
+            Hv = mix(clamp(Hv, mu - gv * sd, mu + gv * sd), Hv, cv * step(P${i}.virtWiden, 0.0));
+          }
+        }
+      }
+      // our gate: virtual motion only where the surface candidate loses history to parallax
+      let aCapS = specCap${i}(g, r.world, r.expPrev);
+      m *= mix(1.0, clamp(1.0 - aCapS / max(aS, 1e-3), 0.0, 1.0), P${i}.virtGate);
+      var aD = aS;
+      let Hb = mix(H${i}, Hv, m);
+      // low-roughness input is nearly noise-free: on a mismatch drop history further (our addition)
+      // and compare against the pixel's own value rather than the 3x3 mean as roughness -> 0
+      // (a clean mirror's 3x3 mean is a blur of its reflected edges; our addition)
+      let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));
+      ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`)}
+      // R-8 surface cap (parallax), R-12 blend in alpha space
+      let aSurf = min(aD, aCapS);
+      let alphaSurf = 1.0 / (1.0 + aSurf);
+      let alphaVirt = mix(1.0 / (1.0 + min(aD, P${i}.aFast)), 1.0 / (1.0 + aD), cv);
+      acc = mix(mix(H${i}, pre, alphaSurf), mix(Hv, pre, alphaVirt), m);
+      a = 1.0 / mix(alphaSurf, alphaVirt, m) - 1.0;
+      mVirt = m * cv;   // stabilization's virtual candidate is trusted as far as R-10 trusts it
+    }
+    textureStore(outAcc${i}, p, acc);
+    A[${sl}] = a;
+    let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
+    let fNew = mix(fPrev, vec2f(luma(pre.rgb), pre.a), fw);
+    fastOut[${2 * sl}] = fNew.x;
+    fastOut[${2 * sl + 1}] = fNew.y;
+  }`;
+
 export function temporalPass(kinds: RecurrentKind[]): PassDef {
   const b = base(kinds);
   addReproj(b);
@@ -384,12 +517,13 @@ export function temporalPass(kinds: RecurrentKind[]): PassDef {
   });
   const I = kinds.map((_, i) => i);
   const slot = (i: number) => slotOf(kinds[i]);
+  const hasSpec = kinds.includes('specular');
   const nb: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
   const specCap = (i: number) => /* wgsl */ `
 // Specular surface-motion cap (SPEC R-7/R-8, our design): the reflection slides by
 // about the parallax angle per frame; history stays sharp while the accumulated
-// slide stays inside the lobe half-angle. Interim until virtual motion (M3).
+// slide stays inside the lobe half-angle (applies to the surface candidate only).
 fn specCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
   let vCur = normalize(world - F.camPos);
   let prevWorld = (F.prevViewInv * vec4f(expPrev, 1.0)).xyz;
@@ -399,10 +533,50 @@ fn specCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
   let NoV = max(dot(g.n, -vCur), 1e-4);
   let aSpec = P${i}.specScale * thetaL(g.rough * g.rough, P${i}.lobeFraction) * sqrt(NoV) / max(parallax, 1e-4);
   return min(aSpec, P${i}.aCap);
+}
+// R-10 virtual history: custom-weighted bilinear at the virtual uv, tap validity
+// against the current surface plane {Xp, np} (a flat reflector's previous texels
+// lie on it), Catmull-Rom (clamped to the 4 taps) when all 4 pass. Also returns
+// the valid-weighted previous normal, roughness and fast history there.
+struct Virt { H: vec4f, Fv: vec4f, n: vec3f, r: f32, vg: f32 }
+fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> Virt {
+  var o: Virt;
+  let pp = uv * F.dims - 0.5;
+  let base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  let bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  let tol = P0.planeTol * length(expPrev);
+  var sw = 0.0;
+  var lo = vec4f(1e30);
+  var hi = vec4f(-1e30);
+  var nOk = 0u;
+  ${[0, 1, 2, 3].map((k) => `{
+    let q0 = base + TAP_OFFS[${k}];
+    let q = clampPix(q0);
+    let gq = geoTap(geoPrev, q);
+    let h = textureLoad(histPrev${i}, q, 0);
+    let fq = textureLoad(fastPrev, q, 0);
+    let Q = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -gq.z);
+    let nAvg = normalize((F.prevView * vec4f(g.n + gq.n, 0.0)).xyz);
+    let ok = all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && abs(dot(nAvg, Q - expPrev)) <= tol;
+    let w = select(0.0, max(bil[${k}], 1e-3), ok);
+    o.vg += select(0.0, bil[${k}], ok);
+    o.H += h * w;
+    o.Fv += fq * w;
+    o.n += gq.n * w;
+    o.r += gq.rough * w;
+    sw += w;
+    lo = select(lo, min(lo, h), ok);
+    hi = select(hi, max(hi, h), ok);
+    nOk += select(0u, 1u, ok);
+  }`).join('\n  ')}
+  if (sw > 0.0) { o.H /= sw; o.Fv /= sw; o.n /= sw; o.r /= sw; }
+  if (nOk == 4u) { o.H = clamp(sampleCatmullRom(histPrev${i}, smp, uv), lo, hi); }
+  return o;
 }`;
   const code = /* wgsl */ `
 ${head(b, REPROJECT_WGSL)}
-${kinds.map((k, i) => (k === 'specular' ? specCap(i) : '')).join('\n')}
+${kinds.map((k, i) => (k === 'specular' ? signalWgsl(k, i) + specCap(i) : '')).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -451,6 +625,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   }
   var A = vec2f(0.0);
   var fastOut = vec4f(0.0);
+  var mVirt = 0.0;   // amount of virtual motion (specular), for stabilization
   // Current-frame anti-lag detector (our addition to C-10, measured: the fast
   // history alone reacts at its own EMA speed): 3x3 mean of this frame's
   // pre-blurred luminance and ĥ vs the reprojected history, in units of the
@@ -460,8 +635,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let pl = makePlane(X, nv);
   ${I.map((i) => `let pc${i} = textureLoad(pre${i}, p, 0);
   var m1_${i} = vec2f(luma(pc${i}.rgb), pc${i}.a);
-  var m2_${i} = m1_${i} * m1_${i};`).join('\n  ')}
+  var m2_${i} = m1_${i} * m1_${i};${kinds[i] === 'specular' ? `
+  var c1_${i} = pc${i}.rgb;
+  var c2_${i} = pc${i}.rgb * pc${i}.rgb;` : ''}`).join('\n  ')}
   var nn = 1.0;
+  var curvSum = 0.0;
   if (hasHist) {
     ${nb.map(([x, y]) => /* wgsl */ `
     {
@@ -470,39 +648,19 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       let gq = geoTap(geoCur, q);
       let ok = select(0.0, 1.0, inside(qq) && planeOk(pl, P0.geoTolLo, gq, q));
       nn += ok;
-      ${I.map((i) => `{ let s = textureLoad(pre${i}, q, 0); let v = vec2f(luma(s.rgb), s.a) * ok; m1_${i} += v; m2_${i} += v * v; }`).join('\n      ')}
+      ${I.map((i) => `{ let s = textureLoad(pre${i}, q, 0); let v = vec2f(luma(s.rgb), s.a) * ok; m1_${i} += v; m2_${i} += v * v;${kinds[i] === 'specular' ? ` let sc = s.rgb * ok; c1_${i} += sc; c2_${i} += sc * sc;` : ''} }`).join('\n      ')}${hasSpec ? `
+      { // curvature along this neighbour: dot(n_q - n, dX) / |dX|^2 (positive = convex)
+        let dX = viewPosAt(uvOf(q), gq.z) - X;
+        let kq = dot(viewNormal(gq.n) - nv, dX) / max(dot(dX, dX), 1e-12);
+        curvSum += kq * ok;
+      }` : ''}
     }`).join('')}
   }
-  ${I.map((i) => /* wgsl */ `
-  {
-    let pre = pc${i};
-    var a = 0.0;
-    if (hasHist) {
-      a = min(Ahist[${slot(i)}] + 1.0, P${i}.aCap);   // C-9: A = frames in the output - 1
-      ${kinds[i] === 'specular' ? `a = min(a, specCap${i}(g, r.world, r.expPrev));` : ''}
-      if ((P${i}.flags & RP_NO_ANTILAG) == 0u && P${i}.lagCurSigma > 0.0 && nn >= 4.0) {
-        let mu = m1_${i} / nn;
-        let se = sqrt(max(m2_${i} / nn - mu * mu, vec2f(0.0)) / nn);
-        let lh = luma(H${i}.rgb);
-        let rI = abs(mu.x - lh) / (P${i}.lagCurSigma * se.x + 0.02 * max(lh, mu.x) + 1e-4);
-        let rH = abs(mu.y - H${i}.a) / (P${i}.lagCurSigma * se.y + P${i}.lagCurHitTol);
-        a = mix(min(a, P${i}.aFast), a, clamp(2.0 - max(rI, rH), 0.0, 1.0));   // SPEC C-10 reduction form
-      }
-    }
-    let acc = mix(H${i}, pre, 1.0 / (1.0 + a));     // RTG2 Eq. 49.1, rgb and ĥ
-    textureStore(outAcc${i}, p, acc);
-    A[${slot(i)}] = a;
-    // C-10 fast history: luminance and ĥ of the pre-blurred input, short cap.
-    let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
-    let fPrev = vec2f(Fh[${2 * slot(i)}], Fh[${2 * slot(i) + 1}]);
-    let fNew = mix(fPrev, vec2f(luma(pre.rgb), pre.a), fw);
-    fastOut[${2 * slot(i)}] = fNew.x;
-    fastOut[${2 * slot(i) + 1}] = fNew.y;
-  }`).join('')}
+  ${I.map((i) => (kinds[i] === 'specular' ? temporalSpecular(i, slot(i)) : temporalDiffuse(i, slot(i)))).join('')}
   textureStore(outFast, p, fastOut);
   var mask = 0u;
   if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
-  textureStore(outData, p, vec4u(packData(A.x, A.y, 0.0, mask), 0u, 0u, 0u));
+  textureStore(outData, p, vec4u(packData(A.x, A.y, mVirt, mask), 0u, 0u, 0u));
 }
 `;
   return { code, entries: b.entries };
@@ -693,14 +851,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     // (c) C-10: clamp slow luminance to the fast history's mean +- gamma sigma; the
     // relative excess and the ĥ excess (min-combined) shorten the history.
     if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
-      let mu = fMean[${2 * slot(i)}];
+      ${kinds[i] === 'specular' ? `// window centred on the pixel's own fast value as roughness -> 0 (clean mirror input:
+      // the 3x3 mean would blur reflected edges; our addition)
+      let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);
+      let mu = mix(fc[${2 * slot(i)}], fMean[${2 * slot(i)}], cw);
+      let muH = mix(fc[${2 * slot(i) + 1}], fMean[${2 * slot(i) + 1}], cw);` : `let mu = fMean[${2 * slot(i)}];
+      let muH = fMean[${2 * slot(i) + 1}];`}
       let sd = fStd[${2 * slot(i)}];
       let Ls = luma(c.rgb);
       let Lc = clamp(Ls, mu - P${i}.lagGamma * sd, mu + P${i}.lagGamma * sd);
       if (Ls > 1e-6) { c = vec4f(c.rgb * (Lc / Ls), c.a); } else { c = vec4f(vec3f(Lc), c.a); }
       let e = abs(Ls - Lc) / (max(Ls, Lc) + 1e-3);
       let cI = clamp(1.0 - e / P${i}.lagEMax, 0.0, 1.0);
-      let muH = fMean[${2 * slot(i) + 1}];
       let sdH = fStd[${2 * slot(i) + 1}];
       let eh = abs(c.a - clamp(c.a, muH - P${i}.lagGamma * sdH, muH + P${i}.lagGamma * sdH));
       let cH = clamp(1.0 - eh / P${i}.lagHitTol, 0.0, 1.0);
@@ -750,16 +912,20 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let An = clamp(A / P${i}.aCap, 0.0, 1.0);
     let c = textureLoad(src${i}, p, 0);
     // R-5: R = max(min(R_max f_A f_r pixSize, c_h h~), R_min pixSize), f_A = 1/(1 + A)
-    var R = max(min(P${i}.maxRadius * radiusRough${i}(g) / (1.0 + A) * ps, hitClamp${i}(g) * hDenorm${i}(c.a, g.z)), P${i}.minRadius * ps);
+    var R = max(min(P${i}.maxRadius * radiusRough${i}(g) * pow(1.0 + A, -P${i}.radiusPow) * ps, hitClamp${i}(g) * hDenorm${i}(c.a, g.z)),
+                P${i}.minRadius * ${kinds[i] === 'specular' ? `mix(1.0, radiusRough${i}(g), P${i}.specMinRadius)` : '1.0'} * ps);
     ${post ? `// D2c: post-blur radius grows where the blur still changed the signal (RTG2 §49.5.6)
     let la = luma(textureLoad(acc${i}, p, 0).rgb);
     let lb = luma(c.rgb);
     R *= mix(P${i}.postLo, P${i}.postHi, clamp(abs(lb - la) / (max(lb, la) + 1e-3) / P${i}.postDelta, 0.0, 1.0));` : ''}
-    let k${i} = kern${i}(g, X, nv, R, An, c.a);
+    var k${i} = kern${i}(g, X, nv, R, An, c.a);
+    // our luminance weight (optional): tolerance = predicted relative noise k * f_r / sqrt(1 + A)
+    k${i}.lc = luma(c.rgb);
+    k${i}.invLumTol = select(0.0, 1.0 / max(P${i}.lumK * radiusRough${i}(g) * inverseSqrt(1.0 + A), 0.02), P${i}.lumK > 0.0);
     var sum${i} = c;
     var sw${i} = 1.0;
     ${[...Array(8).keys()].map((t) => tapWgsl(kinds[i], i, t, {
-      rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => `textureLoad(src${i}, ${q}, 0)`,
+      rotate: !post, hitWeight: true, rgbOnly: false, lumWeight: true, load: (q) => `textureLoad(src${i}, ${q}, 0)`,
     })).join('')}
     textureStore(outBlur${i}, p, sum${i} / sw${i});
   }`).join('')}
@@ -785,12 +951,14 @@ export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): Pass
     }
   });
   const I = kinds.map((_, i) => i);
+  const hasSpec = kinds.includes('specular');
   const nb: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
   const store = (i: number, v: string) => `textureStore(outS${i}, p, ${v});${remodulate ? `
     textureStore(outRemod${i}, p, vec4f(${v}.rgb * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & RP_REMODULATE) != 0u), ${v}.a));` : ''}`;
   const code = /* wgsl */ `
 ${head(b, HISTORY_SAMPLE_WGSL)}
+${kinds.map((k, i) => signalWgsl(k, i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -807,13 +975,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let dv = textureLoad(dataTex, p, 0).r;
   ${I.map((i) => `let h${i} = textureLoad(hCur${i}, p, 0);\n  var m1_${i} = h${i};\n  var m2_${i} = h${i} * h${i};`).join('\n  ')}
   var n = 1.0;
+  var curvSum = 0.0;
   ${nb.map(([x, y]) => /* wgsl */ `
   {
     let qq = p + vec2i(${x}, ${y});
     let q = clampPix(qq);
     let gq = geoTap(geoCur, q);
     let ok = select(0.0, 1.0, inside(qq) && planeOk(pl, P0.geoTolLo, gq, q));
-    n += ok;
+    n += ok;${hasSpec ? `
+    { let dX = viewPosAt(uvOf(q), gq.z) - X; curvSum += dot(viewNormal(gq.n) - nv, dX) / max(dot(dX, dX), 1e-12) * ok; }` : ''}
     ${I.map((i) => `{ let s = textureLoad(hCur${i}, q, 0) * ok; m1_${i} += s; m2_${i} += s * s; }`).join('\n    ')}
   }`).join('')}
   // The temporal pass's 2x2 validity (same reprojection, stored in data): no second
@@ -843,7 +1013,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         hi = max(hi, v);
       }
       sp /= wts.x + wts.y + wts.z + wts.w;
-      if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev${i}, smp, prevUV), lo, hi); }
+      if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev${i}, smp, prevUV), lo, hi); }${kinds[i] === 'specular' ? `
+      // Second candidate: virtual motion (R-9 from this frame's denoised ĥ), blended by
+      // the temporal pass's m (RTG2 p.831); the neighbourhood clamp below guards it.
+      let mS = unpackM(dv) * P${i}.stabVirt;
+      if (mS > 0.0) {
+        let world = (F.viewInv * vec4f(X, 1.0)).xyz;
+        var hV = hDenorm${i}(h${i}.a, g.z);
+        hV = hV / max(1.0 + 2.0 * curvSum / max(n - 1.0, 1.0) * P${i}.virtCurv * hV, 0.05);   // D12c as in the temporal pass
+        let uvV = virtualPrevUV(world, hV, domFactor(g.rough * g.rough));
+        if (onScreen(uvV)) { sp = mix(sp, max(sampleCatmullRom(sPrev${i}, smp, uvV), vec4f(0.0)), mS); }
+      }` : ''}
       let A = unpackA(dv, ${slotOf(kinds[i])}u);
       let An = clamp(A / P${i}.aCap, 0.0, 1.0);
       let mu = m1_${i} / n;

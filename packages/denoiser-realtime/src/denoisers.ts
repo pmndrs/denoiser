@@ -102,7 +102,7 @@ function makePipe(device: GPUDevice, signals: { kind: Kind; r: Resolved }[], lab
       get outputs() { return p.outputs; },
       configure: (w, h) => p.configure(w, h),
       encode: (enc, timer, gp, frames, guides, camera, prefix) =>
-        p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, camera.projection, prefix),
+        p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, camera.projection, camera.prevProjection, prefix),
       endFrame: () => p.endFrame(),
       debugTexture: (n) => (n === 'data' ? p.dataTexture : p.debugTexture(n as 'acc' | 'history')),
       dispose: () => p.dispose(),
