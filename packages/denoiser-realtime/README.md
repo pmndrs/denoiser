@@ -12,6 +12,7 @@ reflection denoisers (`denoiser/ffx` keeps working).
 | `DiffuseDenoiser` | diffuse indirect (GI) / AO | `TemporalDenoiser<DiffuseInputs>` |
 | `SpecularDenoiser` | specular indirect (reflections) | `TemporalDenoiser<SpecularInputs>` |
 | `DiffuseSpecularDenoiser` | both, one shared prepass | `TemporalDenoiser<DiffuseSpecularInputs>` (+ `dispatchBoth`) |
+| `OcclusionDenoiser` | AO / SO from hit distance (provisional, [Occlusion](#occlusion-provisional)) | `TemporalDenoiser<OcclusionInputs>` (+ `dispatchBoth`) |
 
 Classes are named by what they denoise; the algorithm is an option:
 `filter: 'svgf'` (default) or `filter: 'recurrent'` (**provisional**, built against
@@ -243,6 +244,58 @@ vs 5 for A-SVGF). No NaNs in any run.
 `blurTaps: 4` gives 4.05 ms (−0.07 dB diffuse, +5 % flicker). For comparison, joint SVGF is
 4.02 ms, joint A-SVGF `auto` 5.55 ms, and `DiffuseSpecularDenoiser({ filter: 'recurrent' })`
 (recurrent diffuse + A-SVGF specular) 5.98 ms.
+
+## Occlusion (provisional)
+
+`OcclusionDenoiser` denoises ambient occlusion (AO, from the diffuse ray) and specular
+occlusion (SO, from the specular ray) as the **normalized hit distance** of the renderer's
+1-spp rays, ĥ = h / (h + a + b·depth) (SPEC F-3 / §8; a = `hitDistanceScale` = 1 world unit,
+b = `hitDistanceViewScale` = 0.05; miss → 1). Output: ĥ in `.r` (1 = open, → 0 at contact).
+Provisional: SPEC v0.1 §8 is an outline Dennis has not reviewed; defaults were tuned on the
+test bed it is scored on.
+
+```ts
+import { OcclusionDenoiser } from 'denoiser/realtime';
+
+const ao = new OcclusionDenoiser(device, { filter: 'svgf' });          // or 'recurrent' (default)
+ao.configure({ width, height });
+const aoTex = ao.dispatch({ hitDistance: diffuseHitT }, guides, camera); // ĥ in .r
+
+const both = new OcclusionDenoiser(device, { filter: 'svgf', signal: 'both' }); // SO needs guides.roughness
+const { diffuse, specular } = both.dispatchBoth(
+  { diffuse: { hitDistance: diffuseHitT }, specular: { hitDistance: specularHitT } }, guides, camera);
+```
+
+- `filter: 'recurrent'`: the recurrent pipeline's occlusion-only mode (signal kinds `ao` / `so`
+  in `src/shaders/recurrent.ts`): the same passes with the radiance channels dropped, one
+  r32float per signal, no pre-blur (the temporal pass normalizes the raw hit distance), anti-lag
+  on ĥ only, the slow ĥ clamped into the fast-history window, and for SO the fast ĥ follows the
+  virtual (reflection) reprojection. Every `RecurrentOptions` key applies; occlusion defaults:
+  AO blur radius 20 px, minimum radius 2 px.
+- `filter: 'svgf'`: SVGF (unchanged `SvgfPipeline`) on ĥ written as a gray image by a
+  normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
+  `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
+  1080p). `antiLag: 'auto'` works as for radiance.
+- `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image).
+- "Free" AO / SO: `filter: 'recurrent'` radiance outputs keep the denoised ĥ in alpha. It costs
+  nothing extra but is clearly worse than either dedicated filter (below).
+
+**Test bed** (`examples/realtime-denoiser`, signals `ao` / `so`, references = mean of
+per-sample normalized hit distances, 1920×1080, 96 frames, 7 paths; pooled PSNR on ĥ in [0, 1],
+mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `results/M5.md`):
+
+| | AO PSNR | AO contact | SO PSNR | SO contact | GPU ms AO / SO (1080p, fast clock / median) | B/px AO / AO + SO |
+|---|---|---|---|---|---|---|
+| noisy 1 spp | 14.55 | 9.65 | 17.65 | 14.72 | | |
+| `recurrent` | 38.02 | 31.09 | 37.37 | 33.47 | 1.32 / 1.8 · 1.32 / 2.0–2.3 | **57.5** / **73.5** |
+| `svgf` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.5–2.0 · 1.92 / 2.4 | 84 / 148 |
+| `svgf`, `antiLag: 'auto'` | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.3–2.5 · 2.53 / 2.8 | 92 / 163 |
+| recurrent radiance alpha ("free") | 35.15 | 27.64 | 35.47 | 32.10 | 0 extra | 0 extra |
+
+SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB AO,
++1.4 dB SO), A-SVGF `auto` is best overall; recurrent is the memory-lean option and flickers
+least on the static-light path. The radiance alpha is 2.9 dB (AO) / 1.9 dB (SO) below the
+dedicated recurrent mode and doubles FLIP: "nearly free" holds for cost, not for quality.
 
 ## Dev page
 
