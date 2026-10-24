@@ -80,7 +80,7 @@ fn inside(p: vec2i) -> bool {
 }
 fn clampPix(p: vec2i) -> vec2i { return clamp(p, vec2i(0), vec2i(F.dims) - 1); }
 
-// ---- packed geometry (rgba32uint): linear depth, depth slope, normal, roughness
+// ---- packed geometry: linear depth, depth slope, normal, roughness
 struct Geo {
   z: f32,        // linear depth = -viewZ (> 0); 0 = sky / no surface
   grad: vec2f,   // dz/dpixel (x right, y down), from the prepass
@@ -102,18 +102,22 @@ fn octDecode(e: vec2f) -> vec3f {
   n = vec3f(n.xy + select(vec2f(t), vec2f(-t), n.xy >= vec2f(0.0)), n.z);
   return normalize(n);
 }
-fn packGeo(g: Geo) -> vec4u {
-  let gr = clamp(g.grad, vec2f(-60000.0), vec2f(60000.0));
-  return vec4u(bitcast<u32>(g.z), pack2x16float(gr),
-               pack2x16unorm(octEncode(g.n) * 0.5 + 0.5),
-               u32(round(clamp(g.rough, 0.0, 1.0) * 65535.0)));
+// Tap texture (rg32uint, ping-pong): x = linear depth bits, y = octahedral
+// normal 12+12 bits | roughness 8 bits. The depth slope is only needed at the
+// center pixel, so it lives in its own r32uint (pack2x16float), current frame only.
+fn packGeoTap(g: Geo) -> vec2u {
+  let e = vec2u(round(clamp(octEncode(g.n) * 0.5 + 0.5, vec2f(0.0), vec2f(1.0)) * 4095.0));
+  let r = u32(round(clamp(g.rough, 0.0, 1.0) * 255.0));
+  return vec2u(bitcast<u32>(g.z), e.x | (e.y << 12u) | (r << 24u));
 }
-fn unpackGeo(v: vec4u) -> Geo {
+fn packGrad(g: Geo) -> u32 { return pack2x16float(clamp(g.grad, vec2f(-60000.0), vec2f(60000.0))); }
+fn geoTap(t: texture_2d<u32>, p: vec2i) -> Geo {
+  let v = textureLoad(t, p, 0).xy;
   var g: Geo;
   g.z = bitcast<f32>(v.x);
-  g.grad = unpack2x16float(v.y);
-  g.n = octDecode(unpack2x16unorm(v.z) * 2.0 - 1.0);
-  g.rough = f32(v.w & 0xffffu) / 65535.0;
+  g.n = octDecode(vec2f(f32(v.y & 4095u), f32((v.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0);
+  g.rough = f32(v.y >> 24u) / 255.0;
+  g.grad = vec2f(0.0);
   return g;
 }
 `;
@@ -150,7 +154,7 @@ fn expectedPrev(p: vec2i, g: Geo, prevUV: vec2f, world: vec3f) -> vec3f {
 // tap q, plus a normal-agreement test.
 fn tapValid(q: vec2i, g: Geo, expPrev: vec3f, planeTol: f32, normalTol: f32) -> bool {
   if (!inside(q)) { return false; }
-  let gq = unpackGeo(textureLoad(geoPrev, q, 0));
+  let gq = geoTap(geoPrev, q);
   if (gq.z <= 0.0) { return false; }
   let Q = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -gq.z);
   let nq = (F.prevView * vec4f(gq.n, 0.0)).xyz;

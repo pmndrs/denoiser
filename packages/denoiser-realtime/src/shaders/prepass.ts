@@ -1,6 +1,7 @@
 // Guide prepass: packs this frame's geometry (linear depth, depth slope, world
-// normal, roughness) into one rgba32uint texture that every later pass reads,
-// and that becomes next frame's "previous geometry" (ping-pong).
+// normal, roughness) into an rg32uint tap texture that every later pass reads
+// (and that becomes next frame's "previous geometry", ping-pong) plus an r32uint
+// depth-slope texture read only at the center pixel.
 //
 // Depth slope: compute shaders have no derivatives, so the slope of linear
 // depth per pixel is rebuilt here from the 4 neighbours, taking the smaller
@@ -24,7 +25,8 @@ ${FRAME_WGSL}
 @group(0) @binding(2) var viewZTex: texture_2d<f32>;
 @group(0) @binding(3) var normalTex: texture_2d<f32>;
 @group(0) @binding(4) var roughTex: texture_2d<f32>;
-@group(0) @binding(5) var outGeo: texture_storage_2d<rgba32uint, write>;
+@group(0) @binding(5) var outGeo: texture_storage_2d<rg32uint, write>;
+@group(0) @binding(6) var outGrad: texture_storage_2d<r32uint, write>;
 
 // Linear depth (> 0) at p, 0 for sky / no surface.
 fn linZ(p: vec2i) -> f32 {
@@ -67,7 +69,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     g.n = normalize(textureLoad(normalTex, p, 0).xyz);
     if (hasFlag(FRAME_HAS_ROUGHNESS)) { g.rough = textureLoad(roughTex, p, 0).r; }
   }
-  textureStore(outGeo, p, packGeo(g));
+  textureStore(outGeo, p, vec4u(packGeoTap(g), 0u, 0u));
+  textureStore(outGrad, p, vec4u(packGrad(g), 0u, 0u, 0u));
 }
 `;
 }

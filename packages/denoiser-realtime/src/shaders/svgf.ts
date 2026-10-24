@@ -35,6 +35,7 @@ export const P_ANTILAG = 2;
 export const P_REMODULATE = 4;
 export const P_GRADIENT_INPUT = 8;
 export const P_KERNEL_BOX3 = 16;
+export const P_VAR_OF_MEAN = 32;
 
 export const PARAMS_SIZE = 256;
 
@@ -65,6 +66,7 @@ const P_ANTILAG = ${P_ANTILAG}u;
 const P_REMODULATE = ${P_REMODULATE}u;
 const P_GRADIENT_INPUT = ${P_GRADIENT_INPUT}u;
 const P_KERNEL_BOX3 = ${P_KERNEL_BOX3}u;
+const P_VAR_OF_MEAN = ${P_VAR_OF_MEAN}u;
 fn pflag(f: u32) -> bool { return (P.flags & f) != 0u; }
 
 fn finite3(c: vec3f) -> vec3f {
@@ -178,7 +180,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let cur = finite3(max(textureLoad(inputTex, p, 0).rgb, vec3f(0.0)));
   let l = luma(cur);
   let mCur = vec2f(l, l * l);
-  let g = unpackGeo(textureLoad(geoCur, p, 0));
+  let g = geoTap(geoCur, p);
   if (g.z <= 0.0) {
     textureStore(outAccum, p, vec4f(cur, 1.0));
     textureStore(outMoments, p, vec4f(mCur, 0.0, 0.0));
@@ -262,6 +264,12 @@ ${PARAMS_WGSL}
 @group(0) @binding(3) var momentsCur: texture_2d<f32>;
 @group(0) @binding(4) var geoCur: texture_2d<u32>;
 @group(0) @binding(5) var outPing: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(6) var geoGrad: texture_2d<u32>;
+fn geoCenter(p: vec2i) -> Geo {
+  var g = geoTap(geoCur, p);
+  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
+  return g;
+}
 ${weightsWgsl(kind)}
 
 @compute @workgroup_size(8, 8)
@@ -270,9 +278,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (!inside(p)) { return; }
   let a = textureLoad(accumCur, p, 0);
   let m = textureLoad(momentsCur, p, 0).rg;
-  let g = unpackGeo(textureLoad(geoCur, p, 0));
+  let g = geoCenter(p);
   if (g.z <= 0.0) { textureStore(outPing, p, vec4f(a.rgb, 0.0)); return; }
-  let varT = max(0.0, m.y - m.x * m.x);
+  var varT = max(0.0, m.y - m.x * m.x);
+  // Optional (our variant): variance of the accumulated mean instead of the
+  // per-sample variance: EMA with weight a leaves a / (2 - a) of it, a
+  // cumulative average over n frames 1 / n.
+  if (pflag(P_VAR_OF_MEAN)) { varT *= max(P.alpha / (2.0 - P.alpha), 1.0 / max(a.a, 1.0)); }
   let t = clamp((a.a - 1.0) / max(P.rampFrames - 1.0, 1e-3), 0.0, 1.0);
   if (t >= 1.0) { textureStore(outPing, p, vec4f(a.rgb, varT)); return; }
 
@@ -287,7 +299,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       if (dx == 0 && dy == 0) { continue; }
       let q = p + vec2i(dx, dy);
       if (!inside(q)) { continue; }
-      let gq = unpackGeo(textureLoad(geoCur, q, 0));
+      let gq = geoTap(geoCur, q);
       if (gq.z <= 0.0) { continue; }
       let w = wGeo(g, gq, vec2f(f32(dx), f32(dy)));
       sc += textureLoad(accumCur, q, 0).rgb * w;
@@ -312,9 +324,9 @@ export interface AtrousVariant {
   last: boolean;
 }
 
-export function atrousWgsl(kind: SignalKind, v: AtrousVariant): string {
+export function atrousWgsl(kind: SignalKind, v: AtrousVariant, box: boolean): string {
   const histDecl = v.writeHist
-    ? '@group(0) @binding(8) var outHist: texture_storage_2d<rgba16float, write>;' : '';
+    ? '@group(0) @binding(9) var outHist: texture_storage_2d<rgba16float, write>;' : '';
   const store = (val: string, varExpr: string) => v.last
     ? `textureStore(outDst, p, vec4f(${val} * select(vec3f(1.0), textureLoad(demodTex, p, 0).rgb, pflag(P_REMODULATE)), 1.0));`
     : `textureStore(outDst, p, vec4f(${val}, ${varExpr}));`;
@@ -332,58 +344,77 @@ struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
 @group(0) @binding(5) var accumCur: texture_2d<f32>;
 @group(0) @binding(6) var demodTex: texture_2d<f32>;
 @group(0) @binding(7) var outDst: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(8) var geoGrad: texture_2d<u32>;
 ${histDecl}
+fn geoCenter(p: vec2i) -> Geo {
+  var g = geoTap(geoCur, p);
+  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
+  return g;
+}
 ${weightsWgsl(kind)}
 
 const B3 = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
-
-// SVGF sec. 4.4: 3x3 Gaussian of the variance drives the luminance weight only.
-fn prefilteredVariance(p: vec2i) -> f32 {
-  var s = 0.0;
-  for (var dy = -1; dy <= 1; dy++) {
-    for (var dx = -1; dx <= 1; dx++) {
-      let k = (2.0 - f32(abs(dx))) * (2.0 - f32(abs(dy))) / 16.0;
-      s += textureLoad(srcTex, clampPix(p + vec2i(dx, dy)), 0).a * k;
-    }
-  }
-  return s;
-}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
   let c = textureLoad(srcTex, p, 0);
-  let g = unpackGeo(textureLoad(geoCur, p, 0));
+  let g = geoCenter(p);
   if (g.z <= 0.0) {
     ${store('c.rgb', 'c.a')}
     ${hist('c.rgb')}
     return;
   }
+  // SVGF sec. 4.4: a 3x3 Gaussian of the variance drives the luminance weight
+  // (only). The 3x3 taps are the inner taps of this iteration's kernel, loaded
+  // once and reused (exactly the paper's prefilter at stride 1; at larger
+  // strides a wider one: our approximation, saves 8 loads per pixel).
+  var inner: array<vec4f, 9>;
+  var gVar = 0.0;
+  for (var i = 0; i < 9; i++) {
+    let o = vec2i(i % 3 - 1, i / 3 - 1);
+    let s = textureLoad(srcTex, clampPix(p + o * I.stride), 0);
+    inner[i] = s;
+    gVar += s.a * f32((2 - abs(o.x)) * (2 - abs(o.y))) / 16.0;
+  }
   let lc = luma(c.rgb);
-  let lumDenom = P.sigmaL * sqrt(max(prefilteredVariance(p), 0.0)) + 1e-10;
-  let box = pflag(P_KERNEL_BOX3);
-  let r = select(2, 1, box);
-  let hc = select(B3[2] * B3[2], 1.0, box);
+  let lumDenom = P.sigmaL * sqrt(max(gVar, 0.0)) + 1e-10;
+  let hc = ${box ? '1.0' : 'B3[2] * B3[2]'};
   var sumC = c.rgb * hc;
   var sumV = c.a * hc * hc;
   var sumW = hc;
-  for (var dy = -r; dy <= r; dy++) {
-    for (var dx = -r; dx <= r; dx++) {
-      if (dx == 0 && dy == 0) { continue; }
+  for (var i = 0; i < 9; i++) {
+    if (i == 4) { continue; }
+    let o = vec2i(i % 3 - 1, i / 3 - 1);
+    let off = o * I.stride;
+    let q = p + off;
+    if (!inside(q)) { continue; }
+    let gq = geoTap(geoCur, q);
+    if (gq.z <= 0.0) { continue; }
+    let s = inner[i];
+    let h = ${box ? '1.0' : 'B3[o.x + 2] * B3[o.y + 2]'};
+    let w = h * wGeo(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc) / lumDenom);
+    sumC += s.rgb * w;
+    sumV += s.a * w * w;
+    sumW += w;
+  }
+  ${box ? '' : `
+  for (var dy = -2; dy <= 2; dy++) {
+    for (var dx = -2; dx <= 2; dx++) {
+      if (abs(dx) <= 1 && abs(dy) <= 1) { continue; }
       let off = vec2i(dx, dy) * I.stride;
       let q = p + off;
       if (!inside(q)) { continue; }
-      let gq = unpackGeo(textureLoad(geoCur, q, 0));
+      let gq = geoTap(geoCur, q);
       if (gq.z <= 0.0) { continue; }
       let s = textureLoad(srcTex, q, 0);
-      let h = select(B3[dx + 2] * B3[dy + 2], 1.0, box);
-      let w = h * wGeo(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc) / lumDenom);
+      let w = B3[dx + 2] * B3[dy + 2] * wGeo(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc) / lumDenom);
       sumC += s.rgb * w;
       sumV += s.a * w * w;
       sumW += w;
     }
-  }
+  }`}
   let outC = sumC / sumW;
   let outV = sumV / (sumW * sumW);
   ${store('outC', 'outV')}

@@ -65,7 +65,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       motion z), synthetic capture generator (also serves the Windows harness's phase 3),
       validator, browser writer + replay module running any `TemporalDenoiser` from a
       capture, metrics on replay outputs.
-- [~] svgf **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
+- [x] svgf (6561a00) **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
       `denoiser/realtime`, mirroring `packages/denoiser-ffx`; FFX classes re-exported.
 - [ ] **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
 - [ ] **T0.7 Exit (our side):** a capture written by the test bed replays through our
@@ -74,10 +74,10 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M1: SVGF + A-SVGF baseline
 
-- [ ] **T1.1 Shared temporal core**: reprojection (NDC motion + viewZ, 2.5D z when
+- [~] svgf **T1.1 Shared temporal core**: reprojection (NDC motion + viewZ, 2.5D z when
       present), per-tap plane-distance disocclusion, bilinear / Catmull-Rom history,
       history length, reset.
-- [ ] **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
+- [~] svgf **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
 - [ ] **T1.3 SVGF specular** (surface reprojection first; roughness-aware weights).
 - [ ] **T1.4 A-SVGF** gradient-driven α (from the paper + BSD reference code).
 - [ ] **T1.5 Results table** vs references (and vs FFX reflections for specular) on the

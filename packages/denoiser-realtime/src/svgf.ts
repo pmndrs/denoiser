@@ -12,7 +12,7 @@ import { makeBindGroup, makeLayout, makePipeline, runPass, STORAGE_TEX } from '.
 import type { GuidePass } from './guides';
 import { GRADIENT_DOWNSAMPLE, gradientAtrousWgsl, gradientCreateWgsl } from './shaders/gradient';
 import {
-  atrousWgsl, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, PARAMS_SIZE,
+  atrousWgsl, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_VAR_OF_MEAN, PARAMS_SIZE,
   temporalWgsl, varianceWgsl, type SignalKind,
 } from './shaders/svgf';
 
@@ -37,7 +37,7 @@ export interface SvgfOptions {
   normalThreshold?: number;
   /** A-trous iterations (strides 1, 2, 4, ...). Default 5 (SVGF paper). */
   atrousIterations?: number;
-  /** A-trous kernel: SVGF's 5x5 B3 spline or A-SVGF's 3x3 box. Default '5x5'. */
+  /** A-trous kernel: SVGF's 5x5 B3 spline or A-SVGF's 3x3 box (sec. 4: negligible loss, much cheaper; on our dev scene equal or better). Default '3x3'. */
   kernel?: '5x5' | '3x3';
   /** Feed a-trous iteration 0 back as next frame's color history (SVGF paper). Default true. */
   feedback?: boolean;
@@ -45,6 +45,13 @@ export interface SvgfOptions {
   sigmaDepth?: number;
   sigmaNormal?: number;
   sigmaLuminance?: number;
+  /**
+   * Variance that drives the luminance edge-stopping weight: 'sample' (SVGF
+   * paper: per-sample luminance variance from the moments) or 'mean' (our
+   * variant: variance of the temporally accumulated mean, i.e. the noise that is
+   * actually left in what the a-trous filters; sharper edges). Default 'sample'.
+   */
+  luminanceVariance?: 'sample' | 'mean';
   /** Frames over which variance ramps from the spatial to the temporal estimate. Default 4. */
   varianceRampFrames?: number;
   /** Spatial variance boost for young history: x (1 + boost (1 - t)). Default 3 (A-SVGF code). */
@@ -97,11 +104,12 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     planeDistance: o.planeDistance ?? 0.01,
     normalThreshold: o.normalThreshold ?? 0.9,
     atrousIterations: Math.max(1, Math.round(o.atrousIterations ?? 5)),
-    kernel: o.kernel ?? '5x5',
+    kernel: o.kernel ?? '3x3',
     feedback: o.feedback ?? true,
     sigmaDepth: o.sigmaDepth ?? 1,
     sigmaNormal: o.sigmaNormal ?? 128,
     sigmaLuminance: o.sigmaLuminance ?? 4,
+    luminanceVariance: o.luminanceVariance ?? 'sample',
     varianceRampFrames: o.varianceRampFrames ?? 4,
     spatialVarianceBoost: o.spatialVarianceBoost ?? 3,
     antiLag,
@@ -157,8 +165,8 @@ export class SvgfSignal {
 
     this.layouts.temporal = makeLayout(d, `${label} temporal`,
       ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'F', 'f', 'f', 's', 'f', 'rgba16float', 'rg32float']);
-    this.layouts.variance = makeLayout(d, `${label} variance`, ['u', 'u', 'f', 'f', 'i', 'rgba16float']);
-    const atrousBase: Parameters<typeof makeLayout>[2] = ['u', 'u', 'u', 'f', 'i', 'f', 'f', 'rgba16float'];
+    this.layouts.variance = makeLayout(d, `${label} variance`, ['u', 'u', 'f', 'f', 'i', 'rgba16float', 'i']);
+    const atrousBase: Parameters<typeof makeLayout>[2] = ['u', 'u', 'u', 'f', 'i', 'f', 'f', 'rgba16float', 'i'];
     this.layouts.atrous = makeLayout(d, `${label} atrous`, atrousBase);
     this.layouts.atrousHist = makeLayout(d, `${label} atrous+hist`, [...atrousBase, 'rgba16float']);
     this.pipes.temporal = makePipeline(d, `${label} temporal`, temporalWgsl(kind), this.layouts.temporal);
@@ -167,12 +175,12 @@ export class SvgfSignal {
       for (const last of [false, true]) {
         if (writeHist && !opts.feedback) continue;
         this.pipes[`atrous_${+writeHist}${+last}`] = makePipeline(d, `${label} atrous${writeHist ? ' hist' : ''}${last ? ' last' : ''}`,
-          atrousWgsl(kind, { writeHist, last }), writeHist ? this.layouts.atrousHist : this.layouts.atrous);
+          atrousWgsl(kind, { writeHist, last }, opts.kernel === '3x3'), writeHist ? this.layouts.atrousHist : this.layouts.atrous);
       }
     }
     if (opts.antiLag !== 'off') {
       this.layouts.gcreate = makeLayout(d, `${label} gradient create`,
-        ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'f', 'f', 'rgba32float', 'rgba32float']);
+        ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'f', 'f', 'rgba32float', 'rgba32float', 'i']);
       this.layouts.gatrous = makeLayout(d, `${label} gradient atrous`, ['u', 'u', 'f', 'f', 'rgba32float', 'rgba32float']);
       this.pipes.gcreate = makePipeline(d, `${label} gradient create`, gradientCreateWgsl(opts.antiLag === 'input'), this.layouts.gcreate);
       this.pipes.gatrous = makePipeline(d, `${label} gradient atrous`, gradientAtrousWgsl(), this.layouts.gatrous);
@@ -213,7 +221,7 @@ export class SvgfSignal {
     f[12] = o.parallaxScale; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
     u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (o.antiLag !== 'off' ? P_ANTILAG : 0)
       | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'input' ? P_GRADIENT_INPUT : 0)
-      | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0);
+      | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
     this.device.queue.writeBuffer(this.params, 0, f);
   }
@@ -239,7 +247,7 @@ export class SvgfSignal {
       const ggx = Math.ceil(this.gw / 8), ggy = Math.ceil(this.gh / 8);
       runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, makeBindGroup(d, this.layouts.gcreate, [
         gp.frame, this.params, frame.radiance, gp.geoCur, gp.geoPrev, motion, mz, accumPrev,
-        frame.gradient ?? gp.dummy32, g0a, g1a,
+        frame.gradient ?? gp.dummy32, g0a, g1a, gp.geoGrad,
       ]), ggx, ggy);
       let src = [g0a, g1a], dst = [g0b, g1b];
       for (let i = 0; i < o.gradientIterations; i++) {
@@ -256,7 +264,7 @@ export class SvgfSignal {
       colorHist, accumPrev, momPrev, gp.sampler, gradResult, accumCur, momCur,
     ]), gx, gy);
     runPass(enc, timer, name('variance'), this.pipes.variance, makeBindGroup(d, this.layouts.variance, [
-      gp.frame, this.params, accumCur, momCur, gp.geoCur, this.ping[0],
+      gp.frame, this.params, accumCur, momCur, gp.geoCur, this.ping[0], gp.geoGrad,
     ]), gx, gy);
 
     const K = o.atrousIterations;
@@ -266,7 +274,7 @@ export class SvgfSignal {
       const last = i === K - 1;
       const writeHist = i === 0 && o.feedback;
       const target = last ? this.out! : dst;
-      const res = [gp.frame, this.params, this.iterParams[i], src, gp.geoCur, accumCur, demod, target];
+      const res = [gp.frame, this.params, this.iterParams[i], src, gp.geoCur, accumCur, demod, target, gp.geoGrad];
       if (writeHist) res.push(this.hist!);
       runPass(enc, timer, name(`atrous_${i}`), this.pipes[`atrous_${+writeHist}${+last}`],
         makeBindGroup(d, writeHist ? this.layouts.atrousHist : this.layouts.atrous, res), gx, gy);

@@ -53,6 +53,7 @@ ${GPARAMS_WGSL}
 @group(0) @binding(8) var gradInput: texture_2d<f32>;
 @group(0) @binding(9) var outG0: texture_storage_2d<rgba32float, write>;  // delta, Delta, var(delta), valid
 @group(0) @binding(10) var outG1: texture_storage_2d<rgba32float, write>; // mean l, var l, z, |dz|
+@group(0) @binding(11) var geoGrad: texture_2d<u32>;
 ${REPROJECT_WGSL}
 
 @compute @workgroup_size(8, 8)
@@ -66,7 +67,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     for (var xx = 0; xx < P.gradDown; xx++) {
       let p = s * P.gradDown + vec2i(xx, yy);
       if (!inside(p)) { continue; }
-      let g = unpackGeo(textureLoad(geoCur, p, 0));
+      var g = geoTap(geoCur, p);
+      g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
       if (g.z <= 0.0) { continue; }
       let l = luma(max(textureLoad(inputTex, p, 0).rgb, vec3f(0.0)));
       sumL += l; sumL2 += l * l; cnt += 1.0;
