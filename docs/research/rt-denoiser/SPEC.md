@@ -222,7 +222,7 @@ out    = lerp(H, C, 1/(1 + A))          // RTG2 Eq. 49.1; exact running mean (GT
 - `A_cap = maxAccumulatedFrames`, default **31** (so `1/(1+A)` ≥ 1/32), tune: [15, 63]
   (RTG2 Fig. 49-3: up to 64; GTC20: up to 32).
 - Fractional A is allowed (anti-lag reduces it, A-SVGF sets `A = 1/α − 1`).
-- Storage: `recurrent` packs A into the `data` texture (§6.9); `svgf` stores it in the
+- Storage: `recurrent` packs A into the `data` texture (§5.12); `svgf` stores it in the
   history colour's alpha (A-SVGF code layout). fp16 represents every integer ≤ 2048 exactly.
 - A ↔ α conversions in f32; `α = 1/(1 + max(A, 0))`.
 
@@ -259,7 +259,7 @@ c_I  = saturate(1 − e / e_max)                         e_max = 0.5, tune [0.2,
 
 ### 3.6 History repair from mips (C-11)
 
-Defined with the recurrent pipeline (§6.5, D7); usable by `svgf` as an experiment
+Defined with the recurrent pipeline (§5.8a, D7); usable by `svgf` as an experiment
 (default off there: the paper's spatial-variance fallback covers fresh pixels).
 
 ### 3.7 Reset (C-12)
@@ -307,7 +307,7 @@ renderer's primary-visibility pass and its shading pass, see S-8). All ≤ 4 sto
 - Formats: `accum`/`hist` `rgba16float` (alpha = A), `moments` **`rg32float`** (review
   upgrade; l² overflows fp16).
 - Specular (T1.3): surface reprojection only in M1, with
-  `α_c = max(α_min, 1/(1 + min(A, A_spec)))`, `A_spec` from R-6 (§6.6). Virtual motion is M3.
+  `α_c = max(α_min, 1/(1 + min(A, A_spec)))`, `A_spec` from R-8 (§5.6). Virtual motion is M3.
 
 ### 4.3 S-2 Variance (S1 §4.2, S3 `EstimateVariance.frag`)
 
@@ -419,3 +419,512 @@ Gradient strata 3×3 (S2 p.12: ≤ 11 % of samples recycled).
 as an experiment.
 
 ---
+## 5. Family 2: recurrent blur (M2 diffuse, M3 specular) — expected default
+
+Pipeline shape from RTG II ch. 49 §49.5 (Fig. 49-3) and GTC 2020: the **post-blur output
+is next frame's history** (the recurrent loop, RTG2 §49.3), and a separate stabilization
+history never feeds back (RTG2 §49.5.7). Diffuse and specular share every dispatch.
+
+### 5.1 Pass list
+
+| # | pass | reads | writes (storage) | n storage |
+|---|---|---|---|---|
+| R0 | `prepare` | caller guides | `G` | 1 |
+| R1 | `preBlur` | raw radiance + hitT (front end), `G`, `G_prev`, `H_prev` (ĥ guide only) | `pre_d`, `pre_s` (rgb, raw ĥ) | 2 |
+| R2 | `temporal` | `pre_*`, `G`, `G_prev`, `H_prev_*`, `F_prev`, `data_prev` | `acc_d`, `acc_s` (rgb, ĥ), `F`, `data` | 4 |
+| R3 | `mips` | `acc_*`, `G` | mip atlases `M_d`, `M_s` (rgba16f), `M_z` (r32f) | 3 |
+| R4 | `historyFix` | `acc_*`, `M_*`, `G`, `F`, `data` (rw) | `fix_d`, `fix_s`; `data` in place | 3 |
+| R5 | `blur` | `fix_*`, `G`, `data` | `blur_d`, `blur_s` | 2 |
+| R6 | `postBlur` | `blur_*`, `acc_*` (centre only), `G`, `data` | `H_d`, `H_s` = next frame's history | 2 |
+| R7 | `stabilize` | `H_*`, `S_prev_*`, `G`, `G_prev`, `data` | `S_d`, `S_s` (+ remodulated outputs if asked) | 2–4 |
+
+**8 dispatches** per frame for diffuse + specular (RTG2 has 7; our extra one is `prepare`,
+fusable into R1 later). Every dispatch stays within the default 4 storage textures.
+Formats and buffer rotation: §10.
+
+### 5.2 Common definitions
+
+```
+pixSize(d)  = 2·d / (P[5]·H)        (orthographic: 2 / (P[5]·H))          world size of one pixel at depth d
+v           = −normalize(X)          view vector, out of the surface;  NoV = max(dot(n, v), 1e-4)
+α           = r²                     diffuse uses r = 1
+θ_L(α)      = atan(α · sqrt(E / (1 − E))),  E = lobeFraction = 0.75      GGX lobe half-angle (R-1)
+F_dom(α)    = (1 − α)·(sqrt(1 − α) + α)                                  dominant-direction factor (R-2)
+D           = normalize(lerp(n, reflect(−v, n), F_dom(α)))               specular dominant direction
+A_n         = saturate(A / A_cap)
+W(x)        = smoothstep(0, 1, saturate(1 − x))                          weight shape, RTG2 Eq. 49.3 with a = 1/tolerance, b = 0
+lum(c)      = dot(c, (0.2126, 0.7152, 0.0722))
+```
+
+**R-1 Lobe half-angle (D4e).** Our derivation from the GGX NDF: the fraction of
+projected microfacet area within angle θ of the normal is `tan²θ / (α² + tan²θ)`; setting it
+to E gives `tan θ = α·sqrt(E/(1−E))`. With E = 0.75 (the fraction RTG2 p.841 names):
+θ_L = 60° at r = 1, 23° at r = 0.5, 4° at r = 0.2. This replaces the three conflicting
+forms in reblur.md §4.4 (GTC20's 90°·α/(1+α), the FB p.72 form, and RTG2's call, which is
+a listing). Tune: E ∈ [0.5, 0.9].
+
+**R-2 Dominant direction (D4f).** Frostbite's simple fit (Lagarde & de Rousiers 2014,
+Listing 22, p.71), which the authors found to perform better than their accurate fit, fed
+with **GGX α** (FB's `roughness` is α). Mirror: F = 1 (D = reflection); r = 1: F = 0 (D = n).
+Tune on captures: feeding perceptual r instead.
+
+### 5.3 R0 `prepare`
+
+Writes `G` (C-5). Nothing else; no signal processing here.
+
+### 5.4 R1 `preBlur` (D1)
+
+Purpose: redistribute outliers and densify the 1-spp input before it enters the history
+(RTG2 §49.5.1).
+
+- Front end per tap: F-1 sanitize, F-2 demodulate if needed, F-3 normalize hitT → ĥ.
+- Kernel: the shared 8-tap disk (R-3) on the world-space plane (R-4), **static** (no
+  per-pixel rotation; RTG2 §49.5.5), centre included.
+- Radius (D1): `R_pre_px = 15·(H/1080)` diffuse, `10·(H/1080)·f_r(α)` specular (R-5);
+  converted to world with `pixSize(d)`. Constant per pixel, i.e. world radius grows with
+  distance like a screen-space blur. **D1b:** clamped by `c_h·h̃_prev` (R-5) where
+  `h̃_prev` is last frame's **denoised** hit distance: the alpha of `H_prev` at the
+  nearest texel to `uv_prev` (C-6), if that texel passes the plane test (C-7); otherwise no
+  hit clamp. Raw hitT is too noisy to size a kernel (RTG2 p.837), and a pre-blur bias is
+  permanent (the converged result is an average of pre-blurred frames), so contact regions
+  must not be pre-blurred wide. Tune: diffuse [0, 30] px, specular [0, 20] px.
+- Weights: `w_geom`, `w_normal`, `w_rough` (spec) at **A = 0** tolerances (R-6). No
+  hit-distance weight (raw ĥ), no luminance weight (redistribute, don't reject).
+- ĥ passes through **unfiltered** (GTC20 s.60: hit distance denoised in all passes except
+  pre-blur).
+
+### 5.5 R2 `temporal` — diffuse
+
+- Reproject `H_prev_d` (C-6, C-7, C-8 with Catmull-Rom), A per C-9, `A_cap = 31`.
+- `acc_d = lerp(H_d, pre_d, 1/(1 + A_d))` for rgb **and ĥ** (ĥ accumulates with the signal's
+  own A: long accumulation gives good AO; the responsive hit distance lives in `F`).
+- Fast history (C-10): `F_prev` reprojected with custom bilinear;
+  `F.(lum_d, ĥ_d) = lerp(F_prev, (lum(pre_d), ĥ_pre), 1/(1 + min(A_d, A_fast)))`.
+- No variance clamp here (RTG2 p.834: the pre-blurred signal is too noisy for a useful clamp).
+
+### 5.6 R2 `temporal` — specular (M3; D12)
+
+Two history candidates, surface and virtual motion, blended (RTG2 §49.8). The functions
+below are **our design** built from the chapter's prose properties; the listing formulas
+transcribed in reblur.md §4.2 are not used.
+
+**R-7 Parallax** (RTG2 §49.8.1 prose, Fig. 49-5): `π = tan(angle(v_cur, v_prev))` with
+`v_cur = normalize(X)` and `v_prev = normalize(Rc_prev · Xp)` (the point relative to the
+previous camera, from C-6, so object motion is included). `π = 0` under pure rotation.
+Per frame; no fps normalization in v0 (constants are tuned on 60 fps captures).
+
+**R-8 Surface-motion frame cap.** RTG2 p.834 requires a cap that is smaller for low
+roughness, small |n·v|, and high parallax. Ours, from a lag argument: the reflected image
+slides across the surface by about π per frame; history stays sharp while the accumulated
+slide stays inside the lobe half-angle:
+
+```
+A_spec = min(A_cap, k_s · θ_L(α) · NoV^κ / max(π, 1e-4))        k_s = 1 (tune [0.25, 4]), κ = 0.5 (tune [0, 1])
+A_surf = min(A_s, A_spec)                                         A_s after the +1 of C-9 (D12d: post-increment)
+C_surf = lerp(H_surf, pre_s, 1/(1 + A_surf))
+```
+
+Examples: π = 0 → full history even on mirrors (rotation is reprojected exactly); r = 0.05
+with any translation → ~1 frame; r = 0.32 strafing 1 cm/frame at 2 m → full.
+
+**R-9 Virtual position.** The reflected image point along the view ray (the "virtual
+image" used by RTG1 ch. 25 p.451 and Stachowiak 2015), pulled back to the surface by the
+dominant factor (RTG2 p.835–836 prose: F → 0 resolves virtual to surface motion):
+
+```
+h̃      = denormalize(F.ĥ_s)                        this frame's fast specular hit distance (RTG2 p.837 prose)
+X_virt = X + normalize(X) · h̃ · F_dom(α)
+uv_virt = project(prevProjection, R_prev · (X_virt + Δcam))
+```
+
+Static-world assumption for the reflected scene (moving reflectors and reflected moving
+objects lose confidence instead).
+
+**R-10 Virtual history and confidence (D12a).** `H_virt` = custom-weighted bilinear at
+`uv_virt`, tap validity = C-7 against the **current surface plane** `{Xp, np}` (a flat
+reflector's previous texels at `uv_virt` lie on that plane). Then:
+
+```
+v_g   = Σ b_i·v_i                                   valid fraction of the footprint
+n̄_v, r̄_v, ĥ̄_v = valid-weighted averages at uv_virt of previous normal, roughness and F_prev.ĥ_s
+c_v   = inScreen(uv_virt) · v_g
+      · W( acos(n·n̄_v) / (0.5·θ_L(α) + 1°) )        reflections move twice as fast as normals
+      · W( |r − r̄_v| / (0.05 + 0.25·r) )
+      · W( |ĥ̄_v − F.ĥ_s| / (0.05 + 0.25·r) )         hit distance must agree in the reflected world
+```
+
+Tolerances tune: angle factor [0.25, 1], hit tolerance [0.02, 0.1] + [0.1, 0.5]·r.
+
+**R-11 Virtual clamp (D12b).** `μ`, `σ` per channel of `pre_s` over its 3×3 neighbourhood;
+`H_virt ← lerp(clamp(H_virt, μ − 2σ, μ + 2σ), H_virt, c_v)` (RTG2 p.837 prose: confidence
+controls how hard virtual history is clamped). γ tune [1, 3].
+
+**R-12 Blend.**
+
+```
+α_surf = 1/(1 + A_surf)
+α_virt = lerp(1/(1 + min(A_s, A_fast)), 1/(1 + A_s), c_v)   // no parallax penalty; low confidence → fast (RTG2 p.837)
+m      = F_dom(α) · inScreen(uv_virt) · [v_g > 0]            // amount of virtual motion (RTG2 p.837 prose)
+C_virt = lerp(H_virt, pre_s, α_virt)
+acc_s  = lerp(C_surf, C_virt, m)                             // rgb and ĥ
+α_next = lerp(α_surf, α_virt, m);   A_s ← 1/α_next − 1       // blend in α-space: α is the actual weight
+```
+
+If the surface footprint is fully invalid: `A_s = 0`, `acc_s = pre_s`, `m = 0`.
+Fast specular history: surface reprojection only, like diffuse (RTG2's
+"parallax-corrected" detail is not reproduced; our deviation). `m` goes to `data` for R7.
+
+**D12c Curvature.** Not in v0 (flat-reflector virtual motion). Later refinement: the
+thin-lens reflection motion of RTG1 ch. 32 §32.4.3, curvature from neighbouring normals.
+
+### 5.7 R3 `mips` (D7e)
+
+- Levels 1–3 below the base (4 levels in total: base + 3), which reconciles RTG2's "first
+  four mip levels" (text) with "first 3 mip levels" (figure). Tune: add level 4.
+- One dispatch, 16×16 workgroups, shared-memory reduction 16×16 → 8×8 → 4×4 → 2×2
+  (RTG2 §49.5.3: single pass in shared memory).
+- **Averages over non-sky pixels only** (weight `d > 0`), for `acc_d`, `acc_s` (rgb + ĥ) and `d`.
+- **R-13 Atlas layout** (to stay within 4 storage textures): all three levels of one signal
+  go into one 2D texture: level 1 at (0, 0), level 2 at (⌈W/2⌉, 0), level 3 at
+  (⌈W/2⌉, ⌈H/4⌉); atlas size (⌈W/2⌉ + ⌈W/4⌉) × ⌈H/2⌉ (0.375 of the base area). The
+  signal atlases reuse a free full-size rotation buffer (§10); the depth atlas is its own
+  `r32float`. History fix reads atlases with `textureLoad` only (no hardware filtering
+  across regions).
+
+### 5.8 R4 `historyFix` (D7, D8, D9, D11)
+
+Order per pixel and signal: (a) mip repair, (b) anti-firefly, (c) fast-history clamp and
+anti-lag.
+
+**(a) Mip repair (D7).** Only where `A < A_fix`, `A_fix = 3` (RTG2 p.829: full
+reconstruction lasts 1–3 frames). Tune [2, 6].
+
+```
+ρ = 1 (diffuse) or r (specular, perceptual)                   // mirrors start near the base level (GTC20 s.35)
+L = floor(3 · saturate(1 − A/A_fix) · ρ + 0.5)                // GTC20 s.35 structure, L_max = 3
+while L ≥ 1:
+    f  = (p + 0.5)/2^L − 0.5;   3×3 texels t around round(f)          (D7d: 3×3 per RTG2 p.829)
+    w_b = tent(f − t) with half-width 1.5 texels
+    w_z = W( |d_mip(t) − d| / (τ_fix · 2^L · d) ),  τ_fix = 0.02     (D7b; viewZ-only weights, RTG2 p.829)
+    if Σ w_b·w_z / Σ w_b ≥ 0.25:  C ← Σ w_b·w_z·C_t / Σ w_b·w_z;  break     (D7c)
+    L ← L − 1
+```
+
+Tune: τ_fix [0.005, 0.05], weight-sum threshold [0.1, 0.5]. The repaired value replaces the
+accumulated one (rgb and ĥ). Diffuse: A = 0 uses mip 3 (8×8), A = 1 mip 2, A = 2 mip 1.
+
+**(b) Anti-firefly (D9).** Our rank-based clamp in the spirit of rank-conditioned rank
+selection (RTG2 p.830 names Hardie & Barner 1994; we have not read it): over the 8
+neighbours of `acc` that pass `w_geom` at A = 0 tolerances, take the **second-largest
+luminance** `l_(2)`; if the centre's `l > k_ff·l_(2)`, scale its rgb by `k_ff·l_(2)/l`.
+Needs ≥ 4 valid neighbours. `k_ff = 1.5`, tune [1, 4]. Skipped for specular with
+`r < 0.25` (sharp highlights are legitimate and mirror input isn't noisy). ĥ untouched.
+
+**(c) Fast clamp and anti-lag (D8, D11):** C-10 exactly. "Faster history" (D8c) = `F`, a
+second accumulation with cap `A_fast = 3`; neighbourhood 3×3, γ = 2 (D8a). Writes the
+reduced A into `data` in place (`r32uint` read-write, own pixel).
+
+### 5.9 Spatial kernel (R5, R6, and R1's shape)
+
+**R-3 Poisson disk (D3a).** 8 taps in 4 antipodal pairs, from a golden-angle (Vogel 1979)
+spiral of 4 points with radii `sqrt((i + 0.5)/4)`, mirrored. Zero mean (no shift when
+used unrotated), minimum spacing 0.425 of the radius:
+
+| i | x | y | i | x | y |
+|---|---|---|---|---|---|
+| 0 | 0.3536 | 0.0000 | 4 | −0.3536 | 0.0000 |
+| 1 | −0.4515 | 0.4137 | 5 | 0.4515 | −0.4137 |
+| 2 | 0.0691 | −0.7875 | 6 | −0.0691 | 0.7875 |
+| 3 | 0.5691 | 0.7423 | 7 | −0.5691 | −0.7423 |
+
+Plus the centre pixel (weight 1 before the bilateral terms). No distance falloff (uniform
+disk; recurrence smooths). Tune: add `exp(−3u²)` falloff.
+
+**D3b rotation (blur only).** `φ = 2π · fract(B4[py & 3][px & 3]/16 + frameIndex · 0.6180339887)`,
+`B4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]]` (4×4 Bayer, animated with the
+golden-ratio additive sequence; RTG2 §49.5.5 says animated 4×4 Bayer, ALU only; the
+golden-ratio animation is RTG II ch. 24's recommendation for blue noise). Pre- and
+post-blur: φ = 0.
+
+**R-4 Kernel plane (RTG2 §49.9 prose, GTC20 s.38–40).** Axis `a = reflect(−D, n)`: equals
+`n` for diffuse (tangent plane) and `v` for a mirror (screen plane).
+
+```
+if |dot(a, n)| > 0.999:  (T, B) = orthonormal basis of n     (Duff et al., JCGT 6(1), 2017)
+else:                    T = normalize(cross(n, a));  B = cross(a, T)
+T *= s_T,  s_T = 1 − κ_e · (1 − NoV) · 4r(1 − r)              κ_e = 0.75, tune [0, 1]
+X_i = X + R_w · (K_i.x·T + K_i.y·B)       (K_i rotated by φ)
+```
+
+`T` is perpendicular to the plane of incidence, so shrinking it elongates the kernel along
+the plane of incidence (glossy streaks), most at mid roughness and grazing view; mirrors and
+diffuse stay isotropic. The elongation function is ours (the chapter's is in a listing).
+Each `X_i` is projected with the current view-projection; the tap reads the pixel it lands
+in (`textureLoad`); a tap landing on the centre pixel or off-screen gets weight 0; screen
+offsets longer than `2·R_max_px` are scaled back.
+
+**R-5 Radius (D2).**
+
+```
+R_w  = max( min( R_max_px · f_A · f_r(α) · pixSize(d),  c_h · h̃ ),  R_min_px · pixSize(d) )
+f_A  = 1/(1 + A)                                    (GTC20 s.20–22)
+f_r  = 1 (diffuse);  sqrt(saturate(α / 0.25)) (specular: 0 at mirrors, 1 from r = 0.5)
+c_h  = 1 (diffuse);  tan(θ_L(α)) (specular: the lobe's footprint at the hit point)
+h̃    = denormalize(centre ĥ of this pass's input)  (the filtered hit distance)
+R_max_px = 30 · (H/1080), R_min_px = 1             tune: R_max [10, 60], R_min [0.5, 2], c_h diffuse [0.5, 3]
+```
+
+The `c_h·h̃` clamp gives contact hardening: GI and reflections of nearby geometry stay sharp
+(RTG2 p.830 lists hit distance as a radius input; GTC20 s.60 shrinks the radius for short
+hits; the lobe-footprint form is ours).
+
+**R-6 Weights (D4).** `w = w_geom · w_normal · w_rough · w_hit` (RTG2 Eq. 49.2), each `W(x)`:
+
+| weight | x | tolerance (tightens with A) | notes |
+|---|---|---|---|
+| geometry | `|dot(n, X_t − X)| / ‖X‖` | `τ_g = lerp(0.02, 0.005, A_n)` | plane distance (RTG2 p.841, Metro s.59); replaces GTC20's A_factor (D4d) |
+| normal | `acos(dot(n, n_t))` | `θ_n = θ_L(α) · lerp(1, 0.25, A_n) + 1°` | g(A) = lerp(1, 0.25, A_n) (D4c); fast acos approximation is fine |
+| roughness (spec) | `|r − r_t|` | `0.05 + 0.25·r` | our tolerance (GTC20 s.48 has another; RTG1 ch. 32 Eq. 14 a third) |
+| hit distance | `|ĥ_t − ĥ|` | `τ_h = lerp(0.1, 0.5, r) · lerp(1, 0.5, A_n)` | D4b: our formula on normalized ĥ (a relative measure by construction); not in pre-blur |
+
+Tune each tolerance's endpoints by ×[0.5, 2]. Sky taps: 0.
+
+### 5.10 R5 `blur` and R6 `postBlur`
+
+- R5: kernel R-3/R-4, rotated (D3b), radius R-5, weights R-6. Filters rgb and ĥ.
+- R6: same, unrotated, radius scaled by how much the blur changed the signal (RTG2 §49.5.6):
+
+```
+δ    = |lum(blur) − lum(acc)| / (max(lum(blur), lum(acc)) + 1e-3)        (centre pixel)
+R_w  = R5's R_w · lerp(0.5, 2.0, saturate(δ / 0.3))                       (D2c)
+```
+
+  Tune: base [0.25, 1], max [1, 3], δ₀ [0.1, 0.5]. R6's output is `H`, next frame's
+  history (RTG2 p.830).
+
+### 5.11 R7 `stabilize` (D10, D15)
+
+Order: post-blur, then stabilization (RTG2 Fig. 49-3; D15 — GTC20 s.59's order is treated
+as a slide artefact). Own history `S`, never fed back (RTG2 §49.5.7).
+
+- Diffuse: reproject `S_prev_d` (C-6/C-7/C-8 with Catmull-Rom). Specular: surface and
+  virtual fetches (virtual position recomputed with R-9 from `H_s`'s ĥ), blended by `m` from
+  `data` (RTG2 p.831). Invalid → `S = H`.
+- Clamp per channel to the 3×3 neighbourhood of `H` (geometry-valid neighbours):
+  `w = γ_s·σ + β_s·μ`, `γ_s = lerp(1, 3, A_n)`, `β_s = 0.02·A_n` — "wider clamping if
+  possible" (RTG2 Fig. 49-3) read as: wider once the pixel has a long, trusted history.
+  Tune γ_s endpoints [0.5, 4], β_s [0, 0.05].
+- `α_st = max(1/(1 + A), 1/(1 + N_stab))`, `N_stab = 7` (D10; tune [3, 31]); A is the
+  signal's A after anti-lag (A_s for specular, so mirrors stabilize less).
+- `S = lerp(clamp(S_prev), H, α_st)` for rgb and ĥ. Output = `S` (demodulated), or
+  `S·ρ` / `S·E` written to separate output textures when `output = 'remodulated'`.
+- No A reduction here (deviation from RTG2 §49.11, which runs anti-lag in this pass): our
+  anti-lag lives in R4 (C-10), so A is written in one place and the blur radii of this
+  frame already see the reduced A. A second, stabilization-based detector is a tuning
+  option for later.
+
+### 5.12 `data` texture (D14)
+
+`r32uint` per pixel: `A_d` (10 bits, fixed point A·16, max 63.94), `A_s` (10 bits), `m`
+(12 bits unorm). Written by R2 (write-only), updated in place by R4 (read-write, which core
+WebGPU allows for `r32uint`), read by R5–R7 and next frame's R2 (bilinear decode of 4 texels
+for A). GTC20 s.20 hints at a normalized A; the fixed-point packing is ours.
+
+---
+
+## 6. Decisions for the 16 open items (reblur.md §7)
+
+| # | open item | decision | rationale | tune |
+|---|---|---|---|---|
+| D1 | pre-blur radius | 15 px diffuse, 10 px·f_r specular (at 1080p, scaled by H), static disk, A = 0 weights; clamped by `c_h·h̃` from last frame's denoised ĥ when available | densify without permanent contact bias; raw hitT too noisy to size kernels | [0, 30] / [0, 20] px |
+| D2 | blur / post-blur radius | R-5: `max(min(R_max·f_A·f_r·pixSize, c_h·h̃), R_min·pixSize)`, f_A = 1/(1+A), R_max 30 px, R_min 1 px; post-blur × lerp(0.5, 2, sat(δ/0.3)) | GTC20's 1/(1+A); hit distance as a physical footprint (lobe at the hit); post-blur grows only where the blur still changed things | R_max [10, 60]; post-blur [0.25–1, 1–3, δ₀ 0.1–0.5] |
+| D3 | Poisson disk, rotation | 8 antipodal golden-angle taps (table R-3) + centre; blur rotates by 4×4 Bayer + golden-ratio per frame; pre/post static | zero-mean set is safe unrotated; ALU only | falloff on/off |
+| D4 | weights | W(x) = smoothstep(0,1,sat(1−x)) for all; geometry plane distance τ_g 2 %→0.5 %; normal θ_L(α)·lerp(1, 0.25, A_n) + 1°; roughness 0.05 + 0.25r; hit-distance on ĥ, lerp(0.1, 0.5, r)·lerp(1, 0.5, A_n); θ_L from our GGX derivation, E = 0.75; FB simple dominant fit with α | one shape everywhere (RTG2 Eq. 49.3); tolerances tighten with A (RTG2 p.841) | endpoints ×[0.5, 2]; E [0.5, 0.9]; r vs α in the fit |
+| D5 | hit distance | rational `ĥ = h/(h + a + b·d)`, a = 1, b = 0.05; main ĥ accumulates with the signal's A; responsive copy in `F` (cap A_fast = 3) for confidence and virtual motion; ĥ filtered by every pass except pre-blur, with the same weights as radiance; "mix input with reprojection" = the fast history | never clips far hits; AO/SO for free; one curve | a [0.25, 5], b [0, 0.2] |
+| D6 | disocclusion | τ = 1 %; all math in previous view space; pairwise-averaged normal; backface reject; Catmull-Rom only if all 16 taps pass (16 plane tests from 8 gathers) | removes the frame-of-reference ambiguity; exact 4×4 check is cheap ALU | τ [0.5 %, 1.5 %] |
+| D7 | history fix | A_fix = 3; levels base + 3; start L = floor(3·sat(1 − A/A_fix)·ρ + 0.5), ρ = r for specular; 3×3 tent at level L; viewZ weight with τ_fix = 2 %·2^L; fall to finer level if normalized weight sum < 0.25; full replacement | RTG2 p.829 (3×3, viewZ only, 1–3 frames), GTC20 s.35 (start level) | A_fix [2, 6]; τ_fix [0.5 %, 5 %]; sum [0.1, 0.5] |
+| D8 | variance clamping | history fix: 3×3 of fast luminance, γ = 2, luminance-only clamp; stabilization: 3×3 of post-blur output, w = γ_s σ + β_s μ widening with A; "faster history" = `F` with A_fast = 3 | fast history makes the window track recent lighting; widening = "wider if possible" | γ [1, 3]; γ_s, β_s ranges above |
+| D9 | anti-firefly | clamp centre luminance to 1.5× the second-largest of 8 valid neighbours in history fix; skip specular r < 0.25 | rank-conditioned in spirit; no energy removed unless the centre is an extreme outlier | k_ff [1, 4] |
+| D10 | stabilization speed | α = max(1/(1+A), 1/8) (N_stab = 7), uses the signal's A after anti-lag | lag bounded by the clamp; mirrors (low A_s) stabilize less | N_stab [3, 31] |
+| D11 | anti-lag | C-10: fast/slow relative luminance excess beyond γσ, and ĥ excess; confidence `c = min(c_I, c_H)`; `A ← lerp(min(A, A_fast), A, c)`; runs in history fix | renderer-independent; one place writes A | γ [1, 3]; e_max [0.2, 1]; ĥ tol [0.1, 0.4]; A_fast [2, 7] |
+| D12 | virtual motion | confidence R-10 (footprint validity × normal × roughness × fast-ĥ agreement); clamp R-11 to input 3×3 μ ± 2σ, strength by c_v; no curvature in v0; A post-increment | prose properties of RTG2 §49.8.2; listing not used | tolerances in R-10/R-11 |
+| D13 | checkerboard | not supported in v0 | PLAN §1 non-goal | — |
+| D14 | storage of A | `data` r32uint: A_d, A_s as 10-bit A·16, m 12-bit unorm; read-write in history fix | fits the 4-storage limit and the memory budget | — |
+| D15 | specular pass order | post-blur → stabilization (RTG2) | later, more detailed source | — |
+| D16 | motion vectors | 2D NDC motion + optional 2.5D `motionZ` + viewZ + matrices → Xp (C-3, C-6); no 3D world motion input | the API and captures carry 2D/2.5D; 2.5D is NRD's recommended mode too | — |
+
+Other recurrent constants: `A_cap = 31` (C-9), `A_fast = 3` (C-10), `R_max = 30 px`
+(R-5), `N_stab = 7` (D10), `A_fix = 3` (D7).
+
+---
+
+## 7. Shadows (M4) — outline
+
+Replaces the FFX shadow denoiser's weak points measured in `docs/specs/temporal.md`
+(binary visibility, blur feedback drift, no penumbra sizing).
+
+- **SH-1 Inputs.** `visibility` ∈ [0,1] (fractional kept, never thresholded), occluder
+  distance `h` (0 = unoccluded), and the light (`ShadowInputs.light`, same fields as the
+  capture's `lights`). One light per denoiser instance in v0 (RTG1 ch. 19 also filters per
+  light).
+- **SH-2 Penumbra footprint** (Mehta 2012 Eq. 13 rewritten for a hit distance; derivation in
+  `sources/shadows-specular.md` §A2):
+  `W = R · h / max(D − h, 1e-3)` for a sphere light of radius R at distance D from the
+  receiver; `W = h · tan(θ_L)` for a directional light of angular radius θ_L. Floor
+  `W ≥ 1·pixSize(d)` (Mehta's pixel term). World units, on the receiver's tangent plane.
+- **SH-3 Overlapping penumbrae / lit pixels** (gap G2; our design from Mehta's "the
+  occluder closest to the receiver wins" (`d2_max`)): a `tiles` pass over 8×8 tiles stores
+  `W_min` over occluded pixels and a "penumbra present" flag (mixed or fractional
+  visibility). Each pixel uses `W_eff = min(W_own if occluded, W_min of the 3×3 tiles
+  around it that contain occluded pixels)`. Tiles with uniform visibility and no penumbra in
+  their 3×3 neighbourhood are skipped by later passes (indirect dispatch over a tile list;
+  TR19 slide 72, FFX). The patent-described remedy mentioned in shadows-specular.md G2 is
+  not used.
+- **SH-4 Temporal, no blur feedback.** Accumulate **raw** visibility (and `W_eff`) with the
+  core reprojection (C-6/7/8), `A_cap = 15` (tune [7, 31]), and clamp the history to the
+  5×5 mean ± γσ of raw visibility (RTG1 ch. 25 §25.2.1's 5×5 window; γ = 1, tune [0.5, 2])
+  to follow moving shadows that motion vectors miss. The spatial output never re-enters the
+  history (fixes FFX's compounding blur, ~1 dB drift).
+- **SH-5 Spatial.** Two passes, each the 8-tap disk (R-3), rotated per pixel with different
+  rotations, on the tangent plane, radius `R = W_eff · lerp(1, 0.5, A_n)` then `0.5·R` in
+  the second pass; weights `w_geom`, `w_normal` (30°). **Anisotropy (gap G1, our
+  derivation, M4 experiment):** stretch the disk along the light direction projected on the
+  receiver plane by `min(1/max(n·l, 0.2), 4)` (grazing light lengthens penumbrae, RTG II
+  ch. 24 p.389).
+- **SH-6 Fallback without `h`:** Heitz 2018's noise-driven footprint (total variation along
+  4 lines, §4.1) — later.
+- **SH-7 Renderer contract** (documented, not enforced): unjittered shadow-ray origins (TR19
+  slides 55–62); blue-noise light samples animated with the golden-ratio sequence (RTG II
+  ch. 24 §24.7.2).
+- Later: Heitz 2018 ratio estimator for glossy receivers; translucent shadows (M8, TR19's
+  order-independent 1/3 subtraction).
+- **Budget:** 4 dispatches (`tiles`, `temporal`, `spatial` ×2), history `rgba16float`
+  (v, W_eff, A, –) ping-pong 16 B + 2 transients 16 B ≈ **32 B/px**; ≤ 0.6 ms at 1080p on
+  the M5 Pro needs the tile skip (FFX shadows with tile classification measured 0.86 ms).
+
+## 8. Occlusion (M5) — outline
+
+- **O-1 Free AO/SO.** The alpha (ĥ) of `recurrent`'s diffuse and specular outputs **is** AO
+  and SO (GTC20 s.9, s.54, s.63), with our falloff `1/(1 + h/h_scale)` (F-3).
+- **O-2 Occlusion-only denoiser.** The same 8 passes with one `rgba16float` per pixel
+  carrying `(ĥ_d, ĥ_s, –, –)` for both signals: one buffer pool instead of two, no radiance.
+  Anti-lag uses the ĥ detector only; `F` holds `(ĥ_d, ĥ_s)`. ≈ 32 + 8 + 4 + 16 + 1.5 ≈
+  **62 B/px**. Kernel radius and weights unchanged (the hit-distance weight and clamp do the
+  edge work).
+- **O-3 AO radius.** In occlusion-only mode `h_scale = aoRadius` (b = 0), a world constant,
+  the usual AO parameter. Default 1 world unit.
+- **O-4 Cheap SO without specular rays:** Lagarde & de Rousiers 2014 Listing 26 from AO
+  (empirical; optional output, not a denoiser).
+
+---
+
+## 9. Output, remodulation, API notes
+
+- Default output is **demodulated** (`output: 'demodulated'`): captures and metrics compare
+  in that space, and callers usually composite with their own material terms. With
+  `'remodulated'` the last pass multiplies by ρ / E (F-2) into separate output textures.
+- Each class returns one output texture per signal (diffuse and specular: two textures, or
+  an object with both; the `TemporalDenoiser<DiffuseSpecularInputs>` return type needs
+  this decided by T0.5).
+- AO/SO: in the outputs' alpha (O-1).
+
+---
+
+## 10. WebGPU resource plan
+
+### 10.1 Recurrent (diffuse + specular)
+
+Buffer rotation per signal (4 × `rgba16float`, W×H). At frame start: `P` = `H_prev`,
+`Q` = `S_prev`; `R`, `S` free.
+
+| pass | reads | writes | after the pass |
+|---|---|---|---|
+| R1 | P (ĥ guide) | R = `pre` | |
+| R2 | R, P (reprojected) | S = `acc` | P free |
+| R3 | S | P ← signal mip atlas | |
+| R4 | S, P (atlas) | R = `fix` | P free again |
+| R5 | R | P = `blur` | |
+| R6 | P, S (centre) | R = `H` (next history) | |
+| R7 | R, Q (reprojected) | P = `S_new` (next stabilization history) | next frame: P' = R, Q' = P |
+
+| resource | format | count | B/px |
+|---|---|---|---|
+| signal buffers (diffuse, specular) | rgba16float | 2 × 4 | 64 |
+| fast history `F` | rgba16float | 2 (ping-pong) | 16 |
+| `data` | r32uint | 2 (ping-pong) | 8 |
+| `G`, `G_prev` | rg32uint | 2 | 16 |
+| depth mip atlas | r32float | 0.375 | 1.5 |
+| **total internal** | | | **105.5** (≈ 219 MB at 1080p) |
+| optional remodulated outputs | rgba16float | 2 | +16 |
+
+**Over the ≤ 100 B/px target by 5.5 %.** Ready cut: store `F` at half resolution
+(`compactFast`, −12 → **93.5 B/px**), at some cost in hit-distance accuracy at edges for
+virtual motion. Left for Dennis (§12). Inputs (caller-owned, ~32 B/px) are not counted.
+
+Storage textures per dispatch: R0 1, R1 2, R2 4, R3 3, R4 3, R5 2, R6 2, R7 2 (4 with
+remodulated outputs). Read-write storage only on `r32uint` (`data`), which core WebGPU
+allows. No optional features required; `shader-f16` and subgroups are optional speedups.
+
+### 10.2 SVGF
+
+Per signal: `hist` ping-pong 16, `accum`/scratch 8, `V` 8, `moments` (rg32float) ping-pong 16
+= 48 B; ×2 signals + `G` pair 16 = **112 B/px**. A-SVGF adds `lum` ping-pong (r32float) 8 and
+gradient textures at 1/9 resolution (2 × 2 × rgba32float ≈ 7 B/px) plus the requests buffer
+(0.4 B/px): **≈ 127 B/px**. SVGF is the baseline, not the default; no memory target.
+
+### 10.3 Dispatch count and cost vs PLAN §8
+
+| filter | dispatches (diff + spec) | estimate at 1080p, M5 Pro | target |
+|---|---|---|---|
+| recurrent | 8 | **3.5–5 ms** (see below) | ≤ 4 ms |
+| svgf | 8 (15 with A-SVGF) | 6–10 ms (5 full-res à-trous × 25 taps × 2 signals) | baseline only |
+| shadows | 4 | 0.3–1 ms, tile skip decides | ≤ 0.6 ms |
+
+How the recurrent estimate was made (two independent ways, both rough):
+- **Bandwidth:** summing unique bytes per pass (inputs once, outputs once, taps assumed
+  cache hits) gives ≈ 430 B/px ≈ 0.9 GB per frame; at ~200–250 GB/s effective on the M5 Pro
+  that is 3.6–4.5 ms.
+- **Scaling RTG2:** 2.72 ms at 1440p on an RTX 3090 → ~1.5 ms at 1080p; the M5 Pro has
+  roughly 1/3 of the 3090's bandwidth and compute → ~4.5–5 ms.
+
+So the 4 ms target is **at risk** and needs the levers listed below; the first M2 task
+should time the 8-pass skeleton with trivial kernels to calibrate this. Levers, in order of
+expected gain: fuse R0 into R1 (−1 dispatch, −30 B/px); `shader-f16` arithmetic; half-res
+`F`; skip R7's albedo/f0 reads when output is demodulated; tile-skip sky; workgroup tiles
+for the 3×3 neighbourhoods in R4 and R7. On Windows the ≤ 2× native target looks reachable:
+same pass structure, native REBLUR diffuse+specular is 2.55 ms at 1440p on an RTX 4080
+(nrd-provenance §3.1).
+
+---
+
+## 11. What M1/M2 implementers do first
+
+1. `temporal-core.wgsl` (C-1…C-12) with a unit capture: static camera → A grows to the cap;
+   camera cut → A = 0; pan over a step edge → no history across the edge.
+2. SVGF per §4 on top of it (T1.2–T1.4).
+3. For M2: the 8-pass skeleton with trivial kernels, timed (§10.3), then pass by pass.
+
+---
+
+## 12. Open for Dennis's review (taste calls)
+
+1. **Listing policy.** We don't use formulas from RTG II ch. 49's numbered listings even
+   though `sources/reblur.md` transcribed them (A_spec, virtual confidence thresholds,
+   kernel skew, disocclusion max-of-normals). We do use GTC 2020 **slide** formulas (radius
+   1/(1+A), history-fix start level). Keep this line, or relax it (or tighten it to slides'
+   prose only)?
+2. **Hit-distance curve.** Rational `h/(h + h_scale)` (never clips; AO with a soft
+   `1/(1+h/s)` falloff) instead of `saturate(h/h_max)` (classic AO radius look). Changes how
+   AO/SO look. OK?
+3. **Memory: 105.5 B/px vs ≤ 100.** Accept, or turn on half-res fast history (93.5)?
+4. **History caps.** `A_cap = 31` for recurrent (RTG2 allows 64), `63` for SVGF. Longer is
+   smoother and laggier.
+5. **Default output space.** Demodulated (proposed) vs remodulated.
+6. **Pre-blur strength.** 15 px diffuse / 10 px specular trades noise for a permanent,
+   contact-limited bias. Taste on captures.
+7. **A-SVGF renderer contract** (re-shade previous samples with old seeds). Ship it as an
+   opt-in mode for renderers that can, or keep A-SVGF test-bed-only?
+8. **Anti-lag placement.** In history fix (fast vs slow) rather than in stabilization as in
+   RTG2. Simpler; revisit if lag shows on captures.
+9. **Glossy kernel elongation** (`κ_e = 0.75`, R-4): how stretched glossy reflections look.
+10. **No checkerboard** support in v0.
