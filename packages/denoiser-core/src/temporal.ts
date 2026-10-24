@@ -92,12 +92,40 @@ export interface TemporalDenoiser<Inputs extends object = object> {
 
 // ---- signal inputs ------------------------------------------------------------
 
+/**
+ * The shadow-casting light, same fields as a capture's `lights` entry
+ * (CAPTURE-FORMAT v0). Lets a denoiser size penumbrae from occluder distance.
+ */
+export type ShadowLight =
+  | {
+    type: 'sphere';
+    /** World-space centre. */
+    position: readonly [number, number, number];
+    /** World-space radius (0 = point light: hard shadows). */
+    radius: number;
+  }
+  | {
+    type: 'directional';
+    /** Unit vector from the surface TOWARD the light. */
+    direction: readonly [number, number, number];
+    /** Angular radius in radians (the sun is about 0.0047). */
+    angularRadius: number;
+  };
+
 /** Shadows: 1-sample stochastic visibility toward the light. */
 export interface ShadowInputs {
   /** Visibility per pixel in [0, 1] (1 = lit), r8unorm / r16float — one ray or shadow-map sample. */
   visibility: GPUTexture;
-  /** Distance to the occluder (r16float), for penumbra-aware filter sizes. */
+  /**
+   * Distance to the occluder (r16float / r32float), for penumbra-aware filter sizes. World
+   * units; 0 = unoccluded (or self-shadowed, when visibility is 0).
+   */
   hitDistance?: GPUTexture;
+  /**
+   * The light this visibility was traced toward (optional; may change every frame).
+   * Filters that size penumbrae from `hitDistance` need it; others ignore it.
+   */
+  light?: ShadowLight;
 }
 
 /** Reflections / specular indirect: 1 sample per pixel. */
