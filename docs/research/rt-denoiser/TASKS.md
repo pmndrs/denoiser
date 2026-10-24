@@ -193,7 +193,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
 harness builder runs them and returns images/metrics only.)_
 
-- [ ] **P1: does `REFERENCE` reproject?** Captures: `synthetic-static` and `synthetic-plane`
+- [x] (answered 530c780: **no**, it is a per-pixel screen-space running mean; matches our `accumulate-static`; see `native/results/README.md`) **P1: does `REFERENCE` reproject?** Captures: `synthetic-static` and `synthetic-plane`
       (`gen-synthetic.mjs`, see NATIVE-HARNESS phase 3). Run `REFERENCE` on all three
       signals, score with `compare.mjs`. On `synthetic-static` expect last-frame PSNR ≈ 26.5 /
       21.5 / 23.6 dB (diffuse / specular / visibility). On `synthetic-plane`, ours
