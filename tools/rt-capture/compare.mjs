@@ -11,7 +11,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  OUTPUTS_DIR, SIGNALS, frameDir, listDirs, mean, readBuffer, readF32, readManifest, resolveCapture, scoreFrame, settledMask,
+  OUTPUTS_DIR, PSNR_CAP_DB, SIGNALS, frameDir, listDirs, mean, readBuffer, readF32, readManifest, resolveCapture, scoreFrame, settledMask,
 } from './lib/capture.mjs';
 
 const args = process.argv.slice(2);
@@ -57,12 +57,27 @@ function scoreSequence(getOut, signal) {
   const ok = per.filter(Boolean);
   const pick = (k, mask) => per.map((r, i) => (r && (!mask || mask[i]) ? r[k] : NaN));
   const last = [...per].reverse().find(Boolean);
+  // pooled: PSNR of the mean squared error over all (masked) frames and pixels
+  const pooled = (sseKey, cntKey, mask) => {
+    let e = 0, k = 0;
+    per.forEach((r, i) => { if (r && (!mask || mask[i])) { e += r[sseKey]; k += r[cntKey]; } });
+    return k ? 10 * Math.log10(1 / Math.max(e / k, 1e-12)) : NaN;
+  };
+  const capped = (xs) => xs.map((x) => (Number.isFinite(x) ? Math.min(x, PSNR_CAP_DB) : x));
   return {
     frames: ok.length,
     psnr: mean(pick('psnr')),
     psnrSettled: mean(pick('psnr', settled)),
     psnrLast: last?.psnr ?? NaN,
     psnrPenumbra: ch === 1 ? mean(pick('psnrPenumbra')) : NaN,
+    // pooled = PSNR of the mean MSE; capped = mean of per-frame dB clipped at PSNR_CAP_DB
+    // (psnr / psnrSettled / psnrPenumbra above: plain mean of per-frame dB, unchanged)
+    psnrPooled: pooled('sse', 'sseCount'),
+    psnrSettledPooled: pooled('sse', 'sseCount', settled),
+    psnrPenumbraPooled: ch === 1 ? pooled('ssePenumbra', 'ssePenumbraCount') : NaN,
+    psnrCapped: mean(capped(pick('psnr'))),
+    psnrSettledCapped: mean(capped(pick('psnr', settled))),
+    psnrPenumbraCapped: ch === 1 ? mean(capped(pick('psnrPenumbra'))) : NaN,
     flicker: mean(pick('flicker')),
     bias: mean(pick('bias')),
     nonFinite: ok.reduce((a, r) => a + r.nonFinite, 0),
@@ -111,14 +126,15 @@ const lines = [
   `# ${capName}: replay scores`,
   '',
   `${m.width}×${m.height}, ${m.frames.length} frames, resets at [${m.frames.filter((f) => f.reset).map((f) => f.index).join(', ')}], referenceSpp ${m.referenceSpp}. ` +
-  `Metrics: CAPTURE-FORMAT.md; settled = ≥ ${SETTLE} frames after a reset.`,
+  `Metrics: CAPTURE-FORMAT.md; settled = ≥ ${SETTLE} frames after a reset. PSNR, settled, last frame and penumbra are means of per-frame dB; ` +
+  `pooled = PSNR of the mean MSE over all frames and pixels; capped = mean of per-frame dB clipped at ${PSNR_CAP_DB} dB.`,
   '',
-  '| denoiser | signal | PSNR dB (noisy → out) | settled | last frame | penumbra | flicker (noisy → out) | bias | non-finite | GPU ms | wall ms |',
-  '|---|---|---|---|---|---|---|---|---|---|---|',
+  '| denoiser | signal | PSNR dB (noisy → out) | pooled | capped | settled | settled pooled | last frame | penumbra | penumbra pooled | flicker (noisy → out) | bias | non-finite | GPU ms | wall ms |',
+  '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
 ];
 for (const r of results) {
   const b = baselines[r.signal];
-  lines.push(`| ${r.denoiser} | ${r.signal} | ${f2(b.psnr)} → **${f2(r.psnr)}** | ${f2(r.psnrSettled)} | ${f2(r.psnrLast)} | ${f2(r.psnrPenumbra)} | ${f2(b.flicker, 4)} → ${f2(r.flicker, 4)} | ${f2(r.bias, 4)} | ${r.nonFinite} | ${f2(r.medianGpuMs, 3)} | ${f2(r.medianWallMs, 2)} |`);
+  lines.push(`| ${r.denoiser} | ${r.signal} | ${f2(b.psnr)} → **${f2(r.psnr)}** | ${f2(r.psnrPooled)} | ${f2(r.psnrCapped)} | ${f2(r.psnrSettled)} | ${f2(r.psnrSettledPooled)} | ${f2(r.psnrLast)} | ${f2(r.psnrPenumbra)} | ${f2(r.psnrPenumbraPooled)} | ${f2(b.flicker, 4)} → ${f2(r.flicker, 4)} | ${f2(r.bias, 4)} | ${r.nonFinite} | ${f2(r.medianGpuMs, 3)} | ${f2(r.medianWallMs, 2)} |`);
 }
 const md = lines.join('\n') + '\n';
 writeFileSync(path.join(outRoot, 'compare.md'), md);

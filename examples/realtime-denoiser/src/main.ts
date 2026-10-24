@@ -227,6 +227,10 @@ interface Ctx {
 
 const lastReset = (f: number) => Math.max(...[0, ...RESETS].filter((r) => r <= f));
 const psnr = (sse: number, n: number) => (n > 0 ? 10 * Math.log10(1 / Math.max(sse / n, 1e-12)) : NaN);
+// Ceiling for the *Capped variants: per-frame dB clipped here before averaging, so a frame
+// with (almost) no error can't add up to 120 dB to a mean (RESULTS.md "What is measured").
+const PSNR_CAP_DB = 60;
+const capDb = (x: number) => (Number.isFinite(x) ? Math.min(x, PSNR_CAP_DB) : x);
 const mean = (xs: number[]) => { const v = xs.filter((x) => Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
 const r4 = (x: number) => (Number.isFinite(x) ? +x.toFixed(4) : x === undefined ? null : String(x));
@@ -323,10 +327,23 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
   for (const p of pairs) {
     const F = p.frames;
     const perFramePsnr = (k: 0 | 1, region = 0) => F.map((r) => psnr(r.regions[region][k], r.regions[region][2]));
+    // PSNR of the mean MSE over frames (mask) and pixels: sum of squared errors / sum of counts
+    const pooledPsnr = (k: 0 | 1, region = 0, mask?: boolean[]) => {
+      let sse = 0, n = 0;
+      F.forEach((r, f) => { if (!mask || mask[f]) { sse += r.regions[region][k]; n += r.regions[region][2]; } });
+      return psnr(sse, n);
+    };
     const pooled = (region: number) => {
       const s = [0, 0, 0, 0];
       for (const r of F) for (let i = 0; i < 4; i++) s[i] += r.regions[region][i];
-      return { pixelsPerFrame: Math.round(s[2] / F.length), psnrNoisy: r4(psnr(s[0], s[2])), psnrDen: r4(psnr(s[1], s[2])), biasDen: r4(s[2] ? s[3] / s[2] : NaN) };
+      const pf = perFramePsnr(1, region);
+      // psnrDen / psnrNoisy here were always pooled; psnrDenPooled repeats psnrDen so the name
+      // means the same as at the sequence level, psnrDenMean / psnrDenCapped are the per-frame
+      // means (frames where the region is empty are skipped)
+      return {
+        pixelsPerFrame: Math.round(s[2] / F.length), psnrNoisy: r4(psnr(s[0], s[2])), psnrDen: r4(psnr(s[1], s[2])), biasDen: r4(s[2] ? s[3] / s[2] : NaN),
+        psnrDenPooled: r4(psnr(s[1], s[2])), psnrDenMean: r4(mean(pf)), psnrDenCapped: r4(mean(pf.map(capDb))),
+      };
     };
     const tsum = [0, 0, 0, 0];
     let dn2 = 0, lumD = 0, lumR = 0, lumN = 0, errN = 0, nfIn = 0, nfDen = 0;
@@ -350,6 +367,15 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       psnrDenSettled: r4(mean(den.filter((_, f) => settledMask[f]))),
       psnrDenFirstFrame: r4(den[0]),
       psnrDenAfterCut: afterReset.length ? r4(mean(afterReset)) : null,
+      // pooled = PSNR of the mean MSE over frames and pixels; capped = mean of per-frame dB
+      // clipped at PSNR_CAP_DB (the fields above are the plain mean of per-frame dB)
+      psnrNoisyPooled: r4(pooledPsnr(0)),
+      psnrDenPooled: r4(pooledPsnr(1)),
+      psnrDenSettledPooled: r4(pooledPsnr(1, 0, settledMask)),
+      psnrNoisyCapped: r4(mean(noisy.map(capDb))),
+      psnrDenCapped: r4(mean(den.map(capDb))),
+      psnrDenSettledCapped: r4(mean(den.filter((_, f) => settledMask[f]).map(capDb))),
+      psnrCapDb: PSNR_CAP_DB,
       regions: Object.fromEntries(REGIONS.map((name, i) => [name, pooled(i)])),
       biasDen: all.biasDen,
       biasNoisy: r4(allCount ? errN / allCount : NaN),

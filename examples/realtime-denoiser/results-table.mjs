@@ -35,6 +35,20 @@ for (const [signal, rows] of bySignal) {
     console.log(`| ${path} | ${id} | ${f2(x.psnrDen)} | ${f2(x.psnrDenSettled)} | ${f2(reg2)} | ${f2(reg3)} | ${f3(x.flipDen)} | ${f4(x.flickerDen)} | ${f2(x.tpsnrDen)} | ${f4(scalar ? x.regions.penumbra.biasDen : x.biasDen)} | ${pct(x.energyDen)} | ${f2(x.gpuMs?.total)} |`);
   }
   console.log('');
+  // PSNR variants (RESULTS.md "What is measured"): mean of per-frame dB (the PSNR / settled
+  // columns above), pooled = PSNR of the mean MSE over frames and pixels, capped = mean of
+  // per-frame dB clipped at psnrCapDb. Regions in the table above were always pooled.
+  // Runs from before these fields existed show '–'.
+  const regName = scalar ? 'penumbra' : 'disocc.';
+  const cap = rows.find((r) => r.x.psnrCapDb)?.x.psnrCapDb ?? 60;
+  console.log(`PSNR: per-frame mean / pooled (PSNR of the mean MSE) / capped (per-frame dB ≤ ${cap}):\n`);
+  console.log(`| path | denoiser | PSNR mean | pooled | capped | settled mean | settled pooled | settled capped | ${regName} mean | ${regName} pooled | ${regName} capped |`);
+  console.log('|---|---|---|---|---|---|---|---|---|---|---|');
+  for (const { path, id, x } of rows) {
+    const g = scalar ? x.regions.penumbra : x.regions.disoccluded;
+    console.log(`| ${path} | ${id} | ${f2(x.psnrDen)} | ${f2(x.psnrDenPooled)} | ${f2(x.psnrDenCapped)} | ${f2(x.psnrDenSettled)} | ${f2(x.psnrDenSettledPooled)} | ${f2(x.psnrDenSettledCapped)} | ${f2(g.psnrDenMean)} | ${f2(g.psnrDen)} | ${f2(g.psnrDenCapped)} |`);
+  }
+  console.log('');
   if (signal === 'specular') {
     console.log('Specular PSNR by roughness bin (pooled over the path):\n');
     console.log('| path | denoiser | r<0.15 | r<0.35 | r<0.6 | r≥0.6 |');

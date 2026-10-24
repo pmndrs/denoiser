@@ -146,6 +146,10 @@ export const isScored = (d) => d > 0 && d < 1;
 
 const tonemap = (x, ch) => (ch === 1 ? Math.min(Math.max(x, 0), 1) : (x > 0 ? x / (1 + x) : 0));
 
+/** Ceiling for the "capped" PSNR variants: per-frame dB clipped here before averaging
+ * (CAPTURE-FORMAT.md "Metrics for replay outputs"). */
+export const PSNR_CAP_DB = 60;
+
 /**
  * Score one frame. `out`, `ref`: Float32Array with `ch` channels; `depth`: 1 ch.
  * `prevS`: Float32Array of the previous frame's signed error (NaN = not scored) or null.
@@ -177,6 +181,8 @@ export function scoreFrame(out, ref, depth, ch, prevS) {
     psnr: psnr(sse, cnt),
     psnrPenumbra: ch === 1 ? psnr(sseP, cntP) : NaN,
     penumbraPixels: cntP,
+    // raw sums for pooled PSNR (compare.mjs): squared error and value count (pixels x channels)
+    sse, sseCount: cnt, ssePenumbra: sseP, ssePenumbraCount: cntP,
     bias: biasCnt ? bias / biasCnt : NaN,
     flicker: prevS && flickCnt ? flick / flickCnt : NaN,
     pixels: cnt / ch,

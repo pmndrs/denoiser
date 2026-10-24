@@ -37,6 +37,23 @@ quick correctness checks of a denoiser's math.
 - **Metrics** (`src/metrics.ts`, `src/flip.ts`), all on receivers (depth < 1):
   - PSNR on the tonemapped value (Reinhard x/(1+x) per channel; visibility clamped), mean
     of per-frame dB; *settled* skips 8 frames after each reset.
+  - Three ways to average PSNR over a path (every result has all three; the old names keep
+    the per-frame mean, so older tables stay comparable):
+    - *per-frame mean* (`psnrDen`, `psnrDenSettled`): mean of per-frame dB. A frame with
+      (almost) no error scores up to 120 dB (MSE floor 1e-12), so a few near-empty frames
+      decide the mean: on `pan` the last 17 frames show no shadow, every output that
+      returns exactly 1 scores 120 dB there, and the shadows mean reads 52.6 dB.
+    - *pooled* (`psnrDenPooled`, `psnrDenSettledPooled`, `psnrNoisyPooled`): PSNR of the
+      mean MSE, 10·log10(1 / (Σ squared error / Σ scored values)) over all frames (or the
+      settled ones) and pixels. Every pixel-frame weighs the same. **Rank denoisers on this
+      one.**
+    - *capped* (`psnrDenCapped`, `psnrDenSettledCapped`, `psnrNoisyCapped`): mean of
+      per-frame dB after clipping each frame at 60 dB (`psnrCapDb`; RMS error 0.001).
+    - Regions (`regions.<name>`): `psnrDen` there was always pooled (= `psnrDenPooled`);
+      `psnrDenMean` / `psnrDenCapped` are the per-frame mean and capped mean (frames where
+      the region is empty skipped). `results-table.mjs` prints all three in a second table;
+      the replay side (`tools/rt-capture/compare.mjs`) uses the same definitions
+      (CAPTURE-FORMAT.md "Metrics for replay outputs").
   - Regions, pooled over the path: *penumbra* (0.02 < reference visibility < 0.98),
     *disocc.* (pixels with < 8 frames of valid history by ground-truth reprojection,
     excluding the 8 frames after a reset), *after cut* (the reset frame of `cut`),

@@ -200,6 +200,25 @@ definitions (they match `examples/ffx-denoiser/src/eval.ts`), so numbers are com
 - **PSNR** per frame: `MSE = mean over scored pixels and channels of e²`,
   `PSNR = 10 · log10(1 / max(MSE, 1e-12))` (peak 1). Sequence PSNR = **mean of per-frame
   dB**. "Settled" = skipping the first 8 frames after each reset (frame 0 included).
+- **Three sequence PSNRs** (added 2026-10-25; the per-frame mean keeps its old field names):
+  - *per-frame mean* (`psnr`, `psnrSettled`, `psnrPenumbra`): the mean of per-frame dB above.
+    A frame with (almost) no error scores up to 120 dB (the 1e-12 floor), so a few near-empty
+    frames (e.g. no shadow on screen, every output exactly 1) can lift the mean far above
+    what a viewer sees.
+  - *pooled* (`psnrPooled`, `psnrSettledPooled`, `psnrPenumbraPooled`): the PSNR of the mean
+    MSE, `10 · log10(1 / max(Σ e² / Σ n, 1e-12))`, sums over every frame in the window (all,
+    or settled only) and every scored pixel and channel of the region. Every pixel-frame
+    weighs the same; near-empty frames add little error and little weight. **Use this one
+    to rank denoisers.**
+  - *capped* (`psnrCapped`, `psnrSettledCapped`, `psnrPenumbraCapped`): the mean of per-frame
+    dB with each frame clipped at **60 dB** first (`PSNR_CAP_DB` in `lib/capture.mjs`; 60 dB
+    = RMS error 0.001, below anything visible in 8-bit output). Still a mean of dB, so
+    it still favours frames with little error, but no single frame can add more than 60 dB.
+  - The live test bed (`examples/realtime-denoiser`) reports the same three
+    (`psnrDen` / `psnrDenPooled` / `psnrDenCapped`, plus `…Settled…`). Its **region**
+    numbers (`regions.<name>.psnrDen`, e.g. its penumbra PSNR) were always pooled; it adds
+    `psnrDenMean` / `psnrDenCapped` there. `compare.mjs`'s `psnrPenumbra` is a per-frame
+    mean, so compare its `psnrPenumbraPooled` with the test bed's penumbra column.
 - **Penumbra region** (scalar signals only): scored pixels with `0.02 < ref < 0.98`;
   PSNR and bias over those.
 - **Flicker** per frame t (t not a reset frame): mean over pixels scored in t and t−1 of

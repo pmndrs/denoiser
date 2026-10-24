@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // One markdown table per signal from the compare.json files of a capture set (after
 // `run-headless.mjs --set=<set> --replay=...`): rows = captures, columns = denoisers,
-// cells = sequence PSNR / settled PSNR / flicker. Native NRD folders (nrd-*) in the same
+// cells = sequence PSNR / settled PSNR / flicker, then a second table with the PSNR variants
+// (per-frame mean / pooled / capped). Native NRD folders (nrd-*) in the same
 // outputs show up as extra columns.
 //
 //   node replay-table.mjs [--set=standard] [--denoisers=passthrough,accumulate-32,svgf] [--outputs=<root>]
@@ -35,6 +36,20 @@ for (const signal of ['diffuse', 'specular', 'visibility']) {
       const r = rs.find((x) => x.capture === c.name && x.denoiser === d);
       if (!r) return '–';
       return `${f2(r.psnr)} / ${f2(r.psnrSettled)} / ${f4(r.flicker)}${signal === 'visibility' ? ` / ${f2(r.psnrPenumbra)}` : ''}${r.nonFinite ? ` (${r.nonFinite} NaN)` : ''}`;
+    });
+    console.log(`| ${c.name} | ${cells.join(' | ')} |`);
+  }
+  // PSNR variants (CAPTURE-FORMAT "Metrics for replay outputs"): per-frame mean (as above),
+  // pooled = PSNR of the mean MSE over frames and pixels, capped = per-frame dB clipped at
+  // 60 dB before the mean. compare.json files written before these fields existed show '–'.
+  console.log(`\n#### ${signal} (PSNR mean / pooled / capped · settled pooled${signal === 'visibility' ? ' · penumbra pooled' : ''})\n`);
+  console.log(`| capture | ${dens.join(' | ')} |`);
+  console.log(`|---|${dens.map(() => '---').join('|')}|`);
+  for (const c of set) {
+    const cells = dens.map((d) => {
+      const r = rs.find((x) => x.capture === c.name && x.denoiser === d);
+      if (!r) return '–';
+      return `${f2(r.psnr)} / ${f2(r.psnrPooled)} / ${f2(r.psnrCapped)} · ${f2(r.psnrSettledPooled)}${signal === 'visibility' ? ` · ${f2(r.psnrPenumbraPooled)}` : ''}`;
     });
     console.log(`| ${c.name} | ${cells.join(' | ')} |`);
   }
