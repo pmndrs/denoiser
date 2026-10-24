@@ -323,24 +323,29 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     const f = new Float32Array(SP_SIZE / 4);
     const u = new Uint32Array(f.buffer);
     f.set(P, 0);
-    // X(q, z) = A(q) + z B(q), A and B affine in the pixel position q
-    const X = (qx: number, qy: number, z: number) => unprojectZ(Pinv, [2 * qx / W - 1, 1 - 2 * qy / H], -z);
+    // X(q, z) = A(q) + z B(q), A and B affine in the pixel position q (current and previous projection)
     const sub = (a: number[], b: number[]) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    const B0 = sub(X(0, 0, 2), X(0, 0, 1));
-    const A0 = sub(X(0, 0, 1), B0);
-    const B1x = sub(X(1, 0, 2), X(1, 0, 1)), A1x = sub(X(1, 0, 1), B1x);
-    const B1y = sub(X(0, 1, 2), X(0, 1, 1)), A1y = sub(X(0, 1, 1), B1y);
+    const affine = (inv: M4) => {
+      const X = (qx: number, qy: number, z: number) => unprojectZ(inv, [2 * qx / W - 1, 1 - 2 * qy / H], -z);
+      const B0 = sub(X(0, 0, 2), X(0, 0, 1)), A0 = sub(X(0, 0, 1), B0);
+      const B1x = sub(X(1, 0, 2), X(1, 0, 1)), A1x = sub(X(1, 0, 1), B1x);
+      const B1y = sub(X(0, 1, 2), X(0, 1, 1)), A1y = sub(X(0, 1, 1), B1y);
+      return [A0, sub(A1x, A0), sub(A1y, A0), B0, sub(B1x, B0), sub(B1y, B0)];
+    };
+    const [A0, Ax, Ay, B0, Bx, By] = affine(Pinv);
+    const prevCo = affine(invert(mat4(camera.prevProjection)));
+    prevCo.forEach((v, i) => f.set(v, 64 + 4 * i));
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;
     let lightSize = 0, lightVec: readonly number[] = [0, 0, 0];
     if (light?.type === 'sphere') { lightSize = light.radius; lightVec = light.position; }
     else if (light?.type === 'directional') { lightSize = Math.tan(light.angularRadius); lightVec = light.direction; }
     f.set(A0, 16); f[19] = lightSize;
-    f.set(sub(A1x, A0), 20); f[23] = o.maxHistory;
-    f.set(sub(A1y, A0), 24); f[27] = o.clampSigma;
+    f.set(Ax, 20); f[23] = o.maxHistory;
+    f.set(Ay, 24); f[27] = o.clampSigma;
     f.set(B0, 28); f[31] = o.clampFloor;
-    f.set(sub(B1x, B0), 32); f[35] = o.planeDistance;
-    f.set(sub(B1y, B0), 36); f[39] = o.radiusScale;
+    f.set(Bx, 32); f[35] = o.planeDistance;
+    f.set(By, 36); f[39] = o.radiusScale;
     f.set(lightVec, 40); f[43] = o.antiLag;
     const ortho = P[15] === 1;
     f[44] = ortho ? 0 : 2 / (P[5] * H);

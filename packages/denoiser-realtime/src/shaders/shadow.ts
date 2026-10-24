@@ -50,7 +50,7 @@ export const SF_HAS_HIT = 32;
 export const SF_CATMULL = 64;    // Catmull-Rom history for visibility when the 2x2 footprint is valid
 
 /** Size of ShadowParams in bytes. */
-export const SP_SIZE = 64 * 4;
+export const SP_SIZE = 88 * 4;
 
 const PARAMS_WGSL = /* wgsl */ `
 struct ShadowParams {
@@ -67,6 +67,12 @@ struct ShadowParams {
   noiseScale: f32, anisoMax: f32, tilesX: u32, tilesY: u32,
   antiLagHistory: f32, q0: f32, q1: f32, q2: f32,
   terminatorPx: f32, historyScale: f32, minHistory: f32, historyShrink: f32,
+  PA0: vec3f, r0: f32,   // the same affine form for the previous frame's projection
+  PAx: vec3f, r1: f32,
+  PAy: vec3f, r2: f32,
+  PB0: vec3f, r3: f32,
+  PBx: vec3f, r4: f32,
+  PBy: vec3f, r5: f32,
 }
 fn spFlag(f: u32) -> bool { return (SP.flags & f) != 0u; }
 const SF_SPHERE = ${SF_SPHERE}u;
@@ -128,6 +134,55 @@ fn linZ(p: vec2i) -> f32 {
   return z;
 }
 
+// Reprojection with the shared core's rules (SPEC C-6/C-7: bilinear footprint, per-tap
+// plane distance relative to view distance, backfacing taps rejected), made cheaper: tap
+// positions from the affine form X(q, z) = A(q) + z B(q) of the previous projection, so the
+// plane distance is linear in the tap pixel; the plane is the current normal (not the
+// pairwise-averaged one).
+fn reprojFast(p: vec2i, g: Geo) -> Reproj {
+  var r: Reproj;
+  let mv = textureLoad(motionTex, p, 0).xy;
+  r.prevUV = uvOf(p) - vec2f(mv.x, -mv.y) * 0.5;
+  let pc = vec2f(p) + 0.5;
+  let Xv = SP.A0 + SP.Ax * pc.x + SP.Ay * pc.y + g.z * (SP.B0 + SP.Bx * pc.x + SP.By * pc.y);
+  r.world = (F.viewInv * vec4f(Xv, 1.0)).xyz;
+  var dPrev: f32;
+  if (hasFlag(FRAME_HAS_MOTIONZ)) {
+    dPrev = g.z - textureLoad(motionZTex, p, 0).r;
+  } else {
+    dPrev = -(F.prevView * vec4f(r.world, 1.0)).z;
+  }
+  let qp = r.prevUV * F.dims;
+  let Xp = SP.PA0 + SP.PAx * qp.x + SP.PAy * qp.y + dPrev * (SP.PB0 + SP.PBx * qp.x + SP.PBy * qp.y);
+  r.expPrev = Xp;
+  let np = (F.prevView * vec4f(g.n, 0.0)).xyz;
+  let a = vec3f(dot(np, SP.PA0), dot(np, SP.PAx), dot(np, SP.PAy));
+  let b = vec3f(dot(np, SP.PB0), dot(np, SP.PBx), dot(np, SP.PBy));
+  let c = dot(np, Xp);
+  let tol = SP.planeTol * length(Xp);
+  let pp = qp - 0.5;
+  r.base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  r.bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  var valid = vec4f(0.0);
+  for (var k = 0; k < 4; k++) {
+    let q = r.base + TAP_OFFS[k];
+    let gt = textureLoad(geoPrev, clampPix(q), 0).xy;
+    let dt = bitcast<f32>(gt.x);
+    let e = vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0;
+    let nq = vec3f(e, 1.0 - abs(e.x) - abs(e.y));   // octahedral, unnormalized: sign test only
+    let nqf = vec3f(nq.xy + select(vec2f(max(-nq.z, 0.0)), vec2f(-max(-nq.z, 0.0)), nq.xy >= vec2f(0.0)), nq.z);
+    let qc = vec2f(q) + 0.5;
+    let pd = a.x + a.y * qc.x + a.z * qc.y + dt * (b.x + b.y * qc.x + b.z * qc.y) - c;
+    valid[k] = select(0.0, 1.0, inside(q) && dt > 0.0 && dot(g.n, nqf) > 0.0 && abs(pd) <= tol);
+  }
+  r.valid = valid;
+  r.w = r.bil * valid;
+  r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  r.allValid = all(valid > vec4f(0.5));
+  return r;
+}
+
 fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 
 var<workgroup> sV: array<f32, 144>;     // raw visibility, 12x12 = tile + 2-px halo
@@ -159,8 +214,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
     var hist = vec4f(vRaw, 0.0, 0.0, 0.0);
     if (g.z > 0.0) {
       g.n = normalize(nIn);
-      // ---- reproject (shared core: plane distance + backfacing per tap)
-      let r = reproject(p, g, SP.planeTol, -2.0);
+      // ---- reproject (shared core rules, affine form)
+      let r = reprojFast(p, g);
       var A = -1.0;
       var vH = 0.0;
       var gH = 0.0;
@@ -221,9 +276,7 @@ ${nb.join('\n')}
         let h = textureLoad(hitTex, p, 0).r;
         if (h > 0.0) {
           if (spFlag(SF_SPHERE)) {
-            let viewPos = unprojectZ(F.projInv, ndcOf(uvOf(p)), -g.z);
-            let world = (F.viewInv * vec4f(viewPos, 1.0)).xyz;
-            let D = length(SP.light - world);
+            let D = length(SP.light - r.world);
             gS = h / max(D - h, 1e-3 * D);
           } else {
             gS = h;
