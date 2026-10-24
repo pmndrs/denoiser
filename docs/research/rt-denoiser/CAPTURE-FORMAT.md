@@ -73,7 +73,7 @@ Every listed buffer exists in every frame. Readers ignore buffers they don't kno
 | `diffuse_hitt`, `specular_hitt` | 1 | hit distance of the sampled ray | world units, primary segment excluded; 0 = miss / lobe not sampled |
 | `diffuse_ref`, `specular_ref` | 3 | converged reference of the same estimator, same frame | same space as the noisy signal |
 | `visibility` | 1 | 1-ray shadow visibility toward the shadow light | {0,1} or [0,1]; 1 = lit |
-| `occluder_dist` | 1 | distance from the surface to the blocker for that ray | world units; 0 = unoccluded |
+| `occluder_dist` | 1 | distance from the surface to the blocker for that ray | world units; 0 = unoccluded, or self-shadowed (light below the surface's horizon) when `visibility` = 0 |
 | `visibility_ref` | 1 | converged visibility | [0,1] |
 
 `P_prev` is where the surface point was in the previous frame (`P_prev = P` in a static
@@ -205,6 +205,7 @@ definitions (they match `examples/ffx-denoiser/src/eval.ts`), so numbers are com
 - **Flicker** per frame t (t not a reset frame): mean over pixels scored in t and t−1 of
   `|s_t − s_{t−1}|`, the frame-to-frame change of the signed error at a fixed pixel.
   Sequence flicker = mean over those frames. Lower is better; a perfect output is 0.
+  (eval.ts takes s = 0 for pixels not scored in t−1; the difference is negligible.)
 - **Bias**: mean of `s` over scored pixels (penumbra pixels for scalar signals), averaged
   over frames. Negative = darker than the reference.
 - **Non-finite**: count of NaN/Inf output values (never scored silently).

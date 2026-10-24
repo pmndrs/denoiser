@@ -1,8 +1,12 @@
 // Replay page: ?capture=<name>&denoiser=<id>[&signals=diffuse,specular][&frames=N][&output=<folder>]
 // Any other query parameter is passed to the denoiser as a setting (and lands in run.json).
 // No capture: lists captures and denoisers. Result in window.__rtc for run-headless.mjs.
+// ?mode=rewrite&capture=<name>[&as=<new name>]: uploads the capture to GPU textures and
+// writes it back through CaptureWriter (default <name>-rewrite): a writer/readback self-test
+// (compare the two folders byte for byte).
 import { DENOISERS } from './denoisers';
-import { replay } from './replay';
+import { CaptureTextures, loadManifest, replay } from './replay';
+import { CaptureWriter } from './writer';
 import { CaptureClient, type SignalName } from './format';
 
 type State = { ready: boolean; error?: string; results?: unknown; frame?: number };
@@ -11,7 +15,25 @@ const out: State = { ready: false };
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const log = (s: string) => { status.textContent += s + '\n'; };
 
-const RESERVED = new Set(['capture', 'denoiser', 'signals', 'frames', 'output']);
+const RESERVED = new Set(['capture', 'denoiser', 'signals', 'frames', 'output', 'mode', 'as']);
+
+async function rewrite(device: GPUDevice, capture: string, as: string) {
+  const m = await loadManifest(capture);
+  const caps = new CaptureTextures(device, m, capture);
+  const w = new CaptureWriter(device, as);
+  await w.begin({
+    scene: m.scene, width: m.width, height: m.height, lights: m.lights, referenceSpp: m.referenceSpp,
+    reversedDepth: m.reversedDepth, static: m.static, demodulation: m.demodulation, generator: m.generator,
+  });
+  for (const f of m.frames) {
+    await caps.load(f.index);
+    await w.writeFrame({ index: f.index, reset: f.reset, camera: f.camera }, caps.textures);
+    out.frame = f.index;
+  }
+  const r = await w.finish();
+  caps.dispose();
+  return { rewritten: r.path, frames: r.frames };
+}
 
 async function main() {
   const q = new URLSearchParams(location.search);
@@ -44,6 +66,12 @@ async function main() {
     out.error ??= msg;
     log('GPU error: ' + msg);
   });
+  if (q.get('mode') === 'rewrite') {
+    out.results = await rewrite(device, capture, q.get('as') ?? `${capture}-rewrite`);
+    log(JSON.stringify(out.results));
+    out.ready = true;
+    return;
+  }
   log(`replay ${capture} through ${id} ${JSON.stringify(settings)} features=[${[...device.features].join(',')}]`);
   const t0 = performance.now();
   const r = await replay(device, {

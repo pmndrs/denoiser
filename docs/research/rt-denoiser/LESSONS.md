@@ -17,6 +17,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   1080p 120-frame shadow eval takes about a minute. — orchestrator, 2026-10-24
 - Start a dev server in the background (`yarn workspace <name> dev > log 2>&1 &`), give
   it ~4 s, and kill it by port when done. — orchestrator, 2026-10-24
+- The root `.gitignore` ignores `*.js` (and `*.d.ts`): scripts outside `examples/*/src/vendor`
+  must be `.mjs` / `.ts` or they silently never get committed. — capture-io, 2026-10-25
+- `tools/*` is not a yarn workspace. Run Vite there with
+  `node node_modules/vite/bin/vite.js tools/rt-capture --port 5230 ...` (it picks up
+  `tools/rt-capture/vite.config.ts`) and import packages by relative path to their `src/`
+  (no dist needed; type-only `@pmndrs/denoiser-core` imports are erased). — capture-io, 2026-10-25
+- zsh doesn't word-split `$VAR`: `P="a b"; git add $P` adds one path named "a b". Use an
+  array, `P=(a b); git add $P`. — capture-io, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -34,8 +42,26 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - viewZ is three.js view space: in front of the camera is **negative**. — orchestrator,
   2026-10-24
 - Roughness in our captures/API is perceptual r; GGX α = r². — orchestrator, 2026-10-24
+- Jitter (CAPTURE-FORMAT): pixel (px,py)'s ray goes through `(px+0.5+jx, py+0.5+jy)`,
+  pixels x right / y down. History texel k holds the sample at `k+0.5+prevJitter`;
+  `FrameCamera` has no previous jitter, so a denoiser that cares must remember it.
+  — capture-io, 2026-10-25
+- `tools/rt-capture/validate.mjs` catches convention slips both ways: a y-flipped or
+  sign-flipped motion gives ~10–40 px reprojection error and ~6 % history consistency;
+  positive viewz fails outright; stale `prevView` passes the motion check (motion was
+  computed from the same stale matrix) but fails camera continuity and history
+  consistency. Run it on every new capture. — capture-io, 2026-10-25
 
 ## Denoiser design
+
+- History validity: a per-tap *relative view-z* test (|z_tap − z_expected| < 1 %) rejects
+  valid history at grazing angles, where z changes by > 1 % per pixel; it cost the
+  reference accumulator ~5 dB at 8 frames on a ground plane. The plane-distance test
+  `|n · (P_tap − P)| < 1 % · |viewZ|` (RTG II ch. 49 §49.6) keeps it. — capture-io, 2026-10-25
+- Bilinear reprojection low-passes noise: a reprojected running mean on a moving camera
+  scores *above* the static-camera value (synthetic plane, 8 frames, diffuse: 31.7 vs
+  26.5 dB). Not a bug; the static-camera capture is the one that must match σ²/n theory
+  (it does: 32.70 dB measured vs 32.76 predicted at 32 frames). — capture-io, 2026-10-25
 
 ## Clean room
 
