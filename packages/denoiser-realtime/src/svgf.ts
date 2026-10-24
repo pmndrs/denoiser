@@ -40,7 +40,11 @@ export interface SvgfOptions {
   atrousIterations?: number;
   /** A-trous kernel: SVGF's 5x5 B3 spline or A-SVGF's 3x3 box (sec. 4: negligible loss, much cheaper; on our dev scene equal or better). Default '3x3'. */
   kernel?: '5x5' | '3x3';
-  /** Feed a-trous iteration 0 back as next frame's color history (SVGF paper). Default true. */
+  /**
+   * Feed a-trous iteration 0 back as next frame's color history (SVGF paper's choice).
+   * Default false: on the test bed feedback compounds spatial blur (results/M1.md §4: off
+   * wins on all 7 paths, +0.6…+2.6 dB diffuse, and is cheaper).
+   */
   feedback?: boolean;
   /** Edge-stopping parameters (SVGF eq. 3-5). Defaults 1, 128, 4. */
   sigmaDepth?: number;
@@ -113,7 +117,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     normalThreshold: o.normalThreshold ?? 0.95,
     atrousIterations: Math.max(1, Math.round(o.atrousIterations ?? 5)),
     kernel: o.kernel ?? '3x3',
-    feedback: o.feedback ?? true,
+    feedback: o.feedback ?? false,
     sigmaDepth: o.sigmaDepth ?? 1,
     sigmaNormal: o.sigmaNormal ?? 128,
     sigmaLuminance: o.sigmaLuminance ?? 4,

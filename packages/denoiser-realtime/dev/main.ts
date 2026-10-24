@@ -115,7 +115,7 @@ async function main() {
     antiLag,
     kernel: (q.get('kernel') ?? '3x3') as '5x5' | '3x3',
     atrousIterations: num('iters', 5),
-    feedback: q.get('feedback') !== '0',
+    ...(q.has('feedback') ? { feedback: q.get('feedback') !== '0' } : {}),
     historyFilter: (q.get('history') ?? 'bilinear') as 'catmull-rom' | 'bilinear',
     ...(q.has('lumVar') ? { luminanceVariance: q.get('lumVar') as 'sample' | 'mean' } : {}),
     ...(q.has('sigmaL') ? { sigmaLuminance: num('sigmaL', 4) } : {}),

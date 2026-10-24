@@ -85,7 +85,7 @@ All optional; defaults in brackets. Shared: `temporalAlpha` [0.2; 0.1 with
 anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 `historyFilter` ['bilinear' | 'catmull-rom'], `planeDistance` [0.01],
 `normalThreshold` [0.95], `atrousIterations` [5], `kernel` ['3x3' | '5x5'],
-`feedback` [true], `sigmaDepth/Normal/Luminance` [1, 128, 4],
+`feedback` [false; the paper's true compounds blur, results/M1.md §4], `sigmaDepth/Normal/Luminance` [1, 128, 4],
 `varianceRampFrames` [4], `spatialVarianceBoost` [3], `luminanceVariance`
 ['sample' | 'mean'], `antiLag` ['off' | 'auto' | 'gradient'],
 `antiLagNoiseFloor` [2], `antiLagRadius` [1], `gradientIterations` [5],
@@ -120,10 +120,11 @@ flicker = mean |e_t − e_{t−1}| (e = output − truth).
 |---|---|---|---|---|
 | noisy input | 14.04 dB | — | 15.87 dB | — |
 | spatial only (history reset every frame) | 40.13 | 0.0089 | 41.00 | 0.0080 |
-| **SVGF (defaults)** | 40.48 | 0.0020 | 43.56 | 0.0017 |
-| SVGF, `feedback: false` | 41.55 | 0.0021 | | |
-| SVGF, `kernel: '5x5'` | 40.32 | 0.0021 | | |
-| **A-SVGF (`antiLag: 'auto'`)** | **41.62** | **0.0017** | **44.52** | **0.0013** |
+| **SVGF (defaults: `feedback: false`)** | 41.55 | 0.0021 | 45.64 | 0.0018 |
+| SVGF, `feedback: true` (paper; old default) | 40.48 | 0.0020 | 43.56 | 0.0017 |
+| SVGF, `feedback: true, kernel: '5x5'` | 40.32 | 0.0021 | | |
+| **A-SVGF (`antiLag: 'auto'`, quality option)** | **42.52** | **0.0018** | **46.39** | **0.0015** |
+| A-SVGF, `feedback: true` | 41.62 | 0.0017 | 44.52 | 0.0013 |
 
 Light switching on at frame 60, static camera (diffuse): plain SVGF drops to
 22.8 dB and needs ~8 frames to get back above 34 dB; `antiLag: 'auto'` drops to
@@ -131,17 +132,23 @@ Light switching on at frame 60, static camera (diffuse): plain SVGF drops to
 27.1 dB, slower recovery (it only fires on the change frame, as in the paper).
 No NaNs in any run.
 
+Defaults: `antiLag` stays `'off'` (performance first); `antiLag: 'auto'` is the
+quality option (+0.1…+1.1 dB diffuse, up to +2.9 dB specular on the test bed, ~3-frame
+light-change recovery) for about +1.4 ms on the joint denoiser at 1080p. The light-switch
+numbers above were measured with `feedback: true`.
+
 GPU time per frame at 1080p (timestamp queries, min of 400 frames; median
-within 5 %; other headless sessions were alive, so treat as possibly
-contended):
+within 5 %). Rows marked † were re-measured uncontended with the `feedback: false`
+default (2026-10-25); the others are the earlier `feedback: true` measurements (possibly
+contended; feedback costs one extra history write):
 
 | | prepass | temporal | variance | à-trous ×5 | anti-lag passes | total |
 |---|---|---|---|---|---|---|
-| `DiffuseDenoiser` | 0.18 | 0.39 | 0.17 | 0.31 + 4 × 0.27 | — | **2.18 ms** |
+| `DiffuseDenoiser` † | 0.18 | 0.41 | 0.18 | 0.29 + 4 × 0.28 | — | **2.18 ms** |
 | `SpecularDenoiser` | 0.18 | 0.41 | 0.37 | 0.36 + 4 × 0.33 | — | **2.68 ms** |
-| `DiffuseSpecularDenoiser` (joint dispatches) | 0.18 | 0.64 | 0.48 | 0.58 + 4 × 0.51 | — | **3.98 ms** |
+| `DiffuseSpecularDenoiser` (joint dispatches) † | 0.18 | 0.66 | 0.49 | 0.54 + 4 × 0.52 | — | **3.98 ms** |
 | `DiffuseDenoiser`, `antiLag: 'auto'` | 0.18 | 0.41 | 0.18 | 1.40 | 0.45 + 0.36 + 0.04 | **3.08 ms** |
-| `DiffuseSpecularDenoiser`, `antiLag: 'auto'` | 0.18 | 0.68 | 0.51 | 2.62 | 0.57 + 0.73 + 0.07 | **5.45 ms** |
+| `DiffuseSpecularDenoiser`, `antiLag: 'auto'` † | 0.18 | 0.68 | 0.51 | 2.57 | 0.57 + 0.73 + 0.07 | **5.43 ms** |
 
 `kernel: '5x5'` costs 0.7–1.0 ms per à-trous iteration (4.7 ms total for
 diffuse); `atrousIterations: 4` saves one iteration. `DiffuseSpecularDenoiser`
@@ -242,7 +249,7 @@ is 6.48 ms. Over the 4 ms target for diffuse + specular; see TASKS for the lever
 "signal=both&mode=bench"`. Query switches: `signal=diffuse|specular|both`,
 `mode=eval|bench`, `w`, `h`, `frames`, `path=orbit|static|pan`, `cut=N`,
 `switch=N` (a light turns on), `noise`, `ff`, `noHistory=1`,
-`antiLag=off|auto|gradient`, `kernel`, `iters`, `feedback=0`, `history`,
+`antiLag=off|auto|gradient`, `kernel`, `iters`, `feedback=0|1`, `history`,
 `alpha`, `view=out|noisy|ref|err|histlen`, `gain`, `stopAt=N`, `filter=recurrent`,
 `r.<option>=…` / `t.<tune>=…` (recurrent options), `skeleton=1`, `specularFilter=svgf|recurrent`,
 `still=1` (lights don't move), `hit=0`, `--shot=file.png`,

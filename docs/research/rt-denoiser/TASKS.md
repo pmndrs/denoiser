@@ -195,7 +195,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `--set=roundtrip`, then check `validate.mjs` and the round-trip numbers against
       RESULTS.md — found by wiring, owner harness builder (report only)
 
-- [ ] **SVGF defaults from M1** (results/M1.md §4, 1080p test bed, blue noise): set
+- [x] recurrent (next commit) **SVGF defaults from M1** (results/M1.md §4, 1080p test bed, blue noise): set
       `feedback: false` (+0.6…+2.6 dB diffuse on all 7 paths, FLIP −24…−44 %, energy loss
       −3.5 → −1.2 %, specular +0.1…+0.8 dB, flicker unchanged, a bit cheaper) and
       `antiLag: 'auto'` (+0.1…+1.1 dB diffuse, +0.0…+2.9 dB specular over the 7 paths;
@@ -206,6 +206,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       α_min per signal (diffuse 0.1: +1.2 dB; specular must stay 0.2: −1.5 dB at 0.1).
       Repro: test bed `signal=diffuse,specular&mode=eval&preset=full&denoiser=svgf,svgf-auto&path=orbit&feedback=0`.
       Update the README results table too. — found by results, owner `packages/denoiser-realtime`
+      _Done per the orchestrator: `feedback` defaults to false; `antiLag` stays 'off' (performance
+      first; 'auto' documented in the README as the quality option); kernel / iterations /
+      α unchanged (per-signal α_min not done). Dev page re-measured: diffuse 40.48 → 41.55,
+      specular 43.56 → 45.64 dB; joint 3.98 ms at 1080p._
 - [ ] A-SVGF `antiLag: 'auto'` makes α_min ≤ 0.1 inert: 0.05 and 0.1 give identical output
       (≤ 0.02 dB) on orbit/pan/light, i.e. λ keeps 1/n ≥ ~0.1 everywhere, so histories never
       exceed ~10 frames even on static, unchanged regions (`light` before frame 48). Check
