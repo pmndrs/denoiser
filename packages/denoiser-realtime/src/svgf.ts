@@ -19,7 +19,7 @@ import {
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
 export interface SvgfOptions {
-  /** Algorithm. Only 'svgf' today ('recurrent' comes with M2). Default 'svgf'. */
+  /** Algorithm: 'svgf' (default) here; `filter: 'recurrent'` takes RecurrentOptions instead. */
   filter?: 'svgf';
   /**
    * Minimum blend weight of the new frame (SVGF's alpha). Default 0.2 (SVGF

@@ -5,8 +5,9 @@
 export { DiffuseDenoiser, SpecularDenoiser, DiffuseSpecularDenoiser } from './denoisers';
 export type {
   DiffuseDenoiserOptions, SpecularDenoiserOptions, DiffuseSpecularDenoiserOptions, DiffuseSpecularOutputs,
-  RealtimeDiffuseInputs, RealtimeSpecularInputs, RealtimeDiffuseSpecularInputs, SignalExtras,
+  RealtimeDiffuseInputs, RealtimeSpecularInputs, RealtimeDiffuseSpecularInputs, SignalExtras, SignalOptions,
 } from './denoisers';
+export type { RecurrentOptions } from './recurrent';
 export type { SvgfOptions, SpecularSvgfOptions } from './svgf';
 export type {
   TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, DiffuseInputs, SpecularInputs,

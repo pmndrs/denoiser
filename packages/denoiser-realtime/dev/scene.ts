@@ -19,9 +19,9 @@ export const SCENE_PARAMS_SIZE = 4 * 96;
 export const SCENE_OUTPUTS: [string, GPUTextureFormat][][] = [
   [['Depth', 'r32float'], ['ViewZ', 'r32float'], ['Normal', 'rgba16float'], ['Motion', 'rgba16float']],
   [['Mat', 'rgba16float'], ['Diff', 'rgba16float'], ['DiffRef', 'rgba32float'], ['Spec', 'rgba16float']],
-  [['SpecRef', 'rgba32float'], ['Grad', 'rgba32float']],
+  [['SpecRef', 'rgba32float'], ['Grad', 'rgba32float'], ['DiffHit', 'r32float'], ['SpecHit', 'r32float']],
 ];
-const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad'];
+const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad', 'DiffHit', 'SpecHit'];
 
 // The scene writes 10 outputs; the default limit is 4 storage textures per
 // stage, so it runs as 3 dispatches of the same code with different store stubs.
@@ -42,7 +42,7 @@ struct SP {
   view: mat4x4f,
   camPos: vec3f, frame: f32,
   dims: vec2f, prevFrame: f32, noise: f32,
-  fireflyRate: f32, switchFrame: f32, seed: u32, flags: u32,  // flags: 1 = gradient output
+  fireflyRate: f32, switchFrame: f32, seed: u32, flags: u32,  // flags: 1 = gradient output, 2 = lights don't move
   near: f32, far: f32, pad0: f32, pad1: f32,
 }
 @group(0) @binding(0) var<uniform> S: SP;
@@ -146,7 +146,8 @@ fn material(id: i32, x: vec3f) -> vec4f {
   }
 }
 
-fn lightPos(i: i32, frame: f32) -> vec3f {
+fn lightPos(i: i32, frame0: f32) -> vec3f {
+  let frame = select(frame0, 0.0, (S.flags & 2u) != 0u);   // flags 2: lights don't move
   switch (i) {
     case 0: { return vec3f(3.0, 5.0, 4.0); }
     case 1: { return vec3f(cos(frame * 0.02) * 4.0, 3.0, sin(frame * 0.02) * 4.0); }
@@ -243,6 +244,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     stDiffRef(p, vec4f(0.0));
     stSpec(p, vec4f(0.0));
     stSpecRef(p, vec4f(0.0));
+    stDiffHit(p, vec4f(0.0));
+    stSpecHit(p, vec4f(0.0));
     return;
   }
   let x = o + d * h.t;
@@ -270,6 +273,23 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   stSpecRef(p, vec4f(sr, 1.0));
   let ns = noiseFactor(up, 11u, clamp(m.a * 2.5, 0.0, 1.0));
   stSpec(p, vec4f(sr * ns, 0.0));
+  // 1-spp hit distances (0 = miss): a cosine-distributed ray for diffuse, the
+  // mirror direction for specular (the recurrent filter's radius / AO input).
+  {
+    let u1 = rnd(up, 31u);
+    let u2 = rnd(up, 37u);
+    let s = select(-1.0, 1.0, h.n.z >= 0.0);
+    let ca = -1.0 / (s + h.n.z);
+    let tb = vec3f(1.0 + s * h.n.x * h.n.x * ca, s * h.n.x * h.n.y * ca, -s * h.n.x);
+    let bb = vec3f(h.n.x * h.n.y * ca, s + h.n.y * h.n.y * ca, -h.n.y);
+    let rr = sqrt(u1);
+    let ph = 6.2831853 * u2;
+    let dd = normalize(tb * (rr * cos(ph)) + bb * (rr * sin(ph)) + h.n * sqrt(max(0.0, 1.0 - u1)));
+    let hd = trace(x + h.n * 1e-3, dd, S.frame);
+    stDiffHit(p, vec4f(select(0.0, hd.t, hd.id >= 0 && hd.t < 50.0)));
+    let hs = trace(x + h.n * 1e-3, r, S.frame);
+    stSpecHit(p, vec4f(select(0.0, hs.t, hs.id >= 0 && hs.t < 50.0)));
+  }
 
   // A-SVGF gradient sample: one random pixel per 3x3 stratum is "re-shaded"
   // with last frame's lighting and the same noise (same random numbers).

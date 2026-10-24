@@ -132,6 +132,8 @@ struct Reproj {
   prevUV: vec2f,
   base: vec2i,       // top-left texel of the 2x2 footprint
   w: vec4f,          // bilinear x validity, taps (0,0) (1,0) (0,1) (1,1); not normalized
+  bil: vec4f,        // bilinear weights alone
+  valid: vec4f,      // per-tap validity (0 / 1)
   sumW: f32,
   allValid: bool,    // all four taps valid (Catmull-Rom allowed)
   expPrev: vec3f,    // expected previous view-space position of this surface point
@@ -182,6 +184,8 @@ fn reproject(p: vec2i, g: Geo, planeTol: f32, normalTol: f32) -> Reproj {
   if (tapValid(r.base + vec2i(0, 1), g, r.expPrev, planeTol, normalTol)) { valid.z = 1.0; }
   if (tapValid(r.base + vec2i(1, 1), g, r.expPrev, planeTol, normalTol)) { valid.w = 1.0; }
   r.w = bil * valid;
+  r.bil = bil;
+  r.valid = valid;
   r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
   r.allValid = all(valid > vec4f(0.5));
   return r;

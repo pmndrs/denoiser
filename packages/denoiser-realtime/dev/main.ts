@@ -8,9 +8,12 @@
 //   noHistory=1 (reset every frame: spatial only)  antiLag=off|auto|gradient
 //   kernel=5x5|3x3  iters=5  feedback=0|1  history=catmull-rom|bilinear
 //   alpha=  motionZ=0|1  viewZ=0|1  view=out|noisy|ref|err  gain=  stopAt=N
+//   filter=svgf|recurrent  r.<option>=number|bool (recurrent options, e.g. r.blurRadius=20)
+//   t.<tune>=number (recurrent weight tolerances)  skeleton=1 (recurrent: trivial kernels)
+//   hit=0 (no hit distance inputs)  still=1 (lights don't move)
 import {
   DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser,
-  type FrameCamera, type FrameGuides, type SpecularSvgfOptions, type SvgfOptions,
+  type FrameCamera, type FrameGuides, type RecurrentOptions, type SpecularSvgfOptions, type SvgfOptions,
 } from '@pmndrs/denoiser-realtime';
 import { BLIT_WGSL, METRICS_WGSL } from './metrics';
 import { SCENE_OUTPUTS, SCENE_PARAMS_SIZE, sceneWgsl } from './scene';
@@ -125,12 +128,26 @@ async function main() {
     ...(q.has('maxHistory') ? { maxHistory: num('maxHistory', 32) } : {}),
     ...(q.has('noiseFloor') ? { antiLagNoiseFloor: num('noiseFloor', 2) } : {}),
   };
+  // recurrent filter: options from r.<name> / t.<tune> query keys
+  const filter = q.get('filter') ?? 'svgf';
+  const rec: RecurrentOptions & Record<string, unknown> = { filter: 'recurrent', tune: {} };
+  for (const [k, v] of q) {
+    const val = v === 'true' ? true : v === 'false' ? false : Number(v);
+    if (k.startsWith('r.')) rec[k.slice(2)] = val;
+    else if (k.startsWith('t.')) (rec.tune as Record<string, unknown>)[k.slice(2)] = val;
+  }
+  if (q.get('skeleton') === '1') rec.skeleton = true;
+  if (q.get('remod') === '1') rec.remodulate = true;
+  // specularFilter=svgf: recurrent diffuse + SVGF specular in DiffuseSpecularDenoiser
+  const specFilter = q.get('specularFilter');
+  const dOpts: RecurrentOptions | (SvgfOptions & SpecularSvgfOptions) = filter === 'recurrent' ? rec : opts;
+  const useHit = q.get('hit') !== '0';
   const noHistory = q.get('noHistory') === '1';
   const useMotionZ = q.get('motionZ') !== '0';
   const useViewZ = q.get('viewZ') === '1';
   const stopAt = num('stopAt', frames - 1);
   const switchFrame = num('switch', -1);
-  log(`${W}x${H} ${mode} signal=${signal} frames=${frames} path=${path} ${JSON.stringify(opts)}${noHistory ? ' noHistory' : ''}`);
+  log(`${W}x${H} ${mode} signal=${signal} frames=${frames} path=${path} ${JSON.stringify(dOpts)}${specFilter ? ` specular=${specFilter}` : ''}${noHistory ? ' noHistory' : ''}`);
 
   const canvas = document.querySelector('canvas')!;
   canvas.width = W; canvas.height = H;
@@ -176,9 +193,10 @@ async function main() {
   // denoiser(s)
   let both: DiffuseSpecularDenoiser | undefined;
   let single: DiffuseDenoiser | SpecularDenoiser | undefined;
-  if (signal === 'both') both = new DiffuseSpecularDenoiser(device, opts);
-  else if (signal === 'diffuse') single = new DiffuseDenoiser(device, opts);
-  else single = new SpecularDenoiser(device, opts);
+  if (signal === 'both') {
+    both = new DiffuseSpecularDenoiser(device, specFilter === 'svgf' ? { ...dOpts, specular: { ...opts, filter: 'svgf' } } : dOpts);
+  } else if (signal === 'diffuse') single = new DiffuseDenoiser(device, dOpts);
+  else single = new SpecularDenoiser(device, dOpts);
   (both ?? single)!.configure({ width: W, height: H });
   const guides: FrameGuides = {
     depth: tex.Depth, normal: tex.Normal, motion: tex.Motion,
@@ -238,7 +256,7 @@ async function main() {
     sp.set(invert(VP), 0); sp.set(VP, 16); sp.set(mul(proj, prev.view), 32); sp.set(cur.view, 48);
     sp.set(cur.eye, 64); sp[67] = f;
     sp[68] = W; sp[69] = H; sp[70] = Math.max(0, f - 1); sp[71] = num('noise', 1);
-    sp[72] = num('ff', 0.001); sp[73] = switchFrame; su[74] = f + 1; su[75] = antiLag === 'gradient' ? 1 : 0;
+    sp[72] = num('ff', 0.001); sp[73] = switchFrame; su[74] = f + 1; su[75] = (antiLag === 'gradient' ? 1 : 0) | (q.get('still') === '1' ? 2 : 0);
     sp[76] = 0.1; sp[77] = 100;
     device.queue.writeBuffer(sceneParams, 0, sp);
     const enc = device.createCommandEncoder();
@@ -263,13 +281,13 @@ async function main() {
     const grad = antiLag === 'gradient' ? tex.Grad : undefined;
     if (both) {
       lastOut = both.dispatchBoth({
-        diffuse: { radiance: tex.Diff, gradient: grad },
-        specular: { radiance: tex.Spec, hitDistance: tex.Spec, gradient: grad },
+        diffuse: { radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}) },
+        specular: { radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad },
       }, guides, camera);
     } else if (single instanceof DiffuseDenoiser) {
-      lastOut = { diffuse: single.dispatch({ radiance: tex.Diff, gradient: grad }, guides, camera) } as Record<Sig, GPUTexture>;
+      lastOut = { diffuse: single.dispatch({ radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}) }, guides, camera) } as Record<Sig, GPUTexture>;
     } else {
-      lastOut = { specular: single!.dispatch({ radiance: tex.Spec, hitDistance: tex.Spec, gradient: grad }, guides, camera) } as Record<Sig, GPUTexture>;
+      lastOut = { specular: single!.dispatch({ radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad }, guides, camera) } as Record<Sig, GPUTexture>;
     }
 
     if (mode === 'eval') {
@@ -323,13 +341,13 @@ async function main() {
   const srcTex = view === 'noisy' ? tex[showSig === 'diffuse' ? 'Diff' : 'Spec']
     : view === 'ref' ? tex[showSig === 'diffuse' ? 'DiffRef' : 'SpecRef']
       : view === 'err' ? met[showSig]?.err[Math.min(stopAt, frames - 1) & 1]
-        : view === 'histlen' ? (single as DiffuseDenoiser | undefined)?.debugTexture('accum') : lastOut[showSig];
+        : view === 'histlen' ? (filter === 'recurrent' ? lastOut[showSig] : (single as DiffuseDenoiser | undefined)?.debugTexture('accum')) : lastOut[showSig];
   const blit = device.createRenderPipeline({
     layout: 'auto', vertex: { module: device.createShaderModule({ code: BLIT_WGSL }), entryPoint: 'vs' },
     fragment: { module: device.createShaderModule({ code: BLIT_WGSL }), entryPoint: 'fs', targets: [{ format: fmt }] },
   });
   const modeBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(modeBuf, 0, new Float32Array([view === 'err' ? 1 : view === 'histlen' ? 2 : 0, num('gain', view === 'err' ? 8 : view === 'histlen' ? 64 : 1), 0, 0]));
+  device.queue.writeBuffer(modeBuf, 0, new Float32Array([view === 'err' ? 1 : view === 'histlen' ? 2 : 0, num('gain', view === 'err' ? 8 : view === 'histlen' ? (filter === 'recurrent' ? 1 : 64) : 1), 0, 0]));
   if (srcTex) {
     const be = device.createCommandEncoder();
     const rp = be.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
@@ -346,7 +364,7 @@ async function main() {
   const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
   const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
   const r3 = (x: number) => Math.round(x * 1000) / 1000;
-  const results: Record<string, unknown> = { W, H, frames, signal, path, opts, noHistory, adapter: adapter.info?.description ?? adapter.info?.vendor };
+  const results: Record<string, unknown> = { W, H, frames, signal, path, filter, opts: dOpts, specFilter, noHistory, adapter: adapter.info?.description ?? adapter.info?.vendor };
   if (mode === 'eval') {
     for (const s of sigs) {
       const st = met[s].stats;

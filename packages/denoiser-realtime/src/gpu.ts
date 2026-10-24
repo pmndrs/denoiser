@@ -5,9 +5,10 @@ import type { PassTimer } from './common';
 /**
  * Layout entry kinds: 'u' uniform buffer, 'f' unfilterable float texture, 'F'
  * filterable float texture, 'i' uint texture, 'd' depth texture, 's' filtering
- * sampler, or a write-only storage texture format (e.g. 'rgba16float').
+ * sampler, 'rw-r32uint' a read-write r32uint storage texture (core WebGPU allows
+ * read-write on r32 formats), or a write-only storage texture format (e.g. 'rgba16float').
  */
-export type EntryKind = 'u' | 'f' | 'F' | 'i' | 'd' | 's' | GPUTextureFormat;
+export type EntryKind = 'u' | 'f' | 'F' | 'i' | 'd' | 's' | 'rw-r32uint' | GPUTextureFormat;
 
 export function makeLayout(device: GPUDevice, label: string, kinds: EntryKind[]): GPUBindGroupLayout {
   const C = GPUShaderStage.COMPUTE;
@@ -21,6 +22,7 @@ export function makeLayout(device: GPUDevice, label: string, kinds: EntryKind[])
         case 'i': return { binding, visibility: C, texture: { sampleType: 'uint' } };
         case 'd': return { binding, visibility: C, texture: { sampleType: 'depth' } };
         case 's': return { binding, visibility: C, sampler: { type: 'filtering' } };
+        case 'rw-r32uint': return { binding, visibility: C, storageTexture: { access: 'read-write', format: 'r32uint' } };
         default: return { binding, visibility: C, storageTexture: { access: 'write-only', format: k } };
       }
     }),
