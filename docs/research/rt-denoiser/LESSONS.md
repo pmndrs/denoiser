@@ -82,6 +82,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Store the standard deviation, not the variance, in an rgba16float alpha (SPEC S-2a);
   when converting, every `var` use must become `σ*σ` — a missed one in the inner-tap loop
   cost 1.2 dB and looked like a depth-weight regression. — svgf, 2026-10-25
+- Unroll small tap loops at codegen time instead of `var taps: array<vec4f, 9>` indexed
+  by a loop variable: on the M5 Pro (Tint → Metal) the array version was ~35 % slower
+  per à-trous iteration (0.38 → 0.28 ms at 1080p, same output). TS template strings make
+  full unrolling trivial. — svgf, 2026-10-25
+- Generate WGSL binding declarations and the bind-group-layout entries from one list
+  (`packages/denoiser-realtime/src/shaders/bindings.ts`) and bind by name: with 1- or
+  2-signal variants of every pass, hand-numbered bindings drift immediately. — svgf, 2026-10-25
 
 ## Conventions
 

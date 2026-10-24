@@ -147,8 +147,8 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `../../../packages/denoiser-realtime/src/index` (relative, like FFX). — found by svgf, owner `tools/rt-capture`
 - [ ] SVGF vs SPEC v0 deviations to review (all measured on the dev page, provisional):
       (1) default kernel 3×3 box, not B3 5×5 (equal/better PSNR, 2.6× cheaper per iteration);
-      (2) diffuse and specular run as separate dispatches sharing only the prepass (SPEC §4.1:
-      shared dispatches) — merging would save ~30 % for `DiffuseSpecularDenoiser`;
+      (2) resolved: `DiffuseSpecularDenoiser` now runs both signals per dispatch (SPEC §4.1),
+      3.98 ms at 1080p (was 5.85 separate); falls back to two pipelines if structural options differ;
       (3) Catmull-Rom (option, off) gates on the 4 inner taps + clamp, not a 16-tap test;
       (4) the paper's 3×3 history fallback is kept (S-1 drops it);
       (5) `antiLag: 'gradient'` takes renderer-made per-stratum samples instead of an

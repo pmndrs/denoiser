@@ -96,8 +96,9 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 
 | pass | reads → writes | formats |
 |---|---|---|
+| (each pass below handles one or both signals per thread) | | |
 | `prepass` (shared) | depth / viewZ, normal, roughness → tap geometry (linear depth f32, oct normal 12+12 b, roughness 8 b) and depth slope (2×f16) | rg32uint ×2 (ping-pong), r32uint |
-| `gradient_create`, `gradient_atrous_0..4` (anti-lag only) | input, history → per 3×3 stratum (δ, Δ, var δ, valid), (mean l, var l, z, ∣∇z∣) | rgba32float ×4 at 1/3 res |
+| `gradient_create`, `gradient_atrous_0..4`, `gradient_lambda` (anti-lag only) | input, history → per 3×3 stratum (δ, Δ, var δ, valid), (mean l, var l, z, ∣∇z∣) → λ max-filtered over 3×3 strata | rgba32float ×4 + r32float at 1/3 res |
 | `temporal` | input + reprojected history → integrated color + history length n; luminance moments | rgba16float ×2 (rgb, n), rg32float ×2 |
 | `variance` | → color + **standard deviation** (bilateral spatial estimate blended in while n < 4) | rgba16float |
 | `atrous_0..K-1` | edge-avoiding à-trous ping-pong; iteration 0 also writes the feedback history; the last writes the output | rgba16float ×2, + history (rgba16float), output (rgba16float) |
@@ -129,18 +130,22 @@ Light switching on at frame 60, static camera (diffuse): plain SVGF drops to
 27.1 dB, slower recovery (it only fires on the change frame, as in the paper).
 No NaNs in any run.
 
-GPU time per frame at 1080p (timestamp queries, min of 400 frames; other
-headless sessions were alive, so treat as possibly contended):
+GPU time per frame at 1080p (timestamp queries, min of 400 frames; median
+within 5 %; other headless sessions were alive, so treat as possibly
+contended):
 
-| | prepass | temporal | variance | à-trous ×5 | gradient | total |
+| | prepass | temporal | variance | à-trous ×5 | anti-lag passes | total |
 |---|---|---|---|---|---|---|
-| `DiffuseDenoiser` | 0.18 | 0.47 | 0.15 | 0.44 + 4 × 0.38 | — | **2.76 ms** |
-| `SpecularDenoiser` | 0.18 | 0.48 | 0.36 | 0.47 + 4 × 0.43 | — | **3.23 ms** |
-| `DiffuseSpecularDenoiser` | 0.18 (shared) | | | | — | **5.85 ms** |
-| `DiffuseDenoiser`, `antiLag: 'auto'` | 0.18 | 0.57 | 0.16 | 1.94 | 0.43 + 0.36 | **3.70 ms** |
+| `DiffuseDenoiser` | 0.18 | 0.39 | 0.17 | 0.31 + 4 × 0.27 | — | **2.18 ms** |
+| `SpecularDenoiser` | 0.18 | 0.41 | 0.37 | 0.36 + 4 × 0.33 | — | **2.68 ms** |
+| `DiffuseSpecularDenoiser` (joint dispatches) | 0.18 | 0.64 | 0.48 | 0.58 + 4 × 0.51 | — | **3.98 ms** |
+| `DiffuseDenoiser`, `antiLag: 'auto'` | 0.18 | 0.41 | 0.18 | 1.40 | 0.45 + 0.36 + 0.04 | **3.08 ms** |
+| `DiffuseSpecularDenoiser`, `antiLag: 'auto'` | 0.18 | 0.68 | 0.51 | 2.62 | 0.57 + 0.73 + 0.07 | **5.45 ms** |
 
-`kernel: '5x5'` costs ~1.0 ms per à-trous iteration (6.2 ms total for diffuse);
-`atrousIterations: 4` saves ~0.38 ms.
+`kernel: '5x5'` costs 0.7–1.0 ms per à-trous iteration (4.7 ms total for
+diffuse); `atrousIterations: 4` saves one iteration. `DiffuseSpecularDenoiser`
+processes both signals per thread in every pass (SPEC §4.1) unless their
+structural options differ.
 
 ## Dev page
 
