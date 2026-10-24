@@ -173,8 +173,10 @@ fn onbB(n: vec3f) -> vec3f {
   let a = -1.0 / (s + n.z);
   return vec3f(n.x * n.y * a, s + n.y * n.y * a, -n.y);
 }
-// data texture (SPEC §5.12, D14): A_d, A_s as 10-bit fixed point A*16, m 8-bit unorm,
-// and the temporal pass's 2x2 history validity mask (4 bits, reused by stabilization).
+// data texture (SPEC §5.12, D14): A_d, A_s as 10-bit fixed point A*16, m 8-bit unorm
+// (m*c_v, written by temporal and kept by history fix; no pass reads it since R7's virtual
+// candidate was removed), and the temporal pass's 2x2 history validity mask (4 bits,
+// reused by stabilization).
 fn unpackA(v: u32, slot: u32) -> f32 { return f32((v >> (10u * slot)) & 1023u) / 16.0; }
 fn unpackM(v: u32) -> f32 { return f32((v >> 20u) & 255u) / 255.0; }
 fn packData(ad: f32, as_: f32, m: f32, mask: u32) -> u32 {
@@ -546,7 +548,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
       let alphaVirt = mix(1.0 / (1.0 + min(aD, P${i}.aFast)), 1.0 / (1.0 + aD), cv);
       acc = mix(mix(H${i}, pre, alphaSurf), mix(Hv, pre, alphaVirt), m);
       a = 1.0 / mix(alphaSurf, alphaVirt, m) - 1.0;
-      mVirt = m * cv;   // stabilization's virtual candidate is trusted as far as R-10 trusts it
+      mVirt = m * cv;   // m*c_v into data's m bits; no pass reads them (R7's virtual candidate was removed, SPEC v0.2 5.11-5.12)
     }
     textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
     A[${sl}] = a;
@@ -741,7 +743,7 @@ fn main(${TILE_MAIN}) {
   }
   var A = vec2f(0.0);
   var fastOut = vec4f(0.0);
-  var mVirt = 0.0;   // amount of virtual motion (specular), for stabilization
+  var mVirt = 0.0;   // amount of virtual motion (specular), packed into data; currently unread
   // Current-frame anti-lag detector (our addition to C-10, measured: the fast
   // history alone reacts at its own EMA speed): 3x3 mean of this frame's
   // pre-blurred luminance and ĥ vs the reprojected history, in units of the
