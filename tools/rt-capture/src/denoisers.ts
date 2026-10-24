@@ -26,6 +26,9 @@
 //   recurrent-diffuse  DiffuseDenoiser alone;  recurrent-specular  SpecularDenoiser alone
 //   (recurrent settings from the URL: see recurrentOptions(); the output texture rotates
 //   between internal buffers, valid until the next dispatch)
+//   shadows            denoiser/realtime ShadowDenoiser (visibility; provisional, SPEC v0 §7): the
+//                      light comes from the frame's `lights` (test bed / per-frame extras) or the
+//                      manifest's; settings `sh.<option>=v` (see shadowOptions())
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //
@@ -37,8 +40,10 @@ import { AccumulateDenoiser } from './accumulate';
 import { EmaAccumulateDenoiser } from './accumulate-ema';
 import { DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser } from '../../../packages/denoiser-realtime/src/index';
 import type { DiffuseSpecularDenoiserOptions, RecurrentOptions, SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
+import { ShadowDenoiser } from '../../../packages/denoiser-realtime/src/index';
+import type { ShadowDenoiserOptions, ShadowLight } from '../../../packages/denoiser-realtime/src/index';
 import type { DenoiserEntry, ReplayDenoiser, ReplayFrame } from './replay';
-import type { SignalName } from './format';
+import type { CaptureLight, SignalName } from './format';
 
 export const DENOISERS = new Map<string, DenoiserEntry>();
 
@@ -252,4 +257,57 @@ registerDenoiser({
 registerDenoiser({
   id: 'recurrent-specular', description: 'denoiser/realtime recurrent SpecularDenoiser (provisional, needs roughness)', signals: ['specular'],
   create: perSignal((device, _s, st) => new SpecularDenoiser(device, recurrentOptions(st, 'specular'))),
+});
+
+// ---- shadows (denoiser/realtime ShadowDenoiser) -------------------------------------
+
+/**
+ * ShadowDenoiser options from settings: `sh.<option>=v` (numbers or true/false). Two input
+ * switches for experiments: `sh.light=none` (no light: noise-driven radius) and
+ * `sh.hit=none` (drop the occluder distance).
+ */
+export function shadowOptions(st: Record<string, string>): ShadowDenoiserOptions {
+  const o: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(st)) {
+    if (k === 'sh.light' || k === 'sh.hit') continue;
+    if (k.startsWith('sh.')) o[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number(v);
+  }
+  return o as ShadowDenoiserOptions;
+}
+
+/** The shadow light (CAPTURE-FORMAT `lights`, `shadow: true`) as a ShadowLight. */
+export function shadowLightOf(lights: readonly CaptureLight[] | undefined): ShadowLight | undefined {
+  const l = lights?.find((x) => x.shadow) ?? lights?.[0];
+  if (l?.type === 'sphere' && l.position) return { type: 'sphere', position: l.position, radius: l.radius ?? 0 };
+  if (l?.type === 'directional' && l.direction) return { type: 'directional', direction: l.direction, angularRadius: l.angularRadius ?? 0 };
+  return undefined;
+}
+
+registerDenoiser({
+  id: 'shadows', description: 'denoiser/realtime ShadowDenoiser (penumbra-sized, provisional)', signals: ['visibility'],
+  create: (device, ctx) => {
+    const den = new ShadowDenoiser(device, shadowOptions(ctx.settings));
+    den.configure({ width: ctx.width, height: ctx.height });
+    const noLight = ctx.settings['sh.light'] === 'none';
+    const noHit = ctx.settings['sh.hit'] === 'none';
+    return {
+      signals: ['visibility'],
+      dispatch(frame: ReplayFrame) {
+        const inp = frame.inputs.visibility;
+        if (!inp) throw new Error('shadows: capture has no visibility input');
+        // per-frame lights (test bed extras, CAPTURE-FORMAT v1 proposal) before the capture's
+        const light = noLight ? undefined
+          : shadowLightOf(frame.meta?.lights as CaptureLight[] | undefined) ?? shadowLightOf(frame.manifest.lights);
+        return {
+          visibility: den.dispatch({
+            visibility: inp.visibility, ...(inp.hitDistance && !noHit ? { hitDistance: inp.hitDistance } : {}),
+            ...(light ? { light } : {}),
+          }, frame.guides, frame.camera),
+        };
+      },
+      resetHistory() { den.resetHistory(); },
+      gpuTimings() { return new Map(den.gpuTimings ?? []); },
+      dispose() { den.dispose(); },
+    };
+  },
 });

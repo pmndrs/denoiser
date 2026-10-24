@@ -13,3 +13,5 @@ export type {
   TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, DiffuseInputs, SpecularInputs,
   DiffuseSpecularInputs, Mat4,
 } from '@pmndrs/denoiser-core';
+export { ShadowDenoiser, type ShadowDenoiserOptions } from './shadow';
+export type { ShadowInputs, ShadowLight } from '@pmndrs/denoiser-core';
