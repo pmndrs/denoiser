@@ -81,6 +81,7 @@ else writes the affected pass.
 | researchers | research agents → `sources/*.md` | no | yes |
 | spec author / implementers | agents or people writing `SPEC.md` and the WGSL | no | yes |
 | provenance auditor | the audit agent of 2026-10-24 | yes, for references only (rule 3) | **no** (contaminated: grep of NRD source) |
+| research agent, shadows/specular | wrote `sources/shadows-specular.md` (2026-10-24) | no code; it read NRD's README prose before the README was ruled out. Those passages were removed from its report | not without review: if reused, its passes get a second reviewer |
 | harness builder | the agent on the Windows RTX machine ([NATIVE-HARNESS.md](NATIVE-HARNESS.md)) | public headers, integration layer, `NRD.hlsli` (rule 4) | **no** |
 
 Any new agent gets this file in its brief and a clear role from this table.

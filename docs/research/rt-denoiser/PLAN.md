@@ -59,8 +59,18 @@ Windows harness builder never write our passes.
   code cites public sources we can use directly: bounded VNDF sampling (Eto & Tokuyoshi),
   *Ray Tracing Gems* ch. 32, octahedral normal encoding, the Spherical Gaussian series
   (Pettineo). Native NRD builds on Windows/Linux only, from source.
-- **Shadows / specular / signal prep** (`sources/shadows-specular.md`): _pending; this
-  section and §4.4–4.5 get updated when it lands._
+- **Shadows / specular / signal prep** ([sources/shadows-specular.md](sources/shadows-specular.md)).
+  The penumbra footprint has a published formula: Mehta 2012 gives the filter width from
+  light size and distances, which with hit distance h becomes R·h/(D−h), or h·tanθ for
+  a directional light. Heitz 2018 sizes the filter without hit distance and adds a ratio
+  estimator. Boksansky (*Ray Tracing Gems* ch. 13) prints every parameter of a practical
+  version. Specular has four reprojection approaches on record, a fully specified
+  à-trous filter in *Ray Tracing Gems* ch. 32, and lobe-shaped world-space kernels
+  (ReBLUR). Demodulation is albedo for diffuse and the split-sum term (Karis, with
+  Frostbite's f90 variant) for specular, remodulated after the temporal filter.
+  Normalized hit distance doubles as AO/SO. Not public anywhere: the anisotropic
+  penumbra kernel, a fix for overlapping penumbrae, the hit-distance normalization
+  curve, ReBLUR's confidence/parallax constants, and multi-light schemes.
 
 ## 4. Architecture
 
@@ -106,15 +116,26 @@ inputs (ours, per CAPTURE-FORMAT): demodulated diffuse/specular radiance + hitT,
 
 ### 4.4 Specular
 
-Surface-motion and virtual-motion (hit-distance) history candidates blended by confidence,
-as the chapter describes; lobe-aligned, roughness-stretched kernels. Our FFX reflection
-denoiser stays as the comparison baseline. _Details pending the shadows/specular report._
+Surface-motion and virtual-motion (hit-distance) history candidates blended smoothly by
+roughness and confidence (the chapter's design; our FFX port makes a hard pick). Kernels
+on a plane facing the specular dominant direction, sized by the lobe half-angle and hit
+distance; *Ray Tracing Gems* ch. 32's fully specified à-trous weights as the
+fallback. Hit distance is itself denoised before it drives radius and confidence.
+Curvature (thin-lens) correction is a later refinement. Input is demodulated by the
+split-sum term, which also removes the −0.04 dark bias our FFX port shows from its
+luminance-weighted averaging. FFX reflections stays as the comparison baseline.
 
 ### 4.5 Shadows
 
-Penumbra-aware filtering from occluder distance and light size, plus temporal
-stabilization. `ShadowInputs.hitDistance` already exists (FFX ignores it). FFX shadows is
-the baseline. _Details pending the shadows/specular report._
+Per light: filter radius from occluder distance and light size (Mehta 2012's footprint,
+rewritten for hit distance), with Heitz 2018's noise-based sizing as the fallback when
+there's no hit distance. Fractional visibility is kept (FFX thresholds it to binary).
+Temporal history uses a variance-clamped history that does **not** feed the spatial blur
+back (FFX's feedback compounds blur, measured as ~1 dB drift). Needs one API addition:
+light parameters (type, size or angular size) in `ShadowInputs`. The anisotropic
+penumbra kernel and overlapping penumbrae are our design. The renderer contract is
+documented too: unjittered ray origins (Tomb Raider talk) and blue-noise sampling
+animated per frame. FFX shadows is the baseline.
 
 ### 4.6 WebGPU constraints (from the reports)
 
