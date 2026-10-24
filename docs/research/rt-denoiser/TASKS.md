@@ -90,7 +90,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M2–M5 (start after M1 numbers exist; against SPEC v0, provisional until reviewed)
 
-- [ ] **T2 Recurrent diffuse** (pre-blur → temporal → history fix → blur → post-blur →
+- [~] recurrent **T2 Recurrent diffuse** (pre-blur → temporal → history fix → blur → post-blur →
       stabilization, anti-lag).
 - [ ] **T3 Recurrent specular** (virtual motion, lobe kernels).
 - [ ] **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback).
