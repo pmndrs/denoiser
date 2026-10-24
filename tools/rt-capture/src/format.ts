@@ -14,7 +14,13 @@ export type BufferName = keyof typeof BUFFER_CHANNELS;
 
 /** Noisy signals a denoiser replaces (output name = input name). */
 export const SIGNALS = ['diffuse', 'specular', 'visibility'] as const;
-export type SignalName = (typeof SIGNALS)[number];
+/**
+ * Derived signals (T5, occlusion): no buffer of their own, computed from `diffuse_hitt` /
+ * `specular_hitt` at replay time (AO / SO = normalized hit distance, SPEC F-3). A capture
+ * "has" one when it has that hit-distance buffer; there is no reference buffer for them.
+ */
+export const DERIVED_SIGNALS = { ao: 'diffuse_hitt', so: 'specular_hitt' } as const;
+export type SignalName = (typeof SIGNALS)[number] | keyof typeof DERIVED_SIGNALS;
 
 export interface CaptureCamera {
   view: number[]; projection: number[]; prevView: number[]; prevProjection: number[];

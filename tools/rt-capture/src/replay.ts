@@ -15,7 +15,7 @@ import type {
 } from '../../../packages/denoiser-core/src/temporal';
 import { readTextures } from './gpu-readback';
 import {
-  CaptureClient, SIGNALS, frameDir, toFrameCamera,
+  CaptureClient, DERIVED_SIGNALS, SIGNALS, frameDir, toFrameCamera,
   type CaptureFrame, type CaptureManifest, type SignalName,
 } from './format';
 
@@ -30,7 +30,11 @@ export interface ReplayFrame {
   guides: ReplayGuides;
   camera: FrameCamera;
   /** Per-signal inputs in the TemporalDenoiser API shapes (present signals only). */
-  inputs: { diffuse?: DiffuseInputs; specular?: SpecularInputs; visibility?: ShadowInputs };
+  inputs: {
+    diffuse?: DiffuseInputs; specular?: SpecularInputs; visibility?: ShadowInputs;
+    /** Derived occlusion signals (DERIVED_SIGNALS): the raw hit distance of the diffuse / specular ray. */
+    ao?: { hitDistance: GPUTexture }; so?: { hitDistance: GPUTexture };
+  };
   /** Every uploaded buffer by capture name (e.g. `diffuse_ref`, `albedo`, `f0`). */
   textures: Record<string, GPUTexture>;
   /** The manifest's frame entry, incl. extra keys (e.g. the test bed's per-frame `lights`). */
@@ -97,7 +101,7 @@ export interface ReplayResult {
   run: Record<string, unknown>;
 }
 
-const SIGNAL_CH: Record<SignalName, number> = { diffuse: 3, specular: 3, visibility: 1 };
+const SIGNAL_CH: Record<SignalName, number> = { diffuse: 3, specular: 3, visibility: 1, ao: 1, so: 1 };
 
 const formatFor = (ch: number): GPUTextureFormat => (ch === 1 ? 'r32float' : ch === 2 ? 'rg32float' : 'rgba32float');
 
@@ -155,6 +159,8 @@ export class CaptureTextures {
     if (t.diffuse) inputs.diffuse = { radiance: t.diffuse, ...(t.diffuse_hitt ? { hitDistance: t.diffuse_hitt } : {}) };
     if (t.specular) inputs.specular = { radiance: t.specular, hitDistance: t.specular_hitt ?? zeroTexture(this.device, m.width, m.height) };
     if (t.visibility) inputs.visibility = { visibility: t.visibility, ...(t.occluder_dist ? { hitDistance: t.occluder_dist } : {}) };
+    if (t.diffuse_hitt) inputs.ao = { hitDistance: t.diffuse_hitt };
+    if (t.specular_hitt) inputs.so = { hitDistance: t.specular_hitt };
     return { index: f.index, reset: f.reset, manifest: m, guides, camera: toFrameCamera(m, f), inputs, textures: t, meta: f };
   }
 
@@ -209,7 +215,8 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
   const client = new CaptureClient(opts.endpoint);
   const manifest = await loadManifest(opts.capture, client);
   const { width, height } = manifest;
-  const have = SIGNALS.filter((s) => manifest.buffers.some((b) => b.name === s));
+  const has = (name: string) => manifest.buffers.some((b) => b.name === name);
+  const have: SignalName[] = [...SIGNALS.filter(has), ...(Object.keys(DERIVED_SIGNALS) as (keyof typeof DERIVED_SIGNALS)[]).filter((s) => has(DERIVED_SIGNALS[s]))];
   const signals = (opts.signals ?? [...opts.denoiser.signals]).filter((s) => have.includes(s) && opts.denoiser.signals.includes(s));
   if (!signals.length) throw new Error(`denoiser ${opts.denoiser.id} supports [${opts.denoiser.signals}], capture has [${have}]`);
   const settings = opts.settings ?? {};
