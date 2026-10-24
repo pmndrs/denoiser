@@ -61,6 +61,8 @@ export interface ShadowDenoiserOptions {
   maxRadius?: number;
   /** History cap of the penumbra-scale estimate (occluded samples). Default 7. */
   maxScaleHistory?: number;
+  /** Spatial normal weight (structural: a pipeline variant). Default true. */
+  normalWeight?: boolean;
   /** Spatial weights: plane-distance tolerance (relative to view distance) and normal angle (degrees). */
   geometryTolerance?: number;
   normalAngle?: number;
@@ -108,6 +110,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     maxScaleHistory: o.maxScaleHistory ?? 7,
     geometryTolerance: o.geometryTolerance ?? 0.02,
     normalAngle: o.normalAngle ?? 30,
+    normalWeight: o.normalWeight ?? true,
     anisotropy: o.anisotropy ?? false,
     anisotropyMax: o.anisotropyMax ?? 4,
     catmullRom: o.catmullRom ?? true,
@@ -229,7 +232,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       spatial: layout(device, 'shadows spatial', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']),
     };
     this.tilesPipe = pipeline(device, 'shadows tiles', SHADOW_TILES_WGSL, this.layouts.tiles);
-    this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1), this.layouts.spatial));
+    this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
+      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight), this.layouts.spatial));
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }

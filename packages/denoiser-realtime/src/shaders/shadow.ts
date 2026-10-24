@@ -366,7 +366,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 // ---------------------------------------------------------------------------- spatial
 
 /** pass 0 reads the accumulated history (.x), pass 1 the previous pass's output. */
-export function shadowSpatialWgsl(pass: 0 | 1): string {
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true): string {
   const taps: string[] = [];
   for (let i = 0; i < 8; i++) {
     taps.push(/* wgsl */ `
@@ -378,11 +378,11 @@ export function shadowSpatialWgsl(pass: 0 | 1): string {
     let gt = textureLoad(geoCur, qc, 0).xy;
     let vt = textureLoad(srcTex, qc, 0).r;
     let zt = bitcast<f32>(gt.x);
-    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0);
+${normalWeight ? `    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0);` : ''}
     let qp = vec2f(qc) + 0.5;
     let pd = abs(na.x + na.y * qp.x + na.z * qp.y + zt * (nb.x + nb.y * qp.x + nb.z * qp.y) - dC);
     let wg = W1(pd * invGeoTol);
-    let wn = W1((1.0 - dot(n, nt)) * invNormTol);
+    let wn = ${normalWeight ? 'W1((1.0 - dot(n, nt)) * invNormTol)' : '1.0'};
     let w = select(0.0, wg * wn, inside(q) && zt > 0.0);
     sum += w * vt;
     wsum += w;
