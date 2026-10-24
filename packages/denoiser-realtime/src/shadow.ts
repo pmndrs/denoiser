@@ -2,10 +2,10 @@
 // (SPEC v0 §7, M4; provisional until the SPEC is reviewed). Sources and pass list in
 // shaders/shadow.ts; provenance in docs/research/rt-denoiser/PROVENANCE.md.
 //
-//   temporal   raw visibility -> history (rgba16float: v, penumbra scale g, A, n_g), packed
-//              geometry (rg32uint ping-pong; its roughness byte carries the H18 noise estimate E),
-//              tile stats; unfiltered copies into T and out (fresh pixels: mixed with a
-//              geometry-weighted 5x5 mean, `youngMean`)
+//   temporal   raw visibility -> history (rgba16float: v, penumbra scale g, A (+ young-frames
+//              counter x youngBase), n_g), packed geometry (rg32uint ping-pong; its roughness byte
+//              carries the H18 noise estimate E), tile stats; unfiltered copies into T and out
+//              (young pixels: mixed with a geometry-weighted 5x5 mean, `youngMean` / `youngFrames`)
 //   tiles      3x3 tile neighbourhood: nearest-occluder scale + indirect list of penumbra tiles
 //   spatial 0  out copy -> T      (penumbra tiles only)
 //   spatial 1  T -> out           (penumbra tiles only)
@@ -43,6 +43,20 @@ export interface ShadowDenoiserOptions {
   /** Constant added to the clamp window (keeps penumbra history when all 25 samples agree by chance). Default 0.05. */
   clampFloor?: number;
   /**
+   * Clamp window over the 5x5 taps whose normal is within normalAngle of the receiver's only
+   * (window x sqrt(25 / n) for n taps), so thin occluders and creases aren't clamped toward the
+   * surface next to them (pipeline variant: a shared normal tile, loaded only where the raw
+   * samples disagree). Default true (v2.1).
+   */
+  clampGeometry?: boolean;
+  /** clampGeometry: with fewer taps than this passing the normal test (silhouette slivers), the plain 5x5 window. Default 3. */
+  clampMinTaps?: number;
+  /**
+   * Near-hard edges: the clamp window grows by saturate(1 - W_px / clampEdgePx) (up to no clamp)
+   * where the pixel's own penumbra width W_px is below this many pixels (0 = off). Default 2 (v2.1).
+   */
+  clampEdgePx?: number;
+  /**
    * Anti-lag: history length drops toward 1 frame as the clamp moves the history by 1/antiLag
    * (0 = off). Default 64 (any noticeable clamp restarts the history at 1 frame).
    */
@@ -50,14 +64,20 @@ export interface ShadowDenoiserOptions {
   /** Radius factor 1 + freshBoost / (1 + A) for young histories (disocclusions, anti-lag). Default 0. */
   freshBoost?: number;
   /**
-   * Young histories: a geometry-weighted 5x5 mean of raw visibility stands in for this frame's
-   * sample in the spatial passes' input (the history stays raw), with weight
-   * youngMean x saturate(1 - A / youngSpan), gated by the penumbra width (pipeline variant;
-   * 0 = off). Default 0.75 (v2: with youngSpan 1 it acts on fresh pixels only, A = 0).
+   * Fresh pixels (reset / disocclusion): a geometry-weighted 5x5 mean of raw visibility is mixed
+   * into the spatial passes' input (the history stays raw) with weight youngMean on the first
+   * frame, gated by the penumbra width (pipeline variant; 0 = off). Default 0.75.
    */
   youngMean?: number;
-  /** Young-history span: weight youngMean x (1 - A / youngSpan); 0 = youngMean / (1 + A). Default 1. */
-  youngSpan?: number;
+  /**
+   * Frames after a reset / disocclusion during which the 5x5 mean keeps a share of the spatial
+   * input: weight youngMean x (frames left / youngFrames) / (1 + youngTaper x A). Counted from
+   * the first valid history, not shortened by the history cap or anti-lag. 0 = first frame only
+   * (v2). Default 8 (v2.1).
+   */
+  youngFrames?: number;
+  /** Decay of that weight with the accumulated history length A (see youngFrames). Default 0.25. */
+  youngTaper?: number;
   /** Footprint of the young-history mean: (2 youngRadius + 1)^2 pixels (pipeline variant). Default 2. */
   youngRadius?: number;
   /** Young-history mean only where the pass-0 kernel radius (px, at A = 0) exceeds this; full weight 2 px above. Default 1. */
@@ -136,12 +156,16 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     minHistory: o.minHistory ?? 1,
     clampSigma: o.clampSigma ?? 0.4,
     clampFloor: o.clampFloor ?? 0.05,
+    clampGeometry: o.clampGeometry ?? true,
+    clampMinTaps: o.clampMinTaps ?? 3,
+    clampEdgePx: o.clampEdgePx ?? 2,
     antiLag: o.antiLag ?? 64,
     antiLagHistory: o.antiLagHistory ?? 0,
     freshBoost: o.freshBoost ?? 0,
     youngMean: o.youngMean ?? 0.75,
     youngMinPx: o.youngMinPx ?? 1,
-    youngSpan: o.youngSpan ?? 1,
+    youngFrames: Math.max(0, Math.min(15, Math.round(o.youngFrames ?? 8))),
+    youngTaper: o.youngTaper ?? 0.25,
     youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
     pass1Phase: o.pass1Phase ?? 0.3819660113,
     planeDistance: o.planeDistance ?? 0.01,
@@ -338,7 +362,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });
@@ -394,7 +418,13 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     prevCo.forEach((v, i) => f.set(v, 64 + 4 * i));
     f[71] = o.noiseBlend;
     f[75] = o.noiseYoung;
-    f[79] = o.youngSpan;
+    // young-frames counter in the history's A channel above youngBase (> A's range, f16-exact)
+    const youngBase = Math.max(32, 2 ** Math.ceil(Math.log2(o.maxHistory + 2)));
+    f[67] = o.youngMean > 0 ? Math.min(o.youngFrames, Math.floor(512 / youngBase)) : 0;
+    f[79] = o.youngTaper;
+    f[87] = youngBase;
+    f[88] = o.clampMinTaps;
+    f[89] = o.clampEdgePx;
     f[83] = o.pass1Phase;
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;

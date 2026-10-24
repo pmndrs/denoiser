@@ -43,6 +43,16 @@
 //   the 1-spp input): on fresh pixels the spatial passes' input is mixed with a 5x5 mean of
 //   raw visibility over taps on the receiver's plane, gated by the penumbra width; the
 //   history stays raw.
+// - v2.1 (our design, results/M4.md "v2.1"): the clamp window counts only the 5x5 taps whose
+//   normal is within normalAngle of the receiver's (a shared normal tile, loaded only in tiles
+//   whose raw samples disagree), window x sqrt(25/n); it widens toward no clamp where the own
+//   penumbra is narrower than clampEdgePx; and the young mean keeps a tapering share for
+//   youngFrames frames after a reset / disocclusion (counter in the history's A channel). They
+//   fix "frame 2 worse than frame 1": from the second frame on the plain window clamped thin
+//   occluders and creases toward the surface next to them (and hard edges toward their 5x5
+//   mean), and the young mean switched off abruptly. Geometry-aware neighbourhood statistics as
+//   such are common in temporal filters (e.g. the joint bilateral weights of SVGF, Schied et
+//   al. 2017); the binary normal test on the clamp window is ours.
 // - Our designs (tuned on the test bed, docs/research/rt-denoiser/results/M4.md §3): clamp
 //   window 0.4 sigma (about 2 standard errors of the 5x5 mean; SPEC's 1 sigma never fires on
 //   binary samples), anti-lag restart at the current frame when the clamp moves the history,
@@ -68,7 +78,7 @@ export const SF_SNAP = 128;       // uniform 5x5 neighbourhood: history := its v
 export const SF_SNAP_CHANGE = 256; // ... only where the history sits outside the clamp window (a change)
 
 /** Size of ShadowParams in bytes. */
-export const SP_SIZE = 88 * 4;
+export const SP_SIZE = 92 * 4;
 
 const PARAMS_WGSL = /* wgsl */ `
 struct ShadowParams {
@@ -85,13 +95,16 @@ struct ShadowParams {
   noiseScale: f32, anisoMax: f32, tilesX: u32, tilesY: u32,
   antiLagHistory: f32, freshBoost: f32, youngMean: f32, youngMinPx: f32,
   terminatorPx: f32, historyScale: f32, minHistory: f32, historyShrink: f32,
-  PA0: vec3f, r0: f32,   // the same affine form for the previous frame's projection
+  PA0: vec3f, youngFrames: f32,   // the same affine form for the previous frame's projection
   PAx: vec3f, noiseBlend: f32,
   PAy: vec3f, noiseYoung: f32,
-  PB0: vec3f, youngSpan: f32,
+  PB0: vec3f, youngTaper: f32,
   PBx: vec3f, pass1Phase: f32,
-  PBy: vec3f, r5: f32,
+  PBy: vec3f, youngBase: f32,   // history A channel = A + youngBase x (young frames left), see temporal
+  clampMinTaps: f32, clampEdgePx: f32, r2: f32, r3: f32,
 }
+// history length A from the history's A channel (strips the young-frames counter)
+fn histA(z: f32) -> f32 { return z - SP.youngBase * floor(z / SP.youngBase); }
 fn spFlag(f: u32) -> bool { return (SP.flags & f) != 0u; }
 const SF_SPHERE = ${SF_SPHERE}u;
 const SF_NOISE = ${SF_NOISE}u;
@@ -114,7 +127,7 @@ const TILE = 8;
  * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
  * tile's halo grows to max(2, youngRadius)).
  */
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false): string {
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
   const SW = TILE + 2 * HB;                            // shared tile width
   const YR = young ? youngRadius : 2;
@@ -122,8 +135,14 @@ export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, y
   const depthLoad = depthIsDepthFormat ? 'textureLoad(depthTex, p, 0)' : 'textureLoad(depthTex, p, 0).r';
   // 5x5 neighbourhood of raw visibility from the shared tile (unrolled)
   const nb: string[] = [];
+  const nbG: string[] = [];
   for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
-    nb.push(`  { let s = sV[(l.y + ${y + HB - 2}u) * ${SW}u + l.x + ${x + HB - 2}u]; m1 += s; m2 += s * s; }`);
+    const idx = `(l.y + ${y + HB - 2}u) * ${SW}u + l.x + ${x + HB - 2}u`;
+    nb.push(`  { let s = sV[${idx}]; m1 += s; m2 += s * s; }`);
+    if (!clampGeo) continue;
+    // taps whose normal is within normalAngle of the receiver's vote (sky: normal 0, never)
+    // (unpack + dot beat dot4I8Packed on the M5 Pro: no native 4x8 dot there)
+    nbG.push(`        { let s = sV[${idx}]; let w = select(0.0, 1.0, dot(cN, unpack4x8snorm(sN[${idx}])) >= cCos); m0 += w; m1 += w * s; m2 += w * s * s; }`);
   }
   return /* wgsl */ `
 ${FRAME_WGSL}
@@ -232,26 +251,46 @@ fn noiseE(l: vec2u) -> f32 {
 fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 
 var<workgroup> sV: array<f32, ${SW * SW}>;     // raw visibility, ${SW}x${SW} = tile + ${HB}-px halo
+${clampGeo ? `var<workgroup> sN: array<u32, ${SW * SW}>;     // unit world normal, pack4x8snorm (0 = sky / none), same tile` : ''}
 var<workgroup> wgMinG: atomic<u32>;     // min penumbra scale over the tile (f32 bits, >= 0)
 var<workgroup> wgFlags: atomic<u32>;    // 1 fractional history, 2 raw < 1, 4 raw > 0
+${clampGeo ? `var<workgroup> wgHi: atomic<u32>;       // max raw visibility over the shared tile (f32 bits; zero-initialized)
+var<workgroup> wgLoInv: atomic<u32>;    // max of 1 - raw visibility
+var<workgroup> wgMixed: u32;            // the shared tile's raw samples disagree (normal tile loaded)` : ''}
 
 @compute @workgroup_size(${TILE}, ${TILE})
 fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u,
         @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
   let base = vec2i(wid.xy) * ${TILE} - ${HB};
+  var tHi = 0.0;
+  var tLo = 1.0;
   for (var i = li; i < ${SW * SW}u; i += 64u) {
-    sV[i] = rawVis(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
+    let v = rawVis(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
+    sV[i] = v;
+    tHi = max(tHi, v);
+    tLo = min(tLo, v);
   }
   if (li == 0u) { atomicStore(&wgMinG, G_INF); atomicStore(&wgFlags, 0u); }
+${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
+  atomicMax(&wgLoInv, bitcast<u32>(1.0 - tLo));
+  workgroupBarrier();
+  if (li == 0u) { wgMixed = select(0u, 1u, bitcast<f32>(atomicLoad(&wgHi)) > 1.0 - bitcast<f32>(atomicLoad(&wgLoInv))); }
+  // normal tile only where the raw samples disagree somewhere in it (elsewhere every
+  // 5x5 subset agrees and the geometry test can't change anything)
+  let mixedTile = workgroupUniformLoad(&wgMixed) != 0u;
+  if (mixedTile) {
+    for (var i = li; i < ${SW * SW}u; i += 64u) {
+      let q = clampPix(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
+      let nq = textureLoad(normalTex, q, 0).xyz;
+      sN[i] = pack4x8snorm(vec4f(nq * inverseSqrt(max(dot(nq, nq), 1e-12)), 0.0));
+    }
+  }` : ''}
   workgroupBarrier();
 
   let p = vec2i(gid.xy);
   let l = vec2u(lid.xy);
   var vAcc = 0.0;
   var yW = 0.0;        // young-history weight of the 5x5 mean (0 = not young / off)
-  var yC = 0.0;        // young pixels: clamped history, raw sample and A, kept for after the barrier
-  var yR = 0.0;
-  var yA = 0.0;
   var gOwn = -1.0;     // own penumbra-scale estimate (-1 = none)
   var pixW = 1.0;      // world size of one pixel at this depth
   if (inside(p)) {
@@ -270,6 +309,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
       // ---- reproject (shared core rules, affine form)
       let r = reprojFast(p, g);
       var A = -1.0;
+      var yPrev = 0.0;
       var vH = 0.0;
       var gH = 0.0;
       var nW = 0.0;
@@ -280,8 +320,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
         var gs = vec2f(0.0);
         var lo = 1.0;
         var hi = 0.0;
+        var yAcc = 0.0;
         for (var k = 0; k < 4; k++) {
-          let hk = textureLoad(histPrev, clampPix(r.base + TAP_OFFS[k]), 0);
+          var hk = textureLoad(histPrev, clampPix(r.base + TAP_OFFS[k]), 0);
+          let yk = floor(hk.z / SP.youngBase);   // young frames left (0 once settled)
+          hk.z -= yk * SP.youngBase;
+          yAcc += yk * w[k];
           acc += hk * w[k];
           lo = min(lo, hk.x);
           hi = max(hi, hk.x);
@@ -289,6 +333,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
           gs += vec2f(hk.y * hasG, hasG);
         }
         acc *= ws;
+        yPrev = yAcc * ws;
         vH = acc.x;
         if (spFlag(SF_CATMULL) && r.allValid) {
           // sharper resampling: repeated bilinear reprojection blurs narrow penumbrae
@@ -298,24 +343,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
         nW = acc.w;
         gH = select(0.0, gs.x / gs.y, gs.y > 0.0);
       }
-      // ---- neighbourhood clamp on raw visibility (5x5 mean +- gamma sigma)
-      var m1 = 0.0;
-      var m2 = 0.0;
-${nb.join('\n')}
-      let mu = m1 / 25.0;
-      let sigma = sqrt(max(m2 / 25.0 - mu * mu, 0.0));
-      let win = SP.clampSigma * sigma + SP.clampFloor;
-      var vC = clamp(vH, mu - win, mu + win);
-      if (A >= 0.0) {
-        // anti-lag (our design): a history the clamp had to move is short-lived
-        let c = saturate(abs(vC - vH) * SP.antiLag);
-        A = mix(A, min(A, SP.antiLagHistory), c);
-      }
-      // all 25 samples agree: take their value exactly, keep the history length (the floor
-      // above only decides whether this is a change worth restarting for)
-      // (SF_SNAP_CHANGE: only where the clamp fired, i.e. after a change such as a light flip;
-      // a steady outer penumbra keeps its fractional history)
-      if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win)) { vC = mu; }
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
       if (spFlag(SF_NOISE)) {
@@ -342,27 +369,77 @@ ${nb.join('\n')}
       // wide penumbrae keep the full cap, near-hard edges stay short (their 1-spp noise is
       // confined to a band about as wide as the penumbra)
       var cap = SP.maxHistory;
-      if (nWn > 0.0 && !spFlag(SF_NOISE) && SP.historyScale > 0.0) {
-        let wPx = SP.lightSize * gAcc / (g.z * SP.pixScale + SP.pixOrtho);
-        cap = clamp(SP.historyScale * wPx * wPx, SP.minHistory, SP.maxHistory);
+      var wPx = 1e30;   // penumbra width in pixels (unknown: no occluded sample yet)
+      if (nWn > 0.0 && !spFlag(SF_NOISE)) {
+        wPx = SP.lightSize * gAcc / (g.z * SP.pixScale + SP.pixOrtho);
+        if (SP.historyScale > 0.0) { cap = clamp(SP.historyScale * wPx * wPx, SP.minHistory, SP.maxHistory); }
       }
+      // ---- neighbourhood clamp on raw visibility (5x5 mean +- gamma sigma)
+      var m1 = 0.0;
+      var m2 = 0.0;
+      var nS = 25.0;
+${clampGeo ? `      if (mixedTile) {
+        // v2.1 (our design): only taps whose normal is within normalAngle of the receiver's count
+        // (binary), so a thin occluder or a crease isn't clamped toward the surface behind / next
+        // to it (that pulled dark legs on a lit floor up by ~0.1 from the second frame on); the
+        // window widens as sqrt(25 / n), ~2 standard errors of the n-sample mean. Tiles whose raw
+        // samples all agree skip this (every subset agrees too). A plane-distance test on top was
+        // worth 0 dB on the test bed, +0.06..0.28 on the real scene, for a depth tile and ~0.1 ms
+        // more (results/M4.md v2.1).
+        let cN = unpack4x8snorm(pack4x8snorm(vec4f(g.n, 0.0)));
+        let cCos = (SP.normalCos - 0.02) * dot(cN, cN);   // 8-bit normals: a little slack
+        var m0 = 0.0;
+${nbG.join('\n')}
+        // too few taps on the receiver's surface (silhouette slivers): the plain window
+        if (m0 >= SP.clampMinTaps) {
+          nS = m0;
+        } else {
+          m1 = 0.0;
+          m2 = 0.0;
+${nb.map((t) => '    ' + t).join('\n')}
+        }
+      } else {` : '      {'}
+${nb.join('\n')}
+      }
+      let mu = m1 / nS;
+      let sigma = sqrt(max(m2 / nS - mu * mu, 0.0));
+      // near-hard edges (v2.1, our design): a 5x5 mean is a biased estimate of a pixel next to a
+      // step (up to ~0.4 off), so the window grows by up to 1 (no clamp) as the penumbra width
+      // falls below clampEdgePx; such pixels keep a short history anyway (cap ~ W_px^2)
+      let win = SP.clampSigma * sigma${clampGeo ? ' * sqrt(25.0 / nS)' : ''} + SP.clampFloor
+        + select(0.0, saturate(1.0 - wPx / SP.clampEdgePx), SP.clampEdgePx > 0.0);
+      var vC = clamp(vH, mu - win, mu + win);
+      if (A >= 0.0) {
+        // anti-lag (our design): a history the clamp had to move is short-lived
+        let c = saturate(abs(vC - vH) * SP.antiLag);
+        A = mix(A, min(A, SP.antiLagHistory), c);
+      }
+      // all 25 samples agree: take their value exactly, keep the history length (the floor
+      // above only decides whether this is a change worth restarting for)
+      // (SF_SNAP_CHANGE: only where the clamp fired, i.e. after a change such as a light flip;
+      // a steady outer penumbra keeps its fractional history)
+      if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win)) { vC = mu; }
       let An = min(A, cap) + 1.0;   // 0 after a disocclusion
       vAcc = mix(vC, vRaw, 1.0 / (1.0 + An));
-      hist = vec4f(vAcc, gAcc, An, nWn);
+      // young-frames counter (v2.1, our design): youngFrames on a fresh pixel (no valid history),
+      // one less per frame, carried in the A channel above youngBase; unlike A it is not shortened
+      // by the history cap or by anti-lag, so it marks "recently new", not "short history"
+      let yN = select(max(round(yPrev) - 1.0, 0.0), SP.youngFrames, An == 0.0);
+      hist = vec4f(vAcc, gAcc, An + SP.youngBase * yN, nWn);
 ${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
       // over at most maxWHistory + 1 frames and stored in the geometry's 8-bit roughness slot
       let eCur = noiseE(l);
       g.rough = select(eCur, mix(ePrev, eCur, 1.0 / (min(An, SP.maxWHistory) + 1.0)), An > 0.0);` : ''}
-${young ? `      // young history (our design): the 1-spp sample is the noisiest input there; a 5x5
-      // mean of it (accurate for blue-noise samples, the same property the clamp relies on)
-      // stands in for it with weight youngMean x (1 - An / youngSpan) (or youngMean / (1 + An)
-      // when youngSpan = 0), in the spatial passes' input only
-      // (the history stays raw). After the barrier: gated by the penumbra width (hard edges
-      // keep the raw sample) and restricted to taps on the receiver's plane.
-      yW = saturate(SP.youngMean * select(1.0 / (1.0 + An), 1.0 - An / SP.youngSpan, SP.youngSpan > 0.0));
-      yC = vC;
-      yR = vRaw;
-      yA = An;
+${young ? `      // young history (our design): on a fresh pixel the 1-spp sample is the noisiest input; a 5x5
+      // mean of it (accurate for blue-noise samples, the same property the clamp relies on) is
+      // mixed into the spatial passes' input (the history stays raw). v2.1: for youngFrames
+      // frames after a reset / disocclusion it keeps standing in for part of the temporal
+      // estimate, weight youngMean x (frames left / youngFrames) / (1 + youngTaper x A) (about the
+      // inverse-variance share of a biased 25-sample mean against an A + 1-sample mean), instead of
+      // dropping to 0 on the second frame (which made frame 2 worse than frame 1).
+      // After the barrier: gated by the penumbra width (hard edges keep the raw sample) and
+      // restricted to taps on the receiver's plane.
+      yW = saturate(SP.youngMean * select(yN / max(SP.youngFrames, 1.0), 1.0, An == 0.0) / (1.0 + SP.youngTaper * An));
       gOwn = select(-1.0, gAcc, nWn > 0.0);
       pixW = g.z * SP.pixScale + SP.pixOrtho;` : ''}
 
@@ -393,7 +470,9 @@ ${young ? `    if (yW > 0.0) {
         if (gE < 1e30) { rPx = SP.radiusScale * SP.lightSize * gE / pixW; }
       }
       let sY = saturate((rPx - SP.youngMinPx) * 0.5);
-      if (sY > 0.0) {
+      // (clampGeometry: in a tile whose raw samples all agree the mean equals this pixel's own
+      // sample, and so does vAcc after the snap: nothing to mix)
+      if (sY > 0.0${clampGeo ? ' && mixedTile' : ''}) {
         // 5x5 mean over taps within planeTol of the receiver's tangent plane (affine form,
         // as in the spatial passes)
         let nv = (F.view * vec4f(normalize(textureLoad(normalTex, p, 0).xyz), 0.0)).xyz;
@@ -409,16 +488,16 @@ ${young ? `    if (yW > 0.0) {
         for (var dy = 0u; dy < ${2 * YR + 1}u; dy++) {
           for (var dx = 0u; dx < ${2 * YR + 1}u; dx++) {
             let i = (l.y + dy + ${HB - YR}u) * ${SW}u + l.x + dx + ${HB - YR}u;
-            let zt = linZ(clampPix(p + vec2i(i32(dx) - ${YR}, i32(dy) - ${YR})));   // rare: fresh pixels only
+            let zt = linZ(clampPix(p + vec2i(i32(dx) - ${YR}, i32(dy) - ${YR})));   // young pixels only
             let qc = pc + vec2f(f32(dx) - ${YR}.0, f32(dy) - ${YR}.0);
             let pd = na.x + na.y * qc.x + na.z * qc.y + zt * (nb.x + nb.y * qc.x + nb.z * qc.y) - dC;
-            let w = select(0.0, 1.0, zt > 0.0 && abs(pd) <= tol);
+            let w = select(0.0, 1.0, zt > 0.0 && abs(pd) <= tol${clampGeo ? ` && dot(unpack4x8snorm(sN[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u]), unpack4x8snorm(sN[i])) >= SP.normalCos - 0.02` : ''});
             sw += w;
             sv += w * sV[i];
           }
         }
         let muG = sv / max(sw, 1.0);
-        vOut = mix(vAcc, mix(yC, mix(yR, muG, yW), 1.0 / (1.0 + yA)), sY);
+        vOut = mix(vAcc, muG, yW * sY);
       }
     }` : ''}
     textureStore(outT, p, vec4f(vOut, 0.0, 0.0, 0.0));
@@ -539,7 +618,8 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
   let z = bitcast<f32>(gc.x);
   let vin = textureLoad(srcTex, p, 0).r;
   if (z <= 0.0) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
-  let h = textureLoad(histCur, p, 0);
+  var h = textureLoad(histCur, p, 0);
+  h.z = histA(h.z);
 
   // receiver frame in view space
   let pc = vec2f(p) + 0.5;
