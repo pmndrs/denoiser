@@ -7,6 +7,7 @@ _2026-10-24. From the planning session to the implementing agent._
 | what | where |
 |---|---|
 | This work | branch `feat/rt-denoiser-cleanroom`, worktree `/Users/dex/Developer/Denoiser-nrd-cleanroom` |
+| Morning status (2026-10-25) | [STATUS.md](STATUS.md) |
 | Plan (all decisions made) | [PLAN.md](PLAN.md) |
 | Rules (binding) | [RULES.md](RULES.md); you are an **implementer** in rule 8 |
 | Task board, lessons | [TASKS.md](TASKS.md) (who does what, status), [LESSONS.md](LESSONS.md) (gotchas; read first, append before you finish) |
