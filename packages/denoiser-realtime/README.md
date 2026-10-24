@@ -297,6 +297,85 @@ SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB 
 least on the static-light path. The radiance alpha is 2.9 dB (AO) / 1.9 dB (SO) below the
 dedicated recurrent mode and doubles FLIP: "nearly free" holds for cost, not for quality.
 
+## Shadows (provisional)
+
+`ShadowDenoiser` (`TemporalDenoiser<ShadowInputs>`, registry id `shadows`): a penumbra-aware
+denoiser for 1-ray (or few-ray) shadow visibility, built against SPEC v0.1 §7 (not reviewed
+yet: **provisional**). Fractional visibility is kept end to end (never thresholded), the
+history accumulates raw visibility only (no spatial output fed back), and the spatial kernel
+is sized per pixel from the penumbra width (Mehta et al. 2012, from the occluder distance and
+the light size) blended with a noise estimate (Heitz et al. 2018). Sources per pass:
+`src/shaders/shadow.ts` header and `docs/research/rt-denoiser/PROVENANCE.md` "Shadows (M4)".
+
+```ts
+import { ShadowDenoiser } from 'denoiser/realtime';
+
+const shadows = new ShadowDenoiser(device);
+shadows.configure({ width, height });
+// every frame:
+if (cameraCut) shadows.resetHistory();
+const out = shadows.dispatch(
+  {
+    visibility,              // [0, 1], 1 = lit (r8unorm / r16float / r32float), one ray per pixel
+    hitDistance,             // optional: distance to the occluder, world units, 0 = unoccluded
+    light: { type: 'sphere', position: [x, y, z], radius: r },
+    //  or { type: 'directional', direction: [dx, dy, dz] /* toward the light */, angularRadius: 0.0047 }
+  },
+  { depth, normal, motion, viewZ /* optional */, motionZ /* optional */ },
+  { view, projection, prevView, prevProjection, near, far },
+);
+// out: r32float denoised visibility (valid until the next dispatch)
+```
+
+- Without `hitDistance` or `light` it falls back to the noise-driven radius alone (H18).
+- One light per instance (filter per light, as RTG I ch. 19 does). The `light` option sets a
+  default for inputs that carry none.
+- Renderer contract (SPEC SH-7, not enforced): unjittered shadow-ray origins; blue-noise light
+  samples (golden-ratio animation for a scalar, R2 for 2-D samples). The temporal clamp relies
+  on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
+- Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
+  [1], `clampSigma` [0.4], `clampFloor` [0.05], `antiLag` [64], `antiLagHistory` [0],
+  `uniformSnap` [true], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
+  `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
+  `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
+  `youngSpan` [1], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
+  [16 px @1080p], `geometryTolerance` [0.02], `normalAngle` [30°], `normalWeight` [true],
+  `pass1Phase` [0.382], `spatialPasses` [2], `tileSkip` [true], `anisotropy` [false],
+  `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` also takes
+  `'change'` (snap only after a change). Every one is documented in `src/shadow.ts`; M4.md has
+  the measurements behind them.
+
+| pass | threads | reads → writes |
+|---|---|---|
+| `temporal` | 8×8 per tile, shared raw visibility (+ depth for the young-history mean) | guides, visibility, hit distance, previous geometry/history → geometry (rg32uint; its spare byte carries the noise estimate E), history (rgba16float: v, penumbra scale g, A, n_g), unfiltered copies T and out (r32float), tile stats |
+| `tiles` | 1 per 8×8 tile | 3×3-tile nearest-occluder scale; indirect list of penumbra tiles |
+| `spatial0` | indirect, penumbra tiles | out copy → T: 8-tap rotated disk on the receiver's tangent plane |
+| `spatial1` | indirect, penumbra tiles | T → out: same, half radius, another rotation |
+
+Memory: **40 B/px** + 12 B per 8×8 tile (83 MB at 1080p). Core WebGPU only (≤ 4 storage
+textures per pass).
+
+### Results (provisional; tables in `docs/research/rt-denoiser/results/M4.md`)
+
+**Test bed** (`examples/realtime-denoiser`, analytic scene, one sphere light, 1-spp blue-noise
+visibility, 256-spp references), 1920×1080, 96 frames per path, 7 stress paths, PSNR on
+visibility, **pooled** (PSNR of the mean squared error over all frames and pixels):
+
+| | PSNR | penumbra | disoccluded | FLIP | flicker | GPU ms (solo, 7 paths) |
+|---|---|---|---|---|---|---|
+| FFX shadows (`denoiser/ffx`) | 31.20 | 23.50 | 32.91 | 0.038 | 0.0053 | 0.50–0.61 |
+| `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
+| **`ShadowDenoiser` (defaults)** | **37.11** | **28.57** | **34.68** | **0.018** | **0.0033** | **0.48–0.59** |
+
+Ahead of FFX on every path (+4.9 … +8.9 dB pooled). In disoccluded regions it is ahead on
+average, and level with FFX on `pan` and `cut` (within 0.12 dB). On 16-frame replays that start
+at a camera reset FFX is still 0.2–0.5 dB ahead for the first 3 frames of `std1080-orbit`. GPU
+ms are the fastest of 4 solo runs (Apple M5 Pro, Chrome; the GPU has two clock states, ×1.3–1.8).
+Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spatial 0.13 + 0.12 ms.
+`youngMean: 0` saves ~0.025 ms (−0.07 dB). Directional lights: the code path is exercised on
+images only through a stand-in (the test bed's sphere light handed over as a directional light,
+M4.md §10.7). Provisional: tuned and scored on the same scene.
+
 ## Dev page
 
 `yarn workspace @pmndrs/denoiser-realtime dev` (port 5240), then
