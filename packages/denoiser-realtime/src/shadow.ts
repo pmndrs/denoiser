@@ -42,13 +42,17 @@ export interface ShadowDenoiserOptions {
   clampFloor?: number;
   /**
    * Anti-lag: history length drops toward 1 frame as the clamp moves the history by 1/antiLag
-   * (0 = off). Default 16.
+   * (0 = off). Default 64 (any noticeable clamp restarts the history at 1 frame).
    */
   antiLag?: number;
+  /** History length (A) a full anti-lag drops to (0 = this frame only). Default 0. */
+  antiLagHistory?: number;
   /** Temporal disocclusion: plane distance relative to view distance. Default 0.01. */
   planeDistance?: number;
-  /** Kernel radius = radiusScale x penumbra width W (first pass; the second uses half). Default 1. */
+  /** Kernel radius = radiusScale x penumbra width W (first pass; the second uses half). Default 0.75. */
   radiusScale?: number;
+  /** Radius factor at full history (lerp(1, historyShrink, A / maxHistory)). Default 0.5. */
+  historyShrink?: number;
   /** Smallest kernel radius in pixels (M12's pixel floor). Default 1. */
   minRadius?: number;
   /** Largest kernel axis in pixels at 1080p (scaled with height). Default 48. */
@@ -68,7 +72,7 @@ export interface ShadowDenoiserOptions {
   spatialPasses?: number;
   /** Skip tiles without penumbra (TR19 slide 72). Default true. */
   tileSkip?: boolean;
-  /** Pixels with their own occluder estimate still take the 3x3-tile minimum ("nearest occluder wins"). Default false. */
+  /** Pixels with their own occluder estimate still take the 3x3-tile minimum ("nearest occluder wins", SPEC SH-3). Default true. */
   mergeMin?: boolean;
   /** Kernel radius in px (at 1080p) on self-shadowing terminators (light partly below the horizon, no occluder distance). Default 16. */
   terminatorRadius?: number;
@@ -89,9 +93,11 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     minHistory: o.minHistory ?? 1,
     clampSigma: o.clampSigma ?? 0.4,
     clampFloor: o.clampFloor ?? 0.05,
-    antiLag: o.antiLag ?? 16,
+    antiLag: o.antiLag ?? 64,
+    antiLagHistory: o.antiLagHistory ?? 0,
     planeDistance: o.planeDistance ?? 0.01,
-    radiusScale: o.radiusScale ?? 1,
+    radiusScale: o.radiusScale ?? 0.75,
+    historyShrink: o.historyShrink ?? 0.5,
     minRadius: o.minRadius ?? 1,
     maxRadius: o.maxRadius ?? 48,
     maxScaleHistory: o.maxScaleHistory ?? 7,
@@ -102,7 +108,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     catmullRom: o.catmullRom ?? true,
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
-    mergeMin: o.mergeMin ?? false,
+    mergeMin: o.mergeMin ?? true,
     noiseRadius: o.noiseRadius ?? 24,
     terminatorRadius: o.terminatorRadius ?? 16,
     timestamps: o.timestamps ?? true,
@@ -350,9 +356,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[53] = o.anisotropyMax;
     u[54] = this.tilesX;
     u[55] = this.tilesY;
-    f[56] = o.terminatorRadius * H / 1080;
-    f[57] = o.historyScale;
-    f[58] = o.minHistory;
+    f[56] = o.antiLagHistory;
+    f[60] = o.terminatorRadius * H / 1080;
+    f[61] = o.historyScale;
+    f[62] = o.minHistory;
+    f[63] = o.historyShrink;
     this.device.queue.writeBuffer(this.params, 0, f);
   }
 

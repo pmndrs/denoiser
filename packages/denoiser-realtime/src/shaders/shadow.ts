@@ -50,7 +50,7 @@ export const SF_HAS_HIT = 32;
 export const SF_CATMULL = 64;    // Catmull-Rom history for visibility when the 2x2 footprint is valid
 
 /** Size of ShadowParams in bytes. */
-export const SP_SIZE = 60 * 4;
+export const SP_SIZE = 64 * 4;
 
 const PARAMS_WGSL = /* wgsl */ `
 struct ShadowParams {
@@ -65,7 +65,8 @@ struct ShadowParams {
   pixScale: f32, pixOrtho: f32, minRadiusPx: f32, maxRadiusPx: f32,
   flags: u32, maxWHistory: f32, geoTol: f32, normalCos: f32,
   noiseScale: f32, anisoMax: f32, tilesX: u32, tilesY: u32,
-  terminatorPx: f32, historyScale: f32, minHistory: f32, pad2: f32,
+  antiLagHistory: f32, q0: f32, q1: f32, q2: f32,
+  terminatorPx: f32, historyScale: f32, minHistory: f32, historyShrink: f32,
 }
 fn spFlag(f: u32) -> bool { return (SP.flags & f) != 0u; }
 const SF_SPHERE = ${SF_SPHERE}u;
@@ -200,7 +201,7 @@ ${nb.join('\n')}
       if (A >= 0.0) {
         // anti-lag (our design): a history the clamp had to move is short-lived
         let c = saturate(abs(vC - vH) * SP.antiLag);
-        A = mix(A, min(A, 1.0), c);
+        A = mix(A, min(A, SP.antiLagHistory), c);
       }
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
@@ -415,7 +416,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
     if (h.w <= 0.0 && nl < sinL) { Rw = SP.terminatorPx * pix; }
   }
   let An = saturate(h.z / SP.maxHistory);
-  Rw *= SP.radiusScale * mix(1.0, 0.5, An) * select(1.0, 0.5, PASS == 1);
+  Rw *= SP.radiusScale * mix(1.0, SP.historyShrink, An) * select(1.0, 0.5, PASS == 1);
   Rw = max(Rw, SP.minRadiusPx * pix);
   if (Rw < 0.5 * pix) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
 
