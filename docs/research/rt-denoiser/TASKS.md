@@ -128,6 +128,13 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       radiance alpha ("free" AO/SO) is 2.9 / 1.9 dB below the dedicated recurrent mode: free in cost,
       not in quality. `results/M5.md`._
 
+### M6 (groundwork)
+
+- [~] m6 **M6 groundwork**: TSL nodes for the realtime classes in `denoiser/three` (shadows, diffuse/specular
+      joint, occlusion; filter stays an option at the class default), real-scene example pages in
+      `examples/three-temporal` (ours next to FFX), headless checks, first real-scene numbers
+      (`results/M6-real-scene.md`). Experimental / provisional until Dennis reviews.
+
 ## Found along the way
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
@@ -237,16 +244,29 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       first; 'auto' documented in the README as the quality option); kernel / iterations /
       α unchanged (per-signal α_min not done). Dev page re-measured: diffuse 40.48 → 41.55,
       specular 43.56 → 45.64 dB; joint 3.98 ms at 1080p._
-- [~] svgf-antilag **A-SVGF anti-lag v2**: diagnose and fix the `'auto'` history cap (below), re-check α_min per
+- [x] svgf-antilag (5eb75d4, f16ffcd + docs) **A-SVGF anti-lag v2**: diagnose and fix the `'auto'` history cap (below), re-check α_min per
       signal, cut the +2.1 ms of `'auto'` (target within ~1 ms of `'off'`), results in `results/M1.md`
-      "A-SVGF anti-lag v2" — owner svgf-antilag agent (`src/svgf*.ts`, `src/shaders/svgf*.ts`, `src/shaders/gradient*.ts`)
-- [ ] A-SVGF `antiLag: 'auto'` makes α_min ≤ 0.1 inert: 0.05 and 0.1 give identical output
+      §12 — owner svgf-antilag agent. _Done, provisional: root cause = S3's variance propagation
+      treats à-trous taps as independent (noise floor σ ~4.5× too low → λ > 0 on ~85 % of static
+      pixels) and n = 1/α compounding (persistent λ caps n at 1/√λ ≈ 14). v2: noise floor from the
+      composite kernel (ΣK² ≈ 1/(4πv)), per-signal k (diffuse 2, specular 1), one reprojection per
+      stratum, packed f16, 4 iterations, 3×3 young-history variance for specular. Pooled, 7 paths:
+      diffuse 39.12 (v1 39.13, off 38.88), specular 35.04 (v1 34.96, off 33.46); static diffuse n
+      p50 36–43 (v1 13); light recovery 4 / 3 frames (off 5 / 8); joint 4.24 ms vs off 3.99 (v1 5.61),
+      solo bench uncontended round. α_min with 'auto': keep 0.1 for both signals._
+- [ ] **Proposal (Dennis decides, SPEC §12 item 2): make `antiLag: 'auto'` the SVGF default.** With
+      v2 it costs +0.25 ms on the joint denoiser at 1080p (4.24 vs 3.99 ms) for +0.24 dB diffuse and
+      +1.58 dB specular pooled (7 paths), lower FLIP (0.033 / 0.046 vs 0.036 / 0.051) and flicker,
+      and 3-frame light recovery for specular (off: 8). It also fixes `'off'`'s specular lag on
+      `glossy` (+3.8 dB). Memory +4 B/px per signal. The default flip is a one-line change in
+      `src/svgf.ts` `resolveOptions` (`antiLag ?? 'auto'`), plus README/SPEC — found by svgf-antilag, owner Dennis
+- [x] (svgf-antilag, 5eb75d4; results/M1.md §12) A-SVGF `antiLag: 'auto'` makes α_min ≤ 0.1 inert: 0.05 and 0.1 give identical output
       (≤ 0.02 dB) on orbit/pan/light, i.e. λ keeps 1/n ≥ ~0.1 everywhere, so histories never
       exceed ~10 frames even on static, unchanged regions (`light` before frame 48). Check
       the λ noise floor (`antiLagNoiseFloor`, default 2) on static regions; longer histories
       there would cut residual noise. Repro: `signal=diffuse&mode=eval&preset=full&denoiser=svgf-auto&path=light&temporalAlpha=0.05`
       vs `...&temporalAlpha=0.1` (same numbers); try `&antiLagNoiseFloor=3`. — found by results, owner `packages/denoiser-realtime`
-- [ ] Specular `variance` pass is 0.66 ms at 1080p (0.95 with anti-lag) vs 0.23 for diffuse
+- [~] (svgf-antilag: with anti-lag v2 the specular young-history estimate is 3×3, joint variance 1.10 → 0.51 ms; cause = many specular pixels with n < 4 under motion take the 7×7/5×5 spatial path) Specular `variance` pass is 0.66 ms at 1080p (0.95 with anti-lag) vs 0.23 for diffuse
       (README measured 0.37 on the dev scene); worth a profile, it is the largest single
       specular pass (M1.md §6). — found by results, owner `packages/denoiser-realtime`
 - [ ] Windows: the standard capture set was regenerated with blue-noise sampling
@@ -428,6 +448,25 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       with its own parameters. Native's normalized AO is then on a different curve than our test-bed
       references (h/(h + 1 + 0.05·d), per-sample mean), so PSNR against our references is not a fair
       comparison until probe P3 returns native's curve — found by occlusion, owner harness builder (report only)
+
+- [ ] SPEC deviations from anti-lag v2 (results/M1.md §12; for the spec author, SPEC §4.6 S-7b, §4.3,
+      §4.5, §10.2, §10.3, §12 item 2): (1) λ's noise floor uses var δ × ΣK² of the composite
+      reconstruction kernel (ΣK² ≈ 1/(4πv), v tracked through the iterations) instead of S3's Σw²var/(Σw)²
+      (which made 'auto' cap histories at ~13 frames); (2) per-signal floor k: diffuse 2, specular 1
+      (`antiLagNoiseFloor` −1 = per signal); (3) gradient samples from one reprojection per stratum (4
+      bilinear history taps) instead of per-pixel reprojection; (4) gradient state 8 × f16 in one
+      rgba32uint, anti-lag memory 4 B/px per signal (was ~7.6); (5) `gradientIterations` default 4 (S2: 5;
+      measured equal); (6) new `spatialVarianceRadius` (S-2's 7×7/5×5 cap), default 1 for specular when
+      anti-lag is on (+0.07 dB, variance 1.10 → 0.51 ms); (7) `antiLagVersion: 1 | 2`; (8) cost numbers:
+      'auto' is +0.25 ms joint (4.24 vs 3.99, solo bench), not +2.1 ms; the M1 §6 joint replay numbers
+      (6.31 / 4.20) overweight young histories (8-frame capture). `'gradient'` mode uses the same v2
+      reconstruction, unmeasured (no producer) — found by svgf-antilag, owner spec-author
+- [ ] `'off'` specular could use `spatialVarianceRadius: 1` too: +0.03 dB pooled (33.46 → 33.49) and a
+      cheaper variance pass. Not changed (keeps `'off'` bit-identical); a defaults call — found by
+      svgf-antilag, owner `packages/denoiser-realtime` / Dennis
+- [ ] Joint SVGF timings: `std1080-orbit` has 8 frames, so a warmed replay times frames where every
+      pixel is younger than 4 frames (spatial-variance path); use the test-bed solo bench (orbit, 100
+      frames) or a longer capture for cost tables — found by svgf-antilag, owner results / rt-capture
 
 ## Probes for the Windows harness
 

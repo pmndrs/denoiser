@@ -74,6 +74,18 @@ Additions to `@pmndrs/denoiser-core/temporal.ts` (additive): `FrameGuides.viewZ`
 - `'auto'`: temporal gradients estimated from the signal itself (per 3×3
   stratum: current mean luminance vs the reprojected accumulated history, with
   the noise of the current mean subtracted as a k·σ floor). No renderer work.
+- **v2** (`antiLagVersion: 2`, default since 2026-10-25; results/M1.md §12): the noise
+  floor uses the variance of the *reconstructed* gradient (local var δ × ΣK² of the
+  composite à-trous kernel, tracked through the iterations). v1 propagated var as if
+  every tap were independent, so σ came out ~4.5× too small, λ was > 0 on ~90 % of
+  static pixels and histories never passed ~13 frames. v2 floors at k = 2 for diffuse
+  (static histories now reach 32–64 frames) and k = 1 for specular (stays sensitive to
+  view-dependent drift, which the test bed rewards). It is also much cheaper: one
+  reprojection per stratum (history mean from 4 bilinear taps), packed f16 state, 4
+  reconstruction iterations, and a 3×3 young-history variance for specular. Same
+  quality as v1 (diffuse 39.12 vs 39.13, specular 35.04 vs 34.96 dB pooled, 7 paths)
+  for +0.25 ms over `'off'` on the joint denoiser (v1: +1.7 ms). `antiLagVersion: 1`
+  restores the M1 passes for comparisons.
 - `'gradient'`: A-SVGF proper. The renderer supplies `inputs.gradient`, one texel
   per 3×3 stratum (`ceil(W/3) × ceil(H/3)`, rgba32float/rgba16float):
   r = luminance of the forward-projected sample as shaded last frame,
@@ -87,9 +99,10 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 `historyFilter` ['bilinear' | 'catmull-rom'], `planeDistance` [0.01],
 `normalThreshold` [0.95], `atrousIterations` [5], `kernel` ['3x3' | '5x5'],
 `feedback` [false; the paper's true compounds blur, results/M1.md §4], `sigmaDepth/Normal/Luminance` [1, 128, 4],
-`varianceRampFrames` [4], `spatialVarianceBoost` [3], `luminanceVariance`
-['sample' | 'mean'], `antiLag` ['off' | 'auto' | 'gradient'],
-`antiLagNoiseFloor` [2], `antiLagRadius` [1], `gradientIterations` [5],
+`varianceRampFrames` [4], `spatialVarianceBoost` [3], `spatialVarianceRadius` [3; 1 for
+specular with anti-lag v2], `luminanceVariance`
+['sample' | 'mean'], `antiLag` ['off' | 'auto' | 'gradient'], `antiLagVersion` [2 | 1],
+`antiLagNoiseFloor` [diffuse 2, specular 1; v1: 2], `antiLagRadius` [1], `gradientIterations` [4; v1: 5],
 `remodulate` [false], `timestamps` [true]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
@@ -100,7 +113,7 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 |---|---|---|
 | (each pass below handles one or both signals per thread) | | |
 | `prepass` (shared) | depth / viewZ, normal, roughness → tap geometry (linear depth f32, oct normal 12+12 b, roughness 8 b) and depth slope (2×f16) | rg32uint ×2 (ping-pong), r32uint |
-| `gradient_create`, `gradient_atrous_0..4`, `gradient_lambda` (anti-lag only) | input, history → per 3×3 stratum (δ, Δ, var δ, valid), (mean l, var l, z, ∣∇z∣) → λ max-filtered over 3×3 strata | rgba32float ×4 + r32float at 1/3 res |
+| `gradient_create`, `gradient_atrous_0..3`, `gradient_lambda` (anti-lag only) | input, history → per 3×3 stratum (δ, Δ, σ δ, 1 + kernel variance), (mean l, σ l, z, ∣∇z∣) as 8 × f16 → λ max-filtered over 3×3 strata | rgba32uint ×2 + r32float at 1/3 res (v1: rgba32float ×4, 5 iterations) |
 | `temporal` | input + reprojected history → integrated color + history length n; luminance moments | rgba16float ×2 (rgb, n), rg32float ×2 |
 | `variance` | → color + **standard deviation** (bilateral spatial estimate blended in while n < 4) | rgba16float |
 | `atrous_0..K-1` | edge-avoiding à-trous ping-pong; iteration 0 also writes the feedback history; the last writes the output | rgba16float ×2, + history (rgba16float), output (rgba16float) |
@@ -108,7 +121,7 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 Internal memory per signal: 56 B/px including the output (+8 with feedback),
 plus 20 B/px shared geometry: ≈ 148 B/px for diffuse + specular with feedback
 (SPEC §10.2 estimates 112 without outputs; SVGF is the baseline, not the
-memory-target filter). Anti-lag adds ~7 B/px per signal.
+memory-target filter). Anti-lag adds 4 B/px per signal (v1: ~7.6).
 
 ## Results (dev page, synthetic scene, 1920×1080, Apple M5 Pro, Chrome)
 
@@ -133,10 +146,11 @@ Light switching on at frame 60, static camera (diffuse): plain SVGF drops to
 27.1 dB, slower recovery (it only fires on the change frame, as in the paper).
 No NaNs in any run.
 
-Defaults: `antiLag` stays `'off'` (performance first); `antiLag: 'auto'` is the
-quality option (+0.1…+1.1 dB diffuse, up to +2.9 dB specular on the test bed, ~3-frame
-light-change recovery) for about +1.4 ms on the joint denoiser at 1080p. The light-switch
-numbers above were measured with `feedback: true`.
+Defaults: `antiLag` stays `'off'` (Dennis decides, SPEC §12 item 2); `antiLag: 'auto'` is
+the quality option (test bed, pooled: +0.24 dB diffuse, +1.58 dB specular over 7 paths,
+~3-frame light-change recovery vs ~8) and with v2 costs **+0.25 ms** on the joint denoiser
+at 1080p (4.24 vs 3.99 ms, test-bed orbit bench; v1 was 5.61–5.74). The light-switch
+numbers above were measured with `feedback: true` and anti-lag v1.
 
 GPU time per frame at 1080p (timestamp queries, min of 400 frames; median
 within 5 %). Rows marked † were re-measured uncontended with the `feedback: false`
@@ -149,7 +163,10 @@ contended; feedback costs one extra history write):
 | `SpecularDenoiser` | 0.18 | 0.41 | 0.37 | 0.36 + 4 × 0.33 | — | **2.68 ms** |
 | `DiffuseSpecularDenoiser` (joint dispatches) † | 0.18 | 0.66 | 0.49 | 0.54 + 4 × 0.52 | — | **3.98 ms** |
 | `DiffuseDenoiser`, `antiLag: 'auto'` | 0.18 | 0.41 | 0.18 | 1.40 | 0.45 + 0.36 + 0.04 | **3.08 ms** |
-| `DiffuseSpecularDenoiser`, `antiLag: 'auto'` † | 0.18 | 0.68 | 0.51 | 2.57 | 0.57 + 0.73 + 0.07 | **5.43 ms** |
+| `DiffuseSpecularDenoiser`, `antiLag: 'auto'` v1 † | 0.18 | 0.68 | 0.51 | 2.57 | 0.57 + 0.73 + 0.07 | **5.43 ms** |
+| test bed (orbit, solo bench, median, 2026-10-25): joint `'off'` | 0.15 | 0.59 | 0.76 | 2.35 | — | **3.99 ms** |
+| test bed: joint `'auto'` v1 | 0.15 | 0.63 | 1.10 | 2.32 | 0.57 + 0.63 + 0.07 | **5.61 ms** |
+| test bed: joint `'auto'` v2 | 0.15 | 0.61 | 0.51 | 2.33 | 0.28 + 0.14 + 0.07 | **4.24 ms** |
 
 `kernel: '5x5'` costs 0.7–1.0 ms per à-trous iteration (4.7 ms total for
 diffuse); `atrousIterations: 4` saves one iteration. `DiffuseSpecularDenoiser`
