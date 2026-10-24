@@ -454,7 +454,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
   let hasTile = gTile != G_INF;
   var gEff = bitcast<f32>(gTile);
   if (h.w > 0.0) {
-    gEff = select(h.y, min(h.y, gEff), spFlag(SF_MERGE_MIN) && hasTile);
+    gEff = select(h.y, min(h.y, gEff), spFlag(SF_MERGE_MIN) && hasTile && !spFlag(SF_NOISE));
   } else if (!hasTile) {
     gEff = 0.0;
   }
