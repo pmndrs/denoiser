@@ -9,6 +9,7 @@ _2026-10-24. From the planning session to the implementing agent._
 | This work | branch `feat/rt-denoiser-cleanroom`, worktree `/Users/dex/Developer/Denoiser-nrd-cleanroom` |
 | Plan (all decisions made) | [PLAN.md](PLAN.md) |
 | Rules (binding) | [RULES.md](RULES.md); you are an **implementer** in rule 8 |
+| Task board, lessons | [TASKS.md](TASKS.md) (who does what, status), [LESSONS.md](LESSONS.md) (gotchas; read first, append before you finish) |
 | Research | [sources/](sources/): `reblur.md`, `svgf-relax.md`, `shadows-specular.md`, `nrd-provenance.md` (§3 = NRD's interface facts), `ssgi-svgf-review.md` |
 | Source papers (local, not in git) | `/Users/dex/Developer/rt-denoiser-sources/` (see its README) |
 | Capture contract | [CAPTURE-FORMAT.md](CAPTURE-FORMAT.md) v0 (draft; M0 finalizes it) |
