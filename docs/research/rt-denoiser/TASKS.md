@@ -334,6 +334,12 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       1ecc596 (`tapPixel`, `kern{i}` in `src/shaders/recurrent.ts`); "interim recurrent specular …
       virtual motion not implemented" is stale since a787b20; the R-9..R-12 rows have no code column —
       found by spec-author, owner PROVENANCE (second-review agent / T3)
+- [x] (8b94f8f, metrics agent; results M4 §9, M1 §11) Pooled PSNR: headline PSNR was the mean of per-frame dB, so
+      near-empty frames (up to 120 dB) decided it (`pan` shadows 52.6 dB). Added pooled PSNR (PSNR of the mean
+      MSE) and a 60 dB-capped per-frame mean next to it in the test bed, `compare.mjs`, `results-table.mjs`,
+      `replay-table.mjs`; re-scored shadows (snap on/off) and diffuse/specular at 1080p. Rank on pooled from now
+      on. Findings: uniform snap is −0.06 dB pooled (but −10 % FLIP); ours still beats FFX everywhere live —
+      found by spec-author (SPEC §12 item 6c), owner metrics agent
 
 ## Probes for the Windows harness
 

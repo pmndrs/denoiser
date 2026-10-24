@@ -210,6 +210,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   signal names (`visibility` ↔ `shadows`) and filters its own URL keys before passing the
   rest as `settings`. The test bed's old `accumulate` is now `accumulate-32`; `accumulate`
   is the replay's unbounded reference mean. — wiring, 2026-10-25
+- **Rank on pooled PSNR** (`psnrDenPooled` / compare.mjs `psnrPooled`: PSNR of the mean MSE
+  over frames and pixels), not the old `psnrDen` (mean of per-frame dB). A frame with no error
+  scores 120 dB (MSE floor 1e-12): on `pan` the last 17 frames show no shadow, so noisy input
+  "scores" 36.0 dB mean vs 17.9 pooled, and shadows' uniform snap looked like +10 dB. Pooled is
+  dominated by the worst frames instead (resets: accumulate-32 loses 2–3 dB). The live test
+  bed's `regions.*.psnrDen` (incl. penumbra) were always pooled; compare.mjs's `psnrPenumbra`
+  is a per-frame mean. Old JSON can be re-pooled approximately from `perFrame`
+  (10·log10(1/mean 10^(−dB/10)), equal frame weights). — metrics, 2026-10-25
+- `run-headless.mjs` is deterministic in quality: two runs of the same query on a frozen
+  package give identical PSNR to 4 decimals, so a FLIP run can be compared cell by cell with
+  a `flip=0` run, and parallel runs don't disturb quality numbers. — metrics, 2026-10-25
 
 ## Denoiser design
 
