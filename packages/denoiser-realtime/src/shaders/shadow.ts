@@ -65,6 +65,7 @@ export const SF_MERGE_MIN = 16;   // W_eff = min(own, neighbourhood) instead of 
 export const SF_HAS_HIT = 32;
 export const SF_CATMULL = 64;     // Catmull-Rom history for visibility when the 2x2 footprint is valid
 export const SF_SNAP = 128;       // uniform 5x5 neighbourhood: history := its value
+export const SF_SNAP_CHANGE = 256; // ... only where the history sits outside the clamp window (a change)
 
 /** Size of ShadowParams in bytes. */
 export const SP_SIZE = 88 * 4;
@@ -100,6 +101,7 @@ const SF_MERGE_MIN = ${SF_MERGE_MIN}u;
 const SF_HAS_HIT = ${SF_HAS_HIT}u;
 const SF_CATMULL = ${SF_CATMULL}u;
 const SF_SNAP = ${SF_SNAP}u;
+const SF_SNAP_CHANGE = ${SF_SNAP_CHANGE}u;
 const G_INF = 0x7f800000u;   // +inf bits: "no occluder estimate"
 `;
 
@@ -108,9 +110,9 @@ const TILE = 8;
 // ---------------------------------------------------------------------------- temporal
 
 /**
- * `young`: the young-history pipeline variant (option youngMean > 0: shared depth tile +
- * geometry-weighted mean over (2 youngRadius + 1)^2 pixels; the shared tile's halo grows to
- * max(2, youngRadius)).
+ * `young`: the young-history pipeline variant (option youngMean > 0: geometry-weighted mean
+ * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
+ * tile's halo grows to max(2, youngRadius)).
  */
 export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
@@ -230,7 +232,6 @@ fn noiseE(l: vec2u) -> f32 {
 fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 
 var<workgroup> sV: array<f32, ${SW * SW}>;     // raw visibility, ${SW}x${SW} = tile + ${HB}-px halo
-${young ? `var<workgroup> sZ: array<f32, ${SW * SW}>;     // linear depth of the same tile (young variant)` : ''}
 var<workgroup> wgMinG: atomic<u32>;     // min penumbra scale over the tile (f32 bits, >= 0)
 var<workgroup> wgFlags: atomic<u32>;    // 1 fractional history, 2 raw < 1, 4 raw > 0
 
@@ -240,7 +241,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
   let base = vec2i(wid.xy) * ${TILE} - ${HB};
   for (var i = li; i < ${SW * SW}u; i += 64u) {
     sV[i] = rawVis(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
-${young ? `    sZ[i] = linZ(clampPix(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u))));` : ''}
   }
   if (li == 0u) { atomicStore(&wgMinG, G_INF); atomicStore(&wgFlags, 0u); }
   workgroupBarrier();
@@ -313,7 +313,9 @@ ${nb.join('\n')}
       }
       // all 25 samples agree: take their value exactly, keep the history length (the floor
       // above only decides whether this is a change worth restarting for)
-      if (sigma == 0.0 && spFlag(SF_SNAP)) { vC = mu; }
+      // (SF_SNAP_CHANGE: only where the clamp fired, i.e. after a change such as a light flip;
+      // a steady outer penumbra keeps its fractional history)
+      if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win)) { vC = mu; }
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
       if (spFlag(SF_NOISE)) {
@@ -396,7 +398,7 @@ ${young ? `    if (yW > 0.0) {
         // as in the spatial passes)
         let nv = (F.view * vec4f(normalize(textureLoad(normalTex, p, 0).xyz), 0.0)).xyz;
         let pc = vec2f(p) + 0.5;
-        let zc = sZ[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u];
+        let zc = linZ(p);
         let X = SP.A0 + SP.Ax * pc.x + SP.Ay * pc.y + zc * (SP.B0 + SP.Bx * pc.x + SP.By * pc.y);
         let na = vec3f(dot(nv, SP.A0), dot(nv, SP.Ax), dot(nv, SP.Ay));
         let nb = vec3f(dot(nv, SP.B0), dot(nv, SP.Bx), dot(nv, SP.By));
@@ -407,7 +409,7 @@ ${young ? `    if (yW > 0.0) {
         for (var dy = 0u; dy < ${2 * YR + 1}u; dy++) {
           for (var dx = 0u; dx < ${2 * YR + 1}u; dx++) {
             let i = (l.y + dy + ${HB - YR}u) * ${SW}u + l.x + dx + ${HB - YR}u;
-            let zt = sZ[i];
+            let zt = linZ(clampPix(p + vec2i(i32(dx) - ${YR}, i32(dy) - ${YR})));   // rare: fresh pixels only
             let qc = pc + vec2f(f32(dx) - ${YR}.0, f32(dy) - ${YR}.0);
             let pd = na.x + na.y * qc.x + na.z * qc.y + zt * (nb.x + nb.y * qc.x + nb.z * qc.y) - dC;
             let w = select(0.0, 1.0, zt > 0.0 && abs(pd) <= tol);
@@ -468,9 +470,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 /**
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
- * Variants: `taps4` (4 instead of 8 taps), `withE` (radius blended toward the H18 noise radius).
+ * Variant `withE`: radius blended toward the H18 noise radius.
  */
-export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, taps4 = false, withE = false): string {
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false): string {
   const taps: string[] = [];
   const tap = (i: number, r: string) => taps.push(/* wgsl */ `
   {
@@ -490,8 +492,7 @@ ${normalWeight ? `    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 1
     sum += w * vt;
     wsum += w;
   }`);
-  // 4-tap variant: the antipodal pairs at radii 0.61 and 0.79 of the 8-tap disk
-  for (const i of taps4 ? [1, 5, 2, 6] : [0, 1, 2, 3, 4, 5, 6, 7]) tap(i, 'rot');
+  for (let i = 0; i < 8; i++) tap(i, 'rot');
   return /* wgsl */ `
 ${FRAME_WGSL}
 ${PARAMS_WGSL}

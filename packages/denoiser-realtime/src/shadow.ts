@@ -20,7 +20,7 @@ import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
-  SF_ANISO, SF_CATMULL, SF_SNAP, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_TILES_WGSL, SP_SIZE,
+  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_TILES_WGSL, SP_SIZE,
   shadowSpatialWgsl, shadowTemporalWgsl,
 } from './shaders/shadow';
 
@@ -86,11 +86,9 @@ export interface ShadowDenoiserOptions {
   /** Cap of the anisotropic stretch. Default 4. */
   anisotropyMax?: number;
   /** Where all 25 raw samples of the 5x5 window agree, the history takes their value exactly (no residual lag in lit / umbra areas). Default true. */
-  uniformSnap?: boolean;
+  uniformSnap?: boolean | 'change';
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
   catmullRom?: boolean;
-  /** Taps of the second spatial pass: 8 or 4 (the two antipodal pairs at mid radius). Default 8. */
-  pass1Taps?: number;
   /**
    * Rotation offset of the second spatial pass, in turns. Default 2 - phi = 0.382 (the golden
    * angle): with the per-frame golden-ratio step it never repeats pass 0's angle of this or the
@@ -140,7 +138,6 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     youngMinPx: o.youngMinPx ?? 1,
     youngSpan: o.youngSpan ?? 1,
     youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
-    pass1Taps: o.pass1Taps === 4 ? 4 : 8,
     pass1Phase: o.pass1Phase ?? 0.3819660113,
     planeDistance: o.planeDistance ?? 0.01,
     radiusScale: o.radiusScale ?? 0.75,
@@ -277,7 +274,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.withE = this.options.noiseBlend > 0 || this.options.noiseYoung > 0;
     this.tilesPipe = pipeline(device, 'shadows tiles', SHADOW_TILES_WGSL, this.layouts.tiles);
     this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
-      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight, i === 1 && this.options.pass1Taps === 4, this.withE),
+      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight, this.withE),
       this.layouts.spatial));
   }
 
@@ -412,7 +409,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[46] = o.minRadius;
     f[47] = o.maxRadius * H / 1080;
     u[48] = (light?.type === 'sphere' ? SF_SPHERE : 0) | (noise ? SF_NOISE : 0) | (o.anisotropy ? SF_ANISO : 0)
-      | (o.tileSkip ? 0 : SF_NO_SKIP) | (o.mergeMin ? SF_MERGE_MIN : 0) | (inputs.hitDistance ? SF_HAS_HIT : 0) | (o.catmullRom ? SF_CATMULL : 0) | (o.uniformSnap ? SF_SNAP : 0);
+      | (o.tileSkip ? 0 : SF_NO_SKIP) | (o.mergeMin ? SF_MERGE_MIN : 0) | (inputs.hitDistance ? SF_HAS_HIT : 0) | (o.catmullRom ? SF_CATMULL : 0) | (o.uniformSnap ? SF_SNAP : 0)
+      | (o.uniformSnap === 'change' ? SF_SNAP_CHANGE : 0);
     f[49] = o.maxScaleHistory;
     f[50] = o.geometryTolerance;
     f[51] = Math.cos(o.normalAngle * Math.PI / 180);
