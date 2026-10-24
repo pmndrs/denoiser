@@ -25,6 +25,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   (no dist needed; type-only `@pmndrs/denoiser-core` imports are erased). — capture-io, 2026-10-25
 - zsh doesn't word-split `$VAR`: `P="a b"; git add $P` adds one path named "a b". Use an
   array, `P=(a b); git add $P`. — capture-io, 2026-10-25
+- TASKS.md is one file in a shared worktree: another agent's `git commit -- TASKS.md`
+  sweeps your uncommitted edits into their commit. Harmless, but check with
+  `git show HEAD:docs/research/rt-denoiser/TASKS.md` instead of assuming yours is pending.
+  — spec-author, 2026-10-25
+- WebFetch of unrealengine.com blog posts returns 403. — spec-author, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -33,6 +38,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   is 4 storage textures per stage. (PLAN §4.6) — orchestrator, 2026-10-24
 - SVGF moments need `rg32float`; luminance² overflows fp16 on HDR input. — orchestrator,
   2026-10-24
+- To fit 4 storage textures and the memory budget, SPEC §10.1 rotates 4 rgba16float
+  buffers per signal through the recurrent passes (history, stabilization history and
+  transients share them) and packs A_d/A_s/m into one `r32uint` that history fix updates
+  in place (core allows read_write on r32uint). Mip levels go into an atlas inside a free
+  rotation buffer. — spec-author, 2026-10-25
 
 ## Conventions
 
@@ -51,6 +61,9 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   positive viewz fails outright; stale `prevView` passes the motion check (motion was
   computed from the same stale matrix) but fails camera continuity and history
   consistency. Run it on every new capture. — capture-io, 2026-10-25
+- Capture `motion` includes the current jitter (`ndc_sample − ndc_prev`), so
+  `uv_prev = (p + 0.5 + jitter)/size + (−0.5·m.x, +0.5·m.y)`, and positions are rebuilt from
+  the jittered sample NDC with the unjittered matrices (SPEC C-1, C-6). — spec-author, 2026-10-25
 
 ## Denoiser design
 
@@ -62,6 +75,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   scores *above* the static-camera value (synthetic plane, 8 frames, diffuse: 31.7 vs
   26.5 dB). Not a bug; the static-camera capture is the one that must match σ²/n theory
   (it does: 32.70 dB measured vs 32.76 predicted at 32 frames). — capture-io, 2026-10-25
+- Take recurrent-pipeline formulas from SPEC.md, not from `sources/reblur.md` §4.2: that
+  note transcribes RTG II ch. 49 listing formulas (A_spec, virtual confidence, kernel skew),
+  which SPEC deliberately replaces with its own designs (listing policy, SPEC header).
+  — spec-author, 2026-10-25
+- A pre-blur's spatial bias is permanent in a recurrent filter (the converged output is
+  the mean of pre-blurred frames), so SPEC clamps the pre-blur radius by last frame's
+  denoised hit distance. Watch contact GI/reflections when tuning D1. — spec-author, 2026-10-25
 
 ## Clean room
 
