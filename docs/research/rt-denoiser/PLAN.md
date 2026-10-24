@@ -24,8 +24,23 @@ translucent shadows, as milestones M7 and M8.
 **Non-goals for now:** checkerboard rendering, strand and material-ID special cases,
 ReSTIR-specific tuning.
 
-**Working name:** `denoiser/rt` (package `@pmndrs/denoiser-rt`). Rule 6: no NVIDIA names
-in our API. Name TBD by you.
+**Name: `denoiser/realtime`** (internal workspace `@pmndrs/denoiser-realtime`, private
+like the others). The entry points split by API, not algorithm:
+
+| entry | API | contains |
+|---|---|---|
+| `denoiser` | `Denoiser`: one image per call, async, no history | OIDN 2 now, OIDN 3 stills later |
+| `denoiser/realtime` | `TemporalDenoiser`: per frame, synchronous, with history | ours, OIDN 3's real-time model when it ships (`OidnTemporalDenoiser`, lazy-loading its neural runtime so per-effect users don't pay for it), and the FFX classes re-exported (`denoiser/ffx` keeps working) |
+
+Classes are named by what they denoise; the algorithm is an option:
+
+```ts
+import { DiffuseSpecularDenoiser, ShadowDenoiser, OcclusionDenoiser } from 'denoiser/realtime';
+
+const gi = new DiffuseSpecularDenoiser(device, { filter: 'recurrent' }); // or 'svgf'
+```
+
+Rule 6: no NVIDIA names in our API.
 
 ## 2. Process
 
@@ -202,11 +217,11 @@ crops come back into the repo.
 | **M3** | recurrent specular (virtual motion, lobe kernels) | vs FFX reflections and native REBLUR specular |
 | **M4** | shadows (penumbra-aware) | vs FFX shadows and native SIGMA |
 | **M5** | occlusion (AO/SO) variants | vs native occlusion variant |
-| **M6** | `denoiser/rt` entry, TSL nodes in `denoiser/three`, docs page, example | shipped behind "experimental" |
+| **M6** | `denoiser/realtime` entry (plus FFX re-exports), TSL nodes in `denoiser/three`, docs page, example | shipped behind "experimental" |
 | **M7** | SH/SG directional variants (diffuse, then specular): directional payload through the same filters, plus the resolve step for the caller | vs native `*_SH` variants after their color extraction |
 | **M8** | translucent shadows (absorption through transparent hits, order-independent layers per the Tomb Raider talk) | vs native `SIGMA_SHADOW_TRANSLUCENCY` |
 
-## 8. Targets (proposed — please set them)
+## 8. Targets (agreed 2026-10-24)
 
 - **Quality:** on our captures, within ~0.5 dB PSNR and ≤ native flicker of the matching
   native denoiser, with no new artifact classes (ghosting, smearing) in the stress paths.
@@ -227,16 +242,17 @@ crops come back into the repo.
   are simpler. Add at least one real scene before drawing conclusions.
 - **Contamination:** any agent added later must get RULES.md and a role.
 
-## 10. Decisions for you
+## 10. Decisions (all made 2026-10-24)
 
-Decided (2026-10-24): SVGF baseline first, recurrent filter second and expected default;
-SH/SG directional variants and translucent shadows are in, as later phases (M7, M8);
-the SSGI experiment's SVGF (`ssgiDev` demo 14/21) is reviewed, clean, and M1's
-starting point.
+- Build order: SVGF baseline first, recurrent filter second and the expected default,
+  go/no-go after M2.
+- Scope: SH/SG directional variants and translucent shadows are in, as M7 and M8.
+- Starting point: the SSGI experiment's SVGF (`ssgiDev` demos 14/21), reviewed and clean.
+- Name: `denoiser/realtime`, split from `denoiser` by API; per-signal class names;
+  OIDN 3's real-time model goes in `denoiser/realtime` too; FFX re-exported there.
+- Targets: as in §8.
+- Windows: native NRD built on Dennis's Windows RTX machine per NATIVE-HARNESS.md;
+  results come back on `feat/rt-denoiser-native-results`, touching only
+  `docs/research/rt-denoiser/native/`.
 
-Still open:
-
-1. Package/working name (`denoiser/rt`?) and public class names.
-2. The targets in §8.
-3. Results coming back from Windows: a separate branch touching only
-   `docs/research/rt-denoiser/native/` (proposed in NATIVE-HARNESS.md)?
+Nothing is open. Next: M0.
