@@ -16,7 +16,7 @@
 //   depth derivative x offset; no normal term).
 //
 // Two sources for the gradient sample (option `antiLag`):
-// - 'input': the renderer supplies forward-projected, re-shaded samples
+// - 'gradient': the renderer supplies forward-projected, re-shaded samples
 //   (A-SVGF proper, needs RNG-seed reuse; see README for the texture layout).
 // - 'auto' (our design, since most renderers can't re-shade old samples): the
 //   stratum's mean noisy luminance this frame vs the mean of the reprojected

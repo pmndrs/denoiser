@@ -72,7 +72,7 @@ Additions to `@pmndrs/denoiser-core/temporal.ts` (additive): `FrameGuides.viewZ`
 - `'auto'`: temporal gradients estimated from the signal itself (per 3×3
   stratum: current mean luminance vs the reprojected accumulated history, with
   the noise of the current mean subtracted as a k·σ floor). No renderer work.
-- `'input'`: A-SVGF proper. The renderer supplies `inputs.gradient`, one texel
+- `'gradient'`: A-SVGF proper. The renderer supplies `inputs.gradient`, one texel
   per 3×3 stratum (`ceil(W/3) × ceil(H/3)`, rgba32float/rgba16float):
   r = luminance of the forward-projected sample as shaded last frame,
   g = the same sample re-shaded this frame with the same random numbers,

@@ -58,10 +58,10 @@ export interface SvgfOptions {
   spatialVarianceBoost?: number;
   /**
    * A-SVGF anti-lag (gradient-driven alpha). 'auto' estimates the temporal
-   * gradient from the signal itself; 'input' uses renderer-supplied gradient
+   * gradient from the signal itself; 'gradient' uses renderer-supplied gradient
    * samples (`inputs.gradient`, see README). Default 'off'.
    */
-  antiLag?: 'off' | 'auto' | 'input';
+  antiLag?: 'off' | 'auto' | 'gradient';
   /** 'auto' anti-lag: gradient noise floor in standard deviations. Default 2. */
   antiLagNoiseFloor?: number;
   /** Anti-lag: neighbourhood (in strata) for the max over lambda. Default 1 (3x3, A-SVGF). */
@@ -132,7 +132,7 @@ export interface SignalFrame {
   radiance: GPUTexture;
   /** Factor the radiance was divided by (for `remodulate`). */
   demodulation?: GPUTexture;
-  /** Renderer gradient samples for antiLag 'input' (rgba32float/rgba16float at ceil(W/3) x ceil(H/3)). */
+  /** Renderer gradient samples for antiLag 'gradient' (rgba32float/rgba16float at ceil(W/3) x ceil(H/3)). */
   gradient?: GPUTexture;
 }
 
@@ -184,7 +184,7 @@ export class SvgfSignal {
       this.layouts.gcreate = makeLayout(d, `${label} gradient create`,
         ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'f', 'f', 'rgba32float', 'rgba32float', 'i']);
       this.layouts.gatrous = makeLayout(d, `${label} gradient atrous`, ['u', 'u', 'f', 'f', 'rgba32float', 'rgba32float']);
-      this.pipes.gcreate = makePipeline(d, `${label} gradient create`, gradientCreateWgsl(opts.antiLag === 'input'), this.layouts.gcreate);
+      this.pipes.gcreate = makePipeline(d, `${label} gradient create`, gradientCreateWgsl(opts.antiLag === 'gradient'), this.layouts.gcreate);
       this.pipes.gatrous = makePipeline(d, `${label} gradient atrous`, gradientAtrousWgsl(), this.layouts.gatrous);
     }
   }
@@ -222,13 +222,19 @@ export class SvgfSignal {
     f[10] = o.specularHistoryScale; f[11] = o.specularHistoryCurve;
     f[12] = o.lobeFraction; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
     u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (o.antiLag !== 'off' ? P_ANTILAG : 0)
-      | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'input' ? P_GRADIENT_INPUT : 0)
+      | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'gradient' ? P_GRADIENT_INPUT : 0)
       | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
     this.device.queue.writeBuffer(this.params, 0, f);
   }
 
   get output(): GPUTexture | undefined { return this.out; }
+
+  /** @internal Debug access: 'accum' (rgb, history length) of the last frame, 'gradient' (A-SVGF). */
+  debugTexture(name: 'accum' | 'gradient'): GPUTexture | undefined {
+    if (name === 'accum') return this.accum[this.cur ^ 1];
+    return this.grad[this.opts.gradientIterations % 2 === 0 ? 0 : 2];
+  }
 
   /** Records this signal's passes. Returns the output texture. */
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frame: SignalFrame,

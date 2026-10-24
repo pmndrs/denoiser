@@ -21,7 +21,7 @@ export interface SignalExtras {
    */
   demodulation?: GPUTexture;
   /**
-   * A-SVGF gradient samples for `antiLag: 'input'`: one texel per 3x3 stratum
+   * A-SVGF gradient samples for `antiLag: 'gradient'`: one texel per 3x3 stratum
    * (ceil(W/3) x ceil(H/3), rgba32float or rgba16float): r = luminance of the
    * forward-projected sample shaded last frame, g = luminance of the same
    * sample re-shaded this frame with the same random numbers, b > 0 = valid.
@@ -97,6 +97,9 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
 
   resetHistory(): void { this.base.resetHistory(); }
 
+  /** @internal Debug textures of the last frame (dev page). */
+  debugTexture(name: 'accum' | 'gradient') { return this.signal.debugTexture(name); }
+
   dispose(): void {
     this.signal.dispose();
     this.base.dispose();
@@ -142,6 +145,9 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
   }
 
   resetHistory(): void { this.base.resetHistory(); }
+
+  /** @internal Debug textures of the last frame (dev page). */
+  debugTexture(name: 'accum' | 'gradient') { return this.signal.debugTexture(name); }
 
   dispose(): void {
     this.signal.dispose();

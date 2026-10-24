@@ -79,7 +79,11 @@ struct VO { @builtin(position) pos: vec4f }
 @fragment fn fs(v: VO) -> @location(0) vec4f {
   let dims = vec2f(textureDimensions(src));
   let p = vec2i(v.pos.xy / vec2f(textureDimensions(src).xy) * dims);
-  let c = textureLoad(src, vec2i(v.pos.xy), 0).rgb;
+  let c = textureLoad(src, vec2i(min(v.pos.xy, dims - 1.0)), 0).rgb;
+  if (mode.x > 1.5) {   // alpha channel (e.g. history length) / gain
+    let a = clamp(textureLoad(src, vec2i(v.pos.xy), 0).a / mode.y, 0.0, 1.0);
+    return vec4f(a, a, a, 1.0);
+  }
   if (mode.x > 0.5) {
     let e = clamp(abs(c.r + c.g + c.b) / 3.0 * mode.y, 0.0, 1.0);
     return vec4f(e, e * e, 0.2 * (1.0 - e), 1.0);

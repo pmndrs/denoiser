@@ -74,12 +74,12 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M1: SVGF + A-SVGF baseline
 
-- [~] svgf **T1.1 Shared temporal core**: reprojection (NDC motion + viewZ, 2.5D z when
+- [x] svgf (81758c9, ef0c9a9) **T1.1 Shared temporal core**: reprojection (NDC motion + viewZ, 2.5D z when
       present), per-tap plane-distance disocclusion, bilinear / Catmull-Rom history,
       history length, reset.
-- [~] svgf **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
-- [ ] **T1.3 SVGF specular** (surface reprojection first; roughness-aware weights).
-- [ ] **T1.4 A-SVGF** gradient-driven α (from the paper + BSD reference code).
+- [x] svgf (81758c9, ef0c9a9) **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
+- [~] svgf **T1.3 SVGF specular** (surface reprojection first; roughness-aware weights).
+- [x] svgf (see T1.4 commit) **T1.4 A-SVGF** gradient-driven α (from the paper + BSD reference code).
 - [ ] **T1.5 Results table** vs references (and vs FFX reflections for specular) on the
       test bed's paths; per-pass ms at 1080p.
 
@@ -117,6 +117,19 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       a joint diffuse+specular denoiser implements `ReplayDenoiser` and returns both
       outputs). The replay already fills `guides.viewZ` / `guides.motionZ` when the capture
       has them. — found by capture-io, owner `tools/rt-capture` (any agent may add the entry)
+
+- [ ] T0.6 hook: every test-bed buffer lives in `SceneSignals.textures` (`examples/realtime-denoiser/src/signals.ts`,
+      CAPTURE-FORMAT names and formats in its header comment; refs only for signals passed in `refs`,
+      `refs=all` renders all three) plus `SceneSignals.frameMeta` (camera, light, movable sphere, reset)
+      after each `render()`. Write after `render()` in `runEval`; the light is `frameMeta.light`
+      (sphere: pos, radius). — found by testbed, owner T0.6
+- [ ] A-SVGF re-shading (SPEC S-8) not built in T0.3: the tracer's 1-spp samples are already
+      deterministic per (pixel, `u.frame`, signal salt) (`noisySeed` in `src/scene.ts`), so a
+      `reshade` entry that evaluates a forward-projected pixel's sample with frame − 1's seed at
+      the current surface point is the missing piece. — found by testbed, owner T1.4
+- [ ] Test-bed sampling is white noise (PCG); the renderer contract in `sources/shadows-specular.md`
+      asks for blue noise animated per frame. Add a `sampler=bluenoise` option before tuning
+      spatial filters on it (provisional until then). — found by testbed, owner `examples/realtime-denoiser`
 
 ## Probes for the Windows harness
 

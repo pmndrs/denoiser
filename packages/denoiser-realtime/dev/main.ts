@@ -5,7 +5,7 @@
 // Query: mode=eval|bench  signal=diffuse|specular|both  w,h (1920x1080)
 //   frames (120)  path=orbit|static|pan  cut=N (camera cut + resetHistory)
 //   switch=N (a light turns on at frame N)  noise=1  ff=0.001 (firefly rate)
-//   noHistory=1 (reset every frame: spatial only)  antiLag=off|auto|input
+//   noHistory=1 (reset every frame: spatial only)  antiLag=off|auto|gradient
 //   kernel=5x5|3x3  iters=5  feedback=0|1  history=catmull-rom|bilinear
 //   alpha=  motionZ=0|1  viewZ=0|1  view=out|noisy|ref|err  gain=  stopAt=N
 import {
@@ -233,11 +233,11 @@ async function main() {
     sp.set(invert(VP), 0); sp.set(VP, 16); sp.set(mul(proj, prev.view), 32); sp.set(cur.view, 48);
     sp.set(cur.eye, 64); sp[67] = f;
     sp[68] = W; sp[69] = H; sp[70] = Math.max(0, f - 1); sp[71] = num('noise', 1);
-    sp[72] = num('ff', 0.001); sp[73] = switchFrame; su[74] = f + 1; su[75] = antiLag === 'input' ? 1 : 0;
+    sp[72] = num('ff', 0.001); sp[73] = switchFrame; su[74] = f + 1; su[75] = antiLag === 'gradient' ? 1 : 0;
     sp[76] = 0.1; sp[77] = 100;
     device.queue.writeBuffer(sceneParams, 0, sp);
     const enc = device.createCommandEncoder();
-    if (antiLag === 'input') {   // strata without a gradient sample (sky) read as invalid
+    if (antiLag === 'gradient') {   // strata without a gradient sample (sky) read as invalid
       enc.beginRenderPass({ colorAttachments: [{ view: tex.Grad.createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 0] }] }).end();
     }
     const pass = enc.beginComputePass();
@@ -255,7 +255,7 @@ async function main() {
     };
     const den = (both ?? single)!;
     if (noHistory || f === cutAt) den.resetHistory();
-    const grad = antiLag === 'input' ? tex.Grad : undefined;
+    const grad = antiLag === 'gradient' ? tex.Grad : undefined;
     if (both) {
       lastOut = both.dispatchBoth({
         diffuse: { radiance: tex.Diff, gradient: grad },
@@ -317,13 +317,14 @@ async function main() {
   const showSig: Sig = sigs[sigs.length - 1];
   const srcTex = view === 'noisy' ? tex[showSig === 'diffuse' ? 'Diff' : 'Spec']
     : view === 'ref' ? tex[showSig === 'diffuse' ? 'DiffRef' : 'SpecRef']
-      : view === 'err' ? met[showSig]?.err[Math.min(stopAt, frames - 1) & 1] : lastOut[showSig];
+      : view === 'err' ? met[showSig]?.err[Math.min(stopAt, frames - 1) & 1]
+        : view === 'histlen' ? (single as DiffuseDenoiser | undefined)?.debugTexture('accum') : lastOut[showSig];
   const blit = device.createRenderPipeline({
     layout: 'auto', vertex: { module: device.createShaderModule({ code: BLIT_WGSL }), entryPoint: 'vs' },
     fragment: { module: device.createShaderModule({ code: BLIT_WGSL }), entryPoint: 'fs', targets: [{ format: fmt }] },
   });
   const modeBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  device.queue.writeBuffer(modeBuf, 0, new Float32Array([view === 'err' ? 1 : 0, num('gain', view === 'err' ? 8 : 1), 0, 0]));
+  device.queue.writeBuffer(modeBuf, 0, new Float32Array([view === 'err' ? 1 : view === 'histlen' ? 2 : 0, num('gain', view === 'err' ? 8 : view === 'histlen' ? 64 : 1), 0, 0]));
   if (srcTex) {
     const be = device.createCommandEncoder();
     const rp = be.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
