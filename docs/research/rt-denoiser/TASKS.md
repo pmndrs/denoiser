@@ -514,10 +514,19 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       overall, −1.0 … −2.2 dB penumbra; FFX ahead at frame 2 on the wide shot). Repro: `examples/three-temporal`
       `node run-realtime.mjs shadows --metrics --metrics-only` (rows f1 / f2), results/M6-real-scene.md — found by m6,
       owner `packages/denoiser-realtime` (shadows)
-- [ ] Real-scene moving-camera numbers: the three-temporal pages only score static views. A deterministic camera path
-      with a 4096-ray reference per pose (static accumulation per pose, ~4 s each at 960×540), written with
-      `tools/rt-capture`'s writer, then replayed through the denoisers (results/M6-real-scene.md last section) — found by
-      m6, owner unassigned (m6 follow-up)
+- [x] (real-scene-motion, commits: three-temporal + results) Real-scene moving-camera numbers: scripted 64-frame camera
+      path (`src/realtime/path.ts`, slow orbit + fast pan, `?path=orbit` on both realtime pages); `realtime-gi.html?path=orbit&ref=1`
+      writes CAPTURE-FORMAT v0 captures with a converged reference per pose (`node run-realtime.mjs capture --set=moving`:
+      `three-orbit` 40 f, `three-pan` 32 f, 960×540, validated; AO ref as extra `ao_ref`); replayed through the registry
+      (`replay-captures.mjs`) and scored (`score-captures.mjs`, + FLIP and AO). Rankings match the test bed for shadows
+      (ours +3.7 / +2.4 dB over FFX), diffuse and AO; specular swaps plain SVGF and recurrent (SVGF +1.3 / +1.8 dB on SSR
+      input). results/M6-real-scene.md "Moving camera", examples/three-temporal/CAPTURES.md — found by m6
+- [ ] Real-scene captures: a BVH-traced specular signal (demodulated, true hit distance) in the capture mode instead of
+      SSR, so the specular SVGF-vs-recurrent swap on `three-orbit` / `three-pan` can be told apart from SSR's input
+      (results/M6-real-scene.md "Moving camera") — found by real-scene-motion, owner `examples/three-temporal`
+- [ ] Native NRD replay of `three-orbit` / `three-pan` (Windows harness; specular is not demodulated, AO reference is
+      the extra `ao_ref` buffer, light is the equal-area sphere of a rectangular panel: examples/three-temporal/CAPTURES.md)
+      — found by real-scene-motion, owner harness builder
 - [ ] M6 docs page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
       `pmndrs.github.io/denoiser/docs/guides/`): not written in the groundwork — found by m6, owner unassigned
 - [ ] three-temporal realtime pages: per-pass ms on the light realtime-shadows page read 2–3× the test bed (slow GPU clock);

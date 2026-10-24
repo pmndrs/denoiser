@@ -134,13 +134,130 @@ run-to-run spread).
 
 ## What is not measured yet (and what it would take)
 
-- **Moving camera / moving objects.** The reference needs a converged frame per camera pose. Cheap
-  path: a deterministic camera path, render each pose's 4096-ray reference once (static camera
-  per pose, ~4 s each at 960×540), store them, then replay the path with the denoisers (the test
-  bed's capture/replay does exactly this for its own scene; a `mode=capture` for this page would
-  reuse `tools/rt-capture`'s writer). Filed in TASKS.
+- **Moving camera**: done, see "Moving camera" below. **Moving objects** are still not measured
+  (the knot is frozen on the scripted path).
 - **Recurrent / A-SVGF variants on the real scene** (only class defaults ran). The pages take the
   options (`realtimeDiffuseSpecular(..., { denoiser: {...} })`; shadows page `&sh.<option>=`).
 - **Directional light** (sun) shadows on a real scene.
 - The specular reference is SSR's expectation, not ground truth; a BVH-traced specular signal
   (as `reflections-hybrid.html` traces) would allow a true reference.
+
+## Moving camera (scripted path, per-pose references, replayed captures)
+
+_Appended 2026-10-25 by the real-scene-motion agent (implementer, RULES.md rule 8: no NRD code,
+README or port read). Same experimental / provisional status as above: class defaults only,
+nothing tuned on this scene. denoiser/realtime served from a `git archive` snapshot of 2b69b7e
+(package content = dda6596, i.e. without the shadows edits in progress at the time of the run);
+denoiser-ffx and the registry from the working tree at 2b69b7e._
+
+### Setup
+
+| | |
+|---|---|
+| path | `examples/three-temporal/src/realtime/path.ts`, 64 frames: 0–39 slow orbit around the wide shot (0.46°/frame, dolly in, ~5–7 px/frame), 40–63 fast pan (6 cm/frame slide + 1.6°/frame yaw, ~22 px/frame plus parallax). The torus knot is frozen: camera motion only |
+| captures | CAPTURE-FORMAT v0, 960×540: `three-orbit` = path frames 0–39 (40 frames), `three-pan` = 32–63 (32 frames; the pan starts at local frame 8). Frame 0 of each is a reset. Written by `realtime-gi.html?path=orbit&ref=1` (`node run-realtime.mjs capture --set=moving`), 9–10 s per frame, 4.9 GB (4.5 GiB) together; validate.mjs passes (motion reprojection < 0.001 px, history consistency 98.8–99.0 %). Recipe and contents: [examples/three-temporal/CAPTURES.md](../../../../examples/three-temporal/CAPTURES.md) |
+| references, per pose | the pose is frozen and accumulated before the path advances: visibility 1024 rays (4×4 stratified white noise × 64 frames), diffuse 2048 white-noise cosine rays (AO from the same rays, `ao_ref`), specular = 256 frames of SSR lit by the converged diffuse + visibility references (the noisy SSR sample sees the same input). Reference noise floors (variance of the reference mean): diffuse ≈ 50 dB, AO ≈ 46 dB, visibility > 46 dB, specular ≈ 59–60 dB; every denoiser below scores ≥ 4 dB under its floor, and the floor lowers all of them alike |
+| signals | as on the static page: blue-noise 1-ray visibility + occluder distance, 1 cosine diffuse ray + hit distance, three's stochastic SSR (not demodulated, SSR ray length as hit distance), AO = ĥ of the diffuse ray |
+| denoisers | registry entries replayed with `tools/rt-capture`'s replay (the TemporalDenoiser classes the `denoiser/three` nodes wrap): `shadows`, `ffx-shadows`, `svgf`, `svgf-auto`, `recurrent`, `ffx-reflections`, `occlusion-svgf`, `occlusion-svgf-auto`, `occlusion-recurrent` (`&signals=ao`), plus `accumulate-32` as the no-spatial-filter baseline. Defaults, no settings |
+| metrics | `examples/three-temporal/score-captures.mjs`: compare.mjs's definitions (pooled PSNR over all frames and receivers, rank on it; settled = frames ≥ 8 after the reset, which on `three-pan` is exactly the pan; penumbra = 0.02 < ref < 0.98; fixed-pixel flicker; bias) plus AO against `ao_ref` and LDR-FLIP every 4th frame at the test bed's viewing condition (20.7 ppd at 960 px) |
+| commands | `BASE=http://127.0.0.1:5371/ node examples/three-temporal/replay-captures.mjs` (test-bed server pinned with `RT_REALTIME_SRC`), raw numbers [data/M6-moving-camera.json](data/M6-moving-camera.json) |
+
+Replay is deterministic (same numbers on a rerun), so differences of a few hundredths of a dB are
+real but not meaningful. GPU ms from these replays are not reported (idle-GPU replay, LESSONS).
+
+### Shadows
+
+| capture | denoiser | pooled PSNR | settled | penumbra | FLIP | flicker | bias |
+|---|---|---|---|---|---|---|---|
+| `three-orbit` | noisy | 16.05 | 15.99 | 7.79 | 0.106 | 0.0632 | 0.000 |
+| | `accumulate-32` | 26.03 | 27.73 | 19.99 | 0.040 | 0.0135 | −0.002 |
+| | `ffx-shadows` | 26.32 | 25.80 | 22.61 | 0.055 | 0.0077 | −0.040 |
+| | **`shadows`** | **30.04** | **30.01** | **26.68** | **0.030** | **0.0067** | 0.003 |
+| `three-pan` | noisy | 16.79 | 17.12 | 7.84 | 0.087 | 0.0586 | 0.000 |
+| | `accumulate-32` | 25.76 | 28.37 | 18.10 | 0.034 | 0.0161 | −0.001 |
+| | `ffx-shadows` | 27.87 | 27.57 | 23.19 | 0.041 | 0.0099 | −0.037 |
+| | **`shadows`** | **30.31** | **30.59** | **26.47** | **0.024** | **0.0078** | 0.005 |
+
+- Ours leads by **+3.7 / +2.4 dB** pooled (orbit / pan), **+4.1 / +3.3 dB** in penumbrae, FLIP −45 / −42 %,
+  less flicker. The same ranking as the test bed (orbit +5.9, pan +5.0 dB at 1080p, REMEASURE §4)
+  and as the static real-scene views (+3.2 … +5.4 dB), with the smaller real-scene margin.
+- FFX's dark penumbra bias (−0.04) is there under motion too, and FFX again gets worse as its
+  history grows (orbit per-frame 29.8 dB at frame 1 → 26.9 at frame 11 → 25.3–25.6 from frame 18 on); ours stays
+  within 29.8–30.2 dB through the orbit after frame 0 and climbs to 31.2 dB during the pan.
+- **The frame-2 dip after a reset shows on the moving path as well** (orbit 30.59 → 29.99, pan 30.05 →
+  29.24 dB at frames 0 → 1), the weak spot already filed in TASKS (shadows-reset).
+- `uniformSnap` (SPEC §12 item 5) on the real scene: `true` 30.04 / 30.31, `'change'` 30.06 / 30.33,
+  `false` 30.07 / 30.35 dB pooled (orbit / pan); penumbra 26.68 / 26.75 / 26.81 and 26.47 / 26.53 / 26.58;
+  FLIP 0.0295 / 0.0294 / 0.0291 and 0.0238 / 0.0238 / 0.0236. Same order as the test bed's PSNR
+  (`false` ≥ `'change'` ≥ `true`, within 0.03 dB), but here `false` also has the (marginally) best
+  FLIP, where the test bed had `true` best on orbit / pan. No path here changes the lighting, which is
+  the case the snap is for.
+
+### Diffuse and specular (`DiffuseSpecularDenoiser` joint, FFX reflections)
+
+Pooled PSNR on tonemapped x/(1+x) rgb:
+
+| signal | denoiser | orbit | orbit settled | pan | pan settled (= the pan) | FLIP orbit / pan | flicker orbit / pan |
+|---|---|---|---|---|---|---|---|
+| diffuse | noisy | 16.88 | 16.86 | 17.09 | 17.17 | 0.446 / 0.439 | 0.166 / 0.159 |
+| | `accumulate-32` | 28.54 | 33.77 | 26.48 | 29.39 | 0.096 / 0.126 | 0.027 / 0.038 |
+| | `svgf` (`'off'`) | **39.89** | **40.07** | 40.27 | 40.55 | 0.037 / 0.037 | 0.0055 / 0.0058 |
+| | `svgf-auto` (v2) | 39.84 | 40.00 | **40.39** | **40.72** | **0.036 / 0.036** | **0.0054 / 0.0056** |
+| | `recurrent` | 38.78 | 39.31 | 39.56 | 40.15 | 0.039 / 0.038 | 0.0054 / 0.0059 |
+| specular | noisy | 34.79 | 34.88 | 35.87 | 36.06 | 0.138 / 0.134 | 0.0094 / 0.0091 |
+| | `accumulate-32` | 39.31 | 39.29 | 37.22 | 36.53 | 0.071 / 0.080 | 0.0025 / 0.0035 |
+| | `ffx-reflections` | 39.12 | 38.85 | 40.86 | 40.66 | 0.071 / 0.069 | 0.0023 / 0.0028 |
+| | `svgf` (`'off'`) | 44.33 | 44.26 | 46.11 | 46.13 | 0.041 / 0.040 | 0.0012 / 0.0012 |
+| | `svgf-auto` (v2) | **45.32** | **45.39** | **47.58** | **47.92** | **0.038 / 0.036** | **0.0011 / 0.0011** |
+| | `recurrent` | 43.02 | 43.53 | 44.29 | 44.68 | 0.045 / 0.048 | 0.0016 / 0.0018 |
+
+- **Diffuse:** SVGF / A-SVGF `'auto'` ahead of recurrent by 1.1 dB (orbit) and 0.7–0.8 dB (pan), test
+  bed −0.86 / −1.25 dB for recurrent vs SVGF on the same two paths: **agrees**. `'auto'` vs `'off'` is a
+  tie here (−0.05 orbit, +0.12 pan; test bed +0.32 / +0.20).
+- **Specular: the ranking of `'off'` and recurrent flips.** `svgf-auto` first on both (as on the test
+  bed), but plain SVGF beats recurrent by **+1.3 / +1.8 dB** here, where the test bed has recurrent
+  ahead of plain SVGF on orbit and pan (+0.54 / +0.54) and on 5 of 7 paths. FFX reflections is last,
+  4–7 dB behind (test bed: 12–14 dB behind; its energy loss is negligible here, bias ≈ 0, because
+  this SSR signal is dim and LDR-ish).
+- Caveat on that specular row: this specular is three's SSR, mostly rough / dim (walls 0.85, floor
+  and table 0.12), not demodulated, with SSR's ray length (× the specular dominant factor) as hit
+  distance and environment misses as 0. Recurrent specular leans on the hit distance (virtual motion)
+  and on flat glossy floors, where it won on the test bed (`glossy`); this scene has a glossy floor
+  too, but its SSR hit distances are not the traced ones the test bed hands it. So the flip says
+  "recurrent specular's advantage over plain SVGF did not carry to SSR input", not more.
+
+### Occlusion (AO on ĥ, `OcclusionDenoiser`)
+
+| denoiser | orbit | orbit settled | pan | pan settled | FLIP orbit / pan | flicker orbit / pan |
+|---|---|---|---|---|---|---|
+| noisy | 12.52 | 12.55 | 12.74 | 12.77 | 0.422 / 0.414 | 0.337 / 0.329 |
+| `occlusion-svgf` | **33.43** | **33.41** | **33.55** | **33.90** | **0.032 / 0.031** | 0.0091 / 0.0099 |
+| `occlusion-svgf-auto` (v2) | 33.10 | 33.02 | 33.48 | 33.80 | 0.032 / 0.031 | **0.0084 / 0.0093** |
+| `occlusion-recurrent` (class default) | 32.54 | 32.94 | 32.59 | 33.16 | 0.033 / 0.033 | **0.0084** / 0.0099 |
+
+- SVGF > A-SVGF `'auto'` > recurrent on both paths, SVGF ahead of recurrent by +0.9 / +1.0 dB: the
+  test bed's order and margin on the same paths (orbit / pan: SVGF 39.64 / 39.56, `'auto'` 39.57 /
+  39.40, recurrent 38.59 / 38.53, i.e. +1.05 / +1.03). **Agrees.** Absolute AO PSNR is ~6 dB lower than
+  on the test bed (thin legs, the rug edge, the lamp pole: contact detail everywhere).
+
+### Do the rankings match the analytic test bed?
+
+Plainly: **yes for shadows, diffuse and AO; no for one pair in specular.**
+
+| signal | test bed (1080p, orbit / pan, REMEASURE) | real scene, moving camera | match |
+|---|---|---|---|
+| shadows | ours > FFX (+5.9 / +5.0 dB) | ours > FFX (+3.7 / +2.4 dB) | yes, smaller margin |
+| diffuse | `svgf-auto` > `svgf` > `recurrent` | `svgf` ≈ `svgf-auto` (±0.1) > `recurrent` (−0.7 … −1.1 dB) | yes (`'auto'` vs `'off'` a tie) |
+| specular | `svgf-auto` > `recurrent` > `svgf` > FFX | `svgf-auto` > `svgf` > `recurrent` > FFX | **no**: plain SVGF and recurrent swap (SSR input, see caveat) |
+| AO | `svgf` > `svgf-auto` > `recurrent` | `svgf` > `svgf-auto` > `recurrent` | yes, same margins |
+
+For SPEC §12: item 1's recommendation (SVGF family for diffuse, specular and occlusion; recurrent
+opt-in) is **supported** by the second scene; the one disagreement makes recurrent specular look
+worse, not better, so it doesn't argue for recurrent as a default. Item 2 (`'auto'`): it is first on
+specular here too (+1.0 / +1.5 dB over `'off'`) and ties on diffuse; still the recommendation. Item 5
+(uniform snap): the real scene can't separate the three settings (≤ 0.03 dB). Item 7: this scene
+now exists as captures every registry denoiser and the native harness can replay; no default moved
+by more than ~0.5 dB in the direction of a different choice, so nothing needs re-tuning on its
+evidence alone. Limits: one scene, one light, 72 frames, 960×540, SSR as the specular signal, no
+object motion; the live TSL-node path was not scored on the moving path (the replay feeds the same
+classes the nodes wrap).

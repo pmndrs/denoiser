@@ -147,6 +147,15 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - wgslTagFn (three-mesh-bvh) defines ONE function per tag; helpers go in their own `wgslTagFn` and are
   interpolated by reference (`${helper}(args)` emits the name and includes the code). Pasting a WGSL string
   with several `fn`s inside another function body nests them (invalid WGSL). — m6, 2026-10-25
+- Real-scene captures from a three.js page: freeze the pose, render the 1-ray signals once, then accumulate
+  the references while holding it (`realtime-gi.html?path=orbit&ref=1`, `__t.capturePath`). Compute `motion` /
+  `motion_z` in TSL from depth and the previous *path* pose's matrices (uniforms), not with three's `velocity`:
+  the reference frames in between would make it 0. Read signals from float32 RTTs
+  (`convertToTexture(node, null, null, { type: FloatType })`), and give every reference its own seed uniform
+  (frame counter): the blue-noise index stays at the path frame during the hold, so reusing it repeats one
+  sample. validate.mjs then passes first try (motion < 0.001 px). — real-scene-motion, 2026-10-25
+- Node 22.22 imports `.ts` files directly (type stripping, an ExperimentalWarning): Node scripts can reuse the
+  test bed's `src/flip.ts` without a build (`examples/three-temporal/score-captures.mjs`). — real-scene-motion, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -410,6 +419,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   package dev page but 3.99 ms on the test-bed solo bench (`orbit`; every pass 7–18 % lower), while SVGF
   reads 4.02 vs 4.00. "Recurrent is slower than SVGF" was a cross-bench comparison; on one bench they cost
   the same. Rank costs from one bench only. — remeasure, 2026-10-25
+
+- One analytic test bed vs a real scene: shadows, diffuse and AO rankings carried over to the three.js corner on a
+  moving camera (results/M6-real-scene.md), but recurrent specular's lead over plain SVGF did not (SVGF +1.3 / +1.8 dB
+  on SSR input). A specular ranking from one signal type (traced, demodulated, true hit distance) doesn't transfer to
+  SSR input; say which specular signal a ranking was measured on. — real-scene-motion, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
