@@ -131,8 +131,10 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
       s[0] = reg;
       s[9].z = (en.x + en.y + en.z) / 3.0;
       if (m.hasPen != 0u) {
+        // hasPen 1: penumbra (shadows, 0.02 < ref visibility < 0.98); 2: contact region of the
+        // occlusion signals (T5: reference ao / so < 0.5), reported as 'contact'
         let pv = textureLoad(t_pen, pix, 0).r;
-        if (pv > 0.02 && pv < 0.98) { s[1] = reg; }
+        if (select(pv > 0.02 && pv < 0.98, pv < 0.5, m.hasPen == 2u)) { s[1] = reg; }
       }
       let age = textureLoad(t_age, pix, 0).r;
       if (age < m.ageK) { s[2] = reg; }
@@ -281,12 +283,14 @@ export class Scorer {
   async score(o: {
     noisy: GPUTexture; den: GPUTexture; ref: GPUTexture; depth: GPUTexture; rough: GPUTexture; age: GPUTexture;
     motion: GPUTexture; pen?: GPUTexture; scalar: boolean; validPrev: boolean; ageK: number;
+    /** `pen` is an occlusion reference: region 1 = contact (ref < 0.5) instead of penumbra */
+    contact?: boolean;
   }): Promise<FrameScore> {
     const prev = this.cur;
     this.cur ^= 1;
     const b = new ArrayBuffer(32);
     const u = new Uint32Array(b), f = new Float32Array(b);
-    u[0] = this.W; u[1] = this.H; u[2] = o.scalar ? 0 : 1; u[3] = o.validPrev ? 1 : 0; f[4] = o.ageK; u[5] = o.pen ? 1 : 0;
+    u[0] = this.W; u[1] = this.H; u[2] = o.scalar ? 0 : 1; u[3] = o.validPrev ? 1 : 0; f[4] = o.ageK; u[5] = o.pen ? (o.contact ? 2 : 1) : 0;
     this.device.queue.writeBuffer(this.u, 0, b);
     const enc = this.device.createCommandEncoder({ label: 'score' });
     const pass = enc.beginComputePass();

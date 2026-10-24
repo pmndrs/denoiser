@@ -5,7 +5,10 @@
 // scored on the GPU (PSNR per region, bias, temporal stability) plus CPU LDR-FLIP on
 // sampled frames.
 //
-//   ?signal=diffuse|specular|shadows|all     (comma lists ok; default diffuse)
+//   ?signal=diffuse|specular|shadows|ao|so|all  (comma lists ok; default diffuse; all = the three
+//                                             rendered signals; ao / so = T5 occlusion: normalized
+//                                             hit distance of the diffuse / specular ray, scored with
+//                                             a 'contact' region = reference < 0.5)
 //   &denoiser=<id>[,<id>...]                 (src/denoisers.ts; default: every
 //                                             denoiser registered for the signal)
 //   &path=orbit|pan|light|thin|glossy|cut|object   (src/paths.ts; default orbit)
@@ -51,7 +54,7 @@ import { defaultDenoisers, denoiserById, DENOISERS, toCaptureSignal, type Denois
 import { flipMean, prepareFlip, unpackLdr, type FlipPrepared } from './flip';
 import { HistoryAge, LdrPacker, REGIONS, Scorer, type FrameScore } from './metrics';
 import { pathById, PATHS, type PathDef } from './paths';
-import { DEMODULATION, SceneSignals, SIGNALS, type Sampling, type Signal, type TexName } from './signals';
+import { ALL_SIGNALS, DEMODULATION, isOccSignal, SceneSignals, SIGNALS, type Sampling, type Signal, type TexName } from './signals';
 import { PanelView } from './view';
 
 mountShell({ id: 'realtime-denoiser', title: 'Real-time denoiser test bed' });
@@ -62,7 +65,7 @@ const preset = q.get('preset') ?? 'fast';
 const W = Number(q.get('w') ?? (preset === 'full' ? 1920 : 960));
 const H = Number(q.get('h') ?? (preset === 'full' ? 1080 : 540));
 const sigParam = q.get('signal') ?? q.get('signals') ?? (mode === 'capture' ? 'all' : 'diffuse');
-const signals: Signal[] = sigParam === 'all' ? [...SIGNALS] : (sigParam.split(',') as Signal[]).filter((s) => SIGNALS.includes(s));
+const signals: Signal[] = sigParam === 'all' ? [...SIGNALS] : (sigParam.split(',') as Signal[]).filter((s) => ALL_SIGNALS.includes(s));
 const path: PathDef = pathById(q.get('path') ?? 'orbit') ?? PATHS[0];
 const START = Math.max(0, Math.min(Number(q.get('start') ?? 0), path.frames - 1));
 const FRAMES = Math.min(Number(q.get('frames') ?? path.frames), path.frames - START);
@@ -116,7 +119,7 @@ function buildNav() {
     const seg = document.createElement('div'); seg.className = 'dn-seg';
     seg.append(...links); g.append(l, seg); nav.append(g);
   };
-  group('Signal', SIGNALS.map((s) => link({ signal: s }, s, signals[0] === s)));
+  group('Signal', ALL_SIGNALS.map((s) => link({ signal: s }, s, signals[0] === s)));
   const curDen = (q.get('denoiser') ?? defaultDenoisers(signals[0])[0]).split(',')[0];
   group('Denoiser', DENOISERS.filter((d) => d.signals.includes(signals[0])).map((d) => link({ denoiser: d.id }, d.id, d.id === curDen)));
   group('Path', PATHS.map((p) => link({ path: p.id }, p.label, p.id === path.id)));
@@ -166,7 +169,7 @@ async function main() {
 
   const scene = new SceneSignals(device, W, H, SAMPLING);
   await scene.init();
-  const refsNeeded: Signal[] = REFSPP <= 0 ? [] : q.get('refs') === 'all' ? [...SIGNALS] : signals;
+  const refsNeeded: Signal[] = REFSPP <= 0 ? [] : q.get('refs') === 'all' ? [...new Set([...SIGNALS, ...signals])] : signals;
   // what denoisers see as frame.manifest (a capture's manifest has the same fields)
   const static0 = isStatic(path, START, FRAMES);
   const manifest = liveManifest(W, H, signals, refsNeeded.length > 0, lightsOf(path.at(START).light), static0, REFSPP);
@@ -273,7 +276,8 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       const sig = scene.signal(p.signal);
       const r = await p.scorer!.score({
         noisy: sig.noisy, den, ref: sig.ref, depth: T.depth, rough: T.roughness, age: age.current, motion: T.motion,
-        pen: refs.includes('shadows') ? T.visibilityRef : undefined, scalar: sig.scalar, validPrev: !reset,
+        pen: isOccSignal(p.signal) ? sig.ref : refs.includes('shadows') ? T.visibilityRef : undefined, contact: isOccSignal(p.signal),
+        scalar: sig.scalar, validPrev: !reset,
         // "disoccluded" excludes the AGE_K frames right after a reset (everything is history-less
         // there; those frames are covered by psnrDenFirstFrame / psnrDenAfterCut)
         ageK: f - lastReset(f) >= AGE_K ? AGE_K : 0,
@@ -376,7 +380,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       psnrDenCapped: r4(mean(den.map(capDb))),
       psnrDenSettledCapped: r4(mean(den.filter((_, f) => settledMask[f]).map(capDb))),
       psnrCapDb: PSNR_CAP_DB,
-      regions: Object.fromEntries(REGIONS.map((name, i) => [name, pooled(i)])),
+      regions: Object.fromEntries(REGIONS.map((name, i) => [isOccSignal(p.signal) && name === 'penumbra' ? 'contact' : name, pooled(i)])),
       biasDen: all.biasDen,
       biasNoisy: r4(allCount ? errN / allCount : NaN),
       energyDen: r4(lumR ? lumD / lumR - 1 : NaN),

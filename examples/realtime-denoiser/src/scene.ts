@@ -52,7 +52,18 @@
 //             distance (0 = unoccluded). A cone direction under the receiver's
 //             horizon counts as occluded with occluder_dist 0 (self-shadow).
 //             Reference visibility = unoccluded fraction of the cone (fractional).
+//   ao / so   (T5, occlusion) the normalized hit distance of the diffuse / specular 1-spp
+//             ray, SPEC F-3: h_n = h / (h + OCC_A + OCC_B * d), d = -viewz, miss -> 1
+//             (entry `occlusion` in OCC_WGSL, from diffuse_hitt / specular_hitt). The curve is
+//             nonlinear, so the references (`ref_ao`, `ref_so`) normalize EACH sample's hit
+//             distance and average those (same direction distributions as the 1-spp rays:
+//             cosine hemisphere / GGX VNDF with the below-horizon mirror), not the average
+//             hit distance.
 import { bnWgsl } from './bluenoise';
+
+/** SPEC F-3 curve constants used for the test bed's ao / so signals (the denoisers' defaults). */
+export const OCC_A = 1.0;
+export const OCC_B = 0.05;
 
 export const SCENE_WGSL = /* wgsl */ `
 struct U {
@@ -521,6 +532,67 @@ fn ref_specular(@builtin(global_invocation_id) id: vec3u) {
   if (rp.last != 0u) { textureStore(o_refRgb, id.xy, vec4f(m.rgb, 1.0)); }
 }
 
+// ---- occlusion references (T5): mean over samples of the NORMALIZED hit distance
+const OCC_A: f32 = ${OCC_A.toFixed(4)};
+const OCC_B: f32 = ${OCC_B.toFixed(4)};
+fn occNorm(t: f32, d: f32) -> f32 {
+  if (!(t > 0.0)) { return 1.0; }
+  return t / (t + OCC_A + OCC_B * d);
+}
+// hit distance of a diffuse ray (same direction as diffuseSample), -1 = miss
+fn diffuseHitT(p: vec3f, n: vec3f, xi: vec2f) -> f32 {
+  let r = sqrt(xi.x);
+  let phi = 2.0 * PI * xi.y;
+  let dir = basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
+  return trace(p + n * 1e-3, dir, 1e4).t;
+}
+// hit distance of a specular ray (same direction as specularSample), -1 = miss
+fn specularHitT(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f) -> f32 {
+  let alpha = max(rough * rough, 1e-3);
+  let tbn = basis(n);
+  let H = tbn * sampleGGXVNDF(transpose(tbn) * v, alpha, xi);
+  var L = reflect(-v, H);
+  let ndl = dot(n, L);
+  if (ndl <= 0.0) { L = L - 2.0 * ndl * n; }
+  return trace(p + n * 1e-3, L, 1e4).t;
+}
+
+@compute @workgroup_size(8, 8)
+fn ref_ao(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var sum = vec4f(0.0);
+  if (pr.hit) {
+    var seed = refSeed(id.xy, 4u);
+    let rot = rand2(&seed);
+    for (var i = rp.start; i < rp.start + rp.count; i++) {
+      sum.x += occNorm(diffuseHitT(pr.p, pr.n, gridXi(i, rot)), -pr.viewz);
+    }
+  } else {
+    sum.x = f32(rp.count);
+  }
+  let m = accumulate(id.xy, sum);
+  if (rp.last != 0u) { textureStore(o_refScalar, id.xy, vec4f(m.x)); }
+}
+
+@compute @workgroup_size(8, 8)
+fn ref_so(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var sum = vec4f(0.0);
+  if (pr.hit) {
+    var seed = refSeed(id.xy, 5u);
+    let rot = rand2(&seed);
+    for (var i = rp.start; i < rp.start + rp.count; i++) {
+      sum.x += occNorm(specularHitT(pr.p, pr.n, -pr.rd, pr.rough, gridXi(i, rot)), -pr.viewz);
+    }
+  } else {
+    sum.x = f32(rp.count);
+  }
+  let m = accumulate(id.xy, sum);
+  if (rp.last != 0u) { textureStore(o_refScalar, id.xy, vec4f(m.x)); }
+}
+
 @compute @workgroup_size(8, 8)
 fn ref_shadows(@builtin(global_invocation_id) id: vec3u) {
   if (any(id.xy >= u.dims)) { return; }
@@ -590,5 +662,26 @@ fn inject_scalar(@builtin(global_invocation_id) id: vec3u) {
   var seed = pcg(id.x + pcg(id.y + pcg(p.frame * 7333u + p.salt * 0x51ed27u)));
   let r = textureLoad(t_ref, id.xy, 0).r;
   textureStore(o_scalar, id.xy, vec4f(select(0.0, 1.0, rnd(&seed) < r)));
+}
+`;
+
+// Noisy ao / so (T5): the normalized hit distance of this frame's 1-spp diffuse / specular
+// ray (SPEC F-3), per pixel; d = -viewz (sky: viewz = -far, not scored).
+export const OCC_WGSL = /* wgsl */ `
+@group(0) @binding(0) var t_diffHit: texture_2d<f32>;
+@group(0) @binding(1) var t_specHit: texture_2d<f32>;
+@group(0) @binding(2) var t_viewz: texture_2d<f32>;
+@group(0) @binding(3) var o_ao: texture_storage_2d<r32float, write>;
+@group(0) @binding(4) var o_so: texture_storage_2d<r32float, write>;
+fn occNorm(t: f32, d: f32) -> f32 {
+  if (!(t > 0.0)) { return 1.0; }
+  return t / (t + ${OCC_A.toFixed(4)} + ${OCC_B.toFixed(4)} * d);
+}
+@compute @workgroup_size(8, 8)
+fn occlusion(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= textureDimensions(o_ao))) { return; }
+  let d = -textureLoad(t_viewz, id.xy, 0).r;
+  textureStore(o_ao, id.xy, vec4f(occNorm(textureLoad(t_diffHit, id.xy, 0).r, d)));
+  textureStore(o_so, id.xy, vec4f(occNorm(textureLoad(t_specHit, id.xy, 0).r, d)));
 }
 `;

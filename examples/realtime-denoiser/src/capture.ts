@@ -23,19 +23,23 @@ export const CAPTURE_NAME: Record<TexName, string> = {
   diffuse: 'diffuse', diffuseHitT: 'diffuse_hitt', diffuseRef: 'diffuse_ref',
   specular: 'specular', specularHitT: 'specular_hitt', specularRef: 'specular_ref',
   visibility: 'visibility', occluderDist: 'occluder_dist', visibilityRef: 'visibility_ref',
+  // T5 derived signals: live only, never written to a capture (no CAPTURE-FORMAT buffer)
+  ao: 'ao', so: 'so', aoRef: 'ao_ref', soRef: 'so_ref',
 };
 
 const GUIDES: TexName[] = ['depth', 'viewz', 'normal', 'roughness', 'motion', 'motionZ', 'albedo', 'f0'];
+// ao / so are derived from the hit distances at replay time (tools/rt-capture format.ts DERIVED_SIGNALS)
 const SIGNAL_TEX: Record<Signal, TexName[]> = {
   diffuse: ['diffuse', 'diffuseHitT'], specular: ['specular', 'specularHitT'], shadows: ['visibility', 'occluderDist'],
+  ao: ['diffuseHitT'], so: ['specularHitT'],
 };
-const REF_TEX: Record<Signal, TexName> = { diffuse: 'diffuseRef', specular: 'specularRef', shadows: 'visibilityRef' };
+const REF_TEX: Partial<Record<Signal, TexName>> = { diffuse: 'diffuseRef', specular: 'specularRef', shadows: 'visibilityRef' };
 
 const channels = (name: string) => (BUFFER_CHANNELS as Record<string, number>)[name];
 
 /** Textures of a capture of `signals`: guides + noisy + hit distance [+ reference]. */
 const bufferTex = (signals: Signal[], refs: boolean): TexName[] =>
-  [...GUIDES, ...signals.flatMap((s) => SIGNAL_TEX[s]), ...(refs ? signals.map((s) => REF_TEX[s]) : [])];
+  [...new Set([...GUIDES, ...signals.flatMap((s) => SIGNAL_TEX[s]), ...(refs ? signals.flatMap((s) => REF_TEX[s] ?? []) : [])])];
 
 /** Every buffer of a capture of `signals`, by capture name. */
 export function captureBuffers(scene: SceneSignals, signals: Signal[], refs: boolean): Record<string, GPUTexture> {
@@ -103,6 +107,7 @@ export function liveFrame(scene: SceneSignals, manifest: CaptureManifest, index:
       diffuse: { radiance: t.diffuse, hitDistance: t.diffuseHitT },
       specular: { radiance: t.specular, hitDistance: t.specularHitT },
       visibility: { visibility: t.visibility, hitDistance: t.occluderDist },
+      ao: { hitDistance: t.diffuseHitT }, so: { hitDistance: t.specularHitT },
     },
     textures,
     ...(meta ? { meta } : {}),

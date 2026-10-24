@@ -21,6 +21,9 @@
 //   diffuseRef      rgba32float   diffuse_ref    (.rgb)  only when requested in render()
 //   specularRef     rgba32float   specular_ref   (.rgb)  "
 //   visibilityRef   r32float      visibility_ref         "
+//   ao, so          r32float      (none: derived)  T5 occlusion: normalized hit distance of the
+//                                 diffuse / specular ray (scene.ts OCC_WGSL), every frame
+//   aoRef, soRef    r32float      (none)   mean of per-sample normalized hit distances, when requested
 //
 // In noise-injection mode the noisy diffuse/specular/visibility textures are
 // overwritten with noise around the reference (exact ground truth).
@@ -29,10 +32,15 @@ import { FAR, FOVY, invert, lookAt, mul, NEAR, perspective } from './camera';
 import type { FrameState } from './paths';
 import { OBJ_RADIUS } from './paths';
 import { loadBlueNoise } from './bluenoise';
-import { INJECT_WGSL, SCENE_WGSL } from './scene';
+import { INJECT_WGSL, OCC_WGSL, SCENE_WGSL } from './scene';
 
-export type Signal = 'diffuse' | 'specular' | 'shadows';
+export type Signal = 'diffuse' | 'specular' | 'shadows' | 'ao' | 'so';
+/** The three rendered signals (`signal=all`, captures, `refs=all`). */
 export const SIGNALS: Signal[] = ['diffuse', 'specular', 'shadows'];
+/** Derived occlusion signals (T5): AO / SO = normalized hit distance of the diffuse / specular ray. */
+export const OCC_SIGNALS: Signal[] = ['ao', 'so'];
+export const ALL_SIGNALS: Signal[] = [...SIGNALS, ...OCC_SIGNALS];
+export const isOccSignal = (s: Signal) => s === 'ao' || s === 'so';
 
 /** noisy-signal sampler: blue = spatiotemporal blue noise (default), white = PCG */
 export type Sampling = 'blue' | 'white';
@@ -53,6 +61,7 @@ const TEX_FORMATS = {
   diffuse: 'rgba16float', diffuseHitT: 'r32float', specular: 'rgba16float', specularHitT: 'r32float',
   visibility: 'r32float', occluderDist: 'r32float',
   diffuseRef: 'rgba32float', specularRef: 'rgba32float', visibilityRef: 'r32float',
+  ao: 'r32float', so: 'r32float', aoRef: 'r32float', soRef: 'r32float',
 } as const satisfies Record<string, GPUTextureFormat>;
 export type TexName = keyof typeof TEX_FORMATS;
 
@@ -92,7 +101,8 @@ export class SceneSignals {
     const mod = d.createShaderModule({ label: 'rt scene', code: SCENE_WGSL });
     this.blueNoise = await loadBlueNoise(d);
     const inj = d.createShaderModule({ label: 'rt inject', code: INJECT_WGSL });
-    for (const [m, name] of [[mod, 'scene'], [inj, 'inject']] as const) {
+    const occ = d.createShaderModule({ label: 'rt occlusion', code: OCC_WGSL });
+    for (const [m, name] of [[mod, 'scene'], [inj, 'inject'], [occ, 'occlusion']] as const) {
       const info = await m.getCompilationInfo();
       for (const msg of info.messages) if (msg.type === 'error') throw new Error(`${name} WGSL: ${msg.message} @${msg.lineNum}:${msg.linePos}`);
     }
@@ -105,7 +115,8 @@ export class SceneSignals {
     this.groups.guides = entries(mk('guides'), { 0: this.u, 1: t.depth, 2: t.viewz, 3: t.normal, 4: t.roughness, 5: t.motion, 6: t.motionZ });
     this.groups.material = entries(mk('material'), { 0: this.u, 7: t.albedo, 8: t.f0 });
     this.groups.signals = entries(mk('signals'), { 0: this.u, 9: t.diffuse, 10: t.diffuseHitT, 11: t.specular, 12: t.specularHitT, 13: t.visibility, 14: t.occluderDist, 19: this.blueNoise! });
-    for (const s of ['diffuse', 'specular', 'shadows'] as Signal[]) mk(`ref_${s}`);
+    for (const s of ALL_SIGNALS) mk(`ref_${s}`);
+    this.groups.occlusion = entries(mk('occlusion', occ), { 0: t.diffuseHitT, 1: t.specularHitT, 2: t.viewz, 3: t.ao, 4: t.so });
     mk('inject_rgb', inj); mk('inject_scalar', inj);
     this.groups.inject_diffuse = entries(this.pipes.inject_rgb, { 0: this.injectU, 1: t.diffuseRef, 2: t.diffuse });
     this.groups.inject_specular = entries(this.pipes.inject_rgb, { 0: this.injectU, 1: t.specularRef, 2: t.specular });
@@ -116,7 +127,8 @@ export class SceneSignals {
     const key = `ref_${s}_${chunk}`;
     if (!this.groups[key]) {
       this.refU[chunk] ??= this.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      const out = s === 'shadows' ? { 16: this.textures.visibilityRef } : { 15: s === 'diffuse' ? this.textures.diffuseRef : this.textures.specularRef };
+      const scalarRef = { shadows: this.textures.visibilityRef, ao: this.textures.aoRef, so: this.textures.soRef } as Partial<Record<Signal, GPUTexture>>;
+      const out = scalarRef[s] ? { 16: scalarRef[s] } : { 15: s === 'diffuse' ? this.textures.diffuseRef : this.textures.specularRef };
       const pipe = this.pipes[`ref_${s}`];
       this.groups[key] = this.device.createBindGroup({
         layout: pipe.getBindGroupLayout(0),
@@ -166,6 +178,10 @@ export class SceneSignals {
       pass.setPipeline(this.pipes[k]); pass.setBindGroup(0, this.groups[k]); pass.dispatchWorkgroups(...wg);
     }
     pass.end();
+    // T5: noisy ao / so from this frame's hit distances (own pass: reads what `signals` wrote)
+    const occPass = enc.beginComputePass({ label: 'rt occlusion' });
+    occPass.setPipeline(this.pipes.occlusion); occPass.setBindGroup(0, this.groups.occlusion); occPass.dispatchWorkgroups(...wg);
+    occPass.end();
     d.queue.submit([enc.finish()]);
 
     const refs = opts.refs ?? [];
@@ -186,7 +202,7 @@ export class SceneSignals {
     }
 
     if (opts.inject) {
-      for (const s of refs) {
+      for (const s of refs.filter((x) => !isOccSignal(x))) {   // ao / so stay the traced hit distances
         const ib = new ArrayBuffer(32);
         const iu = new Uint32Array(ib), iff = new Float32Array(ib);
         iu[0] = this.width; iu[1] = this.height; iu[2] = opts.seed ?? index; iu[3] = SIGNALS.indexOf(s) + 1;
@@ -210,6 +226,8 @@ export class SceneSignals {
     const t = this.textures;
     if (s === 'diffuse') return { noisy: t.diffuse, ref: t.diffuseRef, hitT: t.diffuseHitT, scalar: false };
     if (s === 'specular') return { noisy: t.specular, ref: t.specularRef, hitT: t.specularHitT, scalar: false };
+    if (s === 'ao') return { noisy: t.ao, ref: t.aoRef, hitT: t.diffuseHitT, scalar: true };
+    if (s === 'so') return { noisy: t.so, ref: t.soRef, hitT: t.specularHitT, scalar: true };
     return { noisy: t.visibility, ref: t.visibilityRef, hitT: t.occluderDist, scalar: true };
   }
 
