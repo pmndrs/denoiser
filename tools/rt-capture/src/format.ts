@@ -20,7 +20,7 @@ export interface CaptureCamera {
   view: number[]; projection: number[]; prevView: number[]; prevProjection: number[];
   jitter: [number, number]; near: number; far: number; position?: [number, number, number];
 }
-export interface CaptureFrame { index: number; reset: boolean; camera: CaptureCamera }
+export interface CaptureFrame { index: number; reset: boolean; camera: CaptureCamera; [extra: string]: unknown }
 export interface CaptureLight {
   id: string; type: 'sphere' | 'directional' | string; shadow?: boolean;
   position?: [number, number, number]; radius?: number;

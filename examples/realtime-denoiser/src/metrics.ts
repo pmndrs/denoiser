@@ -23,23 +23,13 @@
 // val(): shadows score visibility clamped to [0,1]; diffuse / specular score each
 // channel after a Reinhard x/(1+x) tonemap (as examples/ffx-denoiser), so a few hot
 // pixels don't dominate. Only receivers (depth < 1) are scored.
+import { DEPTH_TOL_WGSL } from '../../../tools/rt-capture/src/accumulate-ema';
 
 /** Depth tolerance for history tests: 1 % of |z| + 2 x the robust local slope of z per
  * pixel (per axis the smaller one-sided difference, so a depth edge on one side does
- * not inflate it). Shared with the accumulate baseline. */
-export const SLOPE_WGSL = /* wgsl */ `
-fn depthTol(t: texture_2d<f32>, pix: vec2i, dims: vec2u) -> f32 {
-  let hi = vec2i(dims) - 1;
-  let z = textureLoad(t, pix, 0).r;
-  let zl = textureLoad(t, clamp(pix - vec2i(1, 0), vec2i(0), hi), 0).r;
-  let zr = textureLoad(t, clamp(pix + vec2i(1, 0), vec2i(0), hi), 0).r;
-  let zu = textureLoad(t, clamp(pix - vec2i(0, 1), vec2i(0), hi), 0).r;
-  let zd = textureLoad(t, clamp(pix + vec2i(0, 1), vec2i(0), hi), 0).r;
-  let sx = min(abs(zr - z), abs(z - zl));
-  let sy = min(abs(zd - z), abs(z - zu));
-  return 0.01 * abs(z) + 2.0 * max(sx, sy) + 1e-4;
-}
-`;
+ * not inflate it). One definition, shared with the `accumulate-32` baseline
+ * (tools/rt-capture/src/accumulate-ema.ts), so both reject history with the same test. */
+export const SLOPE_WGSL = DEPTH_TOL_WGSL;
 
 export const AGE_WGSL = /* wgsl */ `
 struct A { dims: vec2u, reset: u32, _p: u32 };

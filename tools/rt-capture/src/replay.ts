@@ -33,6 +33,8 @@ export interface ReplayFrame {
   inputs: { diffuse?: DiffuseInputs; specular?: SpecularInputs; visibility?: ShadowInputs };
   /** Every uploaded buffer by capture name (e.g. `diffuse_ref`, `albedo`, `f0`). */
   textures: Record<string, GPUTexture>;
+  /** The manifest's frame entry, incl. extra keys (e.g. the test bed's per-frame `lights`). */
+  meta?: CaptureFrame;
 }
 
 /** A configured denoiser instance for one replay (may wrap several TemporalDenoisers). */
@@ -147,7 +149,7 @@ export class CaptureTextures {
     if (t.diffuse) inputs.diffuse = { radiance: t.diffuse, ...(t.diffuse_hitt ? { hitDistance: t.diffuse_hitt } : {}) };
     if (t.specular) inputs.specular = { radiance: t.specular, hitDistance: t.specular_hitt ?? zeroTexture(this.device, m.width, m.height) };
     if (t.visibility) inputs.visibility = { visibility: t.visibility, ...(t.occluder_dist ? { hitDistance: t.occluder_dist } : {}) };
-    return { index: f.index, reset: f.reset, manifest: m, guides, camera: toFrameCamera(m, f), inputs, textures: t };
+    return { index: f.index, reset: f.reset, manifest: m, guides, camera: toFrameCamera(m, f), inputs, textures: t, meta: f };
   }
 
   dispose() { for (const t of Object.values(this.textures)) t.destroy(); }

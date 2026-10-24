@@ -1,39 +1,45 @@
-// Test-bed baselines (not part of any package):
-//
-//   PassthroughDenoiser   returns the noisy input unchanged (the "no denoiser" row)
-//   AccumulateDenoiser    plain temporal accumulation with reprojection, no spatial
-//                         filter, no clamping: per-pixel history length n (capped at
-//                         maxFrames), weight 1/n -> a linear (cumulative) average for
-//                         the first maxFrames frames, then an exponential moving
-//                         average with alpha = 1/maxFrames. History is fetched
-//                         bilinearly at the motion-reprojected position; each of the
-//                         4 taps is kept only if its stored linear depth matches the
-//                         expected previous depth (-(viewZ + motionZ), 2.5D motion)
-//                         within 1 % + 2x the local depth slope (metrics.ts depthTol,
-//                         the same test as the ground-truth history age). This is the textbook baseline every temporal
-//                         denoiser must beat; it shows ghosting/lag (no anti-lag) and
-//                         fresh noise in disocclusions (no spatial fallback).
-import type { FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
-import { SLOPE_WGSL } from './metrics';
+// Capped temporal accumulation (registry ids `accumulate-32`, `accumulate-8`): the
+// test bed's "plain temporal accumulation" baseline, moved here from
+// examples/realtime-denoiser so the test bed (live) and the replay run the same code.
+// Our design, textbook:
+//   - per-pixel history length n (capped at maxFrames), weight 1/n: a cumulative
+//     average for the first maxFrames frames, then an exponential moving average with
+//     alpha = 1/maxFrames; no spatial filter, no clamping (it lags and ghosts on purpose);
+//   - history fetched bilinearly at the motion-reprojected position; each of the 4 taps
+//     is kept only if its stored linear depth matches the expected previous depth
+//     -(viewZ + motionZ) (2.5D motion, so moving objects keep history) within
+//     DEPTH_TOL_WGSL (1 % |z| + 2x the robust local depth slope), the same test as the
+//     test bed's ground-truth history age (examples/realtime-denoiser/src/metrics.ts).
+// Unlike `accumulate` (src/accumulate.ts: unbounded mean, world-position plane test,
+// static geometry), this one needs guides.viewZ and guides.motionZ (the replay fills
+// them when the capture has viewz / motion_z). Ignores jitter (the test bed has none).
+// Output: rgba16float, rgb = mean, a = n.
+import type { FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser } from '../../../packages/denoiser-core/src/temporal';
 
-export interface SignalInputs {
-  /** noisy signal: rgb radiance, or a scalar in .r (visibility) */
-  signal: GPUTexture;
+/** Depth tolerance for history taps: 1 % |z| + 2x the robust one-sided z slope. */
+export const DEPTH_TOL_WGSL = /* wgsl */ `
+fn depthTol(t: texture_2d<f32>, pix: vec2i, dims: vec2u) -> f32 {
+  let hi = vec2i(dims) - 1;
+  let z = textureLoad(t, pix, 0).r;
+  let zl = textureLoad(t, clamp(pix - vec2i(1, 0), vec2i(0), hi), 0).r;
+  let zr = textureLoad(t, clamp(pix + vec2i(1, 0), vec2i(0), hi), 0).r;
+  let zu = textureLoad(t, clamp(pix - vec2i(0, 1), vec2i(0), hi), 0).r;
+  let zd = textureLoad(t, clamp(pix + vec2i(0, 1), vec2i(0), hi), 0).r;
+  let sx = min(abs(zr - z), abs(z - zl));
+  let sy = min(abs(zd - z), abs(z - zu));
+  return 0.01 * abs(z) + 2.0 * max(sx, sy) + 1e-4;
+}
+`;
+
+export interface EmaInputs {
+  /** rgb radiance, or visibility in .r */
+  radiance?: GPUTexture;
+  visibility?: GPUTexture;
 }
 
-/** Guides as the test bed hands them (viewZ / motionZ are the optional 2.5D fields). */
-export type TestbedGuides = FrameGuides & { viewZ: GPUTexture; motionZ: GPUTexture };
+type EmaGuides = FrameGuides & { viewZ?: GPUTexture; motionZ?: GPUTexture };
 
-export class PassthroughDenoiser implements TemporalDenoiser<SignalInputs> {
-  readonly name = 'passthrough';
-  constructor(readonly device: GPUDevice) {}
-  configure(_c: TemporalConfig): void { /* stateless */ }
-  dispatch(inputs: SignalInputs): GPUTexture { return inputs.signal; }
-  resetHistory(): void { /* stateless */ }
-  dispose(): void { /* nothing owned */ }
-}
-
-const ACC_WGSL = /* wgsl */ `
+const WGSL = /* wgsl */ `
 struct P { dims: vec2u, reset: u32, _p: u32, maxFrames: f32, _r: f32, _q: vec2f };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var t_cur: texture_2d<f32>;
@@ -44,7 +50,7 @@ struct P { dims: vec2u, reset: u32, _p: u32, maxFrames: f32, _r: f32, _q: vec2f 
 @group(0) @binding(6) var t_prevLin: texture_2d<f32>;
 @group(0) @binding(7) var o_color: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8) var o_lin: texture_storage_2d<r32float, write>;
-${SLOPE_WGSL}
+${DEPTH_TOL_WGSL}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -85,9 +91,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-export interface AccumulateOptions { maxFrames?: number }
+export interface EmaOptions { maxFrames?: number }
 
-export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
+export class EmaAccumulateDenoiser implements TemporalDenoiser<EmaInputs> {
   readonly name: string;
   private pipe: GPUComputePipeline;
   private params: GPUBuffer;
@@ -99,12 +105,12 @@ export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
   private H = 0;
   private maxFrames: number;
 
-  constructor(readonly device: GPUDevice, opts: AccumulateOptions = {}) {
+  constructor(readonly device: GPUDevice, opts: EmaOptions = {}) {
     this.maxFrames = opts.maxFrames ?? 32;
     this.name = `accumulate-${this.maxFrames}`;
     this.pipe = device.createComputePipeline({
-      label: 'accumulate', layout: 'auto',
-      compute: { module: device.createShaderModule({ label: 'accumulate', code: ACC_WGSL }), entryPoint: 'main' },
+      label: 'accumulate-ema', layout: 'auto',
+      compute: { module: device.createShaderModule({ label: 'accumulate-ema', code: WGSL }), entryPoint: 'main' },
     });
     this.params = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
@@ -122,9 +128,11 @@ export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
 
   resetHistory(): void { this.needsReset = true; }
 
-  dispatch(inputs: SignalInputs, guides: FrameGuides, _camera: FrameCamera): GPUTexture {
-    const g = guides as TestbedGuides;
-    if (!g.viewZ || !g.motionZ) throw new Error('AccumulateDenoiser needs guides.viewZ and guides.motionZ');
+  dispatch(inputs: EmaInputs, guides: FrameGuides, _camera: FrameCamera): GPUTexture {
+    const g = guides as EmaGuides;
+    if (!g.viewZ || !g.motionZ) throw new Error('accumulate-ema needs guides.viewZ and guides.motionZ (capture buffers viewz, motion_z)');
+    const sig = inputs.radiance ?? inputs.visibility;
+    if (!sig) throw new Error('accumulate-ema: needs inputs.radiance or inputs.visibility');
     const cur = this.frame & 1, prev = cur ^ 1;
     const b = new ArrayBuffer(32);
     const u = new Uint32Array(b), f = new Float32Array(b);
@@ -135,11 +143,11 @@ export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
       layout: this.pipe.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.params } },
-        ...[inputs.signal, g.viewZ, guides.motion, g.motionZ, this.color[prev], this.lin[prev], this.color[cur], this.lin[cur]]
+        ...[sig, g.viewZ, guides.motion, g.motionZ, this.color[prev], this.lin[prev], this.color[cur], this.lin[cur]]
           .map((t, i) => ({ binding: i + 1, resource: t.createView() })),
       ],
     });
-    const enc = this.device.createCommandEncoder({ label: 'accumulate' });
+    const enc = this.device.createCommandEncoder({ label: 'accumulate-ema' });
     const pass = enc.beginComputePass();
     pass.setPipeline(this.pipe); pass.setBindGroup(0, bg);
     pass.dispatchWorkgroups(Math.ceil(this.W / 8), Math.ceil(this.H / 8));

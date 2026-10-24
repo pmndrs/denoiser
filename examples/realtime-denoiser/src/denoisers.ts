@@ -1,86 +1,38 @@
-// Denoiser registry: id -> factory + which signals it consumes + how to build its
-// inputs from the test bed's textures. Select with `?denoiser=id[,id...]`.
+// The test bed's view of the project's ONE denoiser registry,
+// tools/rt-capture/src/denoisers.ts (single source of truth: register a denoiser there
+// once and it runs here live, in capture-replay (`mode=replay`) and on the replay page).
+// This file only maps names: the registry speaks capture signal names
+// (`diffuse`, `specular`, `visibility`); the test bed calls visibility `shadows`.
 //
-// Every entry returns a `TemporalDenoiser` (packages/denoiser-core/src/temporal.ts),
-// so anything that implements that interface plugs in here unchanged.
-import * as FFX from '@pmndrs/denoiser-ffx';
-import type { TemporalDenoiser } from '@pmndrs/denoiser-ffx';
-import { AccumulateDenoiser, PassthroughDenoiser } from './accumulate';
-import type { SceneSignals, Signal } from './signals';
+// Each (signal, denoiser) pair gets its own ReplayDenoiser instance created with
+// `signals: [that signal]`, fed a ReplayFrame built from the live SceneSignals textures
+// (src/capture.ts `liveFrame`), the same structure the replay builds from a capture.
+import { DENOISERS as REGISTRY } from '../../../tools/rt-capture/src/denoisers';
+import type { DenoiserEntry as RegistryEntry } from '../../../tools/rt-capture/src/replay';
+import type { SignalName } from '../../../tools/rt-capture/src/format';
+import type { Signal } from './signals';
 
 export interface DenoiserEntry {
   id: string;
   label: string;
-  /** signals this denoiser can consume */
+  /** test-bed signals this denoiser can consume */
   signals: Signal[];
-  create(device: GPUDevice, signal: Signal, q: URLSearchParams): TemporalDenoiser<object>;
-  /** the signal-specific `inputs` argument of dispatch() */
-  inputs(s: SceneSignals, signal: Signal): object;
+  /** the registry entry (create() returns a ReplayDenoiser) */
+  entry: RegistryEntry;
 }
 
-const ALL: Signal[] = ['diffuse', 'specular', 'shadows'];
-/** generic `{ signal }` inputs of the test-bed baselines */
-const signalInputs = (s: SceneSignals, signal: Signal) => ({ signal: s.signal(signal).noisy });
-/** `ShadowInputs` (visibility + occluder distance) */
-const shadowInputs = (s: SceneSignals) => ({ visibility: s.textures.visibility, hitDistance: s.textures.occluderDist });
-/** `SpecularInputs` / `DiffuseInputs` (radiance + hit distance) */
-const radianceInputs = (s: SceneSignals, signal: Signal) => {
-  const t = s.signal(signal);
-  return { radiance: t.noisy, hitDistance: t.hitT };
-};
+export const toCaptureSignal = (s: Signal): SignalName => (s === 'shadows' ? 'visibility' : s);
+export const fromCaptureSignal = (s: SignalName): Signal => (s === 'visibility' ? 'shadows' : s);
 
-export const DENOISERS: DenoiserEntry[] = [
-  {
-    id: 'passthrough', label: 'passthrough (noisy input)', signals: ALL,
-    create: (device) => new PassthroughDenoiser(device),
-    inputs: signalInputs,
-  },
-  {
-    id: 'accumulate', label: 'temporal accumulation (32 frames, no clamp)', signals: ALL,
-    create: (device, _s, q) => new AccumulateDenoiser(device, { maxFrames: Number(q.get('accN') ?? 32) }),
-    inputs: signalInputs,
-  },
-  {
-    id: 'accumulate-8', label: 'temporal accumulation (8 frames, no clamp)', signals: ALL,
-    create: (device) => new AccumulateDenoiser(device, { maxFrames: 8 }),
-    inputs: signalInputs,
-  },
-  {
-    id: 'ffx-shadows', label: 'FidelityFX shadows (WGSL port)', signals: ['shadows'],
-    create: (device) => new FFX.FfxShadowDenoiser(device) as TemporalDenoiser<object>,
-    inputs: shadowInputs,
-  },
-  {
-    // FFX reflections on the demodulated specular signal. (It also runs on diffuse,
-    // where it acts as a generic radiance filter with roughness = the surface's; that
-    // is not what it was designed for, so it is only registered for specular.)
-    id: 'ffx-reflections', label: 'FidelityFX reflections (WGSL port)', signals: ['specular'],
-    create: (device, _s, q) => new FFX.FfxReflectionDenoiser(device, {
-      ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
-    }) as TemporalDenoiser<object>,
-    inputs: radianceInputs,
-  },
-
-  // ---------------------------------------------------------------------------
-  // denoiser/realtime (packages/denoiser-realtime) goes HERE once it exports its
-  // denoisers (T1.2 SVGF diffuse, T1.3 SVGF specular, T1.4 A-SVGF; later the
-  // recurrent diffuse/specular, shadows, occlusion). Not imported yet on purpose:
-  // the package is being built in parallel. Sketch:
-  //
-  //   import * as RT from '@pmndrs/denoiser-realtime';   // + vite alias like denoiser-ffx
-  //   {
-  //     id: 'svgf', label: 'SVGF (denoiser/realtime)', signals: ['diffuse', 'specular'],
-  //     create: (device, signal) => new RT.SvgfDenoiser(device, { signal }),
-  //     inputs: radianceInputs,
-  //   },
-  //
-  // Guides passed to every dispatch include the optional 2.5D fields
-  // (`guides.viewZ`, `guides.motionZ`) and `albedo`; see main.ts `guides`.
-  // ---------------------------------------------------------------------------
-];
+export const DENOISERS: DenoiserEntry[] = [...REGISTRY.values()].map((e) => ({
+  id: e.id, label: e.description, signals: e.signals.map(fromCaptureSignal), entry: e,
+}));
 
 export const denoiserById = (id: string) => DENOISERS.find((d) => d.id === id);
 
+/** registry baselines left out of the default set (still selectable with ?denoiser=) */
+const NOT_DEFAULT = new Set(['accumulate', 'accumulate-static', 'accumulate-8']);
+
 /** default denoisers per signal (used when ?denoiser= is absent) */
 export const defaultDenoisers = (signal: Signal) =>
-  DENOISERS.filter((d) => d.signals.includes(signal) && d.id !== 'accumulate-8').map((d) => d.id);
+  DENOISERS.filter((d) => d.signals.includes(signal) && !NOT_DEFAULT.has(d.id)).map((d) => d.id);

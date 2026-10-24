@@ -46,6 +46,9 @@ export class CaptureWriter {
   private frames: CaptureFrame[] = [];
   private buffers?: Map<string, number>;
   private pending: Promise<unknown>[] = [];
+  private pendingBytes = 0;
+  /** Uploads in flight before writeFrame waits (bytes). */
+  maxPendingBytes = 768 * 2 ** 20;
 
   constructor(readonly device: GPUDevice, readonly name: string, options: CaptureWriterOptions = {}) {
     if (!/^[\w.-]+$/.test(name)) throw new Error(`CaptureWriter: bad capture name "${name}"`);
@@ -67,9 +70,11 @@ export class CaptureWriter {
    * Read back and upload one frame. `frame.index` defaults to the next index; frame 0 is
    * always written with reset: true. Uploads overlap with the next frame's rendering;
    * the readback itself is awaited (so the caller may overwrite the textures afterwards).
+   * `extra`: additional per-frame manifest keys (ignored by v0 readers), e.g. the test
+   * bed's per-frame `lights` and moving `object`.
    */
   async writeFrame(
-    frame: { index?: number; reset?: boolean; camera: CaptureCamera | FrameCamera },
+    frame: { index?: number; reset?: boolean; camera: CaptureCamera | FrameCamera; extra?: Record<string, unknown> },
     buffers: Record<string, CaptureBufferSource>,
   ): Promise<void> {
     const meta = this.meta;
@@ -110,11 +115,15 @@ export class CaptureWriter {
       if (d.length !== N * this.buffers.get(name)!) throw new Error(`CaptureWriter: ${name} has ${d.length} floats, expected ${N * this.buffers.get(name)!}`);
     }
     const camera = fromFrameCamera(frame.camera as FrameCamera); // also normalizes a CaptureCamera
-    this.frames.push({ index, reset: index === 0 || !!frame.reset, camera });
+    this.frames.push({ index, reset: index === 0 || !!frame.reset, camera, ...(frame.extra ?? {}) });
     const dir = `${this.path}/${frameDir(index)}`;
-    // keep at most a few frames of uploads in flight
-    this.pending.push(...[...data].map(([name, d]) => this.client.put(`${dir}/${name}.f32`, d.slice().buffer as ArrayBuffer)));
-    if (this.pending.length > 64) { await Promise.all(this.pending); this.pending = []; }
+    // keep a bounded amount of uploads in flight (a 1080p frame with every buffer is ~265 MB)
+    for (const [name, d] of data) {
+      const body = (d.byteOffset === 0 && d.byteLength === d.buffer.byteLength && gpu.some((e) => e.name === name) ? d.buffer : d.slice().buffer) as ArrayBuffer;
+      this.pending.push(this.client.put(`${dir}/${name}.f32`, body));
+      this.pendingBytes += body.byteLength;
+    }
+    if (this.pendingBytes > this.maxPendingBytes) { await Promise.all(this.pending); this.pending = []; this.pendingBytes = 0; }
   }
 
   /** Wait for uploads and write capture.json. */
@@ -123,6 +132,7 @@ export class CaptureWriter {
     if (!meta || !this.buffers) throw new Error('CaptureWriter: nothing written');
     await Promise.all(this.pending);
     this.pending = [];
+    this.pendingBytes = 0;
     const manifest: CaptureManifest = {
       version: 0,
       scene: meta.scene,

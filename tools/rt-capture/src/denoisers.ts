@@ -1,10 +1,24 @@
-// Denoisers the replay can run, by id. Add one with registerDenoiser(); single-signal
-// TemporalDenoisers wrap with perSignal(). A joint denoiser (e.g. diffuse + specular in
-// one dispatch) implements ReplayDenoiser directly and returns both outputs.
+// THE denoiser registry of the project (single source of truth): the replay page here
+// AND the test bed (examples/realtime-denoiser, live and capture modes) both run the
+// entries below, so a denoiser registers once and runs everywhere. Add one with
+// registerDenoiser(); single-signal TemporalDenoisers wrap with perSignal(). A joint
+// denoiser (e.g. diffuse + specular in one dispatch) implements ReplayDenoiser directly
+// and returns both outputs. Inputs follow the TemporalDenoiser API shapes (DiffuseInputs /
+// SpecularInputs / ShadowInputs); signal names are the capture's (`visibility` = the test
+// bed's `shadows`).
 //
 //   passthrough        the noisy input, unchanged (the "noisy" baseline through the same path)
 //   accumulate         reprojected running mean (our analogue of native REFERENCE; M0 sanity)
 //   accumulate-static  running mean without reprojection (static-camera captures)
+//   accumulate-32      capped accumulation, 32 frames, 2.5D depth test (the test bed's
+//                      baseline row; needs viewz + motion_z); `maxFrames` overrides
+//   accumulate-8       the same, 8 frames
+//   svgf               denoiser/realtime SVGF, diffuse + specular (DiffuseSpecularDenoiser,
+//                      dispatchBoth; a single requested signal runs that signal's class)
+//   svgf-auto          the same with A-SVGF anti-lag 'auto' (renderer-free gradients)
+//   svgf-diffuse       DiffuseDenoiser alone;  svgf-specular  SpecularDenoiser alone
+//   (svgf settings from the URL: see svgfOptions(); antiLag 'gradient' needs renderer
+//   gradient samples that neither the test bed nor the captures provide)
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //
@@ -13,6 +27,9 @@ import type { TemporalDenoiser } from '../../../packages/denoiser-core/src/tempo
 // relative source import: works from any page without a package alias or a built dist
 import { FfxReflectionDenoiser, FfxShadowDenoiser } from '../../../packages/denoiser-ffx/src/index';
 import { AccumulateDenoiser } from './accumulate';
+import { EmaAccumulateDenoiser } from './accumulate-ema';
+import { DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser } from '../../../packages/denoiser-realtime/src/index';
+import type { SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
 import type { DenoiserEntry, ReplayDenoiser, ReplayFrame } from './replay';
 import type { SignalName } from './format';
 
@@ -89,6 +106,14 @@ registerDenoiser({
   create: perSignal((device, _s, st) => new AccumulateDenoiser(device, { reproject: false, maxFrames: num(st, 'maxFrames') })),
 });
 registerDenoiser({
+  id: 'accumulate-32', description: 'capped temporal accumulation (32 frames, no clamp, 2.5D depth test; test-bed baseline)', signals: ALL,
+  create: perSignal((device, _s, st) => new EmaAccumulateDenoiser(device, { maxFrames: num(st, 'maxFrames') ?? 32 })),
+});
+registerDenoiser({
+  id: 'accumulate-8', description: 'capped temporal accumulation (8 frames, no clamp, 2.5D depth test)', signals: ALL,
+  create: perSignal((device, _s, st) => new EmaAccumulateDenoiser(device, { maxFrames: num(st, 'maxFrames') ?? 8 })),
+});
+registerDenoiser({
   id: 'ffx-shadows', description: '@pmndrs/denoiser-ffx FfxShadowDenoiser (FidelityFX 1.x port)', signals: ['visibility'],
   create: perSignal((device, _s, st) => new FfxShadowDenoiser(device, {
     ...(st.depthSimilaritySigma ? { depthSimilaritySigma: Number(st.depthSimilaritySigma) } : {}),
@@ -100,4 +125,63 @@ registerDenoiser({
     ...(st.stats ? { currentFrameStatistics: st.stats === 'current' } : {}),
     ...(st.tsf ? { temporalStabilityFactor: Number(st.tsf) } : {}),
   })),
+});
+
+// ---- denoiser/realtime (packages/denoiser-realtime) --------------------------------
+
+const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance', 'normalThreshold', 'atrousIterations',
+  'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
+  'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale'] as const;
+const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight'] as const;
+
+/** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
+export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOptions = {}): SpecularSvgfOptions {
+  const o: Record<string, unknown> = { ...defaults };
+  for (const k of SVGF_NUM) if (st[k] !== undefined) o[k] = Number(st[k]);
+  for (const k of SVGF_STR) if (st[k] !== undefined) o[k] = st[k];
+  if (st.feedback !== undefined) o.feedback = !['0', 'false', 'off'].includes(st.feedback);
+  return o as SpecularSvgfOptions;
+}
+
+/**
+ * Joint diffuse + specular SVGF: DiffuseSpecularDenoiser.dispatchBoth() when both signals
+ * are requested; a single requested signal falls back to that signal's class.
+ */
+function svgfJoint(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
+  return (device, ctx) => {
+    const opts = svgfOptions(ctx.settings, defaults);
+    if (!(ctx.signals.includes('diffuse') && ctx.signals.includes('specular'))) {
+      return perSignal((d, s) => (s === 'diffuse' ? new DiffuseDenoiser(d, opts) : new SpecularDenoiser(d, opts)))(device, ctx);
+    }
+    const den = new DiffuseSpecularDenoiser(device, opts);
+    den.configure({ width: ctx.width, height: ctx.height });
+    return {
+      signals: ['diffuse', 'specular'],
+      dispatch(frame: ReplayFrame) {
+        const { diffuse, specular } = frame.inputs;
+        if (!diffuse || !specular) throw new Error('svgf: capture needs diffuse and specular');
+        return den.dispatchBoth({ diffuse, specular }, frame.guides, frame.camera);
+      },
+      resetHistory() { den.resetHistory(); },
+      gpuTimings() { return new Map(den.gpuTimings ?? []); },
+      dispose() { den.dispose(); },
+    };
+  };
+}
+
+registerDenoiser({
+  id: 'svgf', description: 'denoiser/realtime SVGF (diffuse + specular, joint dispatch)', signals: ['diffuse', 'specular'],
+  create: svgfJoint({}),
+});
+registerDenoiser({
+  id: 'svgf-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), diffuse + specular", signals: ['diffuse', 'specular'],
+  create: svgfJoint({ antiLag: 'auto' }),
+});
+registerDenoiser({
+  id: 'svgf-diffuse', description: 'denoiser/realtime SVGF DiffuseDenoiser', signals: ['diffuse'],
+  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st))),
+});
+registerDenoiser({
+  id: 'svgf-specular', description: 'denoiser/realtime SVGF SpecularDenoiser (needs roughness)', signals: ['specular'],
+  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st))),
 });
