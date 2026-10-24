@@ -376,6 +376,9 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (+15…40 %); ~20 knobs moved it ≤ ±0.2 dB (results/M2-M3.md §5). Candidates not tried: a
       variance-guided (measured, not predicted) luminance weight in the blur, short-history +
       wide spatial mode for r ≥ 0.35 — found by recurrent-spec, owner unassigned
+- [~] shadows-v2 (shadows agent, 2026-10-25 night): fresh-history quality (young-history ideas measured
+      one by one), `thin` cost ≤ 0.6 ms, uniform-snap evidence, provenance hygiene (the three
+      constants, comments), directional-light check, results/M4.md "v2", README shadows section — owner shadows
 
 ## Probes for the Windows harness
 
