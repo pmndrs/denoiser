@@ -183,10 +183,10 @@ Everyone else:
 | who | what | usable on the web? |
 |---|---|---|
 | NVIDIA OptiX denoiser, DLSS Ray Reconstruction | neural | No: proprietary, tied to NVIDIA drivers. |
-| AMD FSR Ray Regeneration | neural | No: signed DX12 binary, license forbids reverse engineering. |
+| AMD FSR Ray Regeneration | neural | No: only headers plus a signed DX12 DLL ([FidelityFX SDK 2.x](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK), `Kits/FidelityFX/signedbin/amd_fidelityfx_denoiser_dx12.dll`); the license allows binary redistribution only and forbids reverse engineering. |
 | Apple MetalFX denoised upscaler | neural | No: Metal only. |
 | AMD FidelityFX Denoiser 1.x | hand-tuned shadows and reflections | Yes, already ported (`denoiser/ffx`). |
-| NVIDIA NRD (ReBLUR, ReLAX, SIGMA) | hand-tuned | Maybe; license check pending ([temporal.md](../specs/temporal.md)). |
+| NVIDIA NRD (ReBLUR, ReLAX, SIGMA) | hand-tuned | No, as a port: the source is public ([NVIDIA-RTX/NRD](https://github.com/NVIDIA-RTX/NRD), v4.18.0, Oct 2026) but under the proprietary NVIDIA RTX SDKs license. It allows modifying only sample code, distributing only as object code inside an app, and no stand-alone redistribution, so a WGSL port in our MIT package is out without an agreement with NVIDIA. |
 | SVGF / A-SVGF / BMFR | classic temporal filters | Yes: published papers, implementable in WGSL. |
 | Academic neural (NPPD, FSSA, KPCN, neural bilateral grid…) | neural | Weights are rarely released. NPPD is the exception; FSSA's are promised. |
 
