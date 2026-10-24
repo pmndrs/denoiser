@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - realtime GI, reflections and AO (experimental)</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; touch-action: none; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
+      .caption span { color: var(--dn-accent); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; max-width: 960px; margin-top: 1rem; box-sizing: border-box; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; max-width: 960px; box-sizing: border-box; }
+      .tag { display: inline-block; font-size: .75rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--dn-accent); color: var(--dn-accent); vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+      <h1>Realtime GI, reflections and AO <span class="tag">experimental</span></h1>
+      <p class="dn-lede">
+        The same furnished corner, now lit only by what is traced at <b>one ray per pixel</b>: a diffuse bounce ray
+        (the environment where it escapes, the area light bounced where it hits), three's stochastic SSR for reflections,
+        and a shadow ray. <code>realtimeDiffuseSpecular()</code> denoises diffuse and specular in one dispatch,
+        <code>realtimeOcclusion()</code> turns the diffuse ray's hit distance into AO, <code>realtimeShadows()</code> the shadow
+        (all from <code>denoiser/three</code>, backed by <code>denoiser/realtime</code>). Left of the divider: what you have without
+        them (the raw diffuse signal, <code>ffxReflections()</code> for SSR).
+      </p>
+      </header>
+
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="caption"><span id="cap-view">...</span><span id="cap-cost"></span></div>
+
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">Signal</span>
+          <div class="dn-seg" id="seg-signal">
+            <button data-v="lit" aria-pressed="true">lit scene</button><button data-v="diffuse" aria-pressed="false">diffuse (GI)</button><button data-v="specular" aria-pressed="false">specular (SSR)</button><button data-v="ao" aria-pressed="false">AO</button>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">View</span>
+          <div class="dn-seg" id="seg-view">
+            <button data-v="split" aria-pressed="true">split</button><button data-v="ours" aria-pressed="false">ours</button><button data-v="other" aria-pressed="false">left side</button><button data-v="noisy" aria-pressed="false">raw</button><button data-v="ref" aria-pressed="false">reference</button>
+          </div>
+        </div>
+        <div class="dn-group"><label class="dn-label" for="split">Divider</label><input id="split" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+        <div class="dn-group">
+          <span class="dn-label">Floor gloss</span>
+          <div class="dn-row"><input id="roughness" type="range" min="0.02" max="0.6" step="0.01" value="0.12" /><output class="dn-value" id="roughness-v"></output>
+          <span class="hint">roughness of the floor and table top</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Camera</span>
+          <div class="dn-row">
+            <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
+            <button class="dn-btn" id="cut">camera cut (resetHistory)</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="box">
+        <h2>Notes</h2>
+        <ul>
+          <li>The diffuse signal is demodulated (not multiplied by albedo), as <code>DiffuseSpecularDenoiser</code> expects; the composite multiplies by albedo afterwards.</li>
+          <li>Each denoiser runs with its class defaults; the algorithm is an option (<code>denoiser: { filter: 'svgf' | 'recurrent' }</code>).</li>
+          <li>The reference accumulates independent samples while the camera holds still (diffuse: 4 rays/frame; specular: the SSR itself, so it shares SSR's own misses).</li>
+          <li><code>denoiser/realtime</code> is experimental: defaults and API may change. Numbers: <code>docs/research/rt-denoiser/results/M6-real-scene.md</code>.</li>
+        </ul>
+      </div>
+
+      <pre class="code">import { realtimeDiffuseSpecular, realtimeOcclusion } from 'denoiser/three';
+
+const guides = { camera, depth, velocity, normal, normalSpace: 'view', normalEncoding: 'packed' };
+const gi = realtimeDiffuseSpecular(
+  { diffuse: { radiance: diffuseRay, hitDistance }, specular: { radiance: ssrNode /* ray length in .a */ } },
+  { ...guides, roughness },
+);
+const ao = realtimeOcclusion(hitDistance, guides);
+const lit = albedo.mul(gi.diffuse.rgb.add(direct)).add(gi.specular.rgb);</pre>
+
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/realtime-gi.ts"></script>
+  </body>
+</html>

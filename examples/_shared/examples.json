@@ -4,6 +4,7 @@
     "OIDN": "Intel Open Image Denoise networks",
     "path tracing": "path-traced input",
     "real-time FFX": "AMD FidelityFX temporal denoisers",
+    "real-time (ours)": "denoiser/realtime: our per-signal temporal denoisers (experimental)",
     "three.js": "three.js WebGPURenderer / TSL",
     "upscaler": "@pmndrs/upscaler (FSR)",
     "runtimes": "WGSL / WebNN / ONNX Runtime / HF kernels",
@@ -90,6 +91,18 @@
       "title": "Baked + dynamic shadows: when to split",
       "description": "Bake what never moves (a lightmap, denoised once with OIDN, or a world-space cache), trace only the moving objects every frame with FFX: what the split buys, what it costs, and when to use it.",
       "tags": ["real-time FFX", "OIDN", "three.js"], "shot": "three-temporal-shadows.png", "deployed": true
+    },
+    {
+      "id": "three-temporal-realtime-shadows", "section": "realtime", "href": "three-temporal/realtime-shadows.html",
+      "title": "Realtime shadows: ours vs FidelityFX (experimental)",
+      "description": "The ray-traced shadows scene, 1 ray per pixel, split-screen: ffxShadows() against realtimeShadows(), the penumbra-aware ShadowDenoiser of denoiser/realtime.",
+      "tags": ["real-time (ours)", "real-time FFX", "three.js"], "deployed": false
+    },
+    {
+      "id": "three-temporal-realtime-gi", "section": "realtime", "href": "three-temporal/realtime-gi.html",
+      "title": "Realtime GI, reflections and AO (experimental)",
+      "description": "The same scene lit only by 1-ray signals: realtimeDiffuseSpecular() on a traced diffuse bounce and three's stochastic SSR, realtimeOcclusion() for AO, split-screen against the raw signal and ffxReflections().",
+      "tags": ["real-time (ours)", "real-time FFX", "three.js"], "deployed": false
     },
     {
       "id": "three-temporal", "section": "realtime", "href": "three-temporal/",
