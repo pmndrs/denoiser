@@ -12,6 +12,9 @@
 //   &mode=view|eval|bench|capture|replay     (default view)
 //   &preset=fast|full                        fast = 960x540 (default), full = 1920x1080
 //   &w=&h=  &frames=N (truncate the path)  &refspp=256  &refs=all (render every reference)
+//   &sampling=blue|white      sampler of the 1-spp signals (default blue: spatiotemporal blue
+//                             noise, src/bluenoise.ts; white = PCG per pixel/frame); references
+//                             are the same either way
 //   &start=S                  begin at path frame S (it becomes frame 0, a reset); paths are
 //                             pure functions of the frame index, so eval with the same
 //                             path/start/frames/size renders exactly the frames of a capture
@@ -48,7 +51,7 @@ import { defaultDenoisers, denoiserById, DENOISERS, toCaptureSignal, type Denois
 import { flipMean, prepareFlip, unpackLdr, type FlipPrepared } from './flip';
 import { HistoryAge, LdrPacker, REGIONS, Scorer, type FrameScore } from './metrics';
 import { pathById, PATHS, type PathDef } from './paths';
-import { DEMODULATION, SceneSignals, SIGNALS, type Signal, type TexName } from './signals';
+import { DEMODULATION, SceneSignals, SIGNALS, type Sampling, type Signal, type TexName } from './signals';
 import { PanelView } from './view';
 
 mountShell({ id: 'realtime-denoiser', title: 'Real-time denoiser test bed' });
@@ -72,7 +75,7 @@ const CAPTURE = mode === 'capture'
   : null;
 // URL keys the test bed reads itself; every other key is a denoiser setting (registry `settings`)
 const TESTBED_KEYS = new Set(['signal', 'signals', 'denoiser', 'path', 'mode', 'preset', 'w', 'h', 'frames', 'start', 'refspp', 'refs',
-  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name']);
+  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling']);
 const INJECT = q.get('noise') === 'inject'
   ? { k: Number(q.get('k') ?? 2), fireflyRate: Number(q.get('ffRate') ?? 0.01), fireflyGain: Number(q.get('ffGain') ?? 20) }
   : undefined;
@@ -84,6 +87,7 @@ const AGE_K = Number(q.get('ageK') ?? 8);
 // &ppd=67 gives FLIP's standard condition (0.7 m from a 0.7 m wide 4K monitor).
 const PPD = Number(q.get('ppd') ?? W / 46.4);
 const SETTLE = 8; // frames after a reset excluded from the "settled" means
+const SAMPLING: Sampling = q.get('sampling') === 'white' ? 'white' : 'blue';
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const log = (s: string) => { status.textContent += s + '\n'; };
@@ -158,9 +162,9 @@ async function main() {
     out.ready = true;
     return;
   }
-  log(`${mode} ${signals.join(',')} path=${path.id}${START ? ` start=${START}` : ''} ${W}x${H} frames=${FRAMES} refspp=${REFSPP}${INJECT ? ' noise=inject' : ''} features=[${[...device.features].join(',')}]`);
+  log(`${mode} ${signals.join(',')} path=${path.id}${START ? ` start=${START}` : ''} ${W}x${H} frames=${FRAMES} refspp=${REFSPP} sampling=${SAMPLING}${INJECT ? ' noise=inject' : ''} features=[${[...device.features].join(',')}]`);
 
-  const scene = new SceneSignals(device, W, H);
+  const scene = new SceneSignals(device, W, H, SAMPLING);
   await scene.init();
   const refsNeeded: Signal[] = REFSPP <= 0 ? [] : q.get('refs') === 'all' ? [...SIGNALS] : signals;
   // what denoisers see as frame.manifest (a capture's manifest has the same fields)
@@ -241,7 +245,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       generator: `examples/realtime-denoiser (analytic WGSL tracer) @ ${info.commit ?? '?'}${info.dirty ? '+dirty' : ''}`,
       width: W, height: H, static: isStaticScene, referenceSpp: refs.length ? Math.round(Math.sqrt(REFSPP)) ** 2 : 0,
       lights: lightsOf(path.at(START).light),
-      extra: { testbed: { path: path.id, start: START, frames: FRAMES, signals, query: location.search, adapter: adapterDescription(device) } },
+      extra: { testbed: { path: path.id, start: START, frames: FRAMES, signals, sampling: SAMPLING, query: location.search, adapter: adapterDescription(device) } },
     });
     captureInfo = { name: CAPTURE, root: info.root, frameBytes, totalBytes: frameBytes * FRAMES };
     log(`capture ${CAPTURE}: ${FRAMES} frames x ${(frameBytes / 2 ** 20).toFixed(1)} MiB -> ${info.root}/captures/${CAPTURE}`);
@@ -369,9 +373,10 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     };
   }
   const summary = {
-    mode, path: path.id, start: START, width: W, height: H, frames: FRAMES, refSpp: REFSPP, inject: INJECT ?? null,
+    mode, path: path.id, start: START, width: W, height: H, frames: FRAMES, refSpp: REFSPP, sampling: SAMPLING, inject: INJECT ?? null,
     capture: captureInfo,
     resets: [0, ...RESETS], ageK: AGE_K, flipEvery: FLIP ? FLIP_EVERY : 0, flipPpd: +PPD.toFixed(2), query: location.search,
+    adapter: adapterDescription(device), userAgent: navigator.userAgent,
     demodulation: DEMODULATION, seconds: +((performance.now() - t0) / 1000).toFixed(1), flipSeconds: +(flipMs / 1000).toFixed(1),
     results,
   };
@@ -412,7 +417,7 @@ async function runBench(device: GPUDevice, scene: SceneSignals, pairs: Pair[], {
     };
     log(`${p.signal}/${p.entry.id}: ${JSON.stringify(results[p.signal][p.entry.id])}`);
   }
-  out.results = { mode: 'bench', path: path.id, width: W, height: H, frames: N, query: location.search, results };
+  out.results = { mode: 'bench', path: path.id, width: W, height: H, frames: N, sampling: SAMPLING, query: location.search, adapter: adapterDescription(device), userAgent: navigator.userAgent, results };
   out.ready = true;
 }
 

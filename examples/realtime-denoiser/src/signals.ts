@@ -28,10 +28,14 @@ import type { FrameCamera } from '@pmndrs/denoiser-ffx';
 import { FAR, FOVY, invert, lookAt, mul, NEAR, perspective } from './camera';
 import type { FrameState } from './paths';
 import { OBJ_RADIUS } from './paths';
+import { loadBlueNoise } from './bluenoise';
 import { INJECT_WGSL, SCENE_WGSL } from './scene';
 
 export type Signal = 'diffuse' | 'specular' | 'shadows';
 export const SIGNALS: Signal[] = ['diffuse', 'specular', 'shadows'];
+
+/** noisy-signal sampler: blue = spatiotemporal blue noise (default), white = PCG */
+export type Sampling = 'blue' | 'white';
 
 export interface InjectOptions { k: number; fireflyRate: number; fireflyGain: number }
 
@@ -71,8 +75,9 @@ export class SceneSignals {
   private groups: Record<string, GPUBindGroup> = {};
   private injectU: GPUBuffer;
   private aspect: number;
+  private blueNoise?: GPUBuffer;
 
-  constructor(readonly device: GPUDevice, readonly width: number, readonly height: number) {
+  constructor(readonly device: GPUDevice, readonly width: number, readonly height: number, readonly sampling: Sampling = 'blue') {
     const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
     this.textures = Object.fromEntries(Object.entries(TEX_FORMATS).map(([name, format]) =>
       [name, device.createTexture({ label: `rt ${name}`, size: [width, height], format, usage })])) as Record<TexName, GPUTexture>;
@@ -85,6 +90,7 @@ export class SceneSignals {
   async init() {
     const d = this.device;
     const mod = d.createShaderModule({ label: 'rt scene', code: SCENE_WGSL });
+    this.blueNoise = await loadBlueNoise(d);
     const inj = d.createShaderModule({ label: 'rt inject', code: INJECT_WGSL });
     for (const [m, name] of [[mod, 'scene'], [inj, 'inject']] as const) {
       const info = await m.getCompilationInfo();
@@ -98,7 +104,7 @@ export class SceneSignals {
     const mk = (entry: string, module = mod) => (this.pipes[entry] = d.createComputePipeline({ label: `rt ${entry}`, layout: 'auto', compute: { module, entryPoint: entry } }));
     this.groups.guides = entries(mk('guides'), { 0: this.u, 1: t.depth, 2: t.viewz, 3: t.normal, 4: t.roughness, 5: t.motion, 6: t.motionZ });
     this.groups.material = entries(mk('material'), { 0: this.u, 7: t.albedo, 8: t.f0 });
-    this.groups.signals = entries(mk('signals'), { 0: this.u, 9: t.diffuse, 10: t.diffuseHitT, 11: t.specular, 12: t.specularHitT, 13: t.visibility, 14: t.occluderDist });
+    this.groups.signals = entries(mk('signals'), { 0: this.u, 9: t.diffuse, 10: t.diffuseHitT, 11: t.specular, 12: t.specularHitT, 13: t.visibility, 14: t.occluderDist, 19: this.blueNoise! });
     for (const s of ['diffuse', 'specular', 'shadows'] as Signal[]) mk(`ref_${s}`);
     mk('inject_rgb', inj); mk('inject_scalar', inj);
     this.groups.inject_diffuse = entries(this.pipes.inject_rgb, { 0: this.injectU, 1: t.diffuseRef, 2: t.diffuse });
@@ -146,7 +152,7 @@ export class SceneSignals {
     const f = new Float32Array(b), u = new Uint32Array(b);
     f.set(invert(vp), 0); f.set(vp, 16); f.set(pvp, 32); f.set(cam.view as Float32Array, 48); f.set(cam.prevView as Float32Array, 64);
     f.set(cur.eye, 80); u[83] = opts.seed ?? index;
-    u[84] = this.width; u[85] = this.height; u[86] = 0;
+    u[84] = this.width; u[85] = this.height; u[86] = 0; u[87] = this.sampling === 'white' ? 0 : 1;
     f.set(cur.light.pos, 88); f[91] = cur.light.radius;
     f.set(cur.light.radiance, 92); f[95] = FAR;
     f.set(cur.obj, 96); f[99] = OBJ_RADIUS;
@@ -209,7 +215,7 @@ export class SceneSignals {
 
   dispose() {
     for (const t of Object.values(this.textures)) t.destroy();
-    this.u.destroy(); this.acc.destroy(); this.injectU.destroy();
+    this.u.destroy(); this.acc.destroy(); this.injectU.destroy(); this.blueNoise?.destroy();
     for (const b of this.refU) b.destroy();
   }
 }

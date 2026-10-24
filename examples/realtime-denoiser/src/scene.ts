@@ -18,6 +18,12 @@
 //   - roughness is perceptual r, GGX alpha = r^2; sky normal = 0, sky depth = 1;
 //   - hit distances are world units, primary segment excluded, 0 = miss.
 //
+// Sampling of the 1-spp signals: u.sampling = 1 (default, `sampling=blue`) draws every
+// sample dimension from spatiotemporal blue noise (src/bluenoise.ts: void-and-cluster
+// mask, per-dimension shift + Cranley-Patterson rotation, R_n per-frame offsets);
+// 0 (`sampling=white`) uses independent PCG streams per pixel, frame and signal.
+// References always use their own stratified grid + white noise.
+//
 // Estimators (all public, textbook):
 //   diffuse   cosine-weighted hemisphere ray (pdf = cos/pi). With a Lambertian
 //             BRDF albedo/pi, f*cos/pdf = albedo, so the DEMODULATED sample is
@@ -46,6 +52,8 @@
 //             distance (0 = unoccluded). A cone direction under the receiver's
 //             horizon counts as occluded with occluder_dist 0 (self-shadow).
 //             Reference visibility = unoccluded fraction of the cone (fractional).
+import { bnWgsl } from './bluenoise';
+
 export const SCENE_WGSL = /* wgsl */ `
 struct U {
   invViewProj: mat4x4f,
@@ -54,7 +62,7 @@ struct U {
   view: mat4x4f,
   prevView: mat4x4f,
   camPos: vec3f, frame: u32,
-  dims: vec2u, seedOffset: u32, _pad0: u32,
+  dims: vec2u, seedOffset: u32, sampling: u32, // sampling: 0 white, 1 blue
   lightPos: vec3f, lightRadius: f32,
   lightRadiance: vec3f, far: f32,
   objPos: vec3f, objRadius: f32,
@@ -82,6 +90,7 @@ struct R { start: u32, count: u32, grid: u32, last: u32 };
 @group(0) @binding(16) var o_refScalar: texture_storage_2d<r32float, write>;
 @group(0) @binding(17) var<uniform> rp: R;
 @group(0) @binding(18) var<storage, read_write> acc: array<vec4f>;
+${bnWgsl(19)}
 
 const PI: f32 = 3.14159265359;
 const MOVING_ID: u32 = 100u;
@@ -432,7 +441,7 @@ fn material(@builtin(global_invocation_id) id: vec3u) {
   textureStore(o_f0, id.xy, vec4f(pr.f0, 1.0));
 }
 
-// 1-spp noisy signals (independent random streams per signal)
+// 1-spp noisy signals (blue noise or independent white-noise streams per signal)
 @compute @workgroup_size(8, 8)
 fn signals(@builtin(global_invocation_id) id: vec3u) {
   if (any(id.xy >= u.dims)) { return; }
@@ -440,7 +449,13 @@ fn signals(@builtin(global_invocation_id) id: vec3u) {
   var d = vec4f(0.0);
   var s = vec4f(0.0);
   var v = vec2f(1.0, 0.0);
-  if (pr.hit) {
+  if (pr.hit && u.sampling == 1u) {
+    // blue noise: dims 0-3 diffuse, 4-7 specular, 8-9 shadows (src/bluenoise.ts)
+    let fr = u.frame + u.seedOffset;
+    d = diffuseSample(pr.p, pr.n, bn2(id.xy, fr, 0u), bn2(id.xy, fr, 2u));
+    s = specularSample(pr.p, pr.n, -pr.rd, pr.rough, pr.f0, bn2(id.xy, fr, 4u), bn2(id.xy, fr, 6u));
+    v = lightSample(pr.p, pr.n, bn2(id.xy, fr, 8u));
+  } else if (pr.hit) {
     var sd = noisySeed(id.xy, 1u);
     d = diffuseSample(pr.p, pr.n, rand2(&sd), rand2(&sd));
     var ss = noisySeed(id.xy, 2u);
