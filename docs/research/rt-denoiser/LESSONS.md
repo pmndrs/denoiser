@@ -80,6 +80,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   timings. A bench loop that waits on `pgrep -f dev/run-headless` before each page gives
   quiet timings while other agents work. — results, 2026-10-25
 
+- zsh: `paths=(${@:-a b c})` is ONE element "a b c" (and an unknown `path=` silently falls
+  back to `orbit` in the test bed, so a sweep "over 3 paths" measured orbit three times).
+  Use `if (( $# )); then paths=($@); else paths=(a b c); fi`. — shadows, 2026-10-25
+- The M5 Pro runs solo benches in two GPU clock states (every pass ×1.3–1.8 in the slow one,
+  FFX too, run to run): a tiny fixed-cost pass is a clock indicator (shadows `tiles` reads
+  0.005 ms fast, 0.007–0.009 slow). Alternate denoisers over several runs and report the
+  fastest run plus the median. — shadows, 2026-10-25
+- The scratchpad folder can be shared with other sessions' files; work in your own subfolder.
+  — shadows, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -139,6 +149,15 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   the tap pixel for a fixed tap depth (perspective dot(n, X_q) = z·(a0 + ax·qx + ay·qy)), and
   the kernel axes projected once give an affine screen Jacobian: same PSNR, ~0.1 ms per
   kernel pass less than full per-tap unproject / projection. — recurrent, 2026-10-25
+
+- `active` is a reserved word in WGSL (Tint: "'active' is a reserved keyword"). — shadows, 2026-10-25
+- r16float is not a core storage-texture format (needs a tier feature); scalar outputs that a
+  later pass writes as storage go to r32float (or rgba16float). — shadows, 2026-10-25
+- Workgroup tile stats for free: when the temporal pass's 8×8 workgroup is exactly a tile,
+  `atomicMin` on the f32 bits of a non-negative value (bit order = value order) and
+  `atomicOr` of flags in workgroup memory, written once by thread 0, replace a separate
+  tile-classification pass; the indirect list then needs only a tiny per-tile pass
+  (`enc.clearBuffer(args, 0, 4)` resets the count, y = z = 1 written once at configure). — shadows, 2026-10-25
 
 ## Conventions
 
@@ -215,6 +234,26 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   catches up and recovered ~2× faster after a light switch on the dev scene. — svgf, 2026-10-25
 - Synthetic scenes: geometry beyond the far plane is "sky" to the denoiser; mark it sky
   in the ground truth too, or the metric scores unfiltered pixels. — svgf, 2026-10-25
+
+- Shadows (1-spp binary visibility): SPEC's 1σ neighbourhood clamp never fires inside a
+  penumbra (5×5 σ ≈ 0.5), so moving shadows lag through it; a window of ~2 standard errors
+  of the 25-sample mean (0.4σ + 0.05) plus "restart at A = 0 when the clamp moved the
+  history" was +2.5 dB overall and +1.7 dB penumbra. Restarting at A = 1 instead left a
+  visible 1/n residue after a light flip (−0.9 dB). Blue-noise samples make the 5×5 mean
+  accurate enough for this. — shadows, 2026-10-25
+- Longer temporal history made shadows *worse* on every moving path, for `accumulate-32` vs
+  `-8` too (orbit 25.8 vs 28.0 dB): repeated bilinear resampling blurs sharp shadows by
+  ~√A px, and moving shadows lag. Catmull-Rom (+0.65 dB) and a per-pixel cap ~W_px² help;
+  the tight clamp matters most. — shadows, 2026-10-25
+- Penumbra-sized spatial kernels: radius ≈ 0.75 × the half-width W = R·h/(D−h), not more —
+  the true profile is S-shaped and a disk as wide as the penumbra rounds its ends (radius
+  1.5·W −0.4 dB, 3·W −1.7 dB on orbit). The noise-driven fallback (H18 total variation, no
+  hit distance) gets within 0.4 dB of the hit-distance sizing on the test bed. — shadows, 2026-10-25
+- Shadow anisotropy (stretch along the projected light by 1/(n·l)) only lost (−0.3 to
+  −2.7 dB): the extra length is extra blur on these scenes. — shadows, 2026-10-25
+- Mean-of-per-frame-dB metrics reward exactness in empty frames: `pan`'s last 17 frames have
+  no shadow (passthrough = 120 dB), so a 1e-3 residue there cost ours 10 dB of the path mean
+  until uniform 5×5 windows snapped the history to the exact value. — shadows, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

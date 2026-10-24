@@ -100,16 +100,20 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       budget for diffuse + specular (5.22 ms). Left open: registry entry (below), budget,
       M2 go/no-go vs native._
 - [~] recurrent-spec **T3 Recurrent specular** (virtual motion, lobe kernels), then the joint budget.
-- [~] shadows **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback). _In progress
-      (shadows agent): `ShadowDenoiser` in `packages/denoiser-realtime` (`src/shadow*.ts`), registry id
-      `shadows`, results in `results/M4.md`; provisional (SPEC v0 §7)._
+- [x] shadows (27eab97 … 86e0262) **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback).
+      _Done, provisional (SPEC v0 §7): `ShadowDenoiser` (`src/shadow.ts`, `src/shaders/shadow.ts`),
+      `ShadowInputs.light` (core, additive), registry id `shadows` (`sh.<option>` settings). 1080p, 7 paths:
+      38.89 dB / penumbra 28.12 / FLIP 0.018 vs FFX 33.57 / 23.50 / 0.038 (better on every path);
+      0.43–0.64 ms solo (FFX 0.50–0.73; `thin` 0.64 over the 0.6 target). Weak spot: first ~5 frames
+      after a reset/disocclusion. `results/M4.md`; PROVENANCE rows marked "yes" need the second
+      reviewer (RULES §8)._
 - [ ] **T5 Occlusion** (AO/SO from normalized hit distance).
 
 ## Found along the way
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
 
-- [ ] API additions proposed by SPEC §1.2/§9: `FrameGuides.f0?`, `ShadowInputs.light`
+- [ ] API additions proposed by SPEC §1.2/§9 (`ShadowInputs.light` done: faade1e, `ShadowLight`): `FrameGuides.f0?`, `ShadowInputs.light`
       (capture `lights` fields), options `inputDemodulated` (default true) and
       `output: 'demodulated' | 'remodulated'` (default demodulated), and how
       `DiffuseSpecularDenoiser.dispatch` returns two outputs — found by spec-author, owner
@@ -277,6 +281,26 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       lights with hard shadows favour SVGF (luminance-weighted à-trous) by ~2 dB, the test
       bed's path-traced GI favours recurrent by ~0.5–1 dB. Tune recurrent on the test bed (or
       captures), sanity-check on the dev page — found by recurrent, owner T1.5 / T3
+
+- [ ] Second review of the shadows PROVENANCE rows marked "yes" (pointers came from
+      `sources/shadows-specular.md`, whose author read NRD README prose; the implementer re-read
+      M12, H18, RTG1-25 §25.2.1 and TR19 slide 72 directly) — found by shadows, owner a reviewer
+      who hasn't read NRD's README
+- [ ] Shadows spec deviations (results/M4.md §7): clamp 0.4σ instead of γ = 1, anti-lag restart
+      at A = 0, uniform snap, W_px² history cap, Catmull-Rom on visibility, g = h/(D−h) stored
+      instead of W_eff, radius 0.75·W, anisotropy off (measured worse), tiles folded into
+      temporal, 40 B/px — found by shadows, owner spec-author (SPEC.md §7)
+- [ ] Shadows: first frames after a reset/disocclusion are ~3 dB below FFX (std1080-orbit frame
+      0: 31.6 vs 34.8 dB); a wider kernel for young histories lost. Try more taps (or a third
+      pass) only where A < 3, or a variance-guided weight there — found by shadows, owner T4 follow-up
+- [ ] Shadows cost on penumbra-heavy views (`thin` 0.64 ms vs ≤ 0.6): temporal writes two
+      unfiltered r32float copies (T and out) that only inactive tiles need; pass 2 could read the
+      history for taps landing in inactive tiles and drop one copy; `shader-f16` — found by shadows, owner T4 follow-up
+- [ ] Shadows: directional-light path untested on images (no capture has a directional light);
+      add a sun to a test-bed path or a synthetic capture — found by shadows, owner `examples/realtime-denoiser`
+- [ ] Shadows section in `packages/denoiser-realtime/README.md` (usage: `new ShadowDenoiser(device)`,
+      `dispatch({ visibility, hitDistance, light }, guides, camera)`, options, M4 numbers); not written
+      by the shadows agent because the README is being edited by the recurrent agent — found by shadows, owner `packages/denoiser-realtime`
 
 ## Probes for the Windows harness
 
