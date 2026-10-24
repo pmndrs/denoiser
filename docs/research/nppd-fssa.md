@@ -14,8 +14,13 @@ _2026-10-24. Papers (authors' copies): [NPPD](https://balint.io/nppd/nppd_paper.
   size class is FSSA's "Mini" ablation: 2.6 M parameters, using the JNDS network from
   Intel's 2022 real-time paper. [Issue #16](https://github.com/pmndrs/denoiser/issues/16) suspects that same line of work is the basis
   of OIDN 3.
-- **Don't port NPPD.** FSSA beats it on every metric in the paper. Even the 2.6 M Mini
+- **NPPD is dropped.** FSSA beats it on every metric in the paper. Even the 2.6 M Mini
   uniform model (no adaptive sampling) beats the 15 M NPPD on most metrics.
+- **The OIDN lock-in is about data, not code** ([below](#oidn-lock-in-and-who-else-is-in-the-game)).
+  OIDN's architecture, weights and training toolkit are all Apache 2.0, and the runtimes
+  are ours. Intel's training data and release schedule are the parts we don't control.
+  No other open, maintained, cross-vendor neural denoiser exists. The hedge is being able
+  to retrain OIDN's architecture on open data, not switching to another vendor.
 - **Don't train anything before OIDN 3 ships.** OIDN 3 is due late November 2026, five
   weeks from now. It brings temporal denoising plus kernel prediction, from Intel, under
   Apache 2.0, with weights. FSSA weights and training data are "coming months".
@@ -153,12 +158,49 @@ checking before any upload: the NPPD repo is Apache 2.0, but the zip and the
 Noisebase data state no license of their own, and the training scenes are commercial
 Evermotion assets. Ask the authors before redistributing anything derived from them.
 
+## OIDN lock-in, and who else is in the game
+
+What depending on OIDN actually means for us:
+
+| piece | open? |
+|---|---|
+| Architecture | Yes. The U-Net is in OIDN's source, and our runtimes implement it. |
+| Weights | Yes, Apache 2.0. We ship our own copies of the `.tza` files. |
+| Training code | Yes, Apache 2.0. [`training/`](https://github.com/RenderKit/oidn/tree/master/training) in the OIDN repo (`preprocess.py`, `train.py`, `export.py` to `.tza`) trains "with image datasets provided by the user". |
+| Runtime | Ours (WGSL, WebNN, ORT). No Intel code runs in the browser. |
+| Training data | **No.** Intel trains on its own private dataset. |
+| Roadmap | **Intel's.** OIDN 3 already slipped from end of 2025 to the second half of 2026. If Intel stopped, we would keep the last weights forever but get no new models. |
+
+So the dependency is Intel's data and release schedule. The hedge is the ability to
+train OIDN-architecture models ourselves. OIDN's toolkit plus an open dataset (NPPD's
+`sampleset_v1`, averaged down to per-pixel images at a chosen spp) would do it, once
+the dataset's license is confirmed. OIDN base is 0.92 M parameters, far cheaper to
+train than NPPD (a guess: around a day on one GPU per run). Treat this as insurance to
+buy if Intel stalls, not work to do now.
+
+Everyone else:
+
+| who | what | usable on the web? |
+|---|---|---|
+| NVIDIA OptiX denoiser, DLSS Ray Reconstruction | neural | No: proprietary, tied to NVIDIA drivers. |
+| AMD FSR Ray Regeneration | neural | No: signed DX12 binary, license forbids reverse engineering. |
+| Apple MetalFX denoised upscaler | neural | No: Metal only. |
+| AMD FidelityFX Denoiser 1.x | hand-tuned shadows and reflections | Yes, already ported (`denoiser/ffx`). |
+| NVIDIA NRD (ReBLUR, ReLAX, SIGMA) | hand-tuned | Maybe; license check pending ([temporal.md](../specs/temporal.md)). |
+| SVGF / A-SVGF / BMFR | classic temporal filters | Yes: published papers, implementable in WGSL. |
+| Academic neural (NPPD, FSSA, KPCN, neural bilateral grid…) | neural | Weights are rarely released. NPPD is the exception; FSSA's are promised. |
+
+OIDN is the only open, maintained, cross-vendor neural denoiser with weights. Most of
+the hedging is already done: we own the runtimes, and the `TemporalDenoiser` API takes
+any source. What's left is non-neural temporal fallbacks (FFX done, SVGF-class later)
+and, if needed, retraining OIDN's architecture ourselves.
+
 ## Is it worth doing?
 
 | question | answer |
 |---|---|
-| NPPD now? | **No.** FSSA supersedes it with the same network, and its 2.6 M Mini variant already beats it. |
-| FSSA now? | **Not yet.** No weights and no training script; data is "coming months". |
+| NPPD? | **Dropped.** FSSA supersedes it with the same network, and its 2.6 M Mini variant already beats it. |
+| FSSA now? | **Watch only.** No weights and no training script; data is "coming months". |
 | Train our own now? | **No.** The compute is cheap; the data and the port aren't. And OIDN 3 lands in about 5 weeks with temporal kernel prediction from Intel, under Apache 2.0, with weights. |
 | A lighter-than-OIDN denoiser? | Only a JNDS-class (~2.6 M) temporal network gets there, and that's likely close to what OIDN 3's real-time mode is. Measure OIDN 3 first. |
 | Anything unique here? | **Adaptive sampling** (FSSA's sampler): the path tracer spends samples where they're visible. OIDN won't do that. It's a renderer feature as much as a denoiser one, and needs per-pixel sample counts in three-gpu-pathtracer. |
@@ -166,15 +208,15 @@ Evermotion assets. Ask the authors before redistributing anything derived from t
 **Decision gates, after OIDN 3 ships:**
 
 1. Port OIDN 3's real-time model ([#16](https://github.com/pmndrs/denoiser/issues/16)) on the WGSL/WebNN runtimes and measure 1080p.
-2. If it's too slow, or FSSA publishes weights: start the FSSA Mini track. Export,
-   port the gather pyramid, benchmark.
-3. If we want adaptive sampling in three-gpu-pathtracer, train FSSA Mini on our inputs
-   ($1–2.5k compute; the data must be public by then).
+2. If it's too slow for real time, or Intel stalls: train a smaller OIDN-architecture
+   (or JNDS-class) model ourselves with OIDN's toolkit on open data.
+3. FSSA only if it publishes weights *and* we want adaptive sampling in
+   three-gpu-pathtracer (training FSSA Mini on our inputs: $1–2.5k compute).
 4. Otherwise close this as "covered by OIDN 3".
 
 ## Sources
 
 - NPPD: [paper](https://balint.io/nppd/nppd_paper.pdf), [supplementary](https://balint.io/nppd/nppd_supplementary.pdf), [project](https://balint.io/nppd/), [code](https://github.com/balintio/nppd), [Noisebase](https://github.com/balintio/noisebase), [SampleSet v1](https://balint.io/noisebase/datasets/sampleset_v1.html)
 - FSSA: [paper](https://balint.io/fssa/fssa.pdf), [project](https://balint.io/fssa/), [code](https://github.com/balintio/fssa), [arXiv:2602.08642](https://arxiv.org/abs/2602.08642)
-- OIDN 3: [CG Channel, 2026-01](https://www.cgchannel.com/2026/01/open-image-denoise-3-will-support-temporal-denoising/), [OIDN milestone](https://github.com/RenderKit/oidn/milestone/1), JNDS: [Intel, 2022](https://www.intel.com/content/www/us/en/developer/articles/technical/temporally-stable-denoising-and-supersampling.html)
+- OIDN: [training toolkit](https://github.com/RenderKit/oidn/tree/master/training); OIDN 3: [CG Channel, 2026-01](https://www.cgchannel.com/2026/01/open-image-denoise-3-will-support-temporal-denoising/), [OIDN milestone](https://github.com/RenderKit/oidn/milestone/1), JNDS: [Intel, 2022](https://www.intel.com/content/www/us/en/developer/articles/technical/temporally-stable-denoising-and-supersampling.html)
 - GPU prices: [RunPod H100, 2026](https://www.spheron.network/blog/runpod-h100-pricing-2026/), [Lambda H100, 2026](https://www.spheron.network/blog/lambda-cloud-h100-pricing-2026/)

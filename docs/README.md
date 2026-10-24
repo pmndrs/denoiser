@@ -39,7 +39,7 @@ covers install, quick start, the API sketch, and the device-lifetime rules.
 
 - [nppd-fssa.md](research/nppd-fssa.md) — NPPD and its follow-up FSSA (MPI
   Informatik): what's released, model sizes vs OIDN, training cost, where weights
-  would live, and why we wait for OIDN 3. Links to the papers are at the top.
+  would live, OIDN lock-in and the alternatives, and why we wait for OIDN 3.
 
 ## Archive (`archive/`)
 
