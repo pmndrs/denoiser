@@ -39,6 +39,8 @@
 //   &ageK=8                   "disoccluded" region = < ageK frames of valid history
 //   &n=100                    bench frames
 //   eval: &show=age puts the ground-truth history age in panel 1 (white = >= ageK frames)
+//         &dump=F&dumpRect=x,y,w,h  read back that crop of frame F's noisy / denoised / reference
+//         (channel .r for scalar signals, rgb otherwise) into results.dumps (occlusion-crops.mjs)
 //   view only: &show=<texture> [&dscale=] puts a SceneSignals texture in panel 1;
 //              &err=<gain> error heat map in panel 2; &stopAt=N freezes at frame N
 //
@@ -78,7 +80,7 @@ const CAPTURE = mode === 'capture'
   : null;
 // URL keys the test bed reads itself; every other key is a denoiser setting (registry `settings`)
 const TESTBED_KEYS = new Set(['signal', 'signals', 'denoiser', 'path', 'mode', 'preset', 'w', 'h', 'frames', 'start', 'refspp', 'refs',
-  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling']);
+  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling', 'dump', 'dumpRect']);
 const INJECT = q.get('noise') === 'inject'
   ? { k: Number(q.get('k') ?? 2), fireflyRate: Number(q.get('ffRate') ?? 0.01), fireflyGain: Number(q.get('ffGain') ?? 20) }
   : undefined;
@@ -264,6 +266,12 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
   const view = new PanelView(device, [...document.querySelectorAll<HTMLCanvasElement>('canvas.panel')], W, H);
   const t0 = performance.now();
   let flipMs = 0;
+  const DUMP = q.has('dump') ? Number(q.get('dump')) : -1;
+  const dumpRect = (q.get('dumpRect') ?? `0,0,${Math.min(W, 256)},${Math.min(H, 256)}`).split(',').map(Number) as [number, number, number, number];
+  const dumps: Record<string, Record<string, number[]>> = {};
+  const dump = async (sig: Signal, name: string, tex: GPUTexture) => {
+    (dumps[sig] ??= {})[name] = Array.from(await readRect(device, tex, dumpRect, scene.signal(sig).scalar ? 1 : 3), (x) => +x.toFixed(5));
+  };
 
   for (let f = 0; f < FRAMES; f++) {
     const { reset, cur, prev } = stateAt(f);
@@ -284,6 +292,10 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       });
       p.frames.push(r);
       if (f >= 2) snapTimings(p);
+      if (f === DUMP) {
+        if (!dumps[p.signal]) { await dump(p.signal, 'noisy', sig.noisy); await dump(p.signal, 'ref', sig.ref); }
+        await dump(p.signal, p.entry.id, den);
+      }
     }
     if (packer && f % FLIP_EVERY === FLIP_EVERY - 1) {
       const tf = performance.now();
@@ -409,8 +421,9 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     adapter: adapterDescription(device), userAgent: navigator.userAgent,
     demodulation: DEMODULATION, seconds: +((performance.now() - t0) / 1000).toFixed(1), flipSeconds: +(flipMs / 1000).toFixed(1),
     results,
+    ...(DUMP >= 0 ? { dumps: { frame: DUMP, rect: dumpRect, data: dumps } } : {}),
   };
-  const brief = JSON.parse(JSON.stringify(summary, (k, v) => (k === 'perFrame' ? undefined : v)));
+  const brief = JSON.parse(JSON.stringify(summary, (k, v) => (k === 'perFrame' || k === 'dumps' ? undefined : v)));
   log(JSON.stringify(brief, null, 1));
   out.results = summary;
   out.ready = true;
@@ -487,6 +500,36 @@ function runView(device: GPUDevice, scene: SceneSignals, pair: Pair, refs: Signa
   };
   out.ready = STOP_AT < 0;
   tick();
+}
+
+/** Crop [x, y, w, h] of a float texture, `ch` channels (r or rgb) per pixel, row-major (eval &dump=). */
+async function readRect(device: GPUDevice, tex: GPUTexture, [x, y, w, h]: [number, number, number, number], ch: number): Promise<Float32Array> {
+  const code = /* wgsl */ `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read_write> o: array<f32>;
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (id.x >= ${w}u || id.y >= ${h}u) { return; }
+  let c = textureLoad(src, vec2u(${x}u, ${y}u) + id.xy, 0);
+  let i = (id.y * ${w}u + id.x) * ${ch}u;
+  ${ch === 1 ? 'o[i] = c.r;' : 'o[i] = c.r; o[i + 1u] = c.g; o[i + 2u] = c.b;'}
+}`;
+  const pipe = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code }), entryPoint: 'main' } });
+  const size = w * h * ch * 4;
+  const buf = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const rb = device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const enc = device.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(pipe);
+  pass.setBindGroup(0, device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: tex.createView() }, { binding: 1, resource: { buffer: buf } }] }));
+  pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8));
+  pass.end();
+  enc.copyBufferToBuffer(buf, 0, rb, 0, size);
+  device.queue.submit([enc.finish()]);
+  await rb.mapAsync(GPUMapMode.READ);
+  const out = new Float32Array(rb.getMappedRange().slice(0));
+  rb.unmap(); buf.destroy(); rb.destroy();
+  return out;
 }
 
 function adapterDescription(device: GPUDevice) {
