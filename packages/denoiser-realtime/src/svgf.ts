@@ -1,19 +1,20 @@
-// SvgfSignal: one signal's SVGF / A-SVGF pipeline (resources, pipelines, and
-// the per-frame pass sequence). The public classes in denoisers.ts compose one
-// or two of these behind a shared GuidePass.
+// SvgfPipeline: SVGF / A-SVGF for one or two signals (resources, pipelines and
+// the per-frame pass sequence). The public classes in denoisers.ts wrap it
+// behind a shared GuidePass. With two signals each pass handles both.
 //
 //   [gradient_create, gradient_atrous_0..G-1]   (antiLag only, 1/3 resolution)
 //   temporal      input + history -> accum[cur] (rgb, n), moments[cur]
-//   variance      accum, moments -> ping (rgb, variance)
+//   variance      accum, moments -> ping (rgb, standard deviation)
 //   atrous_0..K-1 ping <-> pong; iteration 0 also writes hist (feedback);
 //                 the last writes the output (optionally remodulated)
 import type { PassTimer } from './common';
-import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
+import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res } from './gpu';
 import type { GuidePass } from './guides';
-import { GRADIENT_DOWNSAMPLE, gradientAtrousWgsl, gradientCreateWgsl } from './shaders/gradient';
+import type { PassDef } from './shaders/bindings';
+import { GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientCreatePass } from './shaders/gradient';
 import {
-  atrousWgsl, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN, PARAMS_SIZE,
-  temporalWgsl, varianceWgsl, type SignalKind,
+  atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
+  PARAMS_SIZE, temporalPass, variancePass, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -142,83 +143,109 @@ export interface SignalFrame {
   gradient?: GPUTexture;
 }
 
-export class SvgfSignal {
-  private params: GPUBuffer;
+/** Per-signal GPU state. */
+class SignalState {
+  params: GPUBuffer;
+  accum: GPUTexture[] = [];
+  moments: GPUTexture[] = [];
+  hist?: GPUTexture;
+  ping: GPUTexture[] = [];
+  grad: GPUTexture[] = [];   // g0a, g1a, g0b, g1b
+  out?: GPUTexture;
+
+  constructor(device: GPUDevice, readonly kind: SignalKind, readonly opts: ResolvedOptions, readonly label: string) {
+    this.params = device.createBuffer({ label: `${label} params`, size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  }
+
+  destroyTargets() {
+    for (const t of [...this.accum, ...this.moments, ...this.ping, ...this.grad]) t.destroy();
+    this.hist?.destroy();
+    this.out?.destroy();
+    this.accum = []; this.moments = []; this.ping = []; this.grad = [];
+    this.hist = this.out = undefined;
+  }
+}
+
+/** Options that change the pass structure: signals in one pipeline must agree on these. */
+export function structuralKey(o: ResolvedOptions) {
+  return [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations].join('|');
+}
+
+/**
+ * SVGF / A-SVGF for one or two signals. With two signals every pass handles both
+ * per thread (SPEC §4.1): geometry, reprojection and taps are loaded once.
+ * Structural options (iterations, kernel, feedback, antiLag mode) come from the
+ * first signal; numeric ones are per signal. Geometry tolerances (plane
+ * distance, normal threshold) of the first signal are shared.
+ */
+export class SvgfPipeline {
+  private sigs: SignalState[];
   private iterParams: GPUBuffer[] = [];
-  private gradIterParams: GPUBuffer[] = [];
   private layouts: Record<string, GPUBindGroupLayout> = {};
   private pipes: Record<string, GPUComputePipeline> = {};
-  private accum: GPUTexture[] = [];
-  private moments: GPUTexture[] = [];
-  private hist?: GPUTexture;
-  private ping: GPUTexture[] = [];
-  private grad: GPUTexture[] = [];   // g0a, g1a, g0b, g1b
-  private out?: GPUTexture;
+  private defs: Record<string, PassDef> = {};
   private cur = 0;
   private width = 0;
   private height = 0;
   private gw = 0;
   private gh = 0;
+  private opts: ResolvedOptions;
 
-  constructor(private device: GPUDevice, readonly kind: SignalKind, readonly opts: ResolvedOptions, private label: string) {
+  constructor(private device: GPUDevice, signals: { kind: SignalKind; opts: ResolvedOptions }[], private label: string) {
     const d = device;
-    this.params = d.createBuffer({ label: `${label} params`, size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-    const K = opts.atrousIterations;
-    for (let i = 0; i < Math.max(K, opts.gradientIterations); i++) {
+    this.sigs = signals.map((s) => new SignalState(d, s.kind, s.opts, signals.length > 1 ? `${label} ${s.kind}` : label));
+    this.opts = signals[0].opts;
+    const o = this.opts;
+    const kinds = signals.map((s) => s.kind);
+    for (let i = 0; i < Math.max(o.atrousIterations, o.gradientIterations); i++) {
       const b = d.createBuffer({ label: `${label} iter ${i}`, size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
       d.queue.writeBuffer(b, 0, new Int32Array([1 << i, i, 0, 0]));
       this.iterParams.push(b);
     }
-    this.gradIterParams = this.iterParams;
-
-    this.layouts.temporal = makeLayout(d, `${label} temporal`,
-      ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'F', 'f', 'f', 's', 'f', 'rgba16float', 'rg32float']);
-    this.layouts.variance = makeLayout(d, `${label} variance`, ['u', 'u', 'f', 'f', 'i', 'rgba16float', 'i']);
-    const atrousBase: Parameters<typeof makeLayout>[2] = ['u', 'u', 'u', 'f', 'i', 'f', 'f', 'rgba16float', 'i'];
-    this.layouts.atrous = makeLayout(d, `${label} atrous`, atrousBase);
-    this.layouts.atrousHist = makeLayout(d, `${label} atrous+hist`, [...atrousBase, 'rgba16float']);
-    this.pipes.temporal = makePipeline(d, `${label} temporal`, temporalWgsl(kind), this.layouts.temporal);
-    this.pipes.variance = makePipeline(d, `${label} variance`, varianceWgsl(kind), this.layouts.variance);
+    const make = (name: string, def: PassDef) => {
+      this.defs[name] = def;
+      this.layouts[name] = makeLayout(d, `${label} ${name}`, def.entries.map((e) => e.kind));
+      this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);
+    };
+    make('temporal', temporalPass(kinds));
+    make('variance', variancePass(kinds));
+    const box = o.kernel === '3x3';
     for (const writeHist of [false, true]) {
       for (const last of [false, true]) {
-        if (writeHist && !opts.feedback) continue;
-        this.pipes[`atrous_${+writeHist}${+last}`] = makePipeline(d, `${label} atrous${writeHist ? ' hist' : ''}${last ? ' last' : ''}`,
-          atrousWgsl(kind, { writeHist, last }, opts.kernel === '3x3'), writeHist ? this.layouts.atrousHist : this.layouts.atrous);
+        if (writeHist && !o.feedback) continue;
+        make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, { writeHist, last, box }));
       }
     }
-    if (opts.antiLag !== 'off') {
-      this.layouts.gcreate = makeLayout(d, `${label} gradient create`,
-        ['u', 'u', 'f', 'i', 'i', 'f', 'f', 'f', 'f', 'rgba32float', 'rgba32float', 'i']);
-      this.layouts.gatrous = makeLayout(d, `${label} gradient atrous`, ['u', 'u', 'f', 'f', 'rgba32float', 'rgba32float']);
-      this.pipes.gcreate = makePipeline(d, `${label} gradient create`, gradientCreateWgsl(opts.antiLag === 'gradient'), this.layouts.gcreate);
-      this.pipes.gatrous = makePipeline(d, `${label} gradient atrous`, gradientAtrousWgsl(), this.layouts.gatrous);
+    if (o.antiLag !== 'off') {
+      make('gcreate', gradientCreatePass(kinds.length, o.antiLag === 'gradient'));
+      make('gatrous', gradientAtrousPass(kinds.length));
     }
   }
 
   configure(width: number, height: number) {
-    this.destroyTargets();
     this.width = width;
     this.height = height;
     const d = this.device;
-    const tex = (name: string, format: GPUTextureFormat, w = width, h = height, extra = 0) => d.createTexture({
-      label: `${this.label} ${name}`, size: [w, h], format, usage: storageTex() | extra,
-    });
-    this.accum = [tex('accum0', 'rgba16float'), tex('accum1', 'rgba16float')];
-    this.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];
-    if (this.opts.feedback) this.hist = tex('history', 'rgba16float');
-    this.ping = [tex('ping', 'rgba16float'), tex('pong', 'rgba16float')];
-    this.out = tex('output', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
-    if (this.opts.antiLag !== 'off') {
-      this.gw = Math.ceil(width / GRADIENT_DOWNSAMPLE);
-      this.gh = Math.ceil(height / GRADIENT_DOWNSAMPLE);
-      this.grad = ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh));
+    this.gw = Math.ceil(width / GRADIENT_DOWNSAMPLE);
+    this.gh = Math.ceil(height / GRADIENT_DOWNSAMPLE);
+    for (const s of this.sigs) {
+      s.destroyTargets();
+      const tex = (name: string, format: GPUTextureFormat, w = width, h = height, extra = 0) => d.createTexture({
+        label: `${s.label} ${name}`, size: [w, h], format, usage: storageTex() | extra,
+      });
+      s.accum = [tex('accum0', 'rgba16float'), tex('accum1', 'rgba16float')];
+      s.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];
+      if (this.opts.feedback) s.hist = tex('history', 'rgba16float');
+      s.ping = [tex('ping', 'rgba16float'), tex('pong', 'rgba16float')];
+      s.out = tex('output', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
+      if (this.opts.antiLag !== 'off') s.grad = ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh));
+      this.writeParams(s);
     }
     this.cur = 0;
-    this.writeParams();
   }
 
-  private writeParams() {
-    const o = this.opts;
+  private writeParams(s: SignalState) {
+    const o = s.opts;
     const f = new Float32Array(PARAMS_SIZE / 4);
     const u = new Uint32Array(f.buffer);
     const i32 = new Int32Array(f.buffer);
@@ -227,91 +254,98 @@ export class SvgfSignal {
     f[8] = o.varianceRampFrames; f[9] = o.spatialVarianceBoost;
     f[10] = o.specularHistoryScale; f[11] = o.specularHistoryCurve;
     f[12] = o.lobeFraction; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
-    u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (o.antiLag !== 'off' ? P_ANTILAG : 0)
-      | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'gradient' ? P_GRADIENT_INPUT : 0)
-      | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
+    u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (this.opts.antiLag !== 'off' ? P_ANTILAG : 0)
+      | (o.remodulate ? P_REMODULATE : 0) | (this.opts.antiLag === 'gradient' ? P_GRADIENT_INPUT : 0)
+      | (this.opts.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
       | (o.specularNormalWeight === 'power' ? P_SPEC_NORMAL_POWER : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
-    this.device.queue.writeBuffer(this.params, 0, f);
+    this.device.queue.writeBuffer(s.params, 0, f);
   }
 
-  get output(): GPUTexture | undefined { return this.out; }
+  /** Outputs of the last frame, one per signal. */
+  get outputs(): (GPUTexture | undefined)[] { return this.sigs.map((s) => s.out); }
 
-  /** @internal Debug access: 'accum' (rgb, history length) of the last frame, 'gradient' (A-SVGF). */
-  debugTexture(name: 'accum' | 'gradient'): GPUTexture | undefined {
-    if (name === 'accum') return this.accum[this.cur ^ 1];
-    return this.grad[this.opts.gradientIterations % 2 === 0 ? 0 : 2];
+  /** @internal Debug access (signal 0): 'accum' (rgb, history length) of the last frame, 'gradient'. */
+  debugTexture(name: 'accum' | 'gradient', signal = 0): GPUTexture | undefined {
+    const s = this.sigs[signal];
+    if (name === 'accum') return s.accum[this.cur ^ 1];
+    return s.grad[this.opts.gradientIterations % 2 === 0 ? 0 : 2];
   }
 
-  /** Records this signal's passes. Returns the output texture. */
-  encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frame: SignalFrame,
-    motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string): GPUTexture {
-    const d = this.device;
+  private group(name: string, res: Record<string, Res>): GPUBindGroup {
+    return makeBindGroup(this.device, this.layouts[name], this.defs[name].entries.map((e) => {
+      const r = res[e.name];
+      if (!r) throw new Error(`${this.label}: no resource for binding '${e.name}' of ${name}`);
+      return r;
+    }));
+  }
+
+  /** Records the passes for all signals (frames in signal order). */
+  encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frames: SignalFrame[],
+    motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string) {
     const o = this.opts;
     const W = this.width, H = this.height;
     const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
     const name = (n: string) => prefix + n;
-    const accumCur = this.accum[this.cur], accumPrev = this.accum[this.cur ^ 1];
-    const momCur = this.moments[this.cur], momPrev = this.moments[this.cur ^ 1];
-    const colorHist = o.feedback ? this.hist! : accumPrev;
-    const mz = motionZ ?? gp.dummy;
+    const c = this.cur;
+    const shared: Record<string, Res> = {
+      F: gp.frame, geoCur: gp.geoCur, geoPrev: gp.geoPrev, geoGrad: gp.geoGrad,
+      motionTex: motion, motionZTex: motionZ ?? gp.dummy, smp: gp.sampler,
+    };
+    const per = (fn: (s: SignalState, f: SignalFrame, i: number) => Record<string, Res>) => {
+      const r: Record<string, Res> = { ...shared };
+      this.sigs.forEach((s, i) => {
+        r[`P${i}`] = s.params;
+        for (const [k, v] of Object.entries(fn(s, frames[i], i))) r[`${k}${i}`] = v;
+      });
+      return r;
+    };
 
-    let gradResult: GPUTexture = gp.dummy32;
+    const gradResult: GPUTexture[] = this.sigs.map(() => gp.dummy32);
     if (o.antiLag !== 'off') {
-      const [g0a, g1a, g0b, g1b] = this.grad;
-      const ggx = Math.ceil(this.gw / 8), ggy = Math.ceil(this.gh / 8);
-      runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, makeBindGroup(d, this.layouts.gcreate, [
-        gp.frame, this.params, frame.radiance, gp.geoCur, gp.geoPrev, motion, mz, accumPrev,
-        frame.gradient ?? gp.dummy32, g0a, g1a, gp.geoGrad,
-      ]), Math.ceil(W / 9), Math.ceil(H / 9));
-      let src = [g0a, g1a], dst = [g0b, g1b];
-      for (let i = 0; i < o.gradientIterations; i++) {
-        runPass(enc, timer, name(`gradient_atrous_${i}`), this.pipes.gatrous, makeBindGroup(d, this.layouts.gatrous, [
-          this.params, this.gradIterParams[i], src[0], src[1], dst[0], dst[1],
-        ]), ggx, ggy);
-        [src, dst] = [dst, src];
+      runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, this.group('gcreate', per((s, f) => ({
+        input: f.radiance, accumPrev: s.accum[c ^ 1], gradInput: f.gradient ?? gp.dummy32, outG0: s.grad[0], outG1: s.grad[1],
+      }))), Math.ceil(W / 9), Math.ceil(H / 9));
+      let a = 0;
+      for (let it = 0; it < o.gradientIterations; it++) {
+        const res = per((s) => ({ inG0: s.grad[a], inG1: s.grad[a + 1], outG0: s.grad[a ^ 2], outG1: s.grad[(a ^ 2) + 1] }));
+        res.It = this.iterParams[it];
+        runPass(enc, timer, name(`gradient_atrous_${it}`), this.pipes.gatrous, this.group('gatrous', res),
+          Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+        a ^= 2;
       }
-      gradResult = src[0];
+      this.sigs.forEach((s, i) => { gradResult[i] = s.grad[a]; });
     }
 
-    runPass(enc, timer, name('temporal'), this.pipes.temporal, makeBindGroup(d, this.layouts.temporal, [
-      gp.frame, this.params, frame.radiance, gp.geoCur, gp.geoPrev, motion, mz,
-      colorHist, accumPrev, momPrev, gp.sampler, gradResult, accumCur, momCur,
-    ]), gx, gy);
-    runPass(enc, timer, name('variance'), this.pipes.variance, makeBindGroup(d, this.layouts.variance, [
-      gp.frame, this.params, accumCur, momCur, gp.geoCur, this.ping[0], gp.geoGrad,
-    ]), gx, gy);
+    runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({
+      input: f.radiance, colorHist: o.feedback ? s.hist! : s.accum[c ^ 1],
+      momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
+    }))), gx, gy);
+    runPass(enc, timer, name('variance'), this.pipes.variance, this.group('variance', per((s) => ({
+      accumCur: s.accum[c], momentsCur: s.moments[c], outPing: s.ping[0],
+    }))), gx, gy);
 
     const K = o.atrousIterations;
-    const demod = frame.demodulation ?? gp.dummy;
-    let src = this.ping[0], dst = this.ping[1];
-    for (let i = 0; i < K; i++) {
-      const last = i === K - 1;
-      const writeHist = i === 0 && o.feedback;
-      const target = last ? this.out! : dst;
-      const res = [gp.frame, this.params, this.iterParams[i], src, gp.geoCur, accumCur, demod, target, gp.geoGrad];
-      if (writeHist) res.push(this.hist!);
-      runPass(enc, timer, name(`atrous_${i}`), this.pipes[`atrous_${+writeHist}${+last}`],
-        makeBindGroup(d, writeHist ? this.layouts.atrousHist : this.layouts.atrous, res), gx, gy);
-      [src, dst] = [dst, src];
+    let src = 0;
+    for (let it = 0; it < K; it++) {
+      const last = it === K - 1;
+      const writeHist = it === 0 && o.feedback;
+      const key = `atrous_${+writeHist}${+last}`;
+      const res = per((s, f) => ({
+        src: s.ping[src], accumCur: s.accum[c], demod: f.demodulation ?? gp.dummy,
+        dst: last ? s.out! : s.ping[src ^ 1], ...(writeHist ? { hist: s.hist! } : {}),
+      }));
+      res.I = this.iterParams[it];
+      runPass(enc, timer, name(`atrous_${it}`), this.pipes[key], this.group(key, res), gx, gy);
+      src ^= 1;
     }
-    return this.out!;
   }
 
   /** Call once per frame after encode(). */
   endFrame() { this.cur ^= 1; }
 
-  private destroyTargets() {
-    for (const t of [...this.accum, ...this.moments, ...this.ping, ...this.grad]) t.destroy();
-    this.hist?.destroy();
-    this.out?.destroy();
-    this.accum = []; this.moments = []; this.ping = []; this.grad = [];
-    this.hist = this.out = undefined;
-  }
-
   dispose() {
-    this.destroyTargets();
-    this.params.destroy();
+    for (const s of this.sigs) { s.destroyTargets(); s.params.destroy(); }
     for (const b of this.iterParams) b.destroy();
   }
 }

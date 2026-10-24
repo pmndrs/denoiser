@@ -8,7 +8,7 @@ import type {
 import { PassTimer } from './common';
 import { GuidePass } from './guides';
 import {
-  resolveOptions, SvgfSignal, type ResolvedOptions, type SignalFrame, type SpecularSvgfOptions,
+  resolveOptions, structuralKey, SvgfPipeline, type ResolvedOptions, type SignalFrame, type SpecularSvgfOptions,
   type SvgfOptions,
 } from './svgf';
 
@@ -68,14 +68,14 @@ function passCount(o: ResolvedOptions) {
 export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> {
   readonly name: string;
   private base: Base;
-  private signal: SvgfSignal;
+  private signal: SvgfPipeline;
   readonly options: Readonly<ResolvedOptions>;
 
   constructor(device: GPUDevice, options: DiffuseDenoiserOptions = {}) {
     this.options = resolveOptions(options);
     this.name = `${options.filter ?? 'svgf'}-diffuse`;
     this.base = new Base(device, this.name, this.options.timestamps, passCount(this.options) + 1);
-    this.signal = new SvgfSignal(device, 'diffuse', this.options, this.name);
+    this.signal = new SvgfPipeline(device, [{ kind: 'diffuse', opts: this.options }], this.name);
   }
 
   get device() { return this.base.device; }
@@ -89,10 +89,10 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
   dispatch(inputs: RealtimeDiffuseInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     const frame: SignalFrame = { radiance: inputs.radiance, demodulation: inputs.demodulation ?? guides.albedo, gradient: inputs.gradient };
     this.base.run(this.name, guides, camera, [['radiance', inputs.radiance]], (enc, timer, gp) => {
-      this.signal.encode(enc, timer, gp, frame, guides.motion, guides.motionZ, '');
+      this.signal.encode(enc, timer, gp, [frame], guides.motion, guides.motionZ, '');
     });
     this.signal.endFrame();
-    return this.signal.output!;
+    return this.signal.outputs[0]!;
   }
 
   resetHistory(): void { this.base.resetHistory(); }
@@ -116,14 +116,14 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
 export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs> {
   readonly name: string;
   private base: Base;
-  private signal: SvgfSignal;
+  private signal: SvgfPipeline;
   readonly options: Readonly<ResolvedOptions>;
 
   constructor(device: GPUDevice, options: SpecularDenoiserOptions = {}) {
     this.options = resolveOptions(options);
     this.name = `${options.filter ?? 'svgf'}-specular`;
     this.base = new Base(device, this.name, this.options.timestamps, passCount(this.options) + 1);
-    this.signal = new SvgfSignal(device, 'specular', this.options, this.name);
+    this.signal = new SvgfPipeline(device, [{ kind: 'specular', opts: this.options }], this.name);
   }
 
   get device() { return this.base.device; }
@@ -138,10 +138,10 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
     if (!guides.roughness) throw new Error(`${this.name}: guides.roughness is required`);
     const frame: SignalFrame = { radiance: inputs.radiance, demodulation: inputs.demodulation, gradient: inputs.gradient };
     this.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance]], (enc, timer, gp) => {
-      this.signal.encode(enc, timer, gp, frame, guides.motion, guides.motionZ, '');
+      this.signal.encode(enc, timer, gp, [frame], guides.motion, guides.motionZ, '');
     });
     this.signal.endFrame();
-    return this.signal.output!;
+    return this.signal.outputs[0]!;
   }
 
   resetHistory(): void { this.base.resetHistory(); }
@@ -158,14 +158,16 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
 /**
  * Diffuse + specular in one dispatch sequence with a shared guide prepass.
  * Conforms to TemporalDenoiser: `dispatch()` returns the diffuse output; use
- * `dispatchBoth()` (or `outputs` after `dispatch()`) for both textures.
- * Timings are prefixed `diffuse/` and `specular/` (plus `prepass`, `total`).
+ * `dispatchBoth()` (or `outputs` after `dispatch()`) for both textures. Each pass
+ * processes both signals per thread (SPEC §4.1) unless their structural options
+ * (atrousIterations, kernel, feedback, antiLag, gradientIterations) differ; then
+ * they run separately and timings are prefixed `diffuse/` and `specular/`.
  */
 export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuseSpecularInputs> {
   readonly name: string;
   private base: Base;
-  private diffuse: SvgfSignal;
-  private specular: SvgfSignal;
+  /** One joint pipeline (both signals per dispatch), or two when structural options differ. */
+  private pipes: SvgfPipeline[];
   readonly options: { readonly diffuse: Readonly<ResolvedOptions>; readonly specular: Readonly<ResolvedOptions> };
 
   constructor(device: GPUDevice, options: DiffuseSpecularDenoiserOptions = {}) {
@@ -175,10 +177,14 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
       specular: resolveOptions({ ...shared, ...sOpts }),
     };
     this.name = `${options.filter ?? 'svgf'}-diffuse-specular`;
-    const timestamps = this.options.diffuse.timestamps || this.options.specular.timestamps;
-    this.base = new Base(device, this.name, timestamps, passCount(this.options.diffuse) + passCount(this.options.specular) + 1);
-    this.diffuse = new SvgfSignal(device, 'diffuse', this.options.diffuse, `${this.name} diffuse`);
-    this.specular = new SvgfSignal(device, 'specular', this.options.specular, `${this.name} specular`);
+    const { diffuse: od, specular: os } = this.options;
+    const timestamps = od.timestamps || os.timestamps;
+    const joint = structuralKey(od) === structuralKey(os);
+    this.base = new Base(device, this.name, timestamps, passCount(od) + (joint ? 0 : passCount(os)) + 1);
+    this.pipes = joint
+      ? [new SvgfPipeline(device, [{ kind: 'diffuse', opts: od }, { kind: 'specular', opts: os }], this.name)]
+      : [new SvgfPipeline(device, [{ kind: 'diffuse', opts: od }], `${this.name} diffuse`),
+        new SvgfPipeline(device, [{ kind: 'specular', opts: os }], `${this.name} specular`)];
   }
 
   get device() { return this.base.device; }
@@ -186,29 +192,31 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
 
   configure(config: TemporalConfig): void {
     this.base.configure(config);
-    this.diffuse.configure(config.width, config.height);
-    this.specular.configure(config.width, config.height);
+    for (const p of this.pipes) p.configure(config.width, config.height);
   }
 
   /** Both outputs of the last dispatch (valid until the next dispatch / configure / dispose). */
   get outputs(): DiffuseSpecularOutputs | undefined {
-    const d = this.diffuse.output, s = this.specular.output;
+    const [d, s] = this.pipes.length === 1 ? this.pipes[0].outputs : [this.pipes[0].outputs[0], this.pipes[1].outputs[0]];
     return d && s ? { diffuse: d, specular: s } : undefined;
   }
 
   dispatchBoth(inputs: RealtimeDiffuseSpecularInputs, guides: FrameGuides, camera: FrameCamera): DiffuseSpecularOutputs {
     if (!guides.roughness) throw new Error(`${this.name}: guides.roughness is required`);
     const { diffuse: di, specular: si } = inputs;
+    const fd: SignalFrame = { radiance: di.radiance, demodulation: di.demodulation ?? guides.albedo, gradient: di.gradient };
+    const fs: SignalFrame = { radiance: si.radiance, demodulation: si.demodulation, gradient: si.gradient };
     this.base.run(this.name, guides, camera, [
       ['diffuse.radiance', di.radiance], ['specular.radiance', si.radiance], ['specular.hitDistance', si.hitDistance],
     ], (enc, timer, gp) => {
-      this.diffuse.encode(enc, timer, gp, { radiance: di.radiance, demodulation: di.demodulation ?? guides.albedo, gradient: di.gradient },
-        guides.motion, guides.motionZ, 'diffuse/');
-      this.specular.encode(enc, timer, gp, { radiance: si.radiance, demodulation: si.demodulation, gradient: si.gradient },
-        guides.motion, guides.motionZ, 'specular/');
+      if (this.pipes.length === 1) {
+        this.pipes[0].encode(enc, timer, gp, [fd, fs], guides.motion, guides.motionZ, '');
+      } else {
+        this.pipes[0].encode(enc, timer, gp, [fd], guides.motion, guides.motionZ, 'diffuse/');
+        this.pipes[1].encode(enc, timer, gp, [fs], guides.motion, guides.motionZ, 'specular/');
+      }
     });
-    this.diffuse.endFrame();
-    this.specular.endFrame();
+    for (const p of this.pipes) p.endFrame();
     return this.outputs!;
   }
 
@@ -220,8 +228,7 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
   resetHistory(): void { this.base.resetHistory(); }
 
   dispose(): void {
-    this.diffuse.dispose();
-    this.specular.dispose();
+    for (const p of this.pipes) p.dispose();
     this.base.dispose();
   }
 }

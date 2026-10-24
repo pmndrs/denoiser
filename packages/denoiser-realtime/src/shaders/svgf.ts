@@ -1,30 +1,35 @@
 // SVGF passes (temporal accumulation, variance estimation, edge-avoiding
-// a-trous), for diffuse and specular signals. Ported from Dennis Smolek's own
-// SVGF in the ssgiDev bench (demo 14, written from the SVGF paper; see
-// docs/research/rt-denoiser/sources/ssgi-svgf-review.md) with the review's
-// upgrades. Sources (public; full table in docs/research/rt-denoiser/PROVENANCE.md):
+// a-trous) for one or two signals per dispatch (SPEC §4.1: diffuse + specular
+// share dispatches, so geometry loads and the reprojection are done once).
+// Ported from Dennis Smolek's own SVGF in the ssgiDev bench (demo 14, written
+// from the SVGF paper; see docs/research/rt-denoiser/sources/ssgi-svgf-review.md)
+// with the review's upgrades. Sources (public; full table in
+// docs/research/rt-denoiser/PROVENANCE.md):
 //
 // - Schied et al. 2017, "Spatiotemporal Variance-Guided Filtering", HPG:
-//   sec. 4.1 temporal accumulation (2x2 per-tap validity, EMA alpha = 0.2),
-//   sec. 4.2 moments + variance (spatial 7x7 bilateral estimate while history
-//   < 4 frames), sec. 4.3 a-trous with B3 5x5 kernel, feedback of iteration 0
-//   as color history, variance propagated as sum(w^2 var)/sum(w)^2, sec. 4.4
-//   edge-stopping functions eq. 3-5 (sigma_z = 1, sigma_n = 128, sigma_l = 4,
-//   3x3 Gaussian variance prefilter).
+//   sec. 4.1 temporal accumulation (2x2 per-tap validity, 3x3 fallback, EMA
+//   alpha = 0.2), sec. 4.2 moments + variance (spatial 7x7 bilateral estimate
+//   while history < 4 frames), sec. 4.3 a-trous with B3 5x5 kernel, feedback of
+//   iteration 0 as color history, variance propagated as sum(w^2 var)/sum(w)^2,
+//   sec. 4.4 edge-stopping functions eq. 3-5 (sigma_z = 1, sigma_n = 128,
+//   sigma_l = 4, 3x3 Gaussian variance prefilter).
 // - Schied et al. 2018, A-SVGF (PACMCGIT 1(2) art. 24) and its BSD-3 reference
 //   code (a_svgf.zip, Copyright (c) 2018 Christoph Schied, see NOTICE):
-//   alpha = max(alpha, 1/(n+1)) start-up, history cap, 3x3 box kernel option,
-//   spatial-variance boost 1 + 3 (1 - n/4) and filtered color for young
-//   history, short-footprint 5x5 when n > 1.
-// - Specular weights: Ray Tracing Gems ch. 32 (Hirvonen et al. 2019), sec.
-//   32.4.1 eq. 14 (roughness similarity) and eq. 15 (roughness radius);
-//   lobe half-angle normal cutoff 90deg * a/(1+a), a = r^2 (Zhdan, GTC 2020
-//   ReBLUR talk, slides 46-47, via sources/reblur.md sec. 4.4); surface-motion
-//   history cap from roughness, N.V and parallax (RTG II ch. 49 sec. 49.8.1
-//   p.833-834, via sources/reblur.md sec. 4.2).
-// - Our design: smooth temporal->spatial variance ramp over the first frames
-//   (ssgiDev demo 14) instead of a hard switch; history Catmull-Rom clamped to
-//   the 2x2 range (common.ts); epsilon of the depth weight relative to depth.
+//   alpha = max(alpha, 1/(n+1)) start-up, history cap 64, 3x3 box kernel
+//   (sec. 4), spatial-variance boost 1 + 3 (1 - n/4) and filtered color for
+//   young history, 5x5 footprint once n > 1.
+// - SPEC v0 (docs/research/rt-denoiser/SPEC.md): S-2a (standard deviation
+//   stored instead of variance), S-3 (depth weight on q = 1/d), R-1 (GGX lobe
+//   half-angle theta_L, our derivation), R-7/R-8 (specular surface-motion
+//   history cap from lobe angle, N.V and parallax: our design from RTG II
+//   sec. 49.8.1 prose; the chapter's listings are not used).
+// - Specular weights: Ray Tracing Gems ch. 32 (Hirvonen et al. 2019) sec.
+//   32.4.1 eq. 14 (roughness similarity) and eq. 15 (roughness radius); normal
+//   cutoff at theta_L with a linear falloff (shape: Zhdan, GTC 2020, slide 46).
+// - Our design: smooth temporal->spatial variance ramp (ssgiDev demo 14);
+//   variance prefilter from the inner taps at stride > 1; depth slope from the
+//   prepass; per-tap angle ratio in cosine space.
+import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, REPROJECT_WGSL } from './common';
 
 export type SignalKind = 'diffuse' | 'specular';
@@ -40,27 +45,13 @@ export const P_SPEC_NORMAL_POWER = 64;
 
 export const PARAMS_SIZE = 256;
 
-const PARAMS_WGSL = /* wgsl */ `
+export const PARAMS_STRUCT = /* wgsl */ `
 struct Params {
-  alpha: f32,
-  momentsAlpha: f32,
-  maxHistory: f32,
-  planeTol: f32,
-  normalTol: f32,
-  sigmaZ: f32,
-  sigmaN: f32,
-  sigmaL: f32,
-  rampFrames: f32,
-  varBoost: f32,
-  specScale: f32,
-  specKappa: f32,
-  lobeFraction: f32,
-  gradNoiseK: f32,
-  radiusScale: f32,
-  flags: u32,
-  gradRadius: i32,
-  gradDown: i32,
-  gradDims: vec2i,
+  alpha: f32, momentsAlpha: f32, maxHistory: f32, planeTol: f32,
+  normalTol: f32, sigmaZ: f32, sigmaN: f32, sigmaL: f32,
+  rampFrames: f32, varBoost: f32, specScale: f32, specKappa: f32,
+  lobeFraction: f32, gradNoiseK: f32, radiusScale: f32, flags: u32,
+  gradRadius: i32, gradDown: i32, gradDims: vec2i,
 }
 const P_CATMULL = ${P_CATMULL}u;
 const P_ANTILAG = ${P_ANTILAG}u;
@@ -69,76 +60,88 @@ const P_GRADIENT_INPUT = ${P_GRADIENT_INPUT}u;
 const P_KERNEL_BOX3 = ${P_KERNEL_BOX3}u;
 const P_VAR_OF_MEAN = ${P_VAR_OF_MEAN}u;
 const P_SPEC_NORMAL_POWER = ${P_SPEC_NORMAL_POWER}u;
-fn pflag(f: u32) -> bool { return (P.flags & f) != 0u; }
-
 fn finite3(c: vec3f) -> vec3f {
   let b = bitcast<vec3u>(c) & vec3u(0x7f800000u);
   return select(c, vec3f(0.0), b == vec3u(0x7f800000u));
 }
 `;
 
-/** Edge-stopping functions shared by the variance and a-trous passes. */
-function weightsWgsl(kind: SignalKind): string {
+/** Per-signal edge-stopping functions, suffixed with the signal index. */
+function weightsWgsl(kind: SignalKind, i: number): string {
+  const P = `P${i}`;
   const normal = kind === 'diffuse'
     ? /* wgsl */ `
-fn setCenter(g: Geo) { }
-fn wNormal(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), P.sigmaN); }`
+fn setCenter${i}(g: Geo) { }
+fn wNormal${i}(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), ${P}.sigmaN); }`
     : /* wgsl */ `
-// Specular: reject beyond the GGX lobe half-angle theta_L(alpha) (SPEC R-1,
-// our derivation) + 1 deg, falloff linear in the angle (shape from GTC 2020
-// slide 46); or SVGF's power form (SPEC S-3). Per-center constants are set once
-// (setCenter); per tap the angle ratio is sqrt((1 - cos) / (1 - cos theta0)),
-// which equals theta / theta0 to second order and avoids acos per tap.
-var<private> cosLimit: f32 = 0.0;
-fn setCenter(g: Geo) {
+// Specular normal edge-stop: cutoff at the GGX lobe half-angle theta_L + 1 deg,
+// linear in the angle; per tap the angle ratio is sqrt((1 - cos)/(1 - cos0)),
+// = theta/theta0 to second order (no acos per tap). Or SVGF's power form.
+var<private> cosLimit${i}: f32 = 0.0;
+fn setCenter${i}(g: Geo) {
   let a = g.rough * g.rough;
-  cosLimit = cos(atan(a * sqrt(P.lobeFraction / (1.0 - P.lobeFraction))) + 0.0174533);
+  cosLimit${i} = cos(atan(a * sqrt(${P}.lobeFraction / (1.0 - ${P}.lobeFraction))) + 0.0174533);
 }
-fn wNormal(g: Geo, gq: Geo) -> f32 {
+fn wNormal${i}(g: Geo, gq: Geo) -> f32 {
   let d = dot(g.n, gq.n);
-  if (pflag(P_SPEC_NORMAL_POWER)) { return pow(max(0.0, d), P.sigmaN); }
-  return clamp(1.0 - sqrt(max(0.0, 1.0 - d) / max(1.0 - cosLimit, 1e-7)), 0.0, 1.0);
-}`;
-  const spec = kind === 'specular' ? /* wgsl */ `
+  if ((${P}.flags & P_SPEC_NORMAL_POWER) != 0u) { return pow(max(0.0, d), ${P}.sigmaN); }
+  return clamp(1.0 - sqrt(max(0.0, 1.0 - d) / max(1.0 - cosLimit${i}, 1e-7)), 0.0, 1.0);
+}
 // RTG ch. 32 eq. 14-15: f_w(a, b, x) = 1 - smoothstep(a, b, x)
-fn wRough(g: Geo, gq: Geo) -> f32 { return 1.0 - smoothstep(0.01, 0.1, abs(g.rough - gq.rough)); }
-fn wRadius(g: Geo, dist: f32) -> f32 {
-  if (P.radiusScale <= 0.0) { return 1.0; }
-  let r = max(g.rough, 1e-3) * P.radiusScale;
-  return 1.0 - smoothstep(10.0 * r, 70.0 * r, dist);
-}` : '';
+fn wSpec${i}(g: Geo, gq: Geo, dist: f32) -> f32 {
+  var w = 1.0 - smoothstep(0.01, 0.1, abs(g.rough - gq.rough));
+  if (${P}.radiusScale > 0.0) {
+    let r = max(g.rough, 1e-3) * ${P}.radiusScale;
+    w *= 1.0 - smoothstep(10.0 * r, 70.0 * r, dist);
+  }
+  return w;
+}`;
   return /* wgsl */ `
-// SVGF eq. 3 on q = 1/d, which is affine in screen space on planes (like the
-// paper's clip depth): difference relative to the local plane (SPEC S-3).
-fn wDepth(g: Geo, gq: Geo, off: vec2f) -> f32 {
+// SVGF eq. 3 on q = 1/d (affine in screen space on planes, like the paper's
+// clip depth): difference relative to the local plane (SPEC S-3).
+fn wDepth${i}(g: Geo, gq: Geo, off: vec2f) -> f32 {
   let q = 1.0 / g.z;
-  let gradQ = -g.grad * (q * q);
-  let s = P.sigmaZ * abs(dot(gradQ, off)) + 1e-3 * q;
+  let s = ${P}.sigmaZ * abs(dot(-g.grad * (q * q), off)) + 1e-3 * q;
   return exp(-abs(1.0 / gq.z - q) / s);
 }
 ${normal}
-${spec}
-fn wGeo(g: Geo, gq: Geo, off: vec2f) -> f32 {
-  var w = wDepth(g, gq, off) * wNormal(g, gq);
-  ${kind === 'specular' ? 'w *= wRough(g, gq) * wRadius(g, length(off));' : ''}
-  return w;
+fn wGeo${i}(g: Geo, gq: Geo, off: vec2f) -> f32 {
+  return wDepth${i}(g, gq, off) * wNormal${i}(g, gq)${kind === 'specular' ? ` * wSpec${i}(g, gq, length(off))` : ''};
 }
 `;
 }
 
+const header = (b: Bindings) => /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_STRUCT}
+${b.wgsl}
+fn geoCenter(p: vec2i) -> Geo {
+  var g = geoTap(geoCur, p);
+  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
+  return g;
+}
+`;
+
+function baseBindings(kinds: SignalKind[]) {
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  b.add('geoGrad', 'texture_2d<u32>', 'i');
+  return b;
+}
+
 // ---- temporal accumulation ------------------------------------------------------
 
-export function temporalWgsl(kind: SignalKind): string {
-  const cap = kind === 'diffuse'
-    ? /* wgsl */ `fn historyCap(g: Geo, world: vec3f, expPrev: vec3f) -> f32 { return P.maxHistory; }`
-    : /* wgsl */ `
-// Surface-motion history cap for specular (SPEC R-7/R-8, our design from the
-// properties in RTG II sec. 49.8.1 prose: fewer frames for low roughness,
-// grazing angles and high parallax). The reflection slides by about the
-// parallax angle per frame; history stays sharp while the accumulated slide
-// stays inside the GGX lobe half-angle theta_L (SPEC R-1). Returns frames incl.
-// the current one.
-fn historyCap(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
+function capWgsl(kind: SignalKind, i: number): string {
+  const P = `P${i}`;
+  if (kind === 'diffuse') return `fn historyCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 { return ${P}.maxHistory; }`;
+  return /* wgsl */ `
+// Surface-motion history cap for specular (SPEC R-7/R-8, our design): the
+// reflection slides by about the parallax angle per frame; history stays sharp
+// while the accumulated slide stays inside the lobe half-angle theta_L.
+// Returns frames incl. the current one.
+fn historyCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
   let vCur = normalize(world - F.camPos);
   let prevWorld = (F.prevViewInv * vec4f(expPrev, 1.0)).xyz;
   let vPrev = normalize(prevWorld - F.prevCamPos);
@@ -146,174 +149,200 @@ fn historyCap(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
   let parallax = sqrt(max(0.0, 1.0 - c * c)) / max(c, 1e-4);
   let NoV = max(dot(g.n, -vCur), 1e-4);
   let a = g.rough * g.rough;
-  let thetaL = atan(a * sqrt(P.lobeFraction / (1.0 - P.lobeFraction)));
-  let aSpec = P.specScale * thetaL * pow(NoV, P.specKappa) / max(parallax, 1e-4);
-  return clamp(aSpec + 1.0, 1.0, P.maxHistory);
+  let thetaL = atan(a * sqrt(${P}.lobeFraction / (1.0 - ${P}.lobeFraction)));
+  let aSpec = ${P}.specScale * thetaL * pow(NoV, ${P}.specKappa) / max(parallax, 1e-4);
+  return clamp(aSpec + 1.0, 1.0, ${P}.maxHistory);
 }`;
-  return /* wgsl */ `
-${FRAME_WGSL}
-${PARAMS_WGSL}
-@group(0) @binding(0) var<uniform> F: Frame;
-@group(0) @binding(1) var<uniform> P: Params;
-@group(0) @binding(2) var inputTex: texture_2d<f32>;
-@group(0) @binding(3) var geoCur: texture_2d<u32>;
-@group(0) @binding(4) var geoPrev: texture_2d<u32>;
-@group(0) @binding(5) var motionTex: texture_2d<f32>;
-@group(0) @binding(6) var motionZTex: texture_2d<f32>;
-@group(0) @binding(7) var colorHist: texture_2d<f32>;
-@group(0) @binding(8) var accumPrev: texture_2d<f32>;
-@group(0) @binding(9) var momentsPrev: texture_2d<f32>;
-@group(0) @binding(10) var smp: sampler;
-@group(0) @binding(11) var gradTex: texture_2d<f32>;
-@group(0) @binding(12) var outAccum: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(13) var outMoments: texture_storage_2d<rg32float, write>;
-${REPROJECT_WGSL}
-${cap}
+}
 
+function antilagWgsl(i: number): string {
+  const P = `P${i}`;
+  return /* wgsl */ `
 // A-SVGF sec. 3.5: lambda = min(1, |delta| / Delta) from the reconstructed
-// gradient, max over a neighbourhood of strata (safety margin, p.9). Without a
-// renderer-supplied gradient the delta has a noise floor (our design):
-// |delta| - k * sigma_delta.
-fn antilagLambda(p: vec2i) -> f32 {
-  let gp = p / P.gradDown;
+// gradient, max over a neighbourhood of strata (p.9). 'auto' subtracts a noise
+// floor k sigma_delta first (our design).
+fn antilagLambda${i}(p: vec2i) -> f32 {
+  let gp = p / ${P}.gradDown;
   var lam = 0.0;
-  for (var dy = -P.gradRadius; dy <= P.gradRadius; dy++) {
-    for (var dx = -P.gradRadius; dx <= P.gradRadius; dx++) {
-      let q = clamp(gp + vec2i(dx, dy), vec2i(0), P.gradDims - 1);
-      let v = textureLoad(gradTex, q, 0);   // (delta, Delta, var(delta), valid)
+  for (var dy = -${P}.gradRadius; dy <= ${P}.gradRadius; dy++) {
+    for (var dx = -${P}.gradRadius; dx <= ${P}.gradRadius; dx++) {
+      let q = clamp(gp + vec2i(dx, dy), vec2i(0), ${P}.gradDims - 1);
+      let v = textureLoad(grad${i}, q, 0);   // (delta, Delta, var(delta), valid)
       if (v.w <= 0.0 || v.y <= 1e-6) { continue; }
       var d = abs(v.x);
-      if (!pflag(P_GRADIENT_INPUT)) { d = max(0.0, d - P.gradNoiseK * sqrt(max(v.z, 0.0))); }
+      if ((${P}.flags & P_GRADIENT_INPUT) == 0u) { d = max(0.0, d - ${P}.gradNoiseK * sqrt(max(v.z, 0.0))); }
       lam = max(lam, d / v.y);
     }
   }
   return clamp(lam, 0.0, 1.0);
+}`;
 }
+
+export function temporalPass(kinds: SignalKind[]): PassDef {
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  b.add('geoPrev', 'texture_2d<u32>', 'i');
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('motionZTex', 'texture_2d<f32>', 'f');
+  b.add('smp', 'sampler', 's');
+  kinds.forEach((_, i) => {
+    b.add(`input${i}`, 'texture_2d<f32>', 'f');
+    b.add(`colorHist${i}`, 'texture_2d<f32>', 'F');
+    b.add(`momentsPrev${i}`, 'texture_2d<f32>', 'f');
+    b.add(`grad${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outAccum${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`outMoments${i}`, 'texture_storage_2d<rg32float, write>', 'rg32float');
+  });
+  const perSignal = (i: number) => {
+    const P = `P${i}`;
+    return /* wgsl */ `
+  {
+    let cur = finite3(max(textureLoad(input${i}, p, 0).rgb, vec3f(0.0)));
+    let l = luma(cur);
+    let mCur = vec2f(l, l * l);
+    var n = 1.0;
+    var col = cur;
+    var mom = mCur;
+    if (!reset) {
+      var hist = vec3f(0.0);
+      var mHist = vec2f(0.0);
+      var nPrev = 0.0;
+      var sumW = 0.0;
+      if (r.sumW > 0.01) {
+        var lo = vec3f(1e30);
+        var hi = vec3f(-1e30);
+        for (var k = 0; k < 4; k++) {
+          let w = r.w[k];
+          if (w <= 0.0) { continue; }
+          let q = r.base + TAP_OFFS[k];
+          // alpha = history length n in both history layouts (accum, and the
+          // feedback history that a-trous iteration 0 writes)
+          let c4 = textureLoad(colorHist${i}, q, 0);
+          let c = c4.rgb;
+          lo = min(lo, c);
+          hi = max(hi, c);
+          hist += c * w;
+          nPrev += c4.a * w;
+          mHist += textureLoad(momentsPrev${i}, q, 0).rg * w;
+        }
+        sumW = r.sumW;
+        hist /= sumW;
+        if ((${P}.flags & P_CATMULL) != 0u && r.allValid) {
+          hist = clamp(sampleCatmullRom(colorHist${i}, smp, r.prevUV).rgb, lo, hi);
+        }
+      } else if (fbMask != 0u) {
+        for (var k = 0u; k < 9u; k++) {
+          if ((fbMask & (1u << k)) == 0u) { continue; }
+          let q = fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1);
+          let c4 = textureLoad(colorHist${i}, q, 0);
+          hist += c4.rgb;
+          nPrev += c4.a;
+          mHist += textureLoad(momentsPrev${i}, q, 0).rg;
+          sumW += 1.0;
+        }
+        hist /= sumW;
+      }
+      if (sumW > 0.0) {
+        nPrev /= sumW;
+        mHist /= sumW;
+        n = min(nPrev + 1.0, historyCap${i}(g, r.world, r.expPrev));
+        var a = max(${P}.alpha, 1.0 / n);
+        var am = max(${P}.momentsAlpha, 1.0 / n);
+        if ((${P}.flags & P_ANTILAG) != 0u) {
+          let lam = antilagLambda${i}(p);
+          a = mix(a, 1.0, lam);
+          am = mix(am, 1.0, lam);
+          n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
+        }
+        col = mix(finite3(hist), cur, a);
+        mom = mix(mHist, mCur, am);
+      }
+    }
+    textureStore(outAccum${i}, p, vec4f(col, n));
+    textureStore(outMoments${i}, p, vec4f(mom, 0.0, 0.0));
+  }`;
+  };
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_STRUCT}
+${b.wgsl}
+${REPROJECT_WGSL}
+${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
-  let cur = finite3(max(textureLoad(inputTex, p, 0).rgb, vec3f(0.0)));
-  let l = luma(cur);
-  let mCur = vec2f(l, l * l);
   let g = geoTap(geoCur, p);
   if (g.z <= 0.0) {   // sky / no surface: output 0 (SPEC 1.1)
-    textureStore(outAccum, p, vec4f(0.0, 0.0, 0.0, 1.0));
-    textureStore(outMoments, p, vec4f(0.0));
+    ${kinds.map((_, i) => `textureStore(outAccum${i}, p, vec4f(0.0, 0.0, 0.0, 1.0));
+    textureStore(outMoments${i}, p, vec4f(0.0));`).join('\n    ')}
     return;
   }
-
-  var n = 1.0;
-  var col = cur;
-  var mom = mCur;
-  if (!hasFlag(FRAME_RESET)) {
-    let r = reproject(p, g, P.planeTol, P.normalTol);
-    var hist = vec3f(0.0);
-    var mHist = vec2f(0.0);
-    var nPrev = 0.0;
-    var sumW = 0.0;
-    if (r.sumW > 0.01) {
-      var lo = vec3f(1e30);
-      var hi = vec3f(-1e30);
-      for (var i = 0; i < 4; i++) {
-        let q = r.base + TAP_OFFS[i];
-        let w = r.w[i];
-        if (w <= 0.0) { continue; }
-        let c = textureLoad(colorHist, q, 0).rgb;
-        lo = min(lo, c);
-        hi = max(hi, c);
-        hist += c * w;
-        nPrev += textureLoad(accumPrev, q, 0).a * w;
-        mHist += textureLoad(momentsPrev, q, 0).rg * w;
-      }
-      sumW = r.sumW;
-      hist /= sumW;
-      if (pflag(P_CATMULL) && r.allValid) {
-        hist = clamp(sampleCatmullRom(colorHist, smp, r.prevUV).rgb, lo, hi);
-      }
-    } else {
+  // Shared reprojection (geometry tolerances of the first signal).
+  let reset = hasFlag(FRAME_RESET);
+  var r: Reproj;
+  var fbMask = 0u;
+  var fb0 = vec2i(0);
+  if (!reset) {
+    r = reproject(p, g, P0.planeTol, P0.normalTol);
+    if (r.sumW <= 0.01) {
       // SVGF sec. 4.1: 3x3 fallback (thin geometry), equal weights.
-      let c0 = vec2i(floor(r.prevUV * F.dims));
-      for (var dy = -1; dy <= 1; dy++) {
-        for (var dx = -1; dx <= 1; dx++) {
-          let q = c0 + vec2i(dx, dy);
-          if (!tapValid(q, g, r.expPrev, P.planeTol, P.normalTol)) { continue; }
-          hist += textureLoad(colorHist, q, 0).rgb;
-          nPrev += textureLoad(accumPrev, q, 0).a;
-          mHist += textureLoad(momentsPrev, q, 0).rg;
-          sumW += 1.0;
+      fb0 = vec2i(floor(r.prevUV * F.dims));
+      for (var k = 0u; k < 9u; k++) {
+        if (tapValid(fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1), g, r.expPrev, P0.planeTol, P0.normalTol)) {
+          fbMask |= 1u << k;
         }
       }
-      if (sumW > 0.0) { hist /= sumW; }
-    }
-    if (sumW > 0.0) {
-      nPrev /= sumW;
-      mHist /= sumW;
-      n = min(nPrev + 1.0, historyCap(g, r.world, r.expPrev));
-      var a = max(P.alpha, 1.0 / n);
-      var am = max(P.momentsAlpha, 1.0 / n);
-      if (pflag(P_ANTILAG)) {
-        let lam = antilagLambda(p);
-        a = mix(a, 1.0, lam);
-        am = mix(am, 1.0, lam);
-        n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
-      }
-      col = mix(finite3(hist), cur, a);
-      mom = mix(mHist, mCur, am);
     }
   }
-  textureStore(outAccum, p, vec4f(col, n));
-  textureStore(outMoments, p, vec4f(mom, 0.0, 0.0));
+${kinds.map((_, i) => perSignal(i)).join('\n')}
 }
 `;
+  return { code, entries: b.entries };
 }
 
 // ---- variance estimation --------------------------------------------------------
 
-export function varianceWgsl(kind: SignalKind): string {
-  return /* wgsl */ `
-${FRAME_WGSL}
-${PARAMS_WGSL}
-@group(0) @binding(0) var<uniform> F: Frame;
-@group(0) @binding(1) var<uniform> P: Params;
-@group(0) @binding(2) var accumCur: texture_2d<f32>;
-@group(0) @binding(3) var momentsCur: texture_2d<f32>;
-@group(0) @binding(4) var geoCur: texture_2d<u32>;
-@group(0) @binding(5) var outPing: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(6) var geoGrad: texture_2d<u32>;
-fn geoCenter(p: vec2i) -> Geo {
-  var g = geoTap(geoCur, p);
-  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
-  return g;
-}
-${weightsWgsl(kind)}
+export function variancePass(kinds: SignalKind[]): PassDef {
+  const b = baseBindings(kinds);
+  kinds.forEach((_, i) => {
+    b.add(`accumCur${i}`, 'texture_2d<f32>', 'f');
+    b.add(`momentsCur${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outPing${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+  });
+  const I = kinds.map((_, i) => i);
+  const code = /* wgsl */ `
+${header(b)}
+${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
-  let a = textureLoad(accumCur, p, 0);
-  let m = textureLoad(momentsCur, p, 0).rg;
   let g = geoCenter(p);
-  setCenter(g);
-  if (g.z <= 0.0) { textureStore(outPing, p, vec4f(0.0)); return; }
-  var varT = max(0.0, m.y - m.x * m.x);
-  // Optional (our variant): variance of the accumulated mean instead of the
-  // per-sample variance: EMA with weight a leaves a / (2 - a) of it, a
-  // cumulative average over n frames 1 / n.
-  if (pflag(P_VAR_OF_MEAN)) { varT *= max(P.alpha / (2.0 - P.alpha), 1.0 / max(a.a, 1.0)); }
-  let t = clamp((a.a - 1.0) / max(P.rampFrames - 1.0, 1e-3), 0.0, 1.0);
-  // alpha holds the standard deviation, not the variance (SPEC S-2a: sigma^2
-  // ~ l^2 overflows fp16 on HDR input); consumers square it in f32.
-  if (t >= 1.0) { textureStore(outPing, p, vec4f(a.rgb, sqrt(varT))); return; }
-
-  // Young history: bilateral spatial estimate of color and moments
-  // (SVGF sec. 4.2: 7x7; A-SVGF code: 5x5 once n > 1), blended in smoothly.
-  let r = select(2, 3, a.a < 2.0);
-  var sc = a.rgb;
-  var sm = m;
-  var sw = 1.0;
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outPing${i}, p, vec4f(0.0));`).join(' ')}
+    return;
+  }
+  ${I.map((i) => /* wgsl */ `
+  setCenter${i}(g);
+  let a${i} = textureLoad(accumCur${i}, p, 0);
+  let m${i} = textureLoad(momentsCur${i}, p, 0).rg;
+  var varT${i} = max(0.0, m${i}.y - m${i}.x * m${i}.x);
+  // Optional (our variant): variance of the accumulated mean.
+  if ((P${i}.flags & P_VAR_OF_MEAN) != 0u) { varT${i} *= max(P${i}.alpha / (2.0 - P${i}.alpha), 1.0 / max(a${i}.a, 1.0)); }
+  let t${i} = clamp((a${i}.a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
+  let rad${i} = select(select(2, 3, a${i}.a < 2.0), 0, t${i} >= 1.0);
+  var sc${i} = a${i}.rgb;
+  var sm${i} = m${i};
+  var sw${i} = 1.0;`).join('')}
+  // Young history: bilateral spatial estimate of color and moments (SVGF sec.
+  // 4.2: 7x7; A-SVGF code: 5x5 once n > 1), blended in smoothly. One loop for
+  // all signals, each masked to its own radius.
+  let r = max(${I.map((i) => `rad${i}`).join(', ')}${kinds.length === 1 ? ', 0' : ''});
   for (var dy = -r; dy <= r; dy++) {
     for (var dx = -r; dx <= r; dx++) {
       if (dx == 0 && dy == 0) { continue; }
@@ -321,18 +350,32 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       if (!inside(q)) { continue; }
       let gq = geoTap(geoCur, q);
       if (gq.z <= 0.0) { continue; }
-      let w = wGeo(g, gq, vec2f(f32(dx), f32(dy)));
-      sc += textureLoad(accumCur, q, 0).rgb * w;
-      sm += textureLoad(momentsCur, q, 0).rg * w;
-      sw += w;
+      let off = vec2f(f32(dx), f32(dy));
+      let ring = max(abs(dx), abs(dy));
+      ${I.map((i) => /* wgsl */ `
+      if (ring <= rad${i}) {
+        let w = wGeo${i}(g, gq, off);
+        sc${i} += textureLoad(accumCur${i}, q, 0).rgb * w;
+        sm${i} += textureLoad(momentsCur${i}, q, 0).rg * w;
+        sw${i} += w;
+      }`).join('')}
     }
   }
-  sc /= sw;
-  sm /= sw;
-  let varS = (1.0 + P.varBoost * max(0.0, 1.0 - a.a / P.rampFrames)) * max(0.0, sm.y - sm.x * sm.x);
-  textureStore(outPing, p, vec4f(mix(sc, a.rgb, t), sqrt(mix(varS, varT, t))));
+  ${I.map((i) => /* wgsl */ `
+  {
+    // alpha holds the standard deviation (SPEC S-2a: sigma^2 overflows fp16 on HDR).
+    if (t${i} >= 1.0) {
+      textureStore(outPing${i}, p, vec4f(a${i}.rgb, sqrt(varT${i})));
+    } else {
+      let c = sc${i} / sw${i};
+      let m = sm${i} / sw${i};
+      let varS = (1.0 + P${i}.varBoost * max(0.0, 1.0 - a${i}.a / P${i}.rampFrames)) * max(0.0, m.y - m.x * m.x);
+      textureStore(outPing${i}, p, vec4f(mix(c, a${i}.rgb, t${i}), sqrt(mix(varS, varT${i}, t${i}))));
+    }
+  }`).join('')}
 }
 `;
+  return { code, entries: b.entries };
 }
 
 // ---- a-trous ----------------------------------------------------------------------
@@ -342,104 +385,90 @@ export interface AtrousVariant {
   writeHist: boolean;
   /** Last iteration: write the output texture (optionally remodulated). */
   last: boolean;
+  /** 3x3 box (A-SVGF) instead of the 5x5 B3 spline. */
+  box: boolean;
 }
 
-export function atrousWgsl(kind: SignalKind, v: AtrousVariant, box: boolean): string {
-  const histDecl = v.writeHist
-    ? '@group(0) @binding(9) var outHist: texture_storage_2d<rgba16float, write>;' : '';
-  const store = (val: string, varExpr: string) => v.last
-    ? `textureStore(outDst, p, vec4f(${val} * select(vec3f(1.0), textureLoad(demodTex, p, 0).rgb, pflag(P_REMODULATE)), 1.0));`
-    : `textureStore(outDst, p, vec4f(${val}, ${varExpr}));`;
-  const hist = (val: string) => v.writeHist
-    ? `textureStore(outHist, p, vec4f(${val}, textureLoad(accumCur, p, 0).a));` : '';
-  return /* wgsl */ `
-${FRAME_WGSL}
-${PARAMS_WGSL}
+const B3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
+const f32s = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+
+export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
+  const b = baseBindings(kinds);
+  b.uniform('I', 'Iter');
+  kinds.forEach((_, i) => {
+    b.add(`src${i}`, 'texture_2d<f32>', 'f');
+    b.add(`accumCur${i}`, 'texture_2d<f32>', 'f');
+    b.add(`demod${i}`, 'texture_2d<f32>', 'f');
+    b.add(`dst${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    if (v.writeHist) b.add(`hist${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+  });
+  const I = kinds.map((_, i) => i);
+  const inner: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) inner.push([x, y]);
+  const outer: [number, number][] = [];
+  if (!v.box) for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (Math.abs(x) > 1 || Math.abs(y) > 1) outer.push([x, y]);
+  const h = (x: number, y: number) => (v.box ? 1 : B3[x + 2] * B3[y + 2]);
+  const store = (i: number, c: string, sd: string) => v.last
+    ? `textureStore(dst${i}, p, vec4f(${c} * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & P_REMODULATE) != 0u), 1.0));`
+    : `textureStore(dst${i}, p, vec4f(${c}, ${sd}));`;
+  const hist = (i: number, c: string) => v.writeHist ? `textureStore(hist${i}, p, vec4f(${c}, textureLoad(accumCur${i}, p, 0).a));` : '';
+  // one tap: geometry once, then per signal
+  const tap = (x: number, y: number, sample: (i: number) => string) => /* wgsl */ `
+  {
+    let off = vec2i(${x}, ${y}) * I.stride;
+    let q = p + off;
+    if (inside(q)) {
+      let gq = geoTap(geoCur, q);
+      if (gq.z > 0.0) {
+        ${I.map((i) => /* wgsl */ `{
+          let s = ${sample(i)};
+          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc${i}) / lumDenom${i});
+          sumC${i} += s.rgb * w;
+          sumV${i} += s.a * s.a * w * w;
+          sumW${i} += w;
+        }`).join('\n        ')}
+      }
+    }
+  }`;
+  const code = /* wgsl */ `
+${header(b)}
 struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
-@group(0) @binding(0) var<uniform> F: Frame;
-@group(0) @binding(1) var<uniform> P: Params;
-@group(0) @binding(2) var<uniform> I: Iter;
-@group(0) @binding(3) var srcTex: texture_2d<f32>;
-@group(0) @binding(4) var geoCur: texture_2d<u32>;
-@group(0) @binding(5) var accumCur: texture_2d<f32>;
-@group(0) @binding(6) var demodTex: texture_2d<f32>;
-@group(0) @binding(7) var outDst: texture_storage_2d<rgba16float, write>;
-@group(0) @binding(8) var geoGrad: texture_2d<u32>;
-${histDecl}
-fn geoCenter(p: vec2i) -> Geo {
-  var g = geoTap(geoCur, p);
-  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
-  return g;
-}
-${weightsWgsl(kind)}
-
-const B3 = array<f32, 5>(0.0625, 0.25, 0.375, 0.25, 0.0625);
+${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
-  let c = textureLoad(srcTex, p, 0);
   let g = geoCenter(p);
-  setCenter(g);
+  ${I.map((i) => `let c${i} = textureLoad(src${i}, p, 0);`).join('\n  ')}
   if (g.z <= 0.0) {
-    ${store('c.rgb', 'c.a')}
-    ${hist('c.rgb')}
+    ${I.map((i) => `${store(i, `c${i}.rgb`, `c${i}.a`)} ${hist(i, `c${i}.rgb`)}`).join('\n    ')}
     return;
   }
   // SVGF sec. 4.4: a 3x3 Gaussian of the variance drives the luminance weight
-  // (only). The 3x3 taps are the inner taps of this iteration's kernel, loaded
-  // once and reused (exactly the paper's prefilter at stride 1; at larger
-  // strides a wider one: our approximation, saves 8 loads per pixel).
-  var inner: array<vec4f, 9>;
-  var gVar = 0.0;
-  for (var i = 0; i < 9; i++) {
-    let o = vec2i(i % 3 - 1, i / 3 - 1);
-    let s = textureLoad(srcTex, clampPix(p + o * I.stride), 0);
-    inner[i] = s;
-    gVar += s.a * s.a * f32((2 - abs(o.x)) * (2 - abs(o.y))) / 16.0;
-  }
-  let lc = luma(c.rgb);
-  let lumDenom = P.sigmaL * sqrt(max(gVar, 0.0)) + 1e-10;
-  let hc = ${box ? '1.0' : 'B3[2] * B3[2]'};
-  var sumC = c.rgb * hc;
-  var sumV = c.a * c.a * hc * hc;
-  var sumW = hc;
-  for (var i = 0; i < 9; i++) {
-    if (i == 4) { continue; }
-    let o = vec2i(i % 3 - 1, i / 3 - 1);
-    let off = o * I.stride;
-    let q = p + off;
-    if (!inside(q)) { continue; }
-    let gq = geoTap(geoCur, q);
-    if (gq.z <= 0.0) { continue; }
-    let s = inner[i];
-    let h = ${box ? '1.0' : 'B3[o.x + 2] * B3[o.y + 2]'};
-    let w = h * wGeo(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc) / lumDenom);
-    sumC += s.rgb * w;
-    sumV += s.a * s.a * w * w;
-    sumW += w;
-  }
-  ${box ? '' : `
-  for (var dy = -2; dy <= 2; dy++) {
-    for (var dx = -2; dx <= 2; dx++) {
-      if (abs(dx) <= 1 && abs(dy) <= 1) { continue; }
-      let off = vec2i(dx, dy) * I.stride;
-      let q = p + off;
-      if (!inside(q)) { continue; }
-      let gq = geoTap(geoCur, q);
-      if (gq.z <= 0.0) { continue; }
-      let s = textureLoad(srcTex, q, 0);
-      let w = B3[dx + 2] * B3[dy + 2] * wGeo(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc) / lumDenom);
-      sumC += s.rgb * w;
-      sumV += s.a * s.a * w * w;
-      sumW += w;
-    }
-  }`}
-  let outC = sumC / sumW;
-  let outV = sqrt(sumV) / sumW;   // standard deviation
-  ${store('outC', 'outV')}
-  ${hist('outC')}
+  // only. The 3x3 taps are the inner taps of this iteration's kernel, loaded once
+  // and reused (exactly the paper's prefilter at stride 1; wider at larger
+  // strides: our approximation).
+  ${I.map((i) => /* wgsl */ `
+  setCenter${i}(g);
+  ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : `textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0)`};`).join('\n  ')}
+  let gVar${i} = (${inner.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * s${i}_${k}.a * s${i}_${k}.a`).join(' + ')}) / 16.0;
+  let lc${i} = luma(c${i}.rgb);
+  let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;
+  let hc${i} = ${f32s(h(0, 0))};
+  var sumC${i} = c${i}.rgb * hc${i};
+  var sumV${i} = c${i}.a * c${i}.a * hc${i} * hc${i};
+  var sumW${i} = hc${i};`).join('')}
+  ${inner.map(([x, y], k) => (x === 0 && y === 0 ? '' : tap(x, y, (i) => `s${i}_${k}`))).join('')}
+  ${outer.map(([x, y]) => tap(x, y, (i) => `textureLoad(src${i}, q, 0)`)).join('')}
+  ${I.map((i) => /* wgsl */ `
+  {
+    let outC = sumC${i} / sumW${i};
+    let outS = sqrt(sumV${i}) / sumW${i};   // standard deviation
+    ${store(i, 'outC', 'outS')}
+    ${hist(i, 'outC')}
+  }`).join('')}
 }
 `;
+  return { code, entries: b.entries };
 }
