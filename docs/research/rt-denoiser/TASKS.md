@@ -85,8 +85,11 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 - [x] svgf (81758c9, ef0c9a9) **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
 - [x] svgf (d6a4780) **T1.3 SVGF specular** (surface reprojection first; roughness-aware weights).
 - [x] svgf (1f8d028) **T1.4 A-SVGF** gradient-driven α (from the paper + BSD reference code).
-- [~] results **T1.5 Results table** vs references (and vs FFX reflections for specular) on the
-      test bed's paths; per-pass ms at 1080p.
+- [x] results (13dea6c, 89f0050) **T1.5 Results table** vs references (and vs FFX reflections for specular) on the
+      test bed's paths; per-pass ms at 1080p. _Done: `results/M1.md` (blue-noise sampler,
+      7 paths × 3 signals at 1080p, standard-set replay, SVGF sweep, solo costs, crops).
+      Recommended SVGF defaults below (owner denoiser-realtime). Quality vs native awaits
+      the Windows replay of the regenerated standard set._
 
 ### M2–M5 (start after M1 numbers exist; against SPEC v0, provisional until reviewed)
 
@@ -132,7 +135,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       deterministic per (pixel, `u.frame`, signal salt) (`noisySeed` in `src/scene.ts`), so a
       `reshade` entry that evaluates a forward-projected pixel's sample with frame − 1's seed at
       the current surface point is the missing piece. — found by testbed, owner T1.4
-- [ ] Test-bed sampling is white noise (PCG); the renderer contract in `sources/shadows-specular.md`
+- [x] (13dea6c, results) Test-bed sampling is white noise (PCG); the renderer contract in `sources/shadows-specular.md`
       asks for blue noise animated per frame. Add a `sampler=bluenoise` option before tuning
       spatial filters on it (provisional until then). — found by testbed, owner `examples/realtime-denoiser`
 
@@ -173,7 +176,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       bed writes per-frame `frames[i].lights` and `frames[i].object` as extras (ReplayFrame
       exposes them as `frame.meta`). A shadow denoiser that needs the light size per frame
       should read `meta.lights`; consider making it part of v1 — found by wiring, owner CAPTURE-FORMAT (capture-io)
-- [ ] Re-measure the test bed's 1080p baseline tables: `accumulate` there is now
+- [x] (89f0050, results) Re-measure the test bed's 1080p baseline tables: `accumulate` there is now
       `accumulate-32` (same code), and beyond-far geometry became sky in the guides (unscored
       pixels, tiny effect near the horizon on spatial filters) — found by wiring, owner T1.5
 - [ ] Test bed live `svgf` / `svgf-auto` run one instance per signal (the registry's joint
@@ -187,6 +190,33 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       temp-profile cleanup, `--serve` starting Vite. First run on the RTX machine:
       `--set=roundtrip`, then check `validate.mjs` and the round-trip numbers against
       RESULTS.md — found by wiring, owner harness builder (report only)
+
+- [ ] **SVGF defaults from M1** (results/M1.md §4, 1080p test bed, blue noise): set
+      `feedback: false` (+0.6…+2.6 dB diffuse on all 7 paths, FLIP −24…−44 %, energy loss
+      −3.5 → −1.2 %, specular +0.1…+0.8 dB, flicker unchanged, a bit cheaper) and
+      `antiLag: 'auto'` (+0.1…+1.1 dB diffuse, +0.0…+2.9 dB specular over the 7 paths;
+      +0.27 / +1.23 dB mean with feedback off, lower FLIP/flicker,
+      light-change recovery ~3 vs ~9 frames; costs +2.1 ms joint: 4.20 → 6.31 ms at 1080p).
+      Keep `kernel: '3x3'` (5×5: ≤ +0.15 dB for +2 ms), `atrousIterations: 5` (4: −0.1 dB,
+      +15…56 % flicker), `temporalAlpha` 0.2 off / 0.1 auto. If `antiLag` stays 'off', make
+      α_min per signal (diffuse 0.1: +1.2 dB; specular must stay 0.2: −1.5 dB at 0.1).
+      Repro: test bed `signal=diffuse,specular&mode=eval&preset=full&denoiser=svgf,svgf-auto&path=orbit&feedback=0`.
+      Update the README results table too. — found by results, owner `packages/denoiser-realtime`
+- [ ] A-SVGF `antiLag: 'auto'` makes α_min ≤ 0.1 inert: 0.05 and 0.1 give identical output
+      (≤ 0.02 dB) on orbit/pan/light, i.e. λ keeps 1/n ≥ ~0.1 everywhere, so histories never
+      exceed ~10 frames even on static, unchanged regions (`light` before frame 48). Check
+      the λ noise floor (`antiLagNoiseFloor`, default 2) on static regions; longer histories
+      there would cut residual noise. Repro: `signal=diffuse&mode=eval&preset=full&denoiser=svgf-auto&path=light&temporalAlpha=0.05`
+      vs `...&temporalAlpha=0.1` (same numbers); try `&antiLagNoiseFloor=3`. — found by results, owner `packages/denoiser-realtime`
+- [ ] Specular `variance` pass is 0.66 ms at 1080p (0.95 with anti-lag) vs 0.23 for diffuse
+      (README measured 0.37 on the dev scene); worth a profile, it is the largest single
+      specular pass (M1.md §6). — found by results, owner `packages/denoiser-realtime`
+- [ ] Windows: the standard capture set was regenerated with blue-noise sampling
+      (2026-10-25 ~01:00, same names and sizes, `extra.testbed.sampling: "blue"`); copy the
+      new set before the native M1 replay. Old white-noise captures are obsolete. — found by results, owner harness builder (report only)
+- [ ] `RT_REALTIME_SRC=<dir>` on the test-bed Vite server pins `denoiser/realtime` to a frozen
+      `git archive` copy (examples/realtime-denoiser/vite.config.ts); use it for results runs while
+      someone edits the package. — found by results, owner any agent (FYI)
 
 ## Probes for the Windows harness
 
@@ -209,4 +239,7 @@ _(only genuine blockers or taste calls; continue with a provisional best guess m
   iteration 0 → color history) on. Measured on the dev page at 1080p: `feedback: false` is
   +1.1 dB PSNR (40.5 → 41.6 diffuse) with ~4 % more flicker; feedback compounds blur under
   a static camera. Provisional: default stays `true`; recommend `false`. — svgf
+  _Measured on the test bed (results/M1.md §4): `feedback: false` wins on all 7 paths
+  (+0.6…+2.6 dB diffuse, FLIP −24…−44 %, no flicker cost). Recommendation stands; it is a
+  defaults change for the package owner (Found along the way), no taste call left._ — results
 

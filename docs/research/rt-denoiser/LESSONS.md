@@ -70,6 +70,15 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   an alias `/^(\.\.\/)+tools\/rt-capture\/src\/denoisers$/` → the wrapper. A config file
   outside the repo can't resolve the bare `vite` import; import
   `<repo>/node_modules/vite/dist/node/index.js` by absolute path. — recurrent, 2026-10-25
+- Results runs while another agent edits `packages/denoiser-realtime`: Vite serves its
+  `src/` live, so pin it: `git archive HEAD packages/denoiser-realtime/src packages/denoiser-core/src | tar -x -C <dir>`
+  and start the test bed with `RT_REALTIME_SRC=<dir>/packages/denoiser-realtime/src`
+  (alias in its vite.config.ts). Check with `curl .../@fs/<repo>/tools/rt-capture/src/denoisers.ts | grep realtime`.
+  — results, 2026-10-25
+- Several of your own 1080p evals can run in parallel for *quality* numbers (CPU FLIP is
+  most of the time; results are deterministic), ~2–5 min per path with 3 jobs; never for
+  timings. A bench loop that waits on `pgrep -f dev/run-headless` before each page gives
+  quiet timings while other agents work. — results, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -223,6 +232,20 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - Native timings on the RTX 3060 Laptop drift with clocks (wide p90) because the harness idles
   between frames while loading the next one, the same effect our replay fixes with a 50 ms GPU
   warm-up. Compare medians from the same machine only. — orchestrator, 2026-10-25
+- The test bed's scene uniform has no spare slot where it looks like one: `u[86]` is
+  `seedOffset`, the old `_pad0` is `u[87]`. Writing the sampler flag into `u[86]` silently
+  changed the white-noise seed instead (two "different" samplers gave identical stats).
+  When a new mode changes nothing, check the uniform offsets first. — results, 2026-10-25
+- Spatiotemporal blue noise for 2-D (or n-D) samples: animate with the R_n sequence
+  (Roberts 2018), not the golden ratio on every dimension; equal per-dimension steps put a
+  pixel's samples over time on a line. Blue noise lifts temporal accumulation (+1.35 dB
+  diffuse mean, +4.5 dB on a static camera) but leaves SVGF's PSNR unchanged (−12 %
+  flicker): wide à-trous footprints average past the mask's correlation length.
+  — results, 2026-10-25
+- SVGF on the test bed (M1.md §4): `feedback: false` is +0.6…+2.6 dB diffuse with no
+  flicker cost; under `antiLag: 'auto'` α_min ≤ 0.1 is inert (λ keeps 1/n ≥ ~0.1), so
+  sweep α only with anti-lag off; plain SVGF with low α_min ghosts specular (orbit
+  −2.8 dB at 0.1). — results, 2026-10-25
 
 ## Clean room
 
