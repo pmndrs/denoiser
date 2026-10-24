@@ -50,22 +50,22 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M0: foundations
 
-- [ ] **T0.1 SPEC.md v0** (spec author): SVGF + A-SVGF pipeline (papers + `ssgi-svgf-review.md`
+- [~] spec-author **T0.1 SPEC.md v0** (spec author): SVGF + A-SVGF pipeline (papers + `ssgi-svgf-review.md`
       upgrades) and the recurrent pipeline, with a decision for each open item in
       `reblur.md` §7; shared temporal core; shadows and occlusion outlines; WebGPU
       resource/memory budget. _Dennis reviews before M2 is final; M2 may start against v0,
       marked provisional._
-- [ ] **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
+- [~] spec-author **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [~] testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
       albedo/f0; per-frame converged references; stress paths (fast pan, lighting change,
       thin geometry, glossy floor, camera cut); metrics: PSNR, FLIP, temporal PSNR /
       flicker, per-region (penumbra, disoccluded), per-pass GPU ms; headless runner.
-- [ ] **T0.4 Capture I/O** (`tools/rt-capture`): finalize CAPTURE-FORMAT v0 (incl. 2.5D
+- [~] capture-io **T0.4 Capture I/O** (`tools/rt-capture`): finalize CAPTURE-FORMAT v0 (incl. 2.5D
       motion z), synthetic capture generator (also serves the Windows harness's phase 3),
       validator, browser writer + replay module running any `TemporalDenoiser` from a
       capture, metrics on replay outputs.
-- [ ] **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
+- [~] svgf **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
       `denoiser/realtime`, mirroring `packages/denoiser-ffx`; FFX classes re-exported.
 - [ ] **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
 - [ ] **T0.7 Exit (our side):** a capture written by the test bed replays through our
