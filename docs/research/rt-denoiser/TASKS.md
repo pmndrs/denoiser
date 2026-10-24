@@ -67,8 +67,8 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       capture, metrics on replay outputs.
 - [x] svgf (6561a00) **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
       `denoiser/realtime`, mirroring `packages/denoiser-ffx`; FFX classes re-exported.
-- [ ] **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
-- [ ] **T0.7 Exit (our side):** a capture written by the test bed replays through our
+- [~] wiring **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
+- [~] wiring **T0.7 Exit (our side):** a capture written by the test bed replays through our
       replay mode with matching results. _Windows side (native REFERENCE reads it) waits
       for Dennis's machine._
 
