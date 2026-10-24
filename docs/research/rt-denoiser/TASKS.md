@@ -50,18 +50,18 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M0: foundations
 
-- [~] spec-author **T0.1 SPEC.md v0** (spec author): SVGF + A-SVGF pipeline (papers + `ssgi-svgf-review.md`
+- [x] (d3d603a, 4619633) **T0.1 SPEC.md v0** (spec author): SVGF + A-SVGF pipeline (papers + `ssgi-svgf-review.md`
       upgrades) and the recurrent pipeline, with a decision for each open item in
       `reblur.md` §7; shared temporal core; shadows and occlusion outlines; WebGPU
       resource/memory budget. _Dennis reviews before M2 is final; M2 may start against v0,
       marked provisional._
-- [~] spec-author **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
+- [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [~] testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
       albedo/f0; per-frame converged references; stress paths (fast pan, lighting change,
       thin geometry, glossy floor, camera cut); metrics: PSNR, FLIP, temporal PSNR /
       flicker, per-region (penumbra, disoccluded), per-pass GPU ms; headless runner.
-- [~] capture-io **T0.4 Capture I/O** (`tools/rt-capture`): finalize CAPTURE-FORMAT v0 (incl. 2.5D
+- [x] (e411ee7, f376fe2, bb343d9) capture-io **T0.4 Capture I/O** (`tools/rt-capture`): finalize CAPTURE-FORMAT v0 (incl. 2.5D
       motion z), synthetic capture generator (also serves the Windows harness's phase 3),
       validator, browser writer + replay module running any `TemporalDenoiser` from a
       capture, metrics on replay outputs.
@@ -95,10 +95,41 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
 
+- [ ] API additions proposed by SPEC §1.2/§9: `FrameGuides.f0?`, `ShadowInputs.light`
+      (capture `lights` fields), options `inputDemodulated` (default true) and
+      `output: 'demodulated' | 'remodulated'` (default demodulated), and how
+      `DiffuseSpecularDenoiser.dispatch` returns two outputs — found by spec-author, owner
+      `packages/denoiser-core/src/temporal.ts` / T0.5
+- [ ] Capture format: `*_hitt = 0` means both "miss" and "lobe not sampled"; SPEC C-4 treats
+      0 as miss. If probabilistic lobe selection is ever captured, give "not sampled" its
+      own value (proposed: negative) — found by spec-author, owner CAPTURE-FORMAT (capture-io)
+- [ ] A-SVGF renderer contract (SPEC §4.6 S-8): the test bed's tracer must split primary
+      visibility and shading, and re-shade requested pixels at the previous surface point
+      with the previous seed — found by spec-author, owner `examples/realtime-denoiser` (T0.3/T1.4)
+- [ ] M2 first step: time the 8-pass recurrent skeleton with trivial kernels at 1080p
+      (SPEC §10.3 says the 4 ms target is at risk) — found by spec-author, owner T2
+
+- [ ] T0.6 wiring notes: the test bed adds `rtCapture()` from `tools/rt-capture/src/vite-plugin`
+      to its Vite config and writes with `CaptureWriter` (`tools/rt-capture/src/writer.ts`);
+      set `static: false` when the movable sphere moves; run `validate.mjs` on the result.
+      Its Karis 2014 envBRDF matches CAPTURE-FORMAT v0. — found by capture-io, owner `examples/realtime-denoiser`
+- [ ] Register the SVGF denoiser(s) in `tools/rt-capture/src/denoisers.ts` (`registerDenoiser`;
+      a joint diffuse+specular denoiser implements `ReplayDenoiser` and returns both
+      outputs). The replay already fills `guides.viewZ` / `guides.motionZ` when the capture
+      has them. — found by capture-io, owner `tools/rt-capture` (any agent may add the entry)
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
 harness builder runs them and returns images/metrics only.)_
+
+- [ ] **P1: does `REFERENCE` reproject?** Captures: `synthetic-static` and `synthetic-plane`
+      (`gen-synthetic.mjs`, see NATIVE-HARNESS phase 3). Run `REFERENCE` on all three
+      signals, score with `compare.mjs`. On `synthetic-static` expect last-frame PSNR ≈ 26.5 /
+      21.5 / 23.6 dB (diffuse / specular / visibility). On `synthetic-plane`, ours
+      (`accumulate`, reprojected) gets 31.7 / 26.4 / 26.4; without reprojection
+      (`accumulate-static`) 25.7 / 18.1 / 13.9. Return both tables and a specular strip
+      (`preview.mjs --strip specular`). — from capture-io
 
 ## Questions for Dennis
 
