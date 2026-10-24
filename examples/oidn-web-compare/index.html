@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser vs oidn-web</title>
+    <style>
+      /* the shared theme (examples/_shared/shell.css) plus a side panel, as in the Pipeline Lab */
+      :root { --panel: var(--dn-panel); --line: var(--dn-border); --text: var(--dn-text); --dim: var(--dn-muted); --accent: var(--dn-accent); }
+      main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      .frame { position: relative; }
+      #view { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--line); border-radius: 6px; touch-action: none; }
+      .tag { position: absolute; top: 10px; max-width: 46%; padding: 4px 8px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; font: 12px ui-monospace, monospace; pointer-events: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #tagLeft { left: 10px; }
+      #tagRight { right: 10px; text-align: right; }
+      #divider { position: absolute; top: 0; bottom: 0; width: 22px; margin-left: -11px; cursor: ew-resize; touch-action: none; }
+      #divider::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: rgb(255 255 255 / .85); box-shadow: 0 0 4px rgb(0 0 0 / .6); }
+      #divider::after { content: '⇆'; position: absolute; left: 0; top: 50%; width: 22px; height: 22px; margin-top: -11px; border-radius: 50%; background: #fff; color: #000; font: 13px/22px sans-serif; text-align: center; }
+      #divider[hidden] { display: none; }
+      #stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font: 12px ui-monospace, monospace; }
+      #stats span { color: var(--dim); margin-right: 6px; }
+      aside { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; align-self: start; min-width: 0; }
+      /* min-width: 0, or a fieldset grows to its widest child (min-content) and overflows the panel */
+      fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 10px 0 6px; min-width: 0; }
+      fieldset:first-of-type { border-top: 0; padding-top: 0; }
+      legend { font-weight: 600; color: var(--accent); padding: 0; margin-bottom: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+      label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0; color: var(--dim); }
+      label.check { justify-content: flex-start; color: var(--text); }
+      select, input[type=number] { background: #0f1420; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; min-width: 0; max-width: 62%; }
+      input[type=number] { width: 5.5rem; }
+      input[type=range] { flex: 0 1 9rem; width: 9rem; min-width: 0; }
+      label > select { flex: 0 1 auto; text-overflow: ellipsis; }
+      .hint { color: var(--dim); font-size: 12px; margin: 4px 0 8px; }
+      .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      #resultsBox { margin-top: 16px; }
+      .results-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+      .results-head h2 { font-size: 15px; margin: 0; }
+      .results-head .buttons { margin: 0; }
+      .table-wrap { overflow-x: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; }
+      table { border-collapse: collapse; font: 12px ui-monospace, monospace; white-space: nowrap; width: 100%; }
+      th, td { padding: 5px 9px; text-align: right; border-bottom: 1px solid var(--line); }
+      th { color: var(--dim); font-weight: 500; background: var(--panel); }
+      th:nth-child(-n+3), td:nth-child(-n+3), th:last-child, td:last-child { text-align: left; }
+      pre#status { color: var(--dim); font-size: 12px; white-space: pre-wrap; margin: 8px 0 0; }
+      #measuredBox { margin-top: 16px; }
+      #measuredBox h2 { font-size: 15px; margin: 0 0 6px; }
+      #measuredBox p { font-size: 13px; line-height: 1.5; }
+      #measured th, #measured td { text-align: right; }
+      #measured th:first-child, #measured td:first-child { text-align: left; }
+      #measured th { vertical-align: bottom; }
+      #measured small { color: var(--dim); font-weight: 400; }
+      #measured td.best { color: var(--accent); font-weight: 600; }
+      #measured .fail { color: var(--dim); }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+    <header class="dn-head">
+      <h1>denoiser vs oidn-web</h1>
+      <p class="dn-lede">
+        One path-traced frame, two implementations of Intel's OIDN networks: this library and
+        <a href="https://github.com/pissang/oidn-web">oidn-web</a>, the one three-gpu-pathtracer's
+        <code>OIDNDenoiser</code> uses (plus its older TensorFlow.js build). Same weights, same inputs,
+        same GPU device, run one after the other. Drag the divider; orbit with the mouse.
+      </p>
+    </header>
+    <main>
+      <div>
+        <div class="frame">
+          <canvas id="view" width="1280" height="720"></canvas>
+          <div id="divider" title="Drag to move the split"></div>
+          <div id="tagLeft" class="tag"></div>
+          <div id="tagRight" class="tag"></div>
+        </div>
+        <div id="stats"></div>
+        <pre id="status" class="dn-status"></pre>
+        <section id="measuredBox">
+          <h2>What we measured</h2>
+          <p>oidn-web is no longer the TensorFlow.js port it started as. 0.4 (August 2026) replaced TF.js with
+            hand-written WGSL and an experimental WebNN engine, and 0.5 (October 2026) moved its fp16 convolutions to
+            implicit GEMM. three-gpu-pathtracer's <code>OIDNDenoiser</code> doesn't bundle it: you pass in
+            <code>initUNetFromURL</code>, so your app picks the version. The tracer's own demo pins <code>^0.4.0</code>
+            (0.4.x only) and runs the default tiling, the "default tiles" column below.</p>
+          <div class="table-wrap" id="measured"></div>
+          <p class="hint" id="measuredNote"></p>
+        </section>
+        <section id="resultsBox" hidden>
+          <div class="results-head">
+            <h2>Benchmark results</h2>
+            <span class="buttons">
+              <button id="copyMd" class="dn-btn" type="button">Copy as Markdown</button>
+              <button id="copyJson" class="dn-btn" type="button">Copy JSON</button>
+              <button id="clearResults" class="dn-btn" type="button">Clear</button>
+            </span>
+          </div>
+          <div class="table-wrap"><table id="results"></table></div>
+          <p class="hint">"first ms" includes the weights download, parse and shader compile. "vs ours" is PSNR
+            against this library's output: how closely the two implementations agree. Saved in this browser.</p>
+        </section>
+      </div>
+      <aside>
+        <fieldset>
+          <legend>Scene</legend>
+          <label>scene <select id="scene"></select></label>
+          <label>size <select id="size">
+            <option value="960x540">960 × 540</option>
+            <option value="1280x720" selected>1280 × 720</option>
+            <option value="1920x1080">1920 × 1080</option>
+          </select></label>
+          <label>samples per pixel <input id="spp" type="number" value="8" min="1" max="4096"></label>
+          <label>max bounces <input id="bounces" type="number" value="5" min="1" max="32"></label>
+        </fieldset>
+        <fieldset>
+          <legend>Denoisers</legend>
+          <div id="runtimePicker"></div>
+          <label>model <select id="quality">
+            <option value="fast">fast (small)</option>
+            <option value="balanced" selected>balanced (base)</option>
+            <option value="high">high (large)</option>
+          </select></label>
+          <label class="check"><input id="aux" type="checkbox" checked> albedo + normal guides</label>
+          <label>precision <select id="precision">
+            <option value="fp16">fp16 (both)</option>
+            <option value="fp32">fp32 (both)</option>
+          </select></label>
+          <p class="hint">The runtime and precision reload the page. oidn-web 0.3.5 (TensorFlow.js) always runs fp32.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Compare</legend>
+          <label>left <select id="left"></select></label>
+          <label>right <select id="right"></select></label>
+          <label>view <select id="mode">
+            <option value="split" selected>split</option>
+            <option value="diff">difference |left − right|</option>
+          </select></label>
+          <label>difference gain <input id="gain" type="range" min="1" max="64" step="1" value="8"></label>
+          <label>split <input id="split" type="range" min="0" max="100" step="0.1" value="50"></label>
+          <label>reference samples <input id="refspp" type="number" value="1024" min="16" max="16384"></label>
+          <div class="buttons"><button id="traceRef" class="dn-btn" type="button">Trace reference (adds PSNR)</button></div>
+          <p class="hint">PSNR is only meaningful against a converged reference: check it in the split view first.
+            The furnished room is still grainy at 1024 samples; the spheres and the Eiffel Tower converge much sooner.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Benchmark</legend>
+          <p class="hint">The scene's own camera, traced once per size and handed to each denoiser in turn:
+            first run, then warm runs, scored against the reference.</p>
+          <div id="benchSizes">
+            <label class="check"><input type="checkbox" value="960x540" checked> 960 × 540</label>
+            <label class="check"><input type="checkbox" value="1280x720" checked> 1280 × 720</label>
+            <label class="check"><input type="checkbox" value="1920x1080" checked> 1920 × 1080</label>
+          </div>
+          <div id="benchContenders"></div>
+          <label>warm runs <input id="runs" type="number" value="7" min="1" max="50"></label>
+          <div class="buttons"><button id="bench" class="dn-btn dn-btn--primary" type="button">Run benchmark</button></div>
+        </fieldset>
+      </aside>
+    </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

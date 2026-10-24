@@ -1,0 +1,26 @@
+{
+  "name": "oidn-web-compare",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "denoiser vs oidn-web (WGSL / WebNN, and the 0.3.5 TensorFlow.js build) on the same path-traced frame: split view + timings.",
+  "scripts": {
+    "dev": "vite --port 5240",
+    "build": "vite build",
+    "preview": "vite preview --port 5240"
+  },
+  "dependencies": {
+    "denoiser": "workspace:*",
+    "oidn-web": "0.5.0",
+    "oidn-web-tfjs": "npm:oidn-web@0.3.5",
+    "three": "^0.186.1",
+    "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114",
+    "three-mesh-bvh": "^0.9.16",
+    "xatlas-web": "^0.1.0"
+  },
+  "devDependencies": {
+    "onnxruntime-web": "^1.27.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.4"
+  }
+}
