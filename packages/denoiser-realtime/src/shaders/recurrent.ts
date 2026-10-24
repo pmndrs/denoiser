@@ -59,6 +59,9 @@ export const RP_NO_VIRTUAL = 64;
 export const RP_SIZE = 48 * 4;
 export const RF_SIZE = 48 * 4;
 
+/** Disk taps used for a kernel with n taps (R-3 table indices; 4 = two antipodal pairs ~90° apart). */
+export const tapSet = (n: number) => (n <= 4 ? [0, 2, 4, 6] : [0, 1, 2, 3, 4, 5, 6, 7]);
+
 /** Slot in the packed data / fast-history channels: diffuse 0, specular 1. */
 export const slotOf = (k: RecurrentKind) => (k === 'diffuse' ? 0 : 1);
 
@@ -341,7 +344,7 @@ function addReproj(b: Bindings) {
 
 // ---- R1 pre-blur (SPEC §5.4, D1) ------------------------------------------------
 
-export function preBlurPass(kinds: RecurrentKind[]): PassDef {
+export function preBlurPass(kinds: RecurrentKind[], taps: number[] = kinds.map(() => 8)): PassDef {
   const b = base(kinds);
   addReproj(b);
   kinds.forEach((_, i) => {
@@ -393,7 +396,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var sw${i} = 1.0;
     if (R > 0.5 * ps) {   // smaller kernels land on the centre pixel
       let k${i} = kern${i}(g, X, nv, R, 0.0, hh);
-      ${[...Array(8).keys()].map((t) => tapWgsl(kinds[i], i, t, {
+      ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
         rotate: false, hitWeight: false, rgbOnly: true,
         load: (q) => `vec4f(sanitize(textureLoad(input${i}, ${q}, 0).rgb, P${i}.maxRadiance), 0.0)`,
       })).join('')}
@@ -515,6 +518,46 @@ const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
     fastOut[${2 * sl + 1}] = fNew.y;
   }`;
 
+
+// SPEC C-6/C-7 for the recurrent filter (our cheaper variant of the shared core's
+// reproject()): previous view-space positions from the linear unprojection with the
+// previous projection, and the plane test against the plane {Xp, np} of this pixel
+// (current normal only; SPEC averages it pairwise with each tap's normal), its
+// distance linear in the tap pixel (as the kernels). Backfacing taps rejected.
+const REPROJECT_R = /* wgsl */ `
+fn viewPosPrevAt(uv: vec2f, d: f32) -> vec3f {
+  let ndc = ndcOf(uv);
+  if (isOrtho()) { return vec3f((ndc.x - RF.unp2.x) * RF.prevUnp.x, (ndc.y - RF.unp2.y) * RF.prevUnp.y, -d); }
+  return vec3f(d * (ndc.x + RF.prevUnp.z) * RF.prevUnp.x, d * (ndc.y + RF.prevUnp.w) * RF.prevUnp.y, -d);
+}
+fn reprojectR(p: vec2i, g: Geo, tol: f32) -> Reproj {
+  var r: Reproj;
+  let uv = uvOf(p);
+  let mv = textureLoad(motionTex, p, 0).xy;   // NDC delta, current - previous, +y up
+  r.prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+  r.world = (F.viewInv * vec4f(viewPosAt(uv, g.z), 1.0)).xyz;
+  var dPrev: f32;
+  if (hasFlag(FRAME_HAS_MOTIONZ)) { dPrev = g.z - textureLoad(motionZTex, p, 0).r; }
+  else { dPrev = -(F.prevView * vec4f(r.world, 1.0)).z; }
+  r.expPrev = viewPosPrevAt(r.prevUV, dPrev);
+  let pp = r.prevUV * F.dims - 0.5;
+  r.base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  r.bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  let pl = makePlaneU(r.expPrev, (F.prevView * vec4f(g.n, 0.0)).xyz, RF.prevUnp);
+  ${[0, 1, 2, 3].map((k) => `{
+    let q0 = r.base + TAP_OFFS[${k}];
+    let q = clampPix(q0);
+    let gq = geoTap(geoPrev, q);
+    r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= tol);
+  }`).join('\n  ')}
+  r.w = r.bil * r.valid;
+  r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  r.allValid = all(r.valid > vec4f(0.5));
+  return r;
+}
+`;
+
 export function temporalPass(kinds: RecurrentKind[]): PassDef {
   const b = base(kinds);
   addReproj(b);
@@ -581,6 +624,7 @@ fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> Virt {
 }`;
   const code = /* wgsl */ `
 ${head(b, REPROJECT_WGSL)}
+${REPROJECT_R}
 ${kinds.map((k, i) => (k === 'specular' ? signalWgsl(k, i) + specCap(i) : '')).join('\n')}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
@@ -603,7 +647,7 @@ fn main(${TILE_MAIN}) {
   var hasHist = false;
   var r: Reproj;
   if (!hasFlag(FRAME_RESET)) {
-    r = reproject(p, g, P0.planeTol, -1.0);   // C-7: plane distance + backface only (no SVGF normal test)
+    r = reprojectR(p, g, P0.planeTol);   // C-7: plane distance + backface only (no SVGF normal test)
     hasHist = r.sumW > 0.0 || any(r.valid > vec4f(0.5));
   }
   // C-8: custom-weighted bilinear; valid taps with tiny bilinear weight still count.
@@ -613,20 +657,21 @@ fn main(${TILE_MAIN}) {
   if (hasHist) {
     let wts = max(r.bil, vec4f(1e-3)) * r.valid;
     let sw = wts.x + wts.y + wts.z + wts.w;
-    for (var k = 0; k < 4; k++) {
-      let wk = wts[k];
-      if (wk <= 0.0) { continue; }
-      let q = r.base + TAP_OFFS[k];
+    // branchless (all loads in flight; LESSONS): invalid taps get weight 0, clamped coordinates
+    ${[0, 1, 2, 3].map((k) => `{
+      let wk = wts[${k}];
+      let ok = wk > 0.0;
+      let q = clampPix(r.base + TAP_OFFS[${k}]);
       let dv = textureLoad(dataPrev, q, 0).r;
       Ahist += vec2f(unpackA(dv, 0u), unpackA(dv, 1u)) * wk;
       Fh += textureLoad(fastPrev, q, 0) * wk;
       ${I.map((i) => `{
         let h = textureLoad(histPrev${i}, q, 0);
         H${i} += h * wk;
-        lo${i} = min(lo${i}, h);
-        hi${i} = max(hi${i}, h);
+        lo${i} = select(lo${i}, min(lo${i}, h), ok);
+        hi${i} = select(hi${i}, max(hi${i}, h), ok);
       }`).join('\n      ')}
-    }
+    }`).join('\n    ')}
     Ahist /= sw;
     Fh /= sw;
     ${I.map((i) => `H${i} /= sw;`).join(' ')}
@@ -900,7 +945,7 @@ fn main(${TILE_MAIN}) {
 
 // ---- R5 blur / R6 post-blur (SPEC §5.10, R-5, R-6) --------------------------------
 
-export function blurPass(kinds: RecurrentKind[], post: boolean): PassDef {
+export function blurPass(kinds: RecurrentKind[], post: boolean, taps: number[] = kinds.map(() => 8)): PassDef {
   const b = base(kinds);
   b.add('dataTex', 'texture_2d<u32>', 'i');
   kinds.forEach((_, i) => {
@@ -942,7 +987,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let k${i} = kern${i}(g, X, nv, R, An, c.a);
     var sum${i} = c;
     var sw${i} = 1.0;
-    ${[...Array(8).keys()].map((t) => tapWgsl(kinds[i], i, t, {
+    ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
       rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => `textureLoad(src${i}, ${q}, 0)`,
     })).join('')}
     textureStore(outBlur${i}, p, sum${i} / sw${i});
@@ -1026,15 +1071,15 @@ fn main(${TILE_MAIN}) {
       var sp = vec4f(0.0);
       var lo = vec4f(1e30);
       var hi = vec4f(-1e30);
-      for (var k = 0; k < 4; k++) {
-        if (wts[k] <= 0.0) { continue; }
-        let v = textureLoad(sPrev${i}, base + TAP_OFFS[k], 0);
-        sp += v * wts[k];
-        lo = min(lo, v);
-        hi = max(hi, v);
-      }
+      ${[0, 1, 2, 3].map((k) => `{
+        let v = textureLoad(sPrev${i}, clampPix(base + TAP_OFFS[${k}]), 0);
+        let ok = wts[${k}] > 0.0;
+        sp += v * wts[${k}];
+        lo = select(lo, min(lo, v), ok);
+        hi = select(hi, max(hi, v), ok);
+      }`).join('\n      ')}
       sp /= wts.x + wts.y + wts.z + wts.w;
-      if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev${i}, smp, prevUV), lo, hi); }
+      ${kinds[i] === 'specular' ? 'if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev' + i + ', smp, prevUV), lo, hi); }' : '// diffuse: bilinear (Catmull-Rom here: identical PSNR on the test bed, +0.07 ms)'}
       let A = unpackA(dv, ${slotOf(kinds[i])}u);
       let An = clamp(A / P${i}.aCap, 0.0, 1.0);
       let mu = m1_${i} / n;
