@@ -284,6 +284,15 @@ harness builder runs them and returns images/metrics only.)_
       (`accumulate`, reprojected) gets 31.7 / 26.4 / 26.4; without reprojection
       (`accumulate-static`) 25.7 / 18.1 / 13.9. Return both tables and a specular strip
       (`preview.mjs --strip specular`). — from capture-io
+- [ ] **P2: is native specular low because of input conventions?** On `synthetic-static` /
+      `synthetic-plane`, native specular scores 24.6–25.3 dB vs ours 28.7–29.4 (results/M1.md §7),
+      while diffuse is on par. Sensitivity runs, specular only, REBLUR and RELAX, scored with
+      `compare.mjs`: (a) as now; (b) `specular_hitt` scaled ×0.1 and ×10 before packing; (c)
+      roughness forced to 0.3 and to 0.7 everywhere (same in our replay of `svgf-specular`, the
+      orchestrator will run ours); (d) REBLUR with hit-distance parameters chosen so the
+      normalized hit distance of this capture spans roughly 0.2–0.8. Return the PSNR table and
+      the range of normalized hit distance the helper produced in (a). Words/metrics only.
+      — orchestrator
 
 ## Questions for Dennis
 
