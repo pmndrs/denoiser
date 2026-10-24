@@ -193,7 +193,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
 harness builder runs them and returns images/metrics only.)_
 
-- [x] (answered 530c780: **no**, it is a per-pixel screen-space running mean; matches our `accumulate-static`; see `native/results/README.md`) **P1: does `REFERENCE` reproject?** Captures: `synthetic-static` and `synthetic-plane`
+- [x] (answered 530c780: **no**. With the capture's moving camera it passes the noisy frame through unchanged; told the camera is static (prev := current) it keeps a plain per-pixel screen-space mean. That mean scores 22.88 / 17.31 / 12.94 vs our `accumulate-static` 25.7 / 18.1 / 13.9 because ours restarts history where the same pixel was sky last frame (horizon moving); verified CPU-side on a fresh `synthetic-plane`: plain mean 22.88 / 17.31 / 12.94, sky-gated 25.66 / 18.13 / 13.86. Not a bug on either side. — orchestrator) **P1: does `REFERENCE` reproject?** Captures: `synthetic-static` and `synthetic-plane`
       (`gen-synthetic.mjs`, see NATIVE-HARNESS phase 3). Run `REFERENCE` on all three
       signals, score with `compare.mjs`. On `synthetic-static` expect last-frame PSNR ≈ 26.5 /
       21.5 / 23.6 dB (diffuse / specular / visibility). On `synthetic-plane`, ours

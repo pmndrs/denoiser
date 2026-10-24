@@ -180,6 +180,34 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Synthetic scenes: geometry beyond the far plane is "sky" to the denoiser; mark it sky
   in the ground truth too, or the metric scores unfiltered pixels. — svgf, 2026-10-25
 
+## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
+
+_Facts about driving native NRD as a black box: interface and build behavior only._
+
+- Native `REFERENCE` doesn't reproject. On a moving camera it returns the noisy frame unchanged;
+  with prev matrices := current it is a plain per-pixel screen-space mean. Use it as a sanity
+  check on static-camera captures only (`synthetic-static`: 26.53 / 21.51 / 23.63 dB, matches
+  ours). Our `accumulate-static` differs from that mean only where a pixel was sky last frame
+  (ours restarts history there). — orchestrator, 2026-10-25
+- `NRD_NORMAL_ENCODING=4` (RGBA16_SNORM) doesn't build at `e06852b`; encoding 2 with
+  `NRD_ROUGHNESS_ENCODING=1` (linear) does, and is what the harness uses. — harness builder
+- One `Denoise` call per `nrd::Integration` per frame. Several calls on one instance overran its
+  per-frame descriptor pool: a crash with REFERENCE alone, and silent corruption of ~7 % of pixels
+  with all denoisers, which looked like a weighting bug. — harness builder
+- The first-frame format check reads the normal/roughness guide even for `REFERENCE`; always
+  bind the guides. — harness builder
+- Hit distance 0 means "lobe not sampled" to NRD, so the harness maps our 0 (miss) to 65504.
+  Our own 0 still means both miss and not-sampled (TASKS item). — harness builder
+- Shadows: the native shadow denoiser takes distance to occluder, not visibility. The harness maps
+  visibility ≥ 0.5 → miss (65504), 0 with `occluder_dist` > 0 → that distance, 0 with
+  `occluder_dist` 0 (self-shadowed) → 0. Fractional input visibility is lost on that side.
+  — harness builder
+- Jitter is passed in pixels; units are only provisionally confirmed (a smooth plane can't tell).
+  Re-check on a test-bed capture with edges. — harness builder
+- Native timings on the RTX 3060 Laptop drift with clocks (wide p90) because the harness idles
+  between frames while loading the next one, the same effect our replay fixes with a 50 ms GPU
+  warm-up. Compare medians from the same machine only. — orchestrator, 2026-10-25
+
 ## Clean room
 
 - Using native NRD as a black box (feed our captures, compare outputs) is allowed; reading
