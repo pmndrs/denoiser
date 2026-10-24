@@ -195,7 +195,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `--set=roundtrip`, then check `validate.mjs` and the round-trip numbers against
       RESULTS.md — found by wiring, owner harness builder (report only)
 
-- [x] recurrent (next commit) **SVGF defaults from M1** (results/M1.md §4, 1080p test bed, blue noise): set
+- [x] recurrent (24ffe6f) **SVGF defaults from M1** (results/M1.md §4, 1080p test bed, blue noise): set
       `feedback: false` (+0.6…+2.6 dB diffuse on all 7 paths, FLIP −24…−44 %, energy loss
       −3.5 → −1.2 %, specular +0.1…+0.8 dB, flicker unchanged, a bit cheaper) and
       `antiLag: 'auto'` (+0.1…+1.1 dB diffuse, +0.0…+2.9 dB specular over the 7 paths;
