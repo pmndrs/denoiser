@@ -57,7 +57,7 @@ function checkSize(who: string, W: number, H: number, entries: [string, GPUTextu
 }
 
 function passCount(o: ResolvedOptions) {
-  return 2 + o.atrousIterations + (o.antiLag !== 'off' ? 1 + o.gradientIterations : 0);
+  return 2 + o.atrousIterations + (o.antiLag !== 'off' ? 2 + o.gradientIterations : 0);
 }
 
 /**

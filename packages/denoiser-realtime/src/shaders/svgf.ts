@@ -156,25 +156,9 @@ fn historyCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
 }
 
 function antilagWgsl(i: number): string {
-  const P = `P${i}`;
-  return /* wgsl */ `
-// A-SVGF sec. 3.5: lambda = min(1, |delta| / Delta) from the reconstructed
-// gradient, max over a neighbourhood of strata (p.9). 'auto' subtracts a noise
-// floor k sigma_delta first (our design).
-fn antilagLambda${i}(p: vec2i) -> f32 {
-  let gp = p / ${P}.gradDown;
-  var lam = 0.0;
-  for (var dy = -${P}.gradRadius; dy <= ${P}.gradRadius; dy++) {
-    for (var dx = -${P}.gradRadius; dx <= ${P}.gradRadius; dx++) {
-      let q = clamp(gp + vec2i(dx, dy), vec2i(0), ${P}.gradDims - 1);
-      let v = textureLoad(grad${i}, q, 0);   // (delta, Delta, var(delta), valid)
-      if (v.w <= 0.0 || v.y <= 1e-6) { continue; }
-      var d = abs(v.x);
-      if ((${P}.flags & P_GRADIENT_INPUT) == 0u) { d = max(0.0, d - ${P}.gradNoiseK * sqrt(max(v.z, 0.0))); }
-      lam = max(lam, d / v.y);
-    }
-  }
-  return clamp(lam, 0.0, 1.0);
+  // lambda per stratum, already max-filtered (gradient.ts gradientLambdaPass)
+  return `fn antilagLambda${i}(p: vec2i) -> f32 {
+  return textureLoad(grad${i}, min(p / P${i}.gradDown, P${i}.gradDims - 1), 0).r;
 }`;
 }
 

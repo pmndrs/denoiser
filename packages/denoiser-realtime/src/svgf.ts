@@ -11,7 +11,7 @@ import type { PassTimer } from './common';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res } from './gpu';
 import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
-import { GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientCreatePass } from './shaders/gradient';
+import { GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientCreatePass, gradientLambdaPass } from './shaders/gradient';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
   PARAMS_SIZE, temporalPass, variancePass, type SignalKind,
@@ -150,7 +150,7 @@ class SignalState {
   moments: GPUTexture[] = [];
   hist?: GPUTexture;
   ping: GPUTexture[] = [];
-  grad: GPUTexture[] = [];   // g0a, g1a, g0b, g1b
+  grad: GPUTexture[] = [];   // g0a, g1a, g0b, g1b, lambda
   out?: GPUTexture;
 
   constructor(device: GPUDevice, readonly kind: SignalKind, readonly opts: ResolvedOptions, readonly label: string) {
@@ -219,6 +219,7 @@ export class SvgfPipeline {
     if (o.antiLag !== 'off') {
       make('gcreate', gradientCreatePass(kinds.length, o.antiLag === 'gradient'));
       make('gatrous', gradientAtrousPass(kinds.length));
+      make('glambda', gradientLambdaPass(kinds.length));
     }
   }
 
@@ -238,7 +239,10 @@ export class SvgfPipeline {
       if (this.opts.feedback) s.hist = tex('history', 'rgba16float');
       s.ping = [tex('ping', 'rgba16float'), tex('pong', 'rgba16float')];
       s.out = tex('output', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
-      if (this.opts.antiLag !== 'off') s.grad = ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh));
+      if (this.opts.antiLag !== 'off') {
+        s.grad = ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh));
+        s.grad.push(tex('lambda', 'r32float', this.gw, this.gh));
+      }
       this.writeParams(s);
     }
     this.cur = 0;
@@ -265,11 +269,11 @@ export class SvgfPipeline {
   /** Outputs of the last frame, one per signal. */
   get outputs(): (GPUTexture | undefined)[] { return this.sigs.map((s) => s.out); }
 
-  /** @internal Debug access (signal 0): 'accum' (rgb, history length) of the last frame, 'gradient'. */
+  /** @internal Debug access (signal 0): 'accum' (rgb, history length) of the last frame, 'gradient' (lambda). */
   debugTexture(name: 'accum' | 'gradient', signal = 0): GPUTexture | undefined {
     const s = this.sigs[signal];
     if (name === 'accum') return s.accum[this.cur ^ 1];
-    return s.grad[this.opts.gradientIterations % 2 === 0 ? 0 : 2];
+    return s.grad[4];
   }
 
   private group(name: string, res: Record<string, Res>): GPUBindGroup {
@@ -314,7 +318,10 @@ export class SvgfPipeline {
           Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
         a ^= 2;
       }
-      this.sigs.forEach((s, i) => { gradResult[i] = s.grad[a]; });
+      runPass(enc, timer, name('gradient_lambda'), this.pipes.glambda, this.group('glambda', per((s) => ({
+        inG0: s.grad[a], outL: s.grad[4],
+      }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+      this.sigs.forEach((s, i) => { gradResult[i] = s.grad[4]; });
     }
 
     runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({

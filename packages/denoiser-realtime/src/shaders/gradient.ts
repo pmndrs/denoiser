@@ -200,3 +200,45 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 `;
   return { code, entries: b.entries };
 }
+
+/**
+ * lambda = min(1, |delta| / Delta) per stratum, max over a (2r+1)^2
+ * neighbourhood of strata (A-SVGF sec. 3.5, p.9 safety margin), written once
+ * at stratum resolution so the temporal pass reads one texel. 'auto' subtracts
+ * a noise floor k sigma_delta first (our design).
+ */
+export function gradientLambdaPass(count: number): PassDef {
+  const I = [...Array(count).keys()];
+  const b = new Bindings();
+  I.forEach((i) => b.uniform(`P${i}`, 'Params'));
+  I.forEach((i) => {
+    b.add(`inG0${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outL${i}`, 'texture_storage_2d<r32float, write>', 'r32float');
+  });
+  const code = /* wgsl */ `
+${PARAMS_STRUCT}
+${b.wgsl}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let s = vec2i(gid.xy);
+  if (s.x >= P0.gradDims.x || s.y >= P0.gradDims.y) { return; }
+  ${I.map((i) => /* wgsl */ `
+  {
+    var lam = 0.0;
+    for (var dy = -P${i}.gradRadius; dy <= P${i}.gradRadius; dy++) {
+      for (var dx = -P${i}.gradRadius; dx <= P${i}.gradRadius; dx++) {
+        let q = clamp(s + vec2i(dx, dy), vec2i(0), P${i}.gradDims - 1);
+        let v = textureLoad(inG0${i}, q, 0);   // (delta, Delta, var(delta), valid)
+        if (v.w <= 0.0 || v.y <= 1e-6) { continue; }
+        var d = abs(v.x);
+        if ((P${i}.flags & P_GRADIENT_INPUT) == 0u) { d = max(0.0, d - P${i}.gradNoiseK * sqrt(max(v.z, 0.0))); }
+        lam = max(lam, d / v.y);
+      }
+    }
+    textureStore(outL${i}, s, vec4f(clamp(lam, 0.0, 1.0)));
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
