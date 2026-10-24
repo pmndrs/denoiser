@@ -102,9 +102,11 @@ inputs (ours, per CAPTURE-FORMAT): demodulated diffuse/specular radiance + hitT,
    the test bed, captures, metrics and native harness end to end with a denoiser whose
    correct behavior is known. It stays as a second option (the natural fit for
    ReSTIR-style input later) and as the yardstick M2 must beat.
-   **Head start:** existing SVGF work from Dennis's SSGI experiment. Review it at the
-   start of M1 (what it covers, and that it was written from the paper or permissively
-   licensed code, never NRD) and reuse what fits; record it in PROVENANCE.md.
+   **Head start:** Dennis's SVGF from the SSGI experiment (`ssgiDev` demos 14 and 21),
+   reviewed in [sources/ssgi-svgf-review.md](sources/ssgi-svgf-review.md): written from
+   the SVGF paper, provenance clean, five passes that port directly, with a short list of
+   upgrades (bilinear history with per-tap validity, rg32float moments, gradient-scaled
+   depth weight).
 2. **Built second (M2–M3), expected default: recurrent blur (the RTG II design)** for
    diffuse + specular in shared dispatches. NVIDIA's own numbers say it's the cheaper and
    more stable of the two, and the chapter documents it well. Our decisions for its 16
@@ -195,7 +197,7 @@ crops come back into the repo.
 | | work | exit criteria |
 |---|---|---|
 | **M0** | SPEC.md v0, PROVENANCE.md skeleton; test bed signals + stress paths; capture exporter + replay; Windows harness phases 1–3 (in parallel, on your machine) | a capture round-trips: our replay and native REFERENCE both read it correctly |
-| **M1** | SVGF + A-SVGF baseline for diffuse and specular (starting from the SSGI experiment's SVGF where it fits) | metrics vs references and vs native RELAX on the same captures |
+| **M1** | SVGF + A-SVGF baseline for diffuse and specular, ported from `ssgiDev` demo 14 with the review's upgrades | metrics vs references and vs native RELAX on the same captures |
 | **M2** | recurrent diffuse (pre-blur → stabilization, history repair, anti-lag) | beats M1 on quality or cost; within agreed distance of native REBLUR diffuse. **Go/no-go:** if the gap to native isn't closing with tuning, stop and reassess before M3 |
 | **M3** | recurrent specular (virtual motion, lobe kernels) | vs FFX reflections and native REBLUR specular |
 | **M4** | shadows (penumbra-aware) | vs FFX shadows and native SIGMA |
@@ -229,7 +231,8 @@ crops come back into the repo.
 
 Decided (2026-10-24): SVGF baseline first, recurrent filter second and expected default;
 SH/SG directional variants and translucent shadows are in, as later phases (M7, M8);
-existing SVGF work from the SSGI experiment gets reviewed and reused in M1.
+the SSGI experiment's SVGF (`ssgiDev` demo 14/21) is reviewed, clean, and M1's
+starting point.
 
 Still open:
 
@@ -237,4 +240,3 @@ Still open:
 2. The targets in §8.
 3. Results coming back from Windows: a separate branch touching only
    `docs/research/rt-denoiser/native/` (proposed in NATIVE-HARNESS.md)?
-4. Where the SSGI experiment's SVGF lives, and what it was written from.
