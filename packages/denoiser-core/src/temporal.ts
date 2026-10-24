@@ -48,6 +48,20 @@ export interface FrameGuides {
   roughness?: GPUTexture;
   /** Surface albedo [0, 1] — lets filters demodulate texture detail. */
   albedo?: GPUTexture;
+  /**
+   * Optional linear view-space z of the primary hit (r32float / r16float), in
+   * three.js view space: in front of the camera is NEGATIVE; sky = -far (or 0).
+   * When given, filters use it instead of linearizing `depth` (exact, and the
+   * only option for depth buffers that aren't the projection's own).
+   */
+  viewZ?: GPUTexture;
+  /**
+   * Optional 2.5D motion: viewZprev - viewZ per pixel in `.r` (r32float /
+   * r16float), so moving objects reproject correctly in depth too. Without it,
+   * the previous depth is derived from the camera transform (exact for static
+   * geometry).
+   */
+  motionZ?: GPUTexture;
 }
 
 export interface TemporalConfig {
@@ -99,6 +113,15 @@ export interface DiffuseInputs {
   /** Noisy irradiance (linear HDR, rgba16float) or AO in r. */
   radiance: GPUTexture;
   hitDistance?: GPUTexture;
+}
+
+/**
+ * Diffuse + specular denoised together (shared guides and prepass), e.g.
+ * `denoiser/realtime`'s `DiffuseSpecularDenoiser`.
+ */
+export interface DiffuseSpecularInputs {
+  diffuse: DiffuseInputs;
+  specular: SpecularInputs;
 }
 
 /** Full beauty frame for neural temporal denoisers (OIDN 3 class). */

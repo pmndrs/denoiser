@@ -8,7 +8,7 @@ export type {
 } from './runtime';
 export type {
   TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, Mat4,
-  ShadowInputs, SpecularInputs, DiffuseInputs, BeautyInputs,
+  ShadowInputs, SpecularInputs, DiffuseInputs, DiffuseSpecularInputs, BeautyInputs,
 } from './temporal';
 export { determineModel } from './modelName';
 export { parseTZA, halfToFloat, DEFAULT_TZA_URL } from './tza';
