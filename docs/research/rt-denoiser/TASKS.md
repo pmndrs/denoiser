@@ -67,9 +67,14 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       capture, metrics on replay outputs.
 - [x] svgf (6561a00) **T0.5 Package skeleton** `packages/denoiser-realtime` (private), exported as
       `denoiser/realtime`, mirroring `packages/denoiser-ffx`; FFX classes re-exported.
-- [~] wiring **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
-- [~] wiring **T0.7 Exit (our side):** a capture written by the test bed replays through our
-      replay mode with matching results. _Windows side (native REFERENCE reads it) waits
+- [x] wiring (2359748, 6bf2bf7, 0709015) **T0.6 Wire capture exporter + replay into the test bed** (after T0.3, T0.4).
+      One registry (`tools/rt-capture/src/denoisers.ts`, the test bed maps it); test bed
+      `mode=capture` / `mode=replay` / `start=`; standard capture set in
+      `examples/realtime-denoiser/CAPTURES.md` (10.6 GB, one command); runners cross-platform. SVGF registered as `svgf`,
+      `svgf-auto`, `svgf-diffuse`, `svgf-specular` (orbit smoke + standard-set replay: no NaNs).
+- [x] wiring (0709015) **T0.7 Exit (our side):** a capture written by the test bed replays through our
+      replay mode with matching results. _Done: PSNR within 0.001 dB on 30 rows (rt-orbit,
+      rt-cut; RESULTS.md "Capture round trip")._ _Windows side (native REFERENCE reads it) waits
       for Dennis's machine._
 
 ### M1: SVGF + A-SVGF baseline
@@ -109,16 +114,16 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] M2 first step: time the 8-pass recurrent skeleton with trivial kernels at 1080p
       (SPEC §10.3 says the 4 ms target is at risk) — found by spec-author, owner T2
 
-- [ ] T0.6 wiring notes: the test bed adds `rtCapture()` from `tools/rt-capture/src/vite-plugin`
+- [x] (T0.6, wiring) T0.6 wiring notes: the test bed adds `rtCapture()` from `tools/rt-capture/src/vite-plugin`
       to its Vite config and writes with `CaptureWriter` (`tools/rt-capture/src/writer.ts`);
       set `static: false` when the movable sphere moves; run `validate.mjs` on the result.
       Its Karis 2014 envBRDF matches CAPTURE-FORMAT v0. — found by capture-io, owner `examples/realtime-denoiser`
-- [ ] Register the SVGF denoiser(s) in `tools/rt-capture/src/denoisers.ts` (`registerDenoiser`;
+- [x] (T0.6, wiring) Register the SVGF denoiser(s) in `tools/rt-capture/src/denoisers.ts` (`registerDenoiser`;
       a joint diffuse+specular denoiser implements `ReplayDenoiser` and returns both
       outputs). The replay already fills `guides.viewZ` / `guides.motionZ` when the capture
       has them. — found by capture-io, owner `tools/rt-capture` (any agent may add the entry)
 
-- [ ] T0.6 hook: every test-bed buffer lives in `SceneSignals.textures` (`examples/realtime-denoiser/src/signals.ts`,
+- [x] (T0.6, wiring) T0.6 hook: every test-bed buffer lives in `SceneSignals.textures` (`examples/realtime-denoiser/src/signals.ts`,
       CAPTURE-FORMAT names and formats in its header comment; refs only for signals passed in `refs`,
       `refs=all` renders all three) plus `SceneSignals.frameMeta` (camera, light, movable sphere, reset)
       after each `render()`. Write after `render()` in `runEval`; the light is `frameMeta.light`
@@ -131,7 +136,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       asks for blue noise animated per frame. Add a `sampler=bluenoise` option before tuning
       spatial filters on it (provisional until then). — found by testbed, owner `examples/realtime-denoiser`
 
-- [ ] Register `denoiser/realtime` in the test bed (`examples/realtime-denoiser/src/denoisers.ts`):
+- [x] (T0.6, wiring) Register `denoiser/realtime` in the test bed (`examples/realtime-denoiser/src/denoisers.ts`):
       add `@pmndrs/denoiser-realtime` (workspace) + a vite alias to
       `packages/denoiser-realtime/src/index.ts` like denoiser-ffx, then entries
       `{ id: 'svgf', signals: ['diffuse', 'specular'], create: (d, s, q) => s === 'diffuse' ?
@@ -141,7 +146,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `DiffuseSpecularDenoiser.dispatchBoth({ diffuse, specular }, guides, camera)` returns
       `{ diffuse, specular }` (shared prepass; `dispatch()` returns diffuse only). Inputs
       are demodulated; outputs stay demodulated. — found by svgf, owner `examples/realtime-denoiser`
-- [ ] Same for the replay (`tools/rt-capture/src/denoisers.ts`): `perSignal((d, s, set) => s ===
+- [x] (T0.6, wiring) Same for the replay (`tools/rt-capture/src/denoisers.ts`): `perSignal((d, s, set) => s ===
       'diffuse' ? new DiffuseDenoiser(d, …) : new SpecularDenoiser(d, …))` for ids `svgf`,
       `asvgf`; a joint entry can wrap `DiffuseSpecularDenoiser.dispatchBoth`. Import from
       `../../../packages/denoiser-realtime/src/index` (relative, like FFX). — found by svgf, owner `tools/rt-capture`
@@ -162,6 +167,26 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       outside WebGPU (Node / SSR): `packages/denoiser-ffx/src/{shadows,reflections}.ts` read
       `GPUTextureUsage` at module load (`const STORAGE_TEX = …`). Make it lazy (a function or
       numeric flags); `@pmndrs/denoiser-realtime` itself imports fine. — found by svgf, owner `packages/denoiser-ffx`
+
+- [ ] CAPTURE-FORMAT v1: per-frame lights. Test-bed captures move/resize the light (path
+      `light`) and move the sphere (`object`); v0 has one capture-level `lights`, so the test
+      bed writes per-frame `frames[i].lights` and `frames[i].object` as extras (ReplayFrame
+      exposes them as `frame.meta`). A shadow denoiser that needs the light size per frame
+      should read `meta.lights`; consider making it part of v1 — found by wiring, owner CAPTURE-FORMAT (capture-io)
+- [ ] Re-measure the test bed's 1080p baseline tables: `accumulate` there is now
+      `accumulate-32` (same code), and beyond-far geometry became sky in the guides (unscored
+      pixels, tiny effect near the horizon on spatial filters) — found by wiring, owner T1.5
+- [ ] Test bed live `svgf` / `svgf-auto` run one instance per signal (the registry's joint
+      entry falls back to per-signal classes when created for one signal); only replay
+      exercises `DiffuseSpecularDenoiser.dispatchBoth` (identical PSNR, ~12 % cheaper at
+      960×540). Share one instance across a denoiser's signal pairs in `src/main.ts` if live
+      timings of the joint path are wanted — found by wiring, owner `examples/realtime-denoiser`
+- [ ] Windows: the runners (`examples/realtime-denoiser/run-headless.mjs`,
+      `tools/rt-capture/run-headless.mjs`, shared `tools/rt-capture/lib/headless.mjs`) are
+      untested there: Chrome discovery, headless WebGPU on D3D12, Browser.close / kill and
+      temp-profile cleanup, `--serve` starting Vite. First run on the RTX machine:
+      `--set=roundtrip`, then check `validate.mjs` and the round-trip numbers against
+      RESULTS.md — found by wiring, owner harness builder (report only)
 
 ## Probes for the Windows harness
 

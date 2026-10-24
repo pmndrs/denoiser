@@ -49,6 +49,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `[::1]:5240`). Bind and browse `127.0.0.1` explicitly (`--host 127.0.0.1 --strictPort`), and
   check `lsof -nP -iTCP -sTCP:LISTEN | grep 52` before blaming your code for a stale page.
   — orchestrator, 2026-10-25
+- Replay timings need a warm GPU: the replay idles the GPU between frames (fetch, upload,
+  readback) and Apple's GPU clocks down, so timestamps read 4–9× the live test bed's
+  (svgf-diffuse 2.11 vs 0.49 ms at 960×540). `replay()` now runs 50 ms of throwaway compute
+  before each timed dispatch (`&warm=`); 20 ms was enough at 960×540 but not at 1080p.
+  The live eval's timings are kept busy by reference rendering but read high at 1080p;
+  use the solo bench or a warmed replay for costs. — wiring, 2026-10-25
+- Headless Chrome without a fixed port: `--remote-debugging-port=0` and read the port from
+  `<user-data-dir>/DevToolsActivePort` (no random-port collisions between parallel runs).
+  `tools/rt-capture/lib/headless.mjs` does it, plus Chrome discovery per platform and
+  `--serve` (starts Vite as `node <vite>/bin/vite.js <root>`, no shell). — wiring, 2026-10-25
+- The test bed now writes and replays captures itself: `run-headless.mjs --serve --set=standard`
+  (10.6 GB in ~45 s on the M5 Pro, validated) and `--set=<set> --replay=<ids>` (replays +
+  compare.mjs). Live and replay give the same PSNR to 0.001 dB, so a capture can stand in
+  for the live test bed in any comparison. — wiring, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -110,6 +124,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Capture `motion` includes the current jitter (`ndc_sample − ndc_prev`), so
   `uv_prev = (p + 0.5 + jitter)/size + (−0.5·m.x, +0.5·m.y)`, and positions are rebuilt from
   the jittered sample NDC with the unjittered matrices (SPEC C-1, C-6). — spec-author, 2026-10-25
+- An infinite ground plane hits beyond the far plane near the horizon: the test bed wrote
+  depth > 1 with normals there (validate.mjs: depth range warnings, "sky" normals non-zero).
+  The guides now mark such pixels as sky (depth 1, viewz −far, normal 0). — wiring, 2026-10-25
+- The denoiser registry is `tools/rt-capture/src/denoisers.ts` only; the test bed maps its
+  signal names (`visibility` ↔ `shadows`) and filters its own URL keys before passing the
+  rest as `settings`. The test bed's old `accumulate` is now `accumulate-32`; `accumulate`
+  is the replay's unbounded reference mean. — wiring, 2026-10-25
 
 ## Denoiser design
 
