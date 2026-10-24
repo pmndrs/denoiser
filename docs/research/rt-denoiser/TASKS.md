@@ -99,7 +99,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       level on `object`; weaker in disoccluded regions. 2.92 ms at 1080p (diffuse), over
       budget for diffuse + specular (5.22 ms). Left open: registry entry (below), budget,
       M2 go/no-go vs native._
-- [ ] **T3 Recurrent specular** (virtual motion, lobe kernels).
+- [~] recurrent-spec **T3 Recurrent specular** (virtual motion, lobe kernels), then the joint budget.
 - [~] shadows **T4 Shadows** (penumbra-aware, fractional visibility, no blur feedback). _In progress
       (shadows agent): `ShadowDenoiser` in `packages/denoiser-realtime` (`src/shadow*.ts`), registry id
       `shadows`, results in `results/M4.md`; provisional (SPEC v0 §7)._
