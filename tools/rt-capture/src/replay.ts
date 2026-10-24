@@ -75,6 +75,12 @@ export interface ReplayOptions {
   maxFrames?: number;
   /** Plugin endpoint (default '/__rt-capture'). */
   endpoint?: string;
+  /**
+   * Keep the GPU busy for this many ms right before each timed dispatch (default 20; 0 =
+   * off). Between replay frames the GPU idles (uploads, readbacks) and clocks down; without
+   * this, timestamps on Apple M-series read 4-9x the live test bed's.
+   */
+  warmMs?: number;
   /** Progress callback. */
   onFrame?(index: number, outputs: Partial<Record<SignalName, GPUTexture>>, frame: ReplayFrame): void | Promise<void>;
 }
@@ -165,6 +171,39 @@ function zeroTexture(device: GPUDevice, w: number, h: number) {
 
 const nextTask = () => new Promise((r) => setTimeout(r, 0));
 
+/** A throwaway ALU-heavy compute load that raises GPU clocks before a timed dispatch. */
+class GpuWarmer {
+  private pipe: GPUComputePipeline;
+  private buf: GPUBuffer;
+  private bg: GPUBindGroup;
+  constructor(private device: GPUDevice) {
+    const code = /* wgsl */ `
+@group(0) @binding(0) var<storage, read_write> b: array<f32>;
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  var x = f32(id.x) * 1e-6;
+  for (var i = 0u; i < 512u; i++) { x = fma(x, 0.999, 1e-4); }
+  b[id.x & 65535u] = x;
+}`;
+    this.pipe = device.createComputePipeline({ label: 'replay warm', layout: 'auto', compute: { module: device.createShaderModule({ code }), entryPoint: 'main' } });
+    this.buf = device.createBuffer({ size: 65536 * 4, usage: GPUBufferUsage.STORAGE });
+    this.bg = device.createBindGroup({ layout: this.pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: this.buf } }] });
+  }
+  async run(ms: number) {
+    const t0 = performance.now();
+    while (performance.now() - t0 < ms) {
+      const enc = this.device.createCommandEncoder({ label: 'replay warm' });
+      const pass = enc.beginComputePass();
+      pass.setPipeline(this.pipe); pass.setBindGroup(0, this.bg);
+      pass.dispatchWorkgroups(16384);
+      pass.end();
+      this.device.queue.submit([enc.finish()]);
+      await this.device.queue.onSubmittedWorkDone();
+    }
+  }
+  dispose() { this.buf.destroy(); }
+}
+
 /** Replay a capture through a denoiser and (by default) write its outputs. */
 export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<ReplayResult> {
   const client = new CaptureClient(opts.endpoint);
@@ -180,6 +219,8 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
   const frames = manifest.frames.slice(0, opts.maxFrames ?? manifest.frames.length);
 
   const caps = new CaptureTextures(device, manifest, opts.capture, client);
+  const warmMs = opts.warmMs ?? 20;
+  const warmer = warmMs > 0 ? new GpuWarmer(device) : undefined;
   const den = opts.denoiser.create(device, { width, height, signals, settings });
   if (write) await client.rm(outDir);
   const timings: TimingRow[] = [];
@@ -190,6 +231,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
       const frame = caps.frame(f);
       if (f.reset) den.resetHistory();
       await device.queue.onSubmittedWorkDone();
+      await warmer?.run(warmMs);
       const t0 = performance.now();
       const out = den.dispatch(frame);
       await device.queue.onSubmittedWorkDone();
@@ -207,6 +249,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
   } finally {
     den.dispose();
     caps.dispose();
+    warmer?.dispose();
   }
 
   const info = await client.info().catch(() => ({ commit: null, dirty: null, root: '' }));
@@ -219,6 +262,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
     version: opts.denoiser.version ?? null,
     commit: info.commit, dirty: info.dirty,
     settings,
+    warmMs,
     signals,
     frames: frames.length,
     width, height,

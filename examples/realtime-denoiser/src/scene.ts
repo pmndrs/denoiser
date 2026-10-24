@@ -413,9 +413,12 @@ fn primary(pix: vec2u) -> Primary {
 fn guides(@builtin(global_invocation_id) id: vec3u) {
   if (any(id.xy >= u.dims)) { return; }
   let pr = primary(id.xy);
-  textureStore(o_depth, id.xy, vec4f(pr.depth));
-  textureStore(o_viewz, id.xy, vec4f(pr.viewz));
-  textureStore(o_normal, id.xy, vec4f(pr.n, 0.0));
+  // geometry beyond the far plane (the ground near the horizon) is sky to a denoiser
+  // (CAPTURE-FORMAT: depth 1, viewz -far, normal 0); signals there are left as traced
+  let beyond = pr.hit && pr.depth >= 1.0;
+  textureStore(o_depth, id.xy, vec4f(select(pr.depth, 1.0, beyond)));
+  textureStore(o_viewz, id.xy, vec4f(select(pr.viewz, -u.far, beyond)));
+  textureStore(o_normal, id.xy, vec4f(select(pr.n, vec3f(0.0), beyond), 0.0));
   textureStore(o_rough, id.xy, vec4f(pr.rough));
   textureStore(o_motion, id.xy, vec4f(pr.motion, 0.0, 0.0));
   textureStore(o_motionz, id.xy, vec4f(pr.motionz));

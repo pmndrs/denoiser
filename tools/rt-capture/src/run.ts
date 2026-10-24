@@ -3,6 +3,7 @@
 // same and write the same outputs/<capture>/<output>/ folders.
 //
 //   capture=<name>&denoiser=<id>[&signals=diffuse,specular][&frames=N][&output=<folder>]
+//   [&warm=<ms>]              GPU warm-up before each timed dispatch (default 20, 0 = off)
 //   [&<setting>=<value> ...]   every other key not in `reserved` is a denoiser setting
 //                              (recorded in run.json)
 import { DENOISERS } from './denoisers';
@@ -10,7 +11,7 @@ import { replay } from './replay';
 import type { SignalName } from './format';
 
 /** Keys the replay itself reads (never passed to the denoiser as settings). */
-export const REPLAY_KEYS = ['capture', 'denoiser', 'signals', 'frames', 'output', 'mode', 'as'];
+export const REPLAY_KEYS = ['capture', 'denoiser', 'signals', 'frames', 'output', 'mode', 'as', 'warm'];
 
 export interface ReplaySummary {
   capture: string; denoiser: string; outputDir: string; signals: SignalName[]; frames: number;
@@ -39,6 +40,7 @@ export async function replayFromQuery(
     ...(q.get('signals') ? { signals: q.get('signals')!.split(',') as SignalName[] } : {}),
     ...(q.get('frames') ? { maxFrames: Number(q.get('frames')) } : {}),
     ...(q.get('output') ? { outputName: q.get('output')! } : {}),
+    ...(q.get('warm') !== null ? { warmMs: Number(q.get('warm')) } : {}),
     onFrame: (i) => { opts.onFrame?.(i); if (i % 10 === 0) log(`frame ${i}`); },
   });
   const wall = r.timings.filter((t) => t.pass === 'wall').map((t) => t.ms).sort((a, b) => a - b);
