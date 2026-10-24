@@ -13,7 +13,8 @@
 // - Penumbra width from occluder distance and light size: Mehta, Wang, Ramamoorthi 2012,
 //   "Axis-Aligned Filtering for Interactive Sampled Soft Shadows", ACM TOG 31(6) 163,
 //   Eq. 4/13 (filter width sigma*(d1/d2 - 1) with d2 the occluder closest to the receiver,
-//   floored at one pixel). Rewritten for a hit distance h and receiver-light distance D:
+//   floored near one pixel footprint: M12's floor is 1/(k*mu*Omega_x^max); ours is a plain
+//   `minRadius` = 1 px, our value). Rewritten for a hit distance h and receiver-light distance D:
 //   d1/d2 - 1 = h/(D - h), so W = R*h/(D - h) for a sphere light of radius R and
 //   W = h*tan(theta) for a directional light (our algebra).
 // - Filter distances measured in the plane parallel to the light (M12 Eq. 11-12): on a
@@ -33,7 +34,15 @@
 //   measured blur drift (docs/specs/temporal.md).
 // - Noise-driven radius when there is no hit distance / light: Heitz et al. 2018 Sec. 4.2,
 //   Eq. 29 (total variation of the second derivative along 4 lines; here on the 5x5 shared
-//   tile, no random offset), accumulated over time instead of the paper's 3x3 box.
+//   tile, no random offset), accumulated over time instead of the paper's 3x3 box; kernel
+//   size proportional to E as in H18 Sec. 4.1. v2: with a hit distance too, the radius is the
+//   mean of the occluder-sized and the E-sized radius (`noiseBlend` 0.5; E rides in the
+//   geometry texture's roughness byte, accumulated like g): our combination, measured.
+// - v2 young history (our design; idea from the history fix of Zhdan, RTG II ch. 49
+//   Sec. 49.5.4 prose: where history was discarded, stand in a pre-averaged neighbourhood for
+//   the 1-spp input): on fresh pixels the spatial passes' input is mixed with a 5x5 mean of
+//   raw visibility over taps on the receiver's plane, gated by the penumbra width; the
+//   history stays raw.
 // - Our designs (tuned on the test bed, docs/research/rt-denoiser/results/M4.md §3): clamp
 //   window 0.4 sigma (about 2 standard errors of the 5x5 mean; SPEC's 1 sigma never fires on
 //   binary samples), anti-lag restart at the current frame when the clamp moves the history,
@@ -54,8 +63,8 @@ export const SF_ANISO = 4;
 export const SF_NO_SKIP = 8;      // filter every tile
 export const SF_MERGE_MIN = 16;   // W_eff = min(own, neighbourhood) instead of own-first
 export const SF_HAS_HIT = 32;
-export const SF_CATMULL = 64;
-export const SF_SNAP = 128;      // uniform 5x5 neighbourhood: history := its value    // Catmull-Rom history for visibility when the 2x2 footprint is valid
+export const SF_CATMULL = 64;     // Catmull-Rom history for visibility when the 2x2 footprint is valid
+export const SF_SNAP = 128;       // uniform 5x5 neighbourhood: history := its value
 
 /** Size of ShadowParams in bytes. */
 export const SP_SIZE = 88 * 4;
@@ -73,13 +82,13 @@ struct ShadowParams {
   pixScale: f32, pixOrtho: f32, minRadiusPx: f32, maxRadiusPx: f32,
   flags: u32, maxWHistory: f32, geoTol: f32, normalCos: f32,
   noiseScale: f32, anisoMax: f32, tilesX: u32, tilesY: u32,
-  antiLagHistory: f32, freshBoost: f32, q1: f32, q2: f32,
+  antiLagHistory: f32, freshBoost: f32, youngMean: f32, youngMinPx: f32,
   terminatorPx: f32, historyScale: f32, minHistory: f32, historyShrink: f32,
   PA0: vec3f, r0: f32,   // the same affine form for the previous frame's projection
-  PAx: vec3f, r1: f32,
-  PAy: vec3f, r2: f32,
-  PB0: vec3f, r3: f32,
-  PBx: vec3f, r4: f32,
+  PAx: vec3f, noiseBlend: f32,
+  PAy: vec3f, noiseYoung: f32,
+  PB0: vec3f, youngSpan: f32,
+  PBx: vec3f, pass1Phase: f32,
   PBy: vec3f, r5: f32,
 }
 fn spFlag(f: u32) -> bool { return (SP.flags & f) != 0u; }
@@ -98,13 +107,21 @@ const TILE = 8;
 
 // ---------------------------------------------------------------------------- temporal
 
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean): string {
+/**
+ * `young`: the young-history pipeline variant (option youngMean > 0: shared depth tile +
+ * geometry-weighted mean over (2 youngRadius + 1)^2 pixels; the shared tile's halo grows to
+ * max(2, youngRadius)).
+ */
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false): string {
+  const HB = young ? Math.max(2, youngRadius) : 2;   // halo
+  const SW = TILE + 2 * HB;                            // shared tile width
+  const YR = young ? youngRadius : 2;
   const depthDecl = depthIsDepthFormat ? 'texture_depth_2d' : 'texture_2d<f32>';
   const depthLoad = depthIsDepthFormat ? 'textureLoad(depthTex, p, 0)' : 'textureLoad(depthTex, p, 0).r';
-  // 5x5 neighbourhood of raw visibility from the shared 12x12 tile (unrolled)
+  // 5x5 neighbourhood of raw visibility from the shared tile (unrolled)
   const nb: string[] = [];
   for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
-    nb.push(`  { let s = sV[(l.y + ${y}) * 12 + l.x + ${x}]; m1 += s; m2 += s * s; }`);
+    nb.push(`  { let s = sV[(l.y + ${y + HB - 2}u) * ${SW}u + l.x + ${x + HB - 2}u]; m1 += s; m2 += s * s; }`);
   }
   return /* wgsl */ `
 ${FRAME_WGSL}
@@ -148,6 +165,7 @@ fn linZ(p: vec2i) -> f32 {
 // positions from the affine form X(q, z) = A(q) + z B(q) of the previous projection, so the
 // plane distance is linear in the tap pixel; the plane is the current normal (not the
 // pairwise-averaged one).
+var<private> ePrev: f32;   // previous frame's noise estimate E (geometry tap byte), bilinear over the valid taps
 fn reprojFast(p: vec2i, g: Geo) -> Reproj {
   var r: Reproj;
   let mv = textureLoad(motionTex, p, 0).xy;
@@ -174,9 +192,11 @@ fn reprojFast(p: vec2i, g: Geo) -> Reproj {
   let f = pp - floor(pp);
   r.bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
   var valid = vec4f(0.0);
+  var eTap = vec4f(0.0);
   for (var k = 0; k < 4; k++) {
     let q = r.base + TAP_OFFS[k];
     let gt = textureLoad(geoPrev, clampPix(q), 0).xy;
+    eTap[k] = f32(gt.y >> 24u) / 255.0;
     let dt = bitcast<f32>(gt.x);
     let e = vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0;
     let nq = vec3f(e, 1.0 - abs(e.x) - abs(e.y));   // octahedral, unnormalized: sign test only
@@ -188,28 +208,52 @@ fn reprojFast(p: vec2i, g: Geo) -> Reproj {
   r.valid = valid;
   r.w = r.bil * valid;
   r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  ePrev = dot(r.w, eTap) / max(r.sumW, 1e-6);
   r.allValid = all(valid > vec4f(0.5));
   return r;
 }
 
+// Heitz 2018 Eq. 29 on the 5x5 tile: |d2v/dt2| along 4 lines through the centre, in [0, 1]
+fn noiseE(l: vec2u) -> f32 {
+  let c0 = i32((l.y + ${HB}u) * ${SW}u + l.x + ${HB}u);
+  var e = 0.0;
+  for (var d = 0; d < 4; d++) {
+    let st = array<i32, 4>(1, ${SW}, ${SW + 1}, ${SW - 1})[d];   // -, |, \\, / through the centre
+    for (var k = -1; k <= 1; k++) {
+      let c = c0 + k * st;
+      e += abs(sV[c - st] - 2.0 * sV[c] + sV[c + st]);
+    }
+  }
+  return e / 24.0;
+}
+
 fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 
-var<workgroup> sV: array<f32, 144>;     // raw visibility, 12x12 = tile + 2-px halo
+var<workgroup> sV: array<f32, ${SW * SW}>;     // raw visibility, ${SW}x${SW} = tile + ${HB}-px halo
+${young ? `var<workgroup> sZ: array<f32, ${SW * SW}>;     // linear depth of the same tile (young variant)` : ''}
 var<workgroup> wgMinG: atomic<u32>;     // min penumbra scale over the tile (f32 bits, >= 0)
 var<workgroup> wgFlags: atomic<u32>;    // 1 fractional history, 2 raw < 1, 4 raw > 0
 
 @compute @workgroup_size(${TILE}, ${TILE})
 fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u,
         @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
-  let base = vec2i(wid.xy) * ${TILE} - 2;
-  for (var i = li; i < 144u; i += 64u) {
-    sV[i] = rawVis(base + vec2i(i32(i % 12u), i32(i / 12u)));
+  let base = vec2i(wid.xy) * ${TILE} - ${HB};
+  for (var i = li; i < ${SW * SW}u; i += 64u) {
+    sV[i] = rawVis(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
+${young ? `    sZ[i] = linZ(clampPix(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u))));` : ''}
   }
   if (li == 0u) { atomicStore(&wgMinG, G_INF); atomicStore(&wgFlags, 0u); }
   workgroupBarrier();
 
   let p = vec2i(gid.xy);
   let l = vec2u(lid.xy);
+  var vAcc = 0.0;
+  var yW = 0.0;        // young-history weight of the 5x5 mean (0 = not young / off)
+  var yC = 0.0;        // young pixels: clamped history, raw sample and A, kept for after the barrier
+  var yR = 0.0;
+  var yA = 0.0;
+  var gOwn = -1.0;     // own penumbra-scale estimate (-1 = none)
+  var pixW = 1.0;      // world size of one pixel at this depth
   if (inside(p)) {
     var g: Geo;
     g.z = linZ(p);
@@ -218,8 +262,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
     g.rough = 0.0;
     let nIn = textureLoad(normalTex, p, 0).xyz;
     if (dot(nIn, nIn) < 0.01) { g.z = 0.0; }
-    let vRaw = sV[(l.y + 2u) * 12u + l.x + 2u];
-    var vAcc = vRaw;
+    let vRaw = sV[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u];
+    vAcc = vRaw;
     var hist = vec4f(vRaw, 0.0, 0.0, 0.0);
     if (g.z > 0.0) {
       g.n = normalize(nIn);
@@ -273,17 +317,7 @@ ${nb.join('\n')}
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
       if (spFlag(SF_NOISE)) {
-        // Heitz 2018 Eq. 29 on the 5x5 tile: |d2v/dt2| along 4 lines through the centre
-        let c0 = i32((l.y + 2u) * 12u + l.x + 2u);
-        var e = 0.0;
-        for (var d = 0; d < 4; d++) {
-          let st = array<i32, 4>(1, 12, 13, 11)[d];   // -, |, \\, / through the centre
-          for (var k = -1; k <= 1; k++) {
-            let c = c0 + k * st;
-            e += abs(sV[c - st] - 2.0 * sV[c] + sV[c + st]);
-          }
-        }
-        gS = e / 24.0;   // [0, 1]
+        gS = noiseE(l);
       } else if (vRaw < 0.999) {
         let h = textureLoad(hitTex, p, 0).r;
         if (h > 0.0) {
@@ -313,6 +347,22 @@ ${nb.join('\n')}
       let An = min(A, cap) + 1.0;   // 0 after a disocclusion
       vAcc = mix(vC, vRaw, 1.0 / (1.0 + An));
       hist = vec4f(vAcc, gAcc, An, nWn);
+${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
+      // over at most maxWHistory + 1 frames and stored in the geometry's 8-bit roughness slot
+      let eCur = noiseE(l);
+      g.rough = select(eCur, mix(ePrev, eCur, 1.0 / (min(An, SP.maxWHistory) + 1.0)), An > 0.0);` : ''}
+${young ? `      // young history (our design): the 1-spp sample is the noisiest input there; a 5x5
+      // mean of it (accurate for blue-noise samples, the same property the clamp relies on)
+      // stands in for it with weight youngMean x (1 - An / youngSpan) (or youngMean / (1 + An)
+      // when youngSpan = 0), in the spatial passes' input only
+      // (the history stays raw). After the barrier: gated by the penumbra width (hard edges
+      // keep the raw sample) and restricted to taps on the receiver's plane.
+      yW = saturate(SP.youngMean * select(1.0 / (1.0 + An), 1.0 - An / SP.youngSpan, SP.youngSpan > 0.0));
+      yC = vC;
+      yR = vRaw;
+      yA = An;
+      gOwn = select(-1.0, gAcc, nWn > 0.0);
+      pixW = g.z * SP.pixScale + SP.pixOrtho;` : ''}
 
       // ---- tile stats
       if (nWn > 0.0) { atomicMin(&wgMinG, bitcast<u32>(max(gAcc, 0.0))); }
@@ -324,10 +374,54 @@ ${nb.join('\n')}
     }
     textureStore(outGeo, p, vec4u(packGeoTap(g), 0u, 0u));
     textureStore(outHist, p, hist);
-    textureStore(outT, p, vec4f(vAcc, 0.0, 0.0, 0.0));
-    textureStore(outV, p, vec4f(vAcc, 0.0, 0.0, 0.0));
   }
   workgroupBarrier();
+  if (inside(p)) {
+    // unfiltered output copies (inputs of the spatial passes; final output of inactive tiles)
+    var vOut = vAcc;
+${young ? `    if (yW > 0.0) {
+      // pass-0 kernel radius in px at A = 0 from the nearest occluder of this tile (own first)
+      let gT = bitcast<f32>(atomicLoad(&wgMinG));
+      var rPx = 0.0;
+      if (spFlag(SF_NOISE)) {
+        rPx = max(gOwn, 0.0) * SP.noiseScale;
+      } else {
+        var gE = gT;
+        if (gOwn >= 0.0) { gE = min(gOwn, gT); }
+        if (gE < 1e30) { rPx = SP.radiusScale * SP.lightSize * gE / pixW; }
+      }
+      let sY = saturate((rPx - SP.youngMinPx) * 0.5);
+      if (sY > 0.0) {
+        // 5x5 mean over taps within planeTol of the receiver's tangent plane (affine form,
+        // as in the spatial passes)
+        let nv = (F.view * vec4f(normalize(textureLoad(normalTex, p, 0).xyz), 0.0)).xyz;
+        let pc = vec2f(p) + 0.5;
+        let zc = sZ[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u];
+        let X = SP.A0 + SP.Ax * pc.x + SP.Ay * pc.y + zc * (SP.B0 + SP.Bx * pc.x + SP.By * pc.y);
+        let na = vec3f(dot(nv, SP.A0), dot(nv, SP.Ax), dot(nv, SP.Ay));
+        let nb = vec3f(dot(nv, SP.B0), dot(nv, SP.Bx), dot(nv, SP.By));
+        let dC = dot(nv, X);
+        let tol = SP.geoTol * length(X);
+        var sw = 0.0;
+        var sv = 0.0;
+        for (var dy = 0u; dy < ${2 * YR + 1}u; dy++) {
+          for (var dx = 0u; dx < ${2 * YR + 1}u; dx++) {
+            let i = (l.y + dy + ${HB - YR}u) * ${SW}u + l.x + dx + ${HB - YR}u;
+            let zt = sZ[i];
+            let qc = pc + vec2f(f32(dx) - ${YR}.0, f32(dy) - ${YR}.0);
+            let pd = na.x + na.y * qc.x + na.z * qc.y + zt * (nb.x + nb.y * qc.x + nb.z * qc.y) - dC;
+            let w = select(0.0, 1.0, zt > 0.0 && abs(pd) <= tol);
+            sw += w;
+            sv += w * sV[i];
+          }
+        }
+        let muG = sv / max(sw, 1.0);
+        vOut = mix(vAcc, mix(yC, mix(yR, muG, yW), 1.0 / (1.0 + yA)), sY);
+      }
+    }` : ''}
+    textureStore(outT, p, vec4f(vOut, 0.0, 0.0, 0.0));
+    textureStore(outV, p, vec4f(vOut, 0.0, 0.0, 0.0));
+  }
   if (li == 0u) {
     tileStats[wid.y * SP.tilesX + wid.x] = vec2u(atomicLoad(&wgMinG), atomicLoad(&wgFlags));
   }
@@ -372,13 +466,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
 // ---------------------------------------------------------------------------- spatial
 
-/** pass 0 reads the accumulated history (.x), pass 1 the previous pass's output. */
-export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true): string {
+/**
+ * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
+ * Variants: `taps4` (4 instead of 8 taps), `withE` (radius blended toward the H18 noise radius).
+ */
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, taps4 = false, withE = false): string {
   const taps: string[] = [];
-  for (let i = 0; i < 8; i++) {
-    taps.push(/* wgsl */ `
+  const tap = (i: number, r: string) => taps.push(/* wgsl */ `
   {
-    let o = rot * DISK[${i}];
+    let o = ${r} * DISK[${i}];
     let qf = pc + o.x * jT + o.y * jB;
     let q = vec2i(floor(qf));
     let qc = clampPix(q);
@@ -394,7 +490,8 @@ ${normalWeight ? `    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 1
     sum += w * vt;
     wsum += w;
   }`);
-  }
+  // 4-tap variant: the antipodal pairs at radii 0.61 and 0.79 of the 8-tap disk
+  for (const i of taps4 ? [1, 5, 2, 6] : [0, 1, 2, 3, 4, 5, 6, 7]) tap(i, 'rot');
   return /* wgsl */ `
 ${FRAME_WGSL}
 ${PARAMS_WGSL}
@@ -476,6 +573,9 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
     Rw = gEff * SP.noiseScale * pix;
   } else {
     Rw = gEff * SP.lightSize;
+${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's roughness byte), more for young histories
+    let bE = saturate(SP.noiseBlend + SP.noiseYoung / (1.0 + h.z));
+    Rw = mix(Rw, f32(gc.y >> 24u) / 255.0 * SP.noiseScale * pix, bE);` : ''}
     // self-shadowing terminator (part of the light below the horizon, occluder distance 0):
     // visibility follows n.l, smooth on a flat receiver; the normal weight limits curved ones
     if (h.w <= 0.0 && nl < sinL) { Rw = SP.terminatorPx * pix; }
@@ -509,8 +609,9 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
   if (lB > maxPx) { jB *= maxPx / lB; }
 
   // per-pixel rotation: animated 4x4 Bayer (SPEC D3b), a different angle per pass
+  // pass offset pass1Phase (default 2 - phi = 0.382 turn, the golden angle): our choice, see the option
   let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + f32(F.frameIndex) * 0.6180339887
-    + f32(PASS) * 0.3819660113);
+    + f32(PASS) * SP.pass1Phase);
   let cs = cos(phi);
   let sn = sin(phi);
   let rot = mat2x2f(cs, sn, -sn, cs);

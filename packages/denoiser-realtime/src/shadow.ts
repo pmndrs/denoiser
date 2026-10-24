@@ -3,9 +3,11 @@
 // shaders/shadow.ts; provenance in docs/research/rt-denoiser/PROVENANCE.md.
 //
 //   temporal   raw visibility -> history (rgba16float: v, penumbra scale g, A, n_g), packed
-//              geometry (rg32uint ping-pong), tile stats; unfiltered copies into T and out
+//              geometry (rg32uint ping-pong; its roughness byte carries the H18 noise estimate E),
+//              tile stats; unfiltered copies into T and out (fresh pixels: mixed with a
+//              geometry-weighted 5x5 mean, `youngMean`)
 //   tiles      3x3 tile neighbourhood: nearest-occluder scale + indirect list of penumbra tiles
-//   spatial 0  history.v -> T     (penumbra tiles only)
+//   spatial 0  out copy -> T      (penumbra tiles only)
 //   spatial 1  T -> out           (penumbra tiles only)
 //
 // Memory at W x H: history 2 x 8 B + geometry 2 x 8 B + T 4 B + out 4 B = 40 B/px, plus
@@ -47,6 +49,19 @@ export interface ShadowDenoiserOptions {
   antiLag?: number;
   /** Radius factor 1 + freshBoost / (1 + A) for young histories (disocclusions, anti-lag). Default 0. */
   freshBoost?: number;
+  /**
+   * Young histories: a geometry-weighted 5x5 mean of raw visibility stands in for this frame's
+   * sample in the spatial passes' input (the history stays raw), with weight
+   * youngMean x saturate(1 - A / youngSpan), gated by the penumbra width (pipeline variant;
+   * 0 = off). Default 0.75 (v2: with youngSpan 1 it acts on fresh pixels only, A = 0).
+   */
+  youngMean?: number;
+  /** Young-history span: weight youngMean x (1 - A / youngSpan); 0 = youngMean / (1 + A). Default 1. */
+  youngSpan?: number;
+  /** Footprint of the young-history mean: (2 youngRadius + 1)^2 pixels (pipeline variant). Default 2. */
+  youngRadius?: number;
+  /** Young-history mean only where the pass-0 kernel radius (px, at A = 0) exceeds this; full weight 2 px above. Default 1. */
+  youngMinPx?: number;
   /** History length (A) a full anti-lag drops to (0 = this frame only). Default 0. */
   antiLagHistory?: number;
   /** Temporal disocclusion: plane distance relative to view distance. Default 0.01. */
@@ -55,7 +70,7 @@ export interface ShadowDenoiserOptions {
   radiusScale?: number;
   /** Radius factor at full history (lerp(1, historyShrink, A / maxHistory)). Default 0.5. */
   historyShrink?: number;
-  /** Smallest kernel radius in pixels (M12's pixel floor). Default 1. */
+  /** Smallest kernel radius in pixels. Default 1 (our value; M12 Eq. 13 floors its width near one pixel footprint, 1/(k mu Omega_x^max)). */
   minRadius?: number;
   /** Largest kernel axis in pixels at 1080p (scaled with height). Default 48. */
   maxRadius?: number;
@@ -74,6 +89,14 @@ export interface ShadowDenoiserOptions {
   uniformSnap?: boolean;
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
   catmullRom?: boolean;
+  /** Taps of the second spatial pass: 8 or 4 (the two antipodal pairs at mid radius). Default 8. */
+  pass1Taps?: number;
+  /**
+   * Rotation offset of the second spatial pass, in turns. Default 2 - phi = 0.382 (the golden
+   * angle): with the per-frame golden-ratio step it never repeats pass 0's angle of this or the
+   * next frame (our choice; measured insensitive, results/M4.md "v2").
+   */
+  pass1Phase?: number;
   /** Spatial passes: 0, 1 or 2. Default 2. */
   spatialPasses?: number;
   /** Skip tiles without penumbra (TR19 slide 72). Default true. */
@@ -82,8 +105,19 @@ export interface ShadowDenoiserOptions {
   mergeMin?: boolean;
   /** Kernel radius in px (at 1080p) on self-shadowing terminators (light partly below the horizon, no occluder distance). Default 16. */
   terminatorRadius?: number;
-  /** Noise-driven radius (H18) when there is no hitDistance or light: radius in px = noiseRadius x E. Default 24. */
+  /**
+   * Noise-driven radius (H18): radius in px (at 1080p) = noiseRadius x E, used alone when there is
+   * no hitDistance or light, and blended in by noiseBlend otherwise. Default 32 (v2; M4 tuned 24
+   * for the fallback alone, 24..48 measured flat there).
+   */
   noiseRadius?: number;
+  /**
+   * Blend the kernel radius toward the noise-driven one (H18, as in the fallback) by
+   * saturate(noiseBlend + noiseYoung / (1 + A)) when the hit-distance radius is used
+   * (pipeline variant when either is > 0). Defaults 0.5 (v2), 0.
+   */
+  noiseBlend?: number;
+  noiseYoung?: number;
   /** Light used when the inputs carry none. */
   light?: ShadowLight;
   /** Per-pass GPU timestamps into `gpuTimings`. Default true. */
@@ -102,6 +136,12 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     antiLag: o.antiLag ?? 64,
     antiLagHistory: o.antiLagHistory ?? 0,
     freshBoost: o.freshBoost ?? 0,
+    youngMean: o.youngMean ?? 0.75,
+    youngMinPx: o.youngMinPx ?? 1,
+    youngSpan: o.youngSpan ?? 1,
+    youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
+    pass1Taps: o.pass1Taps === 4 ? 4 : 8,
+    pass1Phase: o.pass1Phase ?? 0.3819660113,
     planeDistance: o.planeDistance ?? 0.01,
     radiusScale: o.radiusScale ?? 0.75,
     historyShrink: o.historyShrink ?? 0.5,
@@ -118,7 +158,9 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
     mergeMin: o.mergeMin ?? true,
-    noiseRadius: o.noiseRadius ?? 24,
+    noiseRadius: o.noiseRadius ?? 32,
+    noiseBlend: o.noiseBlend ?? 0.5,
+    noiseYoung: o.noiseYoung ?? 0,
     terminatorRadius: o.terminatorRadius ?? 16,
     timestamps: o.timestamps ?? true,
     ...(o.light ? { light: o.light } : {}),
@@ -194,6 +236,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private tilesX = 0;
   private tilesY = 0;
   private frameIndex = 0;
+  private withE = false;
   private needsReset = true;
   private cur = 0;
 
@@ -231,9 +274,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       tiles: layout(device, 'shadows tiles', ['u', 'sbr', 'sb', 'sb', 'sb']),
       spatial: layout(device, 'shadows spatial', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']),
     };
+    this.withE = this.options.noiseBlend > 0 || this.options.noiseYoung > 0;
     this.tilesPipe = pipeline(device, 'shadows tiles', SHADOW_TILES_WGSL, this.layouts.tiles);
     this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
-      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight), this.layouts.spatial));
+      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight, i === 1 && this.options.pass1Taps === 4, this.withE),
+      this.layouts.spatial));
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
@@ -291,7 +336,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth'), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });
@@ -310,7 +355,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       enc.clearBuffer(this.args!, 0, 4);
       pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!]),
         Math.ceil(this.tilesX / 8), Math.ceil(this.tilesY / 8));
-      const src = [this.hist[cur], this.tTex!];
+      const src = [this.out, this.tTex!];
       const dst = o.spatialPasses === 1 ? [this.out] : [this.tTex!, this.out];
       for (let i = 0; i < o.spatialPasses; i++) {
         pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, [
@@ -345,6 +390,10 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     const [A0, Ax, Ay, B0, Bx, By] = affine(Pinv);
     const prevCo = affine(invert(mat4(camera.prevProjection)));
     prevCo.forEach((v, i) => f.set(v, 64 + 4 * i));
+    f[71] = o.noiseBlend;
+    f[75] = o.noiseYoung;
+    f[79] = o.youngSpan;
+    f[83] = o.pass1Phase;
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;
     let lightSize = 0, lightVec: readonly number[] = [0, 0, 0];
@@ -373,6 +422,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     u[55] = this.tilesY;
     f[56] = o.antiLagHistory;
     f[57] = o.freshBoost;
+    f[58] = o.youngMean;
+    f[59] = o.youngMinPx;
     f[60] = o.terminatorRadius * H / 1080;
     f[61] = o.historyScale;
     f[62] = o.minHistory;
