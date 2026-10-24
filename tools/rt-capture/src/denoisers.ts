@@ -19,6 +19,13 @@
 //   svgf-diffuse       DiffuseDenoiser alone;  svgf-specular  SpecularDenoiser alone
 //   (svgf settings from the URL: see svgfOptions(); antiLag 'gradient' needs renderer
 //   gradient samples that neither the test bed nor the captures provide)
+//   recurrent          denoiser/realtime recurrent blur (provisional, SPEC v0 §5) for diffuse AND
+//                      specular in shared dispatches (DiffuseSpecularDenoiser, dispatchBoth; a single
+//                      requested signal runs that signal's class with the same options)
+//   recurrent-svgfspec recurrent diffuse + SVGF (antiLag 'auto') specular, two pipelines
+//   recurrent-diffuse  DiffuseDenoiser alone;  recurrent-specular  SpecularDenoiser alone
+//   (recurrent settings from the URL: see recurrentOptions(); the output texture rotates
+//   between internal buffers, valid until the next dispatch)
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //
@@ -29,7 +36,7 @@ import { FfxReflectionDenoiser, FfxShadowDenoiser } from '../../../packages/deno
 import { AccumulateDenoiser } from './accumulate';
 import { EmaAccumulateDenoiser } from './accumulate-ema';
 import { DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser } from '../../../packages/denoiser-realtime/src/index';
-import type { SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
+import type { DiffuseSpecularDenoiserOptions, RecurrentOptions, SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
 import type { DenoiserEntry, ReplayDenoiser, ReplayFrame } from './replay';
 import type { SignalName } from './format';
 
@@ -184,4 +191,65 @@ registerDenoiser({
 registerDenoiser({
   id: 'svgf-specular', description: 'denoiser/realtime SVGF SpecularDenoiser (needs roughness)', signals: ['specular'],
   create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st))),
+});
+
+/**
+ * Recurrent options from replay / test-bed settings: `r.<option>=v` (any RecurrentOptions
+ * key, numbers or true/false), `t.<tune>=v` (RecurrentTune), and per signal `d.<option>` /
+ * `s.<option>` (diffuse / specular only). Outputs stay demodulated.
+ */
+export function recurrentOptions(st: Record<string, string>, signal?: 'diffuse' | 'specular'): RecurrentOptions {
+  const val = (v: string) => (v === 'true' ? true : v === 'false' ? false : Number(v));
+  const o: Record<string, unknown> = { filter: 'recurrent' };
+  const tune: Record<string, unknown> = {};
+  const own = signal === 'diffuse' ? 'd.' : signal === 'specular' ? 's.' : null;
+  for (const [k, v] of Object.entries(st)) {
+    if (k.startsWith('r.') || (own && k.startsWith(own))) o[k.slice(2)] = val(v);
+    else if (k.startsWith('t.')) tune[k.slice(2)] = val(v);
+  }
+  if (Object.keys(tune).length) o.tune = tune;
+  return o as unknown as RecurrentOptions;
+}
+
+/** Joint recurrent (both signals in shared dispatches unless `specular` says otherwise). */
+function recurrentJoint(specular: (st: Record<string, string>) => DiffuseSpecularDenoiserOptions['specular']): DenoiserEntry['create'] {
+  return (device, ctx) => {
+    const st = ctx.settings;
+    const spec = specular(st);
+    if (!(ctx.signals.includes('diffuse') && ctx.signals.includes('specular'))) {
+      return perSignal((d, s) => (s === 'diffuse'
+        ? new DiffuseDenoiser(d, recurrentOptions(st, 'diffuse'))
+        : new SpecularDenoiser(d, { ...recurrentOptions(st), ...spec } as RecurrentOptions)))(device, ctx);
+    }
+    const den = new DiffuseSpecularDenoiser(device, { ...recurrentOptions(st), diffuse: recurrentOptions(st, 'diffuse'), specular: spec });
+    den.configure({ width: ctx.width, height: ctx.height });
+    return {
+      signals: ['diffuse', 'specular'],
+      dispatch(frame: ReplayFrame) {
+        const { diffuse, specular: sp } = frame.inputs;
+        if (!diffuse || !sp) throw new Error('recurrent: capture needs diffuse and specular');
+        return den.dispatchBoth({ diffuse, specular: sp }, frame.guides, frame.camera);
+      },
+      resetHistory() { den.resetHistory(); },
+      gpuTimings() { return new Map(den.gpuTimings ?? []); },
+      dispose() { den.dispose(); },
+    };
+  };
+}
+
+registerDenoiser({
+  id: 'recurrent', description: 'denoiser/realtime recurrent blur, diffuse + specular in shared dispatches (provisional)', signals: ['diffuse', 'specular'],
+  create: recurrentJoint((st) => recurrentOptions(st, 'specular')),
+});
+registerDenoiser({
+  id: 'recurrent-svgfspec', description: "recurrent diffuse + SVGF (antiLag 'auto') specular", signals: ['diffuse', 'specular'],
+  create: recurrentJoint((st) => ({ ...svgfOptions(st, { antiLag: 'auto' }), filter: 'svgf' }) as DiffuseSpecularDenoiserOptions['specular']),
+});
+registerDenoiser({
+  id: 'recurrent-diffuse', description: 'denoiser/realtime recurrent DiffuseDenoiser (provisional)', signals: ['diffuse'],
+  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, recurrentOptions(st, 'diffuse'))),
+});
+registerDenoiser({
+  id: 'recurrent-specular', description: 'denoiser/realtime recurrent SpecularDenoiser (provisional, needs roughness)', signals: ['specular'],
+  create: perSignal((device, _s, st) => new SpecularDenoiser(device, recurrentOptions(st, 'specular'))),
 });
