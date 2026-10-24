@@ -284,13 +284,15 @@ const { diffuse, specular } = both.dispatchBoth(
 per-sample normalized hit distances, 1920×1080, 96 frames, 7 paths; pooled PSNR on ĥ in [0, 1],
 mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `results/M5.md`):
 
-| | AO PSNR | AO contact | SO PSNR | SO contact | GPU ms AO / SO (1080p, fast clock / median) | B/px AO / AO + SO |
+| | AO PSNR | AO contact | SO PSNR | SO contact | GPU ms AO / SO / both (1080p, M5 Pro, fastest clock) | B/px AO / AO + SO |
 |---|---|---|---|---|---|---|
 | noisy 1 spp | 14.55 | 9.65 | 17.65 | 14.72 | | |
-| `recurrent` | 38.02 | 31.09 | 37.37 | 33.47 | 1.32 / 1.8 · 1.32 / 2.0–2.3 | **57.5** / **73.5** |
-| `svgf` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.5–2.0 · 1.92 / 2.4 | 84 / 148 |
-| `svgf`, `antiLag: 'auto'` | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.3–2.5 · 2.53 / 2.8 | 92 / 163 |
+| `recurrent` | 38.02 | 31.09 | 37.37 | 33.47 | **1.32** / **1.32** / **2.39** | **57.5** / **73.5** |
+| `svgf` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.92 / 2.99 | 84 / 148 |
+| `svgf`, `antiLag: 'auto'` | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.53 / 5.27 | 92 / 163 |
 | recurrent radiance alpha ("free") | 35.15 | 27.64 | 35.47 | 32.10 | 0 extra | 0 extra |
+
+(Medians run 15–60 % above the fastest-clock numbers; `results/M5.md` §5.)
 
 SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB AO,
 +1.4 dB SO), A-SVGF `auto` is best overall; recurrent is the memory-lean option and flickers
