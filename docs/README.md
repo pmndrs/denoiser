@@ -35,6 +35,13 @@ covers install, quick start, the API sketch, and the device-lifetime rules.
 - [upscale-roadmap.md](specs/upscale-roadmap.md) — denoise→upscale (FSR1 done,
   temporal later).
 
+## Research (`research/`)
+
+- [nppd-fssa.md](research/nppd-fssa.md) — NPPD and its follow-up FSSA (MPI
+  Informatik): what's released, model sizes vs OIDN, training cost, where weights
+  would live, OIDN lock-in and the alternatives, how NRD works and the papers
+  behind it, and why we wait for OIDN 3.
+
 ## Archive (`archive/`)
 
 Superseded proposals and notes (implemented specs, NO-GO experiments) — see

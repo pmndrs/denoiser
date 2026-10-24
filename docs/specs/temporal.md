@@ -20,7 +20,8 @@ real-time denoising "no matter the source", so this API is source-agnostic:
 |---|---|---|
 | FidelityFX Denoiser (AMD, MIT, SDK v1.1.4) | shadows, reflections — hand-tuned filters | ported (`denoiser/ffx`) |
 | OIDN 3 (Intel) | neural, temporal, full beauty frame | waiting on upstream |
-| NRD (NVIDIA: ReBLUR, ReLAX, SIGMA) | diffuse/specular GI, shadows | license check first |
+| NRD (NVIDIA: ReBLUR, ReLAX, SIGMA) | diffuse/specular GI, shadows — hand-tuned, not neural | source public, license (NVIDIA RTX SDKs) rules out a port; implement from the published papers instead (SVGF, A-SVGF, RTG II ReBLUR chapter) — see [research/nppd-fssa.md](../research/nppd-fssa.md#nrd-how-it-works-and-where-it-comes-from) |
+| NPPD / FSSA (MPI Informatik, research) | neural, temporal; FSSA adds adaptive sampling | NPPD dropped; FSSA watch-only — see [research/nppd-fssa.md](../research/nppd-fssa.md) |
 | own models | anything | later |
 
 AMD's newer **FSR Ray Regeneration** (FidelityFX SDK 2.x) is an ML denoiser
