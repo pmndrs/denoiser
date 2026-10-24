@@ -9,10 +9,12 @@
 //                         bilinearly at the motion-reprojected position; each of the
 //                         4 taps is kept only if its stored linear depth matches the
 //                         expected previous depth (-(viewZ + motionZ), 2.5D motion)
-//                         within 3 %. This is the textbook baseline every temporal
+//                         within 1 % + 2x the local depth slope (metrics.ts depthTol,
+//                         the same test as the ground-truth history age). This is the textbook baseline every temporal
 //                         denoiser must beat; it shows ghosting/lag (no anti-lag) and
 //                         fresh noise in disocclusions (no spatial fallback).
 import type { FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
+import { SLOPE_WGSL } from './metrics';
 
 export interface SignalInputs {
   /** noisy signal: rgb radiance, or a scalar in .r (visibility) */
@@ -32,7 +34,7 @@ export class PassthroughDenoiser implements TemporalDenoiser<SignalInputs> {
 }
 
 const ACC_WGSL = /* wgsl */ `
-struct P { dims: vec2u, reset: u32, _p: u32, maxFrames: f32, depthTol: f32, _q: vec2f };
+struct P { dims: vec2u, reset: u32, _p: u32, maxFrames: f32, _r: f32, _q: vec2f };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var t_cur: texture_2d<f32>;
 @group(0) @binding(2) var t_viewz: texture_2d<f32>;
@@ -42,6 +44,7 @@ struct P { dims: vec2u, reset: u32, _p: u32, maxFrames: f32, depthTol: f32, _q: 
 @group(0) @binding(6) var t_prevLin: texture_2d<f32>;
 @group(0) @binding(7) var o_color: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8) var o_lin: texture_storage_2d<r32float, write>;
+${SLOPE_WGSL}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -59,6 +62,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // NDC delta -> pixel delta (NDC +y is up, texel rows go down)
     let prevPos = vec2f(id.xy) + 0.5 - vec2f(m.x, -m.y) * 0.5 * vec2f(p.dims) - 0.5;
     let base = vec2i(floor(prevPos));
+    let tol = depthTol(t_viewz, pix, p.dims);
     let fr = prevPos - vec2f(base);
     var wsum = 0.0;
     for (var k = 0; k < 4; k++) {
@@ -67,7 +71,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       if (any(q < vec2i(0)) || any(q >= vec2i(p.dims))) { continue; }
       let w = select(1.0 - fr.x, fr.x, o.x == 1) * select(1.0 - fr.y, fr.y, o.y == 1);
       let pl = textureLoad(t_prevLin, q, 0).r;
-      if (abs(pl - expected) > p.depthTol * max(expected, 1e-3)) { continue; }
+      if (abs(pl - expected) > tol) { continue; }
       let h = textureLoad(t_hist, q, 0);
       hist += h.rgb * w;
       n += h.a * w;
@@ -81,7 +85,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-export interface AccumulateOptions { maxFrames?: number; depthTolerance?: number }
+export interface AccumulateOptions { maxFrames?: number }
 
 export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
   readonly name: string;
@@ -94,11 +98,9 @@ export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
   private W = 0;
   private H = 0;
   private maxFrames: number;
-  private depthTol: number;
 
   constructor(readonly device: GPUDevice, opts: AccumulateOptions = {}) {
     this.maxFrames = opts.maxFrames ?? 32;
-    this.depthTol = opts.depthTolerance ?? 0.03;
     this.name = `accumulate-${this.maxFrames}`;
     this.pipe = device.createComputePipeline({
       label: 'accumulate', layout: 'auto',
@@ -127,7 +129,7 @@ export class AccumulateDenoiser implements TemporalDenoiser<SignalInputs> {
     const b = new ArrayBuffer(32);
     const u = new Uint32Array(b), f = new Float32Array(b);
     u[0] = this.W; u[1] = this.H; u[2] = this.needsReset ? 1 : 0;
-    f[4] = this.maxFrames; f[5] = this.depthTol;
+    f[4] = this.maxFrames;
     this.device.queue.writeBuffer(this.params, 0, b);
     const bg = this.device.createBindGroup({
       layout: this.pipe.getBindGroupLayout(0),

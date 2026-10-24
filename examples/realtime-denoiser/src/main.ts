@@ -18,6 +18,7 @@
 //   &ppd=<pixels per degree>  FLIP viewing condition (default W / 46.4, see PPD)
 //   &ageK=8                   "disoccluded" region = < ageK frames of valid history
 //   &n=100                    bench frames
+//   eval: &show=age puts the ground-truth history age in panel 1 (white = >= ageK frames)
 //   view only: &show=<texture> [&dscale=] puts a SceneSignals texture in panel 1;
 //              &err=<gain> error heat map in panel 2; &stopAt=N freezes at frame N
 //
@@ -227,7 +228,9 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       const p = pairs[0];
       const last = p.frames[p.frames.length - 1];
       const sig = scene.signal(p.signal);
-      view.show([{ tex: sig.noisy, mode: sig.scalar ? 0 : 1 }, { tex: p.lastOut!, mode: sig.scalar ? 0 : 1 }, { tex: sig.ref, mode: sig.scalar ? 0 : 1 }], sig.ref);
+      // &show=age: panel 1 shows the ground-truth history age (white = >= ageK frames)
+      const p0 = q.get('show') === 'age' ? { tex: age.current, mode: 2, exposure: 1 / AGE_K } : { tex: sig.noisy, mode: sig.scalar ? 0 : 1 };
+      view.show([p0, { tex: p.lastOut!, mode: sig.scalar ? 0 : 1 }, { tex: sig.ref, mode: sig.scalar ? 0 : 1 }], sig.ref);
       log(`frame ${f}: ${pairs.map((pp) => { const l = pp.frames[pp.frames.length - 1]; return `${pp.signal}/${pp.entry.id} ${psnr(l.regions[0][1], l.regions[0][2]).toFixed(2)} dB`; }).join('  ')}  (noisy ${psnr(last.regions[0][0], last.regions[0][2]).toFixed(2)})`);
     }
     out.frame = f;

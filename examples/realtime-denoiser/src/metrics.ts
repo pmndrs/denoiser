@@ -2,9 +2,11 @@
 //
 //   HistoryAge  per-pixel "frames of valid history" from the GROUND-TRUTH geometry:
 //               reproject with motion, keep the history if a previous-frame texel in
-//               the 2x2 footprint has viewZ within 2 % of the expected previous
-//               viewZ (viewZ + motion_z). 0 on resets, off-screen reveals and
-//               disocclusions. Region "disoccluded" = age < k (default 8).
+//               the 2x2 footprint has viewZ within tol of the expected previous viewZ
+//               (viewZ + motion_z), tol = 1 % |viewZ| + 2 x the local viewZ slope per
+//               pixel (robust one-sided differences, so grazing surfaces aren't
+//               flagged and depth edges still are). 0 on resets, off-screen reveals
+//               and disocclusions. Region "disoccluded" = age < k (default 8).
 //   Scorer      one per (signal, denoiser): per-frame partial sums for PSNR per region
 //               (all receivers, penumbra, disoccluded, 4 roughness bins), mean signed
 //               error (bias), linear-luminance energy ratio, and temporal stability:
@@ -22,6 +24,23 @@
 // channel after a Reinhard x/(1+x) tonemap (as examples/ffx-denoiser), so a few hot
 // pixels don't dominate. Only receivers (depth < 1) are scored.
 
+/** Depth tolerance for history tests: 1 % of |z| + 2 x the robust local slope of z per
+ * pixel (per axis the smaller one-sided difference, so a depth edge on one side does
+ * not inflate it). Shared with the accumulate baseline. */
+export const SLOPE_WGSL = /* wgsl */ `
+fn depthTol(t: texture_2d<f32>, pix: vec2i, dims: vec2u) -> f32 {
+  let hi = vec2i(dims) - 1;
+  let z = textureLoad(t, pix, 0).r;
+  let zl = textureLoad(t, clamp(pix - vec2i(1, 0), vec2i(0), hi), 0).r;
+  let zr = textureLoad(t, clamp(pix + vec2i(1, 0), vec2i(0), hi), 0).r;
+  let zu = textureLoad(t, clamp(pix - vec2i(0, 1), vec2i(0), hi), 0).r;
+  let zd = textureLoad(t, clamp(pix + vec2i(0, 1), vec2i(0), hi), 0).r;
+  let sx = min(abs(zr - z), abs(z - zl));
+  let sy = min(abs(zd - z), abs(z - zu));
+  return 0.01 * abs(z) + 2.0 * max(sx, sy) + 1e-4;
+}
+`;
+
 export const AGE_WGSL = /* wgsl */ `
 struct A { dims: vec2u, reset: u32, _p: u32 };
 @group(0) @binding(0) var<uniform> a: A;
@@ -31,6 +50,8 @@ struct A { dims: vec2u, reset: u32, _p: u32 };
 @group(0) @binding(4) var t_prevViewz: texture_2d<f32>;
 @group(0) @binding(5) var t_prevAge: texture_2d<f32>;
 @group(0) @binding(6) var o_age: texture_storage_2d<r32float, write>;
+
+${SLOPE_WGSL}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -50,7 +71,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
       if (any(q < vec2i(0)) || any(q >= vec2i(a.dims))) { continue; }
       let w = select(1.0 - fr.x, fr.x, o.x == 1) * select(1.0 - fr.y, fr.y, o.y == 1);
       let pz = textureLoad(t_prevViewz, q, 0).r;
-      if (abs(pz - expected) <= 0.02 * abs(expected) + 1e-4 && w > bestW) {
+      if (abs(pz - expected) <= depthTol(t_viewz, pix, a.dims) && w > bestW) {
         bestW = w;
         age = min(textureLoad(t_prevAge, q, 0).r + 1.0, 65535.0);
       }
