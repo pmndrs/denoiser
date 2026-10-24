@@ -195,6 +195,64 @@ the hedging is already done: we own the runtimes, and the `TemporalDenoiser` API
 any source. What's left is non-neural temporal fallbacks (FFX done, SVGF-class later)
 and, if needed, retraining OIDN's architecture ourselves.
 
+## NRD: how it works and where it comes from
+
+NRD ([NVIDIA-RTX/NRD](https://github.com/NVIDIA-RTX/NRD), v4.18.0, Oct 2026) is
+NVIDIA's real-time denoiser for 1-path-per-pixel path tracing. **It isn't neural**:
+there are no weights to train or download, only hand-tuned compute shaders. It's the
+same family as the FFX filters we ported, with more signals.
+
+- **Inputs:** per-pixel diffuse and specular radiance, each with its hit distance,
+  plus the G-buffer (normals, roughness, view depth, motion). Materials are divided
+  out before denoising and multiplied back in after, so it blurs lighting, not texture.
+- **Temporal step:** reprojects history along the motion vectors and rejects
+  disocclusions. Specular gets its own reprojection based on hit distance. History
+  confidence and "anti-lag" logic reset stale history when lighting changes.
+- **Spatial step:** a blur whose radius is set by hit distance, roughness and the
+  number of frames accumulated. Contact lighting stays sharp, and young history gets
+  blurred more.
+- **Three filters:**
+  - **ReBLUR** (diffuse/specular, plus ambient and specular occlusion): a "recurrent
+    blur" whose output feeds back into the history.
+  - **ReLAX** (diffuse/specular): SVGF-style à-trous filtering guided by variance,
+    built to pair with RTXDI/ReSTIR.
+  - **SIGMA** (shadows only): penumbra-sized blur from the distance to the blocker.
+- **Cost** (README, RTX 4080, 1440p): ReBLUR diffuse+specular 2.55 ms, ReLAX
+  3.25 ms, SIGMA 0.40 ms.
+
+**vs DLSS Ray Reconstruction.** RR replaces this whole stack with one neural network
+(a transformer since DLSS 4) that denoises and upscales every signal at once. It holds
+fine specular detail better and ghosts less, but it is RTX-only and closed. NRD runs on
+any D3D12/Vulkan GPU, can be tuned, and is cheaper on older hardware. For us, the NRD
+tier is what FFX (and later an SVGF-class GI filter) covers. The RR tier is what
+OIDN 3's real-time mode is aiming at.
+
+**License.** The source is public, but under the proprietary NVIDIA RTX SDKs license
+(see the table above), so we can't port NRD's code. We can implement the published
+techniques below ourselves, written from the papers and the book chapter, not from
+NRD's source.
+
+**Lineage.** NRD was never published as a paper. The written sources are:
+
+| source | what it covers |
+|---|---|
+| Zhdan, ["ReBLUR: A Hierarchical Recurrent Denoiser"](https://www.realtimerendering.com/raytracinggems/rtg2/), *Ray Tracing Gems II*, ch. 49 (2021; free download, CC BY-NC-ND 4.0) | ReBLUR, the closest thing to a paper |
+| Zhdan, "Fast Denoising with Self-Stabilizing Recurrent Blurs", GTC 2020 ([slides](https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf), [video](https://developer.nvidia.com/gtc/2020/video/s22699-vid)) | ReBLUR's origin (it grew out of the Metro Exodus denoiser): recurrent blur, temporal accumulation, hierarchical history reconstruction, blur weights |
+| Schied et al., "Spatiotemporal Variance-Guided Filtering" (SVGF), HPG 2017, [doi:10.1145/3105762.3105770](https://doi.org/10.1145/3105762.3105770) | temporal accumulation + variance-guided à-trous: ReLAX's direct ancestor |
+| Schied, Peters, Dachsbacher, "Gradient Estimation for Real-Time Adaptive Temporal Filtering" (A-SVGF), HPG 2018, [doi:10.1145/3233301](https://doi.org/10.1145/3233301) | dropping stale history when lighting changes (what NRD's anti-lag solves) |
+| Dammertz et al., "Edge-Avoiding À-Trous Wavelet Transform for Fast Global Illumination Filtering", HPG 2010, [doi:10.2312/EGGH/HPG10/067-075](https://doi.org/10.2312/EGGH/HPG10/067-075) | the wide, cheap, edge-aware blur under SVGF and ReLAX |
+
+ReLAX and SIGMA have no write-up beyond NVIDIA's [NRD page](https://developer.nvidia.com/nrd)
+and the README. NVIDIA also holds patents on the recurrent-blur idea ("Denoising
+techniques suitable for recurrent blurs", e.g. [US11823321](https://patents.google.com/patent/US11823321)).
+They're noted for completeness; we work from the published chapter and papers, not
+from the patents.
+
+**If we build a diffuse/GI filter**, start from SVGF + A-SVGF (+ à-trous). They're
+published, well understood, and match the `DiffuseInputs` slot in `TemporalDenoiser`.
+Borrow ReBLUR ideas from the RTG II chapter where they help: hit-distance-driven
+radius, recurrent blur, hierarchical history reconstruction.
+
 ## Is it worth doing?
 
 | question | answer |
@@ -219,4 +277,5 @@ and, if needed, retraining OIDN's architecture ourselves.
 - NPPD: [paper](https://balint.io/nppd/nppd_paper.pdf), [supplementary](https://balint.io/nppd/nppd_supplementary.pdf), [project](https://balint.io/nppd/), [code](https://github.com/balintio/nppd), [Noisebase](https://github.com/balintio/noisebase), [SampleSet v1](https://balint.io/noisebase/datasets/sampleset_v1.html)
 - FSSA: [paper](https://balint.io/fssa/fssa.pdf), [project](https://balint.io/fssa/), [code](https://github.com/balintio/fssa), [arXiv:2602.08642](https://arxiv.org/abs/2602.08642)
 - OIDN: [training toolkit](https://github.com/RenderKit/oidn/tree/master/training); OIDN 3: [CG Channel, 2026-01](https://www.cgchannel.com/2026/01/open-image-denoise-3-will-support-temporal-denoising/), [OIDN milestone](https://github.com/RenderKit/oidn/milestone/1), JNDS: [Intel, 2022](https://www.intel.com/content/www/us/en/developer/articles/technical/temporally-stable-denoising-and-supersampling.html)
+- NRD: [repo](https://github.com/NVIDIA-RTX/NRD), [NVIDIA page](https://developer.nvidia.com/nrd), [Ray Tracing Gems II](https://www.realtimerendering.com/raytracinggems/rtg2/), [GTC 2020 slides](https://developer.download.nvidia.com/video/gputechconf/gtc/2020/presentations/s22699-fast-denoising-with-self-stabilizing-recurrent-blurs.pdf)
 - GPU prices: [RunPod H100, 2026](https://www.spheron.network/blog/runpod-h100-pricing-2026/), [Lambda H100, 2026](https://www.spheron.network/blog/lambda-cloud-h100-pricing-2026/)
