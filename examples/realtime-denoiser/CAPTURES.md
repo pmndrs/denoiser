@@ -100,6 +100,10 @@ signal names are the capture's: `visibility` is the test bed's `shadows`.
 - Per-frame extras (ignored by v0 readers): `pathFrame`, `lights` (the light moves and
   shrinks in path `light`; v0's capture-level `lights` holds only frame 0's), `object`
   (the movable sphere's position and radius).
+- Sampling: spatiotemporal **blue noise** (`sampling=blue`, the test bed's default since
+  T1.5; `extra.testbed.sampling` in the manifest records it). Captures made before
+  2026-10-25 01:00 used white noise; the standard set was regenerated then. Add
+  `&sampling=white` to a capture query for the old sampler.
 - No jitter (`[0, 0]`), `reversedDepth: false`, near 0.1, far 100. Geometry beyond the
   far plane (the ground at the horizon) is sky in the guides (depth 1, viewz −far,
   normal 0); its signals keep their traced values.
