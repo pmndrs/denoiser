@@ -314,3 +314,9 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   its code or README prose is not. NRD's interface facts (e.g. 2.5D motion,
   z = viewZprev − viewZ, is its recommended mode) are in `sources/nrd-provenance.md` §3
   and are fine to use. — orchestrator, 2026-10-24
+- Second reviews: check equations against the PDF page image, not the text extraction.
+  Two-column `pdftotext` scrambles stacked fractions (M12 Eq. 13 reads as "1 1 / k µ" and was
+  transcribed with µ in the wrong place in a source note). `Read` on the PDF with `pages: "4"`
+  renders the page; `pdftotext -f N -l N` finds which page a section is on. Slide decks: the
+  `tr/p-0NN.png` images show whether a slide has text or only a picture (TR19's "overlapping
+  penumbra" slides are pictures only, so no fix can have come from them). — shadows provenance reviewer, 2026-10-25

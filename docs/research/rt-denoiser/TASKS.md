@@ -282,10 +282,11 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       bed's path-traced GI favours recurrent by ~0.5–1 dB. Tune recurrent on the test bed (or
       captures), sanity-check on the dev page — found by recurrent, owner T1.5 / T3
 
-- [ ] Second review of the shadows PROVENANCE rows marked "yes" (pointers came from
+- [x] (reviewer, `reviews/shadows-provenance.md`) Second review of the shadows PROVENANCE rows marked "yes" (pointers came from
       `sources/shadows-specular.md`, whose author read NRD README prose; the implementer re-read
       M12, H18, RTG1-25 §25.2.1 and TR19 slide 72 directly) — found by shadows, owner a reviewer
-      who hasn't read NRD's README
+      who hasn't read NRD's README. _Done: 6 confirmed, 2 confirmed with a citation correction, none
+      unsupported. The same check covers the RTG2-24 source of the recurrent D3b row (still marked "yes")._
 - [ ] Shadows spec deviations (results/M4.md §7): clamp 0.4σ instead of γ = 1, anti-lag restart
       at A = 0, uniform snap, W_px² history cap, Catmull-Rom on visibility, g = h/(D−h) stored
       instead of W_eff, radius 0.75·W, anisotropy off (measured worse), tiles folded into
@@ -301,6 +302,16 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Shadows section in `packages/denoiser-realtime/README.md` (usage: `new ShadowDenoiser(device)`,
       `dispatch({ visibility, hitDistance, light }, guides, camera)`, options, M4 numbers); not written
       by the shadows agent because the README is being edited by the recurrent agent — found by shadows, owner `packages/denoiser-realtime`
+- [ ] Trim `sources/shadows-specular.md` (list with line numbers in `reviews/shadows-provenance.md`
+      last section): delete the NRD-README multi-light sentence (l. 582–583, RULES §2), drop the
+      "NRD prose says it exists" attribution (l. 573–574), cite M12 §6 for "spread h to lit pixels"
+      (l. 246–247), fix the M12 Eq. 13 transcription (l. 110: 1/(kµ) outside the max, floor 1/Ω_x^max)
+      — found by shadows provenance reviewer, owner orchestrator (`sources/`)
+- [ ] Shadows provenance hygiene (non-blocking): record `maxScaleHistory` = 7, `maxRadius` = 48 px and
+      the pass-2 rotation offset 2 − φ as "our design" in PROVENANCE (or tune them); fix the
+      `shaders/shadow.ts` comments "floored at one pixel" (M12's floor is 1/(kµ·Ω_x^max), 1 px is ours) and
+      the two merged comments on line 58; row SH-6: σ ∝ E is H18 §4.1, not §4.2; optionally cite RTG1-13
+      Eq. 11 p.170 as precedent for the raw-only history — found by shadows provenance reviewer, owner shadows
 
 ## Probes for the Windows harness
 
