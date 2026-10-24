@@ -152,7 +152,7 @@ One list, ordered by how much each item blocks (TASKS "Questions for Dennis" poi
 2. **SVGF `antiLag` default.** Recommendation: `'auto'` (v2): +0.25 ms joint for +0.24 dB
    diffuse, +1.58 dB specular, 3-frame specular light recovery (`'off'`: 8).
 3. **4 ms on the M5 Pro vs ≤ 2× native.** Recommendation: ≤ 2× native binding once measurable;
-   4 ms an M5 Pro guide with ~10 % tolerance (A-SVGF auto 4.24 passes, recurrent 4.44 borderline).
+   4 ms an M5 Pro guide with ~10 % tolerance (test-bed bench medians: A-SVGF auto 4.23 passes, recurrent 3.99, hybrid 4.79 fails; [REMEASURE](results/REMEASURE-2026-10-25.md)).
 4. **Memory over 100 B/px.** Recommendation: accept ~140 B/px for the SVGF default (an untested
    output-aliasing cut gives −16); recurrent with half-res fast history (93.5) is the ≤ 100 option.
 5. **Shadows: uniform snap.** Recommendation: `'change'`, after one 1080p check.
@@ -1625,12 +1625,12 @@ PLAN §8: diffuse + specular ≤ 4 ms and ≤ 100 B/px on the M5 Pro at 1080p; s
 |---|---|---|---|---|
 | SVGF diffuse + specular (`antiLag: 'off'`, default) | 8 | **3.99** (bench, M1 §12.4) / 4.02 (dev page, M2-M3 §4) | 132 | at target; memory over |
 | A-SVGF diffuse + specular (`antiLag: 'auto'` v2) | 14 | **4.24** (bench; v1: 5.61 bench, 5.55 dev page) | 140 | 6 % over; memory over |
-| recurrent diffuse + specular, shared dispatches | 8 | **4.44** (dev page); 4.05 with `blurTaps: 4` (−0.07 dB, +5 % flicker) | 105.5 | 11 % over; memory 5.5 % over |
+| recurrent diffuse + specular, shared dispatches | 8 | **3.99** test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md)); 4.44 dev page; 4.05 with `blurTaps: 4` (dev page; −0.07 dB, +5 % flicker) | 105.5 | at target on the test-bed bench; memory 5.5 % over |
 | recurrent diffuse alone / specular alone | 8 | 2.38 / 2.79 (dev page) | 73.5 / 73.5 | SVGF alone: 2.11–2.18 / 2.68–2.99 |
-| `filter: 'recurrent'` joint default today (recurrent diffuse + A-SVGF specular, shared prepass) | 21 | 5.98 (dev page, anti-lag v1; not re-measured with v2) | ≈ 138 | over |
+| `filter: 'recurrent'` joint default today (recurrent diffuse + A-SVGF specular, shared prepass) | 21 | **4.79** test-bed bench median, anti-lag v2 ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 dev page: 5.98) | ≈ 138 | 20 % over |
 | skeleton: 8 recurrent passes with trivial kernels, both signals | 8 | 0.85 | — | dispatch + centre I/O ≈ ⅕ of 4 ms |
 | occlusion AO: recurrent / SVGF / A-SVGF `auto` (v1) | 7 / 7 / 13 | 1.32 / 1.37 / 2.16 (fastest clock) | 57.5 / 84 / 92 | no PLAN target |
-| occlusion AO + SO joint: recurrent / SVGF / A-SVGF `auto` (v1) | 7 / 8 / 14 | 2.39 / 2.99 / 5.27 (8-frame replay, min: overweights young histories) | 73.5 / 148 / 163 | no PLAN target |
+| occlusion AO + SO joint: recurrent / SVGF / A-SVGF `auto` (v2) | 7 / 8 / 14 | 2.62 / 2.89 / 3.10 test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 8-frame replay min: 2.39 / 2.99 / 5.27) | 73.5 / 148 / 156 | no PLAN target |
 | shadows (v2) | 4 | **0.48–0.59** fastest of 4 runs (`thin` 0.59); FFX 0.50–0.61 | 40 (+12 B per tile) | at target |
 
 The M5 Pro runs solo benches in two clock states (every pass ×1.3–1.8 in the slow one): M4 and M5
@@ -1696,14 +1696,14 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      beats plain SVGF on 5 of 7 paths, A-SVGF auto only on `glossy`, +0.17); occlusion AO SVGF
      38.93 vs recurrent 38.02, SO 38.76 vs 37.37, SVGF ahead on every path. Recurrent is weaker in
      disocclusions (diffuse −1.2 dB vs SVGF) and slower after light changes (diffuse 11 frames to
-     recover vs 5 for A-SVGF, M2-M3 §6). Cost: joint 3.99 / 4.24 / 4.44 ms; AO 1.37 vs 1.32.
+     recover vs 5 for A-SVGF, M2-M3 §6). Cost (test-bed bench medians, [REMEASURE](results/REMEASURE-2026-10-25.md)): joint SVGF 4.00 / A-SVGF auto 4.23 / recurrent 3.99 ms; AO+SO joint 2.89 / 3.10 / 2.62.
      Memory: 132 / 140 / 105.5 B/px; AO 84 vs 57.5. Recurrent's wins: flat glossy floors (virtual
      motion), memory, static-view flicker, and a design meant to track native (unmeasured). About
      20 knobs moved its gap by ≤ ±0.2 dB (M2-M3 §5, M5 §4).
    - *Today's code.* `DiffuseDenoiser`, `SpecularDenoiser` and `DiffuseSpecularDenoiser` default
      to `'svgf'`; `OcclusionDenoiser` defaults to `'recurrent'` (SPEC O-2);
      `DiffuseSpecularDenoiser({ filter: 'recurrent' })` means recurrent diffuse + A-SVGF specular
-     (5.98 ms with v1, ≈ 138 B/px), which `'svgf'` + `'auto'` on both signals beats on quality,
+     (4.79 ms bench with anti-lag v2, ≈ 138 B/px), which `'svgf'` + `'auto'` on both signals beats on quality,
      cost and memory.
    - *Options.* (a) SVGF for all three (plus item 2's anti-lag), recurrent opt-in. (b) Recurrent
      for all three, accepting −0.9 dB diffuse and specular (vs A-SVGF auto) and −0.9 / −1.4 dB
@@ -1728,10 +1728,10 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
    - *Recommendation:* (a). Item 3 decides whether 4.24 ms is acceptable.
 
 3. **The 4 ms budget vs ≤ 2× native.**
-   - *Evidence.* Joint diffuse + specular on the M5 Pro: SVGF 3.99, A-SVGF auto v2 4.24,
-     recurrent 4.44 (4.05 with `blurTaps: 4`). Native on the RTX 3060 Laptop: RELAX 6.74 ms,
+   - *Evidence.* Joint diffuse + specular on the M5 Pro, test-bed bench medians ([REMEASURE](results/REMEASURE-2026-10-25.md)): SVGF 4.00,
+     A-SVGF auto v2 4.23, recurrent 3.99, hybrid 4.79 (recurrent on the dev page: 4.44). Native on the RTX 3060 Laptop: RELAX 6.74 ms,
      REBLUR 5.61 ms at 1080p (M1 §7); ours has never run there (NATIVE-HARNESS phase 5).
-   - *Options.* (a) ≤ 4 ms firm for the defaults (then `'auto'` and recurrent miss by 6 % / 11 %).
+   - *Options.* (a) ≤ 4 ms firm for the defaults (then `'auto'` misses by 6 %; recurrent passes on the test-bed bench).
      (b) ≤ 2× native on the same GPU binding, 4 ms on the M5 Pro a guide. (c) Both, with a
      tolerance.
    - *Recommendation:* (b), with 4 ms ± 10 % as the M5 Pro guide until phase 5 runs, and phase 5

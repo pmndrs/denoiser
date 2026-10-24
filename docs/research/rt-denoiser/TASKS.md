@@ -496,7 +496,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       124; output valid until the next dispatch, as recurrent's already is). Untested proposal; check
       that nothing reads the ping buffer after the last iteration — found by spec-author, owner
       `packages/denoiser-realtime`
-- [ ] SPEC numbers outside §0.2 still quote the pre-remeasure values: §0.3 item 3 ("A-SVGF auto 4.24 passes,
+- [x] (orchestrator: §0.3, §10.3, §12 items 1 and 3 updated to the bench medians) SPEC numbers outside §0.2 still quote the pre-remeasure values: §0.3 item 3 ("A-SVGF auto 4.24 passes,
       recurrent 4.44 borderline"), §10.3 (hybrid 5.98 ms v1, occlusion A-SVGF v1 ms / B/px), §12 items 1, 3, 5
       (hybrid cost, recurrent joint cost: 3.99 ms on the test-bed bench vs 4.44 on the dev page, snap evidence now
       at 1080p). Numbers in results/REMEASURE-2026-10-25.md — found by remeasure, owner spec-author
