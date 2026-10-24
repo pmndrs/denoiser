@@ -27,13 +27,13 @@ export interface SvgfOptions {
   temporalAlpha?: number;
   /** Minimum blend weight for the luminance moments. Default = temporalAlpha. */
   momentsAlpha?: number;
-  /** History length cap in frames. Default 32. */
+  /** History length cap in frames, incl. the current one. Default 64 (A-SVGF code). */
   maxHistory?: number;
-  /** History resampling when the 2x2 footprint is valid. Default 'catmull-rom'. */
+  /** History resampling when the 2x2 footprint is valid. Default 'bilinear' (SPEC C-8 for svgf: its history is already the smooth a-trous output; Catmull-Rom measured +0.03-0.07 dB, slightly more flicker). */
   historyFilter?: 'catmull-rom' | 'bilinear';
   /** Plane-distance disocclusion threshold, relative to camera distance. Default 0.01. */
   planeDistance?: number;
-  /** Minimum cosine between current and previous normals to reuse history. Default 0.9. */
+  /** Minimum cosine between current and previous normals to reuse history. Default 0.95 (A-SVGF code). */
   normalThreshold?: number;
   /** A-trous iterations (strides 1, 2, 4, ...). Default 5 (SVGF paper). */
   atrousIterations?: number;
@@ -54,7 +54,7 @@ export interface SvgfOptions {
   luminanceVariance?: 'sample' | 'mean';
   /** Frames over which variance ramps from the spatial to the temporal estimate. Default 4. */
   varianceRampFrames?: number;
-  /** Spatial variance boost for young history: x (1 + boost (1 - t)). Default 3 (A-SVGF code). */
+  /** Spatial variance boost for young history: x (1 + boost (1 - n / rampFrames)). Default 3 (A-SVGF code). */
   spatialVarianceBoost?: number;
   /**
    * A-SVGF anti-lag (gradient-driven alpha). 'auto' estimates the temporal
@@ -80,12 +80,14 @@ export interface SvgfOptions {
 
 /** Specular-only settings. */
 export interface SpecularSvgfOptions extends SvgfOptions {
-  /** Base power P of the roughness history cap (RTG II eq. in sec. 49.8.1; 0.5-1). Default 0.75. */
-  specularHistoryPower?: number;
-  /** Grazing-angle curve kappa of the history cap (1 low, 0.66 medium, 0.5 high). Default 0.66. */
+  /**
+   * Surface-motion history cap for specular (SPEC R-8, our design):
+   * A_spec = scale * theta_L(alpha) * NoV^curve / parallax. Defaults 1 and 0.5.
+   */
+  specularHistoryScale?: number;
   specularHistoryCurve?: number;
-  /** Parallax normalization (frames per second the parallax is expressed in). Default 60. */
-  parallaxScale?: number;
+  /** Energy fraction E defining the GGX lobe half-angle theta_L (SPEC R-1). Default 0.75. */
+  lobeFraction?: number;
   /** Scales the roughness-dependent kernel radius (RTG ch. 32 eq. 15). Default 1. */
   radiusScale?: number;
 }
@@ -99,10 +101,10 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
   return {
     temporalAlpha,
     momentsAlpha: o.momentsAlpha ?? temporalAlpha,
-    maxHistory: o.maxHistory ?? 32,
-    historyFilter: o.historyFilter ?? 'catmull-rom',
+    maxHistory: o.maxHistory ?? 64,
+    historyFilter: o.historyFilter ?? 'bilinear',
     planeDistance: o.planeDistance ?? 0.01,
-    normalThreshold: o.normalThreshold ?? 0.9,
+    normalThreshold: o.normalThreshold ?? 0.95,
     atrousIterations: Math.max(1, Math.round(o.atrousIterations ?? 5)),
     kernel: o.kernel ?? '3x3',
     feedback: o.feedback ?? true,
@@ -118,9 +120,9 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     gradientIterations: o.gradientIterations ?? 5,
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
-    specularHistoryPower: o.specularHistoryPower ?? 0.75,
-    specularHistoryCurve: o.specularHistoryCurve ?? 0.66,
-    parallaxScale: o.parallaxScale ?? 60,
+    specularHistoryScale: o.specularHistoryScale ?? 1,
+    specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
+    lobeFraction: o.lobeFraction ?? 0.75,
     radiusScale: o.radiusScale ?? 1,
   };
 }
@@ -217,8 +219,8 @@ export class SvgfSignal {
     f[0] = o.temporalAlpha; f[1] = o.momentsAlpha; f[2] = o.maxHistory; f[3] = o.planeDistance;
     f[4] = o.normalThreshold; f[5] = o.sigmaDepth; f[6] = o.sigmaNormal; f[7] = o.sigmaLuminance;
     f[8] = o.varianceRampFrames; f[9] = o.spatialVarianceBoost;
-    f[10] = o.specularHistoryPower; f[11] = o.specularHistoryCurve;
-    f[12] = o.parallaxScale; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
+    f[10] = o.specularHistoryScale; f[11] = o.specularHistoryCurve;
+    f[12] = o.lobeFraction; f[13] = o.antiLagNoiseFloor; f[14] = o.radiusScale;
     u[15] = (o.historyFilter === 'catmull-rom' ? P_CATMULL : 0) | (o.antiLag !== 'off' ? P_ANTILAG : 0)
       | (o.remodulate ? P_REMODULATE : 0) | (o.antiLag === 'input' ? P_GRADIENT_INPUT : 0)
       | (o.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0);

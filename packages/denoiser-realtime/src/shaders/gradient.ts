@@ -32,8 +32,8 @@ const GPARAMS_WGSL = /* wgsl */ `
 struct Params {
   alpha: f32, momentsAlpha: f32, maxHistory: f32, planeTol: f32,
   normalTol: f32, sigmaZ: f32, sigmaN: f32, sigmaL: f32,
-  rampFrames: f32, varBoost: f32, specPower: f32, specKappa: f32,
-  parallaxScale: f32, gradNoiseK: f32, radiusScale: f32, flags: u32,
+  rampFrames: f32, varBoost: f32, specScale: f32, specKappa: f32,
+  lobeFraction: f32, gradNoiseK: f32, radiusScale: f32, flags: u32,
   gradRadius: i32, gradDown: i32, gradDims: vec2i,
 }
 `;

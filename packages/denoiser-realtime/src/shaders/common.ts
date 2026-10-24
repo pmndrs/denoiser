@@ -150,16 +150,18 @@ fn expectedPrev(p: vec2i, g: Geo, prevUV: vec2f, world: vec3f) -> vec3f {
   return unprojectZ(F.prevProjInv, ndcOf(prevUV), prevVz);
 }
 
-// Per-tap test: plane distance of the expected point to the previous surface at
-// tap q, plus a normal-agreement test.
+// Per-tap test (SPEC C-7): distance of the expected point to the previous
+// surface plane at tap q, with the pairwise-averaged normal, relative to the
+// view distance; backfacing taps rejected; plus SVGF's normal-agreement test.
 fn tapValid(q: vec2i, g: Geo, expPrev: vec3f, planeTol: f32, normalTol: f32) -> bool {
   if (!inside(q)) { return false; }
   let gq = geoTap(geoPrev, q);
   if (gq.z <= 0.0) { return false; }
+  let ndn = dot(g.n, gq.n);
+  if (ndn <= 0.0 || ndn < normalTol) { return false; }
   let Q = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -gq.z);
-  let nq = (F.prevView * vec4f(gq.n, 0.0)).xyz;
-  let dist = abs(dot(nq, expPrev - Q));
-  return dist <= planeTol * max(gq.z, g.z) && dot(g.n, gq.n) >= normalTol;
+  let nAvg = normalize((F.prevView * vec4f(g.n + gq.n, 0.0)).xyz);
+  return abs(dot(nAvg, Q - expPrev)) <= planeTol * length(expPrev);
 }
 
 fn reproject(p: vec2i, g: Geo, planeTol: f32, normalTol: f32) -> Reproj {
