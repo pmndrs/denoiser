@@ -11,7 +11,11 @@
 // G-buffer channel, a_svgf.zip, BSD-3).
 import { FRAME_WGSL } from './common';
 
-export function prepassWgsl(depthIsDepthFormat: boolean): string {
+/**
+ * `slope = false` (filters that never read the depth slope, e.g. recurrent): no
+ * neighbour depth reads and no slope output (binding 6 absent).
+ */
+export function prepassWgsl(depthIsDepthFormat: boolean, slope = true): string {
   const depthDecl = depthIsDepthFormat
     ? 'var depthTex: texture_depth_2d;'
     : 'var depthTex: texture_2d<f32>;';
@@ -26,7 +30,7 @@ ${FRAME_WGSL}
 @group(0) @binding(3) var normalTex: texture_2d<f32>;
 @group(0) @binding(4) var roughTex: texture_2d<f32>;
 @group(0) @binding(5) var outGeo: texture_storage_2d<rg32uint, write>;
-@group(0) @binding(6) var outGrad: texture_storage_2d<r32uint, write>;
+${slope ? '@group(0) @binding(6) var outGrad: texture_storage_2d<r32uint, write>;' : ''}
 
 // Linear depth (> 0) at p, 0 for sky / no surface.
 fn linZ(p: vec2i) -> f32 {
@@ -60,17 +64,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   g.n = vec3f(0.0, 0.0, 1.0);
   g.grad = vec2f(0.0);
   g.rough = 1.0;
-  if (g.z > 0.0) {
+  if (g.z > 0.0) {${slope ? `
     let zl = select(0.0, linZ(p - vec2i(1, 0)), p.x > 0);
     let zr = select(0.0, linZ(p + vec2i(1, 0)), f32(p.x + 1) < F.dims.x);
     let zu = select(0.0, linZ(p - vec2i(0, 1)), p.y > 0);
     let zd = select(0.0, linZ(p + vec2i(0, 1)), f32(p.y + 1) < F.dims.y);
-    g.grad = vec2f(slope(g.z, zl, zr), slope(g.z, zu, zd));
+    g.grad = vec2f(slope(g.z, zl, zr), slope(g.z, zu, zd));` : ''}
     g.n = normalize(textureLoad(normalTex, p, 0).xyz);
     if (hasFlag(FRAME_HAS_ROUGHNESS)) { g.rough = textureLoad(roughTex, p, 0).r; }
   }
   textureStore(outGeo, p, vec4u(packGeoTap(g), 0u, 0u));
-  textureStore(outGrad, p, vec4u(packGrad(g), 0u, 0u, 0u));
+  ${slope ? 'textureStore(outGrad, p, vec4u(packGrad(g), 0u, 0u, 0u));' : ''}
 }
 `;
 }

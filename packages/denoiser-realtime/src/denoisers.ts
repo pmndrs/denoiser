@@ -131,7 +131,7 @@ class Single {
   readonly r: Resolved;
   constructor(device: GPUDevice, kind: Kind, options: Partial<SpecularSvgfOptions> | Partial<RecurrentOptions>, readonly name: string) {
     this.r = resolve(options);
-    this.base = new Base(device, name, this.r.o.timestamps, 0);
+    this.base = new Base(device, name, this.r.o.timestamps, 0, this.r.filter !== 'recurrent');
     this.pipe = makePipe(device, [{ kind, r: this.r }], name);
     this.base.setTimer(this.r.o.timestamps, this.pipe.passes + 1);
   }
@@ -271,7 +271,7 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
     this.name = rd.filter === rs.filter ? `${rd.filter}-diffuse-specular` : `${rd.filter}+${rs.filter}-diffuse-specular`;
     const timestamps = rd.o.timestamps || rs.o.timestamps;
     const joint = key(rd) === key(rs);
-    this.base = new Base(device, this.name, timestamps, 0);
+    this.base = new Base(device, this.name, timestamps, 0, rd.filter !== 'recurrent' || rs.filter !== 'recurrent');
     this.pipes = joint
       ? [makePipe(device, [{ kind: 'diffuse', r: rd }, { kind: 'specular', r: rs }], this.name)]
       : [makePipe(device, [{ kind: 'diffuse', r: rd }], `${this.name} diffuse`),
@@ -337,10 +337,11 @@ class Base {
   private needsReset = true;
   private configured = false;
 
-  constructor(device: GPUDevice, label: string, timestamps: boolean, maxPasses: number) {
+  /** `slope: false` when no SVGF pipeline reads the depth slope (recurrent only). */
+  constructor(device: GPUDevice, label: string, timestamps: boolean, maxPasses: number, slope = true) {
     this.device = device;
     if (maxPasses > 0) this.setTimer(timestamps, maxPasses);
-    this.gp = new GuidePass(device, label);
+    this.gp = new GuidePass(device, label, slope);
   }
 
   setTimer(timestamps: boolean, maxPasses: number) {

@@ -24,18 +24,20 @@ export class GuidePass {
   width = 0;
   height = 0;
 
-  constructor(private device: GPUDevice, private label: string) {
+  /** `slope: false` skips the depth-slope texture (4 B/px and 4 neighbour reads) for filters that don't read it. */
+  constructor(private device: GPUDevice, private label: string, private readonly slope = true) {
     this.frame = device.createBuffer({ label: `${label} frame`, size: FRAME_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.dummy = device.createTexture({ label: `${label} dummy`, size: [1, 1], format: 'rgba16float', usage: GPUTextureUsage.TEXTURE_BINDING });
     this.dummy32 = device.createTexture({ label: `${label} dummy32`, size: [1, 1], format: 'rgba32float', usage: GPUTextureUsage.TEXTURE_BINDING });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    const out: ('rg32uint' | 'r32uint')[] = slope ? ['rg32uint', 'r32uint'] : ['rg32uint'];
     this.layouts = {
-      depth: makeLayout(device, `${label} prepass (depth)`, ['u', 'd', 'f', 'f', 'f', 'rg32uint', 'r32uint']),
-      float: makeLayout(device, `${label} prepass (float)`, ['u', 'f', 'f', 'f', 'f', 'rg32uint', 'r32uint']),
+      depth: makeLayout(device, `${label} prepass (depth)`, ['u', 'd', 'f', 'f', 'f', ...out]),
+      float: makeLayout(device, `${label} prepass (float)`, ['u', 'f', 'f', 'f', 'f', ...out]),
     };
     this.pipes = {
-      depth: makePipeline(device, `${label} prepass (depth)`, prepassWgsl(true), this.layouts.depth),
-      float: makePipeline(device, `${label} prepass (float)`, prepassWgsl(false), this.layouts.float),
+      depth: makePipeline(device, `${label} prepass (depth)`, prepassWgsl(true, slope), this.layouts.depth),
+      float: makePipeline(device, `${label} prepass (float)`, prepassWgsl(false, slope), this.layouts.float),
     };
   }
 
@@ -46,16 +48,19 @@ export class GuidePass {
     this.geo = [0, 1].map((i) => this.device.createTexture({
       label: `${this.label} geometry ${i}`, size: [width, height], format: 'rg32uint', usage: storageTex(),
     }));
-    this.grad = this.device.createTexture({
+    this.grad = this.slope ? this.device.createTexture({
       label: `${this.label} depth slope`, size: [width, height], format: 'r32uint', usage: storageTex(),
-    });
+    }) : undefined;
     this.cur = 0;
   }
 
   get geoCur(): GPUTexture { return this.geo[this.cur]; }
   get geoPrev(): GPUTexture { return this.geo[this.cur ^ 1]; }
-  /** Depth slope of the current frame (r32uint, pack2x16float). */
-  get geoGrad(): GPUTexture { return this.grad!; }
+  /** Depth slope of the current frame (r32uint, pack2x16float); only with `slope` (default). */
+  get geoGrad(): GPUTexture {
+    if (!this.grad) throw new Error(`${this.label}: depth slope not computed (GuidePass slope: false)`);
+    return this.grad;
+  }
 
   /** Writes the frame uniform and records the prepass. */
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, guides: FrameGuides, camera: FrameCamera, reset: boolean) {
@@ -64,7 +69,8 @@ export class GuidePass {
     const kind = isDepthFormat(guides.depth.format) ? 'depth' : 'float';
     const depthView = kind === 'depth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     runPass(enc, timer, 'prepass', this.pipes[kind], makeBindGroup(this.device, this.layouts[kind], [
-      this.frame, depthView, guides.viewZ ?? this.dummy, guides.normal, guides.roughness ?? this.dummy, this.geoCur, this.grad!,
+      this.frame, depthView, guides.viewZ ?? this.dummy, guides.normal, guides.roughness ?? this.dummy, this.geoCur,
+      ...(this.grad ? [this.grad] : []),
     ]), Math.ceil(this.width / 8), Math.ceil(this.height / 8));
   }
 
