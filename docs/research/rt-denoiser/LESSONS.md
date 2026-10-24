@@ -30,6 +30,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `git show HEAD:docs/research/rt-denoiser/TASKS.md` instead of assuming yours is pending.
   — spec-author, 2026-10-25
 - WebFetch of unrealengine.com blog posts returns 403. — spec-author, 2026-10-25
+- `examples/realtime-denoiser` evaluates several (signal, denoiser) pairs in ONE page
+  (`signal=all&denoiser=a,b`): the expensive references are rendered once per frame and
+  shared. A 1080p 96-frame path with all three signals and 256-spp references takes
+  ~80 s, ~60 s of it CPU FLIP; the 960x540 default preset ~25 s. `flip=0` for speed.
+  — testbed, 2026-10-25
+- Bench one denoiser per page load: in a page that benches several denoisers in a row,
+  FFX shadows read 1.2 ms instead of 0.51 ms (alone). Eval-mode `gpuMs` (GPU kept busy
+  by the references) agree with the solo bench. — testbed, 2026-10-25
 
 ## WebGPU / WGSL
 
@@ -43,6 +51,12 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   transients share them) and packs A_d/A_s/m into one `r32uint` that history fix updates
   in place (core allows read_write on r32uint). Mip levels go into an atlas inside a free
   rotation buffer. — spec-author, 2026-10-25
+- One WGSL module with many entry points + `layout: 'auto'` binds only what each entry
+  statically uses, so the test bed keeps every CAPTURE-FORMAT buffer in one module and
+  splits writers per entry (`guides` 6, `material` 2, `signals` 6 storage textures) under
+  the 8 storage textures it requests. Long reference dispatches are chunked (32 spp per
+  submit, sums in a storage buffer) so no single command buffer runs for seconds.
+  — testbed, 2026-10-25
 
 ## Conventions
 
@@ -82,6 +96,22 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A pre-blur's spatial bias is permanent in a recurrent filter (the converged output is
   the mean of pre-blurred frames), so SPEC clamps the pre-blur radius by last frame's
   denoised hit distance. Watch contact GI/reflections when tuning D1. — spec-author, 2026-10-25
+- Test-bed numbers to keep in mind: the noisy input's *tonemapped* bias is negative
+  (−0.06 diffuse, −0.07 specular) only because x/(1+x) is concave; use the linear
+  `energy` ratio for energy loss. FFX reflections on our demodulated specular loses ~28 %
+  energy (its luminance-weighted firefly suppression), far more than the −0.04 tonemapped
+  bias seen in `examples/ffx-denoiser`. FFX shadows writes 0 on sky pixels (not scored).
+  — testbed, 2026-10-25
+- FLIP's viewing condition decides what "noise" is: at FLIP's standard 67 ppd a 960x540
+  frame is ~14° wide and 1-px binary shadow dither scores *better* than FFX's smooth
+  result. The test bed scales ppd with resolution (image spans 46.4°, ~41 ppd at 1080p;
+  `&ppd=67` restores the standard). — testbed, 2026-10-25
+- Test-bed ground-truth disocclusion (history age) uses a slope-aware depth test:
+  1 % |z| + 2 × the robust one-sided z slope per pixel (`metrics.ts` `depthTol`); a
+  best-of-4-taps 2 % relative test gave the same counts on our scene, so best-of-4 also
+  avoids most grazing-angle false rejections. In the slow orbit ~8 % of receivers have
+  < 8 frames of valid history, real ones: behind the fence slats and at the screen edge
+  (see `mode=eval&show=age`). — testbed, 2026-10-25
 
 ## Clean room
 
