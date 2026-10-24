@@ -56,7 +56,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       resource/memory budget. _Dennis reviews before M2 is final; M2 may start against v0,
       marked provisional._
 - [ ] **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
-- [ ] **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
+- [~] testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
       albedo/f0; per-frame converged references; stress paths (fast pan, lighting change,
       thin geometry, glossy floor, camera cut); metrics: PSNR, FLIP, temporal PSNR /
