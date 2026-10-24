@@ -47,7 +47,8 @@ export const SF_ANISO = 4;
 export const SF_NO_SKIP = 8;      // filter every tile
 export const SF_MERGE_MIN = 16;   // W_eff = min(own, neighbourhood) instead of own-first
 export const SF_HAS_HIT = 32;
-export const SF_CATMULL = 64;    // Catmull-Rom history for visibility when the 2x2 footprint is valid
+export const SF_CATMULL = 64;
+export const SF_SNAP = 128;      // uniform 5x5 neighbourhood: history := its value    // Catmull-Rom history for visibility when the 2x2 footprint is valid
 
 /** Size of ShadowParams in bytes. */
 export const SP_SIZE = 88 * 4;
@@ -82,6 +83,7 @@ const SF_NO_SKIP = ${SF_NO_SKIP}u;
 const SF_MERGE_MIN = ${SF_MERGE_MIN}u;
 const SF_HAS_HIT = ${SF_HAS_HIT}u;
 const SF_CATMULL = ${SF_CATMULL}u;
+const SF_SNAP = ${SF_SNAP}u;
 const G_INF = 0x7f800000u;   // +inf bits: "no occluder estimate"
 `;
 
@@ -252,12 +254,15 @@ ${nb.join('\n')}
       let mu = m1 / 25.0;
       let sigma = sqrt(max(m2 / 25.0 - mu * mu, 0.0));
       let win = SP.clampSigma * sigma + SP.clampFloor;
-      let vC = clamp(vH, mu - win, mu + win);
+      var vC = clamp(vH, mu - win, mu + win);
       if (A >= 0.0) {
         // anti-lag (our design): a history the clamp had to move is short-lived
         let c = saturate(abs(vC - vH) * SP.antiLag);
         A = mix(A, min(A, SP.antiLagHistory), c);
       }
+      // all 25 samples agree: take their value exactly, keep the history length (the floor
+      // above only decides whether this is a change worth restarting for)
+      if (sigma == 0.0 && spFlag(SF_SNAP)) { vC = mu; }
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
       if (spFlag(SF_NOISE)) {

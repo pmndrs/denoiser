@@ -18,7 +18,7 @@ import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
-  SF_ANISO, SF_CATMULL, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_TILES_WGSL, SP_SIZE,
+  SF_ANISO, SF_CATMULL, SF_SNAP, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_TILES_WGSL, SP_SIZE,
   shadowSpatialWgsl, shadowTemporalWgsl,
 } from './shaders/shadow';
 
@@ -66,6 +66,8 @@ export interface ShadowDenoiserOptions {
   anisotropy?: boolean;
   /** Cap of the anisotropic stretch. Default 4. */
   anisotropyMax?: number;
+  /** Where all 25 raw samples of the 5x5 window agree, the history takes their value exactly (no residual lag in lit / umbra areas). Default true. */
+  uniformSnap?: boolean;
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
   catmullRom?: boolean;
   /** Spatial passes: 0, 1 or 2. Default 2. */
@@ -106,6 +108,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     anisotropy: o.anisotropy ?? false,
     anisotropyMax: o.anisotropyMax ?? 4,
     catmullRom: o.catmullRom ?? true,
+    uniformSnap: o.uniformSnap ?? true,
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
     mergeMin: o.mergeMin ?? true,
@@ -353,7 +356,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[46] = o.minRadius;
     f[47] = o.maxRadius * H / 1080;
     u[48] = (light?.type === 'sphere' ? SF_SPHERE : 0) | (noise ? SF_NOISE : 0) | (o.anisotropy ? SF_ANISO : 0)
-      | (o.tileSkip ? 0 : SF_NO_SKIP) | (o.mergeMin ? SF_MERGE_MIN : 0) | (inputs.hitDistance ? SF_HAS_HIT : 0) | (o.catmullRom ? SF_CATMULL : 0);
+      | (o.tileSkip ? 0 : SF_NO_SKIP) | (o.mergeMin ? SF_MERGE_MIN : 0) | (inputs.hitDistance ? SF_HAS_HIT : 0) | (o.catmullRom ? SF_CATMULL : 0) | (o.uniformSnap ? SF_SNAP : 0);
     f[49] = o.maxScaleHistory;
     f[50] = o.geometryTolerance;
     f[51] = Math.cos(o.normalAngle * Math.PI / 180);
