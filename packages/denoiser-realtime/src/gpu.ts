@@ -60,4 +60,5 @@ export function runPass(
   pass.end();
 }
 
-export const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
+/** STORAGE_BINDING | TEXTURE_BINDING, read lazily so importing the module works without WebGPU (SSR / Node). */
+export const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;

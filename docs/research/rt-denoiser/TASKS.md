@@ -131,6 +131,38 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       asks for blue noise animated per frame. Add a `sampler=bluenoise` option before tuning
       spatial filters on it (provisional until then). — found by testbed, owner `examples/realtime-denoiser`
 
+- [ ] Register `denoiser/realtime` in the test bed (`examples/realtime-denoiser/src/denoisers.ts`):
+      add `@pmndrs/denoiser-realtime` (workspace) + a vite alias to
+      `packages/denoiser-realtime/src/index.ts` like denoiser-ffx, then entries
+      `{ id: 'svgf', signals: ['diffuse', 'specular'], create: (d, s, q) => s === 'diffuse' ?
+      new RT.DiffuseDenoiser(d, opts(q)) : new RT.SpecularDenoiser(d, opts(q)), inputs: radianceInputs }`
+      and `'asvgf'` with `{ antiLag: 'auto' }` (options from `q`: `feedback`, `kernel`, `antiLag`).
+      Both conform to `TemporalDenoiser`; specular needs `guides.roughness`. Joint use:
+      `DiffuseSpecularDenoiser.dispatchBoth({ diffuse, specular }, guides, camera)` returns
+      `{ diffuse, specular }` (shared prepass; `dispatch()` returns diffuse only). Inputs
+      are demodulated; outputs stay demodulated. — found by svgf, owner `examples/realtime-denoiser`
+- [ ] Same for the replay (`tools/rt-capture/src/denoisers.ts`): `perSignal((d, s, set) => s ===
+      'diffuse' ? new DiffuseDenoiser(d, …) : new SpecularDenoiser(d, …))` for ids `svgf`,
+      `asvgf`; a joint entry can wrap `DiffuseSpecularDenoiser.dispatchBoth`. Import from
+      `../../../packages/denoiser-realtime/src/index` (relative, like FFX). — found by svgf, owner `tools/rt-capture`
+- [ ] SVGF vs SPEC v0 deviations to review (all measured on the dev page, provisional):
+      (1) default kernel 3×3 box, not B3 5×5 (equal/better PSNR, 2.6× cheaper per iteration);
+      (2) diffuse and specular run as separate dispatches sharing only the prepass (SPEC §4.1:
+      shared dispatches) — merging would save ~30 % for `DiffuseSpecularDenoiser`;
+      (3) Catmull-Rom (option, off) gates on the 4 inner taps + clamp, not a 16-tap test;
+      (4) the paper's 3×3 history fallback is kept (S-1 drops it);
+      (5) `antiLag: 'gradient'` takes renderer-made per-stratum samples instead of an
+      in-denoiser G1 forward projection; plus `antiLag: 'auto'` (our renderer-free design)
+      instead of C-10's fast history; gradients are per signal, not on the remodulated sum;
+      (6) specular normal weight = lobe half-angle cutoff (+0.65 dB vs S-3's power form);
+      (7) `remodulate: boolean` + `inputs.demodulation` instead of `output:` / `inputDemodulated`.
+      — found by svgf, owner spec-author (SPEC.md §4)
+
+- [ ] `denoiser/ffx` (and therefore `denoiser/realtime`, which re-exports it) throws on import
+      outside WebGPU (Node / SSR): `packages/denoiser-ffx/src/{shadows,reflections}.ts` read
+      `GPUTextureUsage` at module load (`const STORAGE_TEX = …`). Make it lazy (a function or
+      numeric flags); `@pmndrs/denoiser-realtime` itself imports fine. — found by svgf, owner `packages/denoiser-ffx`
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -147,3 +179,9 @@ harness builder runs them and returns images/metrics only.)_
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
+
+- **SVGF feedback default.** The brief and SPEC keep the paper's feedback (à-trous
+  iteration 0 → color history) on. Measured on the dev page at 1080p: `feedback: false` is
+  +1.1 dB PSNR (40.5 → 41.6 diffuse) with ~4 % more flicker; feedback compounds blur under
+  a static camera. Provisional: default stays `true`; recommend `false`. — svgf
+

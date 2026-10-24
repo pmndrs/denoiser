@@ -77,10 +77,10 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| position from viewZ, camera-relative X | C-1 | RTG2 §49.4 prose (position from viewZ; camera-relative X) | jittered sample NDC per CAPTURE-FORMAT; formulas ours | | |
-| depth source / linearization | C-2 | standard projection algebra | — | | |
-| previous depth from 2.5D motion or static transform | C-3, D16 | 2.5D convention: nrd-provenance §3.2 (interface fact) | static-world derivation when absent: ours | | |
-| packed guide `G` (oct normal 2×12 b + roughness 8 b + f32 depth) | C-5 | CIG14 (octahedral) | packing layout ours | | |
+| position from viewZ, camera-relative X | C-1 | RTG2 §49.4 prose (position from viewZ; camera-relative X) | jittered sample NDC per CAPTURE-FORMAT; formulas ours | | `packages/denoiser-realtime/src/shaders/common.ts` `unprojectZ` (generic two-point ray through projInv, also ortho / reversed-Z) |
+| depth source / linearization | C-2 | standard projection algebra | — | | `packages/denoiser-realtime/src/shaders/prepass.ts` `linZ` |
+| previous depth from 2.5D motion or static transform | C-3, D16 | 2.5D convention: nrd-provenance §3.2 (interface fact) | static-world derivation when absent: ours | | `packages/denoiser-realtime/src/shaders/common.ts` `expectedPrev` |
+| packed guide `G` (oct normal 2×12 b + roughness 8 b + f32 depth) | C-5 | CIG14 (octahedral) | packing layout ours | | `packages/denoiser-realtime/src/shaders/common.ts` `packGeoTap`/`geoTap`, `shaders/prepass.ts` (same layout) |
 | sanitize / safety clamp | F-1 | our design | | | |
 | diffuse demodulation, 1e-3 floor | F-2 | S1 §3 "Reconstruction"; Z15 §3 (floor) | — | yes (Z15 via shadows-specular.md) | |
 | specular demodulation (split-sum, analytic) | F-2 | K13 Eq. 7–8; K14m (analytic env-BRDF fit; constants as in CAPTURE-FORMAT) | f90 = 1 | yes | |
@@ -91,48 +91,63 @@ HB94 Hardie & Barner 1994 (cited by RTG2, not read).
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| reprojection into previous view space | C-6, D6b | RTG2 §49.6 prose | doing all math in previous view space is ours | | |
-| plane-distance disocclusion, τ = 1 % | C-7 | RTG2 §49.6 p.831 (0.5–1.5 %); METRO s.59 | pairwise-averaged normal; listing 49-2 not used | | |
-| backface rejection | C-7 | RTG2 p.832 | — | | |
-| SVGF normal test cosN = 0.95 | C-7 | S3 `TemporalAccumulation.frag` / `svgf_shared.glsl` | — | | |
-| custom-weighted bilinear history | C-8 | GTC20 s.27–30; RTG2 p.832; S1 p.5 | 1e-3 weight guard ours | | |
-| Catmull-Rom when 4×4 valid | C-8 | RTG2 §49.7 | 16-tap exact check, 9-tap evaluation (GG2-20), min/max clamp: ours | | |
-| history length A, α = 1/(1+A), increment / reset | C-9 | RTG2 Eq. 49.1, §49.5.2; GTC20 s.25–26; BAV12 s.37–39 | A_cap = 31 default (RTG2: up to 64) | | |
+| reprojection into previous view space | C-6, D6b | RTG2 §49.6 prose | doing all math in previous view space is ours | | `packages/denoiser-realtime/src/shaders/common.ts` `reproject` |
+| plane-distance disocclusion, τ = 1 % | C-7 | RTG2 §49.6 p.831 (0.5–1.5 %); METRO s.59 | pairwise-averaged normal; listing 49-2 not used | | `packages/denoiser-realtime/src/shaders/common.ts` `tapValid` |
+| backface rejection | C-7 | RTG2 p.832 | — | | `packages/denoiser-realtime/src/shaders/common.ts` `tapValid` |
+| SVGF normal test cosN = 0.95 | C-7 | S3 `TemporalAccumulation.frag` / `svgf_shared.glsl` | — | | `packages/denoiser-realtime/src/shaders/common.ts` `tapValid` |
+| custom-weighted bilinear history | C-8 | GTC20 s.27–30; RTG2 p.832; S1 p.5 | 1e-3 weight guard ours | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalWgsl` (accept if Σ b·v > 0.01, S3; no 1e-3 guard) |
+| Catmull-Rom when 4×4 valid | C-8 | RTG2 §49.7 | 16-tap exact check, 9-tap evaluation (GG2-20), min/max clamp: ours | | `packages/denoiser-realtime/src/shaders/common.ts` `sampleCatmullRom` (5-fetch); option, off by default for svgf; gate = the 4 inner taps valid + clamp, not a 16-tap test |
+| history length A, α = 1/(1+A), increment / reset | C-9 | RTG2 Eq. 49.1, §49.5.2; GTC20 s.25–26; BAV12 s.37–39 | A_cap = 31 default (RTG2: up to 64) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalWgsl` (n = A + 1 in `accum.a`) |
 | fast history + luminance clamp + A reduction (anti-lag) | C-10, D8, D11 | idea "clamp toward a faster history": RTG2 p.830 (and p.824 for ReLAX); variance clipping SAL16; A reduction behaviour RTG2 §49.11 | **our design, tuned on captures** (luminance/ĥ only, γ = 2, A_fast = 3, min-combine, runs in history fix) | | |
-| reset via `historyValid` uniform | C-12 | our design | | | |
+| reset via `historyValid` uniform | C-12 | our design | | | `packages/denoiser-realtime/src/shaders/common.ts` `FRAME_RESET` flag |
 
 ### SVGF + A-SVGF (M1)
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| pass structure (TA → variance → à-trous ×K, feedback after iteration 0) | §4.1 | S1 §4, Fig. 3, p.5; prior work (ssgiDev) | diffuse+specular in shared dispatches | | |
-| α = max(α_min, 1/(1+A)), α_min 0.2 / 0.1 | S-1 | S1 p.5; S2 p.10; S3 (max with 1/(n+1)) | — | | |
-| moments α = α_min by default (S3: 0.6) | S-1 | S1 §4.2; S3 | default follows the paper's reading | | |
-| moments in rg32float | S-1 | ssgi-svgf-review upgrade | — | | |
-| spatial variance below 4 frames, 7×7 / 5×5, boost | S-2 | S1 p.5; S3 `EstimateVariance.frag` | smooth ramp (ssgiDev); S3 neighbour-luminance quirk not copied | | |
-| σ stored instead of σ² | S-2a | our design | numerically equivalent | | |
-| B3 5×5 à-trous, K = 5 | S-3 | S1 Eq. 1; DAM §2.2 | — | | |
-| edge stops σ_z = 1, σ_n = 128, σ_l = 4 | S-3 | S1 Eq. 3–5, p.5 | depth weight on q = 1/d with ∇q from one-sided differences (no derivatives in compute) | | |
-| 3×3 Gaussian variance prefilter | S-3 | S1 p.6, Fig. 5 | — | | |
-| variance propagation | S-3 | S1 p.5 | — | | |
-| specular roughness weight | S-3 | RTG1-32 Eq. 14 | — | yes | |
-| 3×3 box kernel option | S-3 | S2 §4 | — | | |
-| gradient sampling (3×3 strata, forward projection, atomics, same seed) | S-7, S-8 | S2 §3.1–3.3; S3 `GradientForwardProject.fs` | static-world forward projection; hash choice ours | | |
-| gradient reconstruction (5 à-trous at stratum res) | S-7 | S2 §3.4; S3 `CreateGradientSamples.frag`, `AtrousGradient.frag` | one gradient on the remodulated sum for both signals | | |
-| λ = min(1, |δ̂|/Δ̂), 3×3 max, α ← lerp(α, 1, λ), A = 1/α − 1 | S-7 | S2 Eq. 13–14, p.9; S3 `TemporalAccumulation.frag` | λ clamped (S3 bug not copied) | | |
+| pass structure (TA → variance → à-trous ×K, feedback after iteration 0) | §4.1 | S1 §4, Fig. 3, p.5; prior work (ssgiDev) | diffuse+specular in shared dispatches | | `packages/denoiser-realtime/src/svgf.ts` `SvgfSignal.encode`; diffuse and specular run as separate dispatches sharing only the prepass |
+| α = max(α_min, 1/(1+A)), α_min 0.2 / 0.1 | S-1 | S1 p.5; S2 p.10; S3 (max with 1/(n+1)) | — | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalWgsl` |
+| moments α = α_min by default (S3: 0.6) | S-1 | S1 §4.2; S3 | default follows the paper's reading | | `packages/denoiser-realtime/src/shaders/svgf.ts` `temporalWgsl` |
+| moments in rg32float | S-1 | ssgi-svgf-review upgrade | — | | `packages/denoiser-realtime/src/svgf.ts` `configure` |
+| spatial variance below 4 frames, 7×7 / 5×5, boost | S-2 | S1 p.5; S3 `EstimateVariance.frag` | smooth ramp (ssgiDev); S3 neighbour-luminance quirk not copied | | `packages/denoiser-realtime/src/shaders/svgf.ts` `varianceWgsl` |
+| σ stored instead of σ² | S-2a | our design | numerically equivalent | | `packages/denoiser-realtime/src/shaders/svgf.ts` `varianceWgsl`/`atrousWgsl` |
+| B3 5×5 à-trous, K = 5 | S-3 | S1 Eq. 1; DAM §2.2 | — | | `packages/denoiser-realtime/src/shaders/svgf.ts` `atrousWgsl` (`kernel: '5x5'`; default is the 3×3 box, measured equal/better and ~2.6× cheaper) |
+| edge stops σ_z = 1, σ_n = 128, σ_l = 4 | S-3 | S1 Eq. 3–5, p.5 | depth weight on q = 1/d with ∇q from one-sided differences (no derivatives in compute) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `weightsWgsl` (∇d from the prepass slope texture, converted to ∇q) |
+| 3×3 Gaussian variance prefilter | S-3 | S1 p.6, Fig. 5 | — | | `packages/denoiser-realtime/src/shaders/svgf.ts` `atrousWgsl` (taken from the inner taps at the current stride: exact at stride 1) |
+| variance propagation | S-3 | S1 p.5 | — | | `packages/denoiser-realtime/src/shaders/svgf.ts` `atrousWgsl` |
+| specular roughness weight | S-3 | RTG1-32 Eq. 14 | — | yes | `packages/denoiser-realtime/src/shaders/svgf.ts` `weightsWgsl` `wRough` |
+| 3×3 box kernel option | S-3 | S2 §4 | — | | `packages/denoiser-realtime/src/shaders/svgf.ts` `atrousWgsl` (default) |
+| gradient sampling (3×3 strata, forward projection, atomics, same seed) | S-7, S-8 | S2 §3.1–3.3; S3 `GradientForwardProject.fs` | static-world forward projection; hash choice ours | | `packages/denoiser-realtime/src/shaders/gradient.ts` (`antiLag: 'gradient'`): the renderer does the forward projection and supplies one (l_prev, l_cur) sample per stratum; no in-denoiser G1 pass |
+| gradient reconstruction (5 à-trous at stratum res) | S-7 | S2 §3.4; S3 `CreateGradientSamples.frag`, `AtrousGradient.frag` | one gradient on the remodulated sum for both signals | | `packages/denoiser-realtime/src/shaders/gradient.ts` `gradientAtrousWgsl` (per signal, not on the remodulated sum) |
+| λ = min(1, |δ̂|/Δ̂), 3×3 max, α ← lerp(α, 1, λ), A = 1/α − 1 | S-7 | S2 Eq. 13–14, p.9; S3 `TemporalAccumulation.frag` | λ clamped (S3 bug not copied) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `antilagLambda` (n ← min(n, 1/lerp(1/n, 1, λ))) |
+
+### `denoiser-realtime` M1 additions (svgf implementer, 2026-10-25)
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| 3×3 history fallback when no 2×2 tap passes | (S-1 says none) | S1 §4.1 p.5 | kept from the paper (S3 omits it) | | `src/shaders/svgf.ts` `temporalWgsl` |
+| depth-slope texture from the prepass (smaller one-sided difference per axis) | S-3 ∇q | needed by S1 Eq. 3; S3 stores a depth derivative in the G-buffer | **our design**: one r32uint (2×f16) written once instead of 4 loads per pass | | `src/shaders/prepass.ts` |
+| variance prefilter from the inner taps at stride > 1 | S-3 g3x3 | S1 p.6 | **our approximation** (wider prefilter at coarse levels, saves 8 loads) | | `src/shaders/svgf.ts` `atrousWgsl` |
+| `antiLag: 'auto'`: per-stratum mean of the noisy input vs the reprojected *accumulated* history, k·σ noise floor (k = 2), then S2's reconstruction and λ | (C-10 is the SPEC's renderer-free option) | gradient idea S2 §3; "clamp toward a faster history" RTG2 p.830 | **our design** (no renderer cooperation; fires until history catches up) | | `src/shaders/gradient.ts` `gradientCreateWgsl(false)`, `src/shaders/svgf.ts` `antilagLambda` |
+| `antiLag: 'gradient'` input contract: one (l_prev, l_cur, valid) texel per 3×3 stratum | S-8 | S2 §3.1–3.3 | renderer projects and re-shades; denoiser only reconstructs | | `src/shaders/gradient.ts`, `src/denoisers.ts` `SignalExtras.gradient` |
+| gradient strata reduced in 9×9 workgroups (one pixel per thread) | — | our design (performance) | | | `src/shaders/gradient.ts` |
+| specular normal weight: cutoff at θ_L(α) + 1°, linear in angle, angle ratio via sqrt((1−cos)/(1−cos θ0)) | (S-3 uses the power form) | θ_L: SPEC R-1; linear shape: GTC20 s.46 | **ours**; `specularNormalWeight: 'power'` gives SPEC S-3 (measured −0.65 dB) | | `src/shaders/svgf.ts` `weightsWgsl` |
+| specular roughness radius 1 − smoothstep(10r, 70r, ∣Δp∣) | — | RTG1-32 Eq. 15 | `radiusScale` option | yes (RTG1-32 via shadows-specular.md) | `src/shaders/svgf.ts` `wRadius` |
+| `luminanceVariance: 'mean'` (variance of the accumulated mean drives w_l) | — | our design (experiment) | off by default (measured worse) | | `src/shaders/svgf.ts` `varianceWgsl` |
+| dev page: exact ground truth + injected Exp(1) noise | — | ssgiDev `svgf-noiseinject.wgsl` (prior work by Dennis) | analytic scene and noise model ours; dev only, not shipped | | `packages/denoiser-realtime/dev/` |
 
 ### Recurrent pipeline (M2/M3)
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
 | 7-pass structure, recurrent loop, separate stabilization history | §5.1 | RTG2 §49.3, §49.5, Fig. 49-3; GTC20 s.15–19, s.51 | + `prepare` pass | | |
-| GGX lobe half-angle θ_L, E = 0.75 | R-1, D4e | E = 0.75 from RTG2 p.841 prose; derivation from the GGX NDF | **our derivation** (replaces GTC20 / FB p.72 forms) | | |
+| GGX lobe half-angle θ_L, E = 0.75 | R-1, D4e | E = 0.75 from RTG2 p.841 prose; derivation from the GGX NDF | **our derivation** (replaces GTC20 / FB p.72 forms) | | `packages/denoiser-realtime/src/shaders/svgf.ts` (SVGF specular: `setCenter`, `historyCap`) |
 | dominant direction factor (simple fit, α input) | R-2, D4f | FB Listing 22, p.71 (and its remark that the simple fit performs better) | input convention α chosen deliberately | | |
 | pre-blur: static disk, constant radius, A = 0 weights | R1, D1 | RTG2 §49.5.1, §49.5.5; GTC20 s.51 | radii 15/10 px and the denoised-ĥ clamp: **our design** | | |
 | ĥ not filtered in pre-blur | R1 | GTC20 s.60 | — | | |
 | temporal accumulation, Catmull-Rom, no clamp in TA | R2 | RTG2 §49.5.2, §49.7, p.834 | — | | |
-| parallax definition | R-7 | RTG2 §49.8.1 prose, Fig. 49-5 | previous direction from 2.5D reprojection; no ×60 | | |
-| surface-motion frame cap A_spec = θ_L·NoV^κ/π | R-8 | properties from RTG2 p.834 | **our design** (listing 49-4 not used) | | |
+| parallax definition | R-7 | RTG2 §49.8.1 prose, Fig. 49-5 | previous direction from 2.5D reprojection; no ×60 | | `packages/denoiser-realtime/src/shaders/svgf.ts` `historyCap` (previous direction from `expectedPrev`) |
+| surface-motion frame cap A_spec = θ_L·NoV^κ/π | R-8 | properties from RTG2 p.834 | **our design** (listing 49-4 not used) | | `packages/denoiser-realtime/src/shaders/svgf.ts` `historyCap` (used by SVGF specular, SPEC S-1) |
 | virtual position X + v̂·h̃·F_dom | R-9 | virtual image: RTG1-25 p.451, S15 slide 67; pull-back by dominant factor: RTG2 p.835–836 prose | listing 49-6 not used | yes (RTG1-25/S15 via shadows-specular.md) | |
 | virtual confidence (validity × normal × roughness × fast-ĥ) | R-10, D12a | concept: RTG2 p.837 prose | **our design** (listing 49-7 not used) | | |
 | confidence-scaled virtual clamp | R-11, D12b | RTG2 p.837 prose | **our design** | | |

@@ -8,7 +8,7 @@
 //   atrous_0..K-1 ping <-> pong; iteration 0 also writes hist (feedback);
 //                 the last writes the output (optionally remodulated)
 import type { PassTimer } from './common';
-import { makeBindGroup, makeLayout, makePipeline, runPass, STORAGE_TEX } from './gpu';
+import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
 import type { GuidePass } from './guides';
 import { GRADIENT_DOWNSAMPLE, gradientAtrousWgsl, gradientCreateWgsl } from './shaders/gradient';
 import {
@@ -201,7 +201,7 @@ export class SvgfSignal {
     this.height = height;
     const d = this.device;
     const tex = (name: string, format: GPUTextureFormat, w = width, h = height, extra = 0) => d.createTexture({
-      label: `${this.label} ${name}`, size: [w, h], format, usage: STORAGE_TEX | extra,
+      label: `${this.label} ${name}`, size: [w, h], format, usage: storageTex() | extra,
     });
     this.accum = [tex('accum0', 'rgba16float'), tex('accum1', 'rgba16float')];
     this.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];

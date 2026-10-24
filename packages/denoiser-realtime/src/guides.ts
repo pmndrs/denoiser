@@ -3,7 +3,7 @@
 // Owns the packed-geometry ping-pong (this frame / previous frame).
 import type { FrameCamera, FrameGuides } from '@pmndrs/denoiser-core';
 import { eyeFromView, invert, isDepthFormat, mat4, type PassTimer } from './common';
-import { makeBindGroup, makeLayout, makePipeline, runPass, STORAGE_TEX } from './gpu';
+import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
 import {
   FRAME_HAS_MOTIONZ, FRAME_HAS_ROUGHNESS, FRAME_HAS_VIEWZ, FRAME_RESET, FRAME_SIZE,
 } from './shaders/common';
@@ -44,10 +44,10 @@ export class GuidePass {
     this.width = width;
     this.height = height;
     this.geo = [0, 1].map((i) => this.device.createTexture({
-      label: `${this.label} geometry ${i}`, size: [width, height], format: 'rg32uint', usage: STORAGE_TEX,
+      label: `${this.label} geometry ${i}`, size: [width, height], format: 'rg32uint', usage: storageTex(),
     }));
     this.grad = this.device.createTexture({
-      label: `${this.label} depth slope`, size: [width, height], format: 'r32uint', usage: STORAGE_TEX,
+      label: `${this.label} depth slope`, size: [width, height], format: 'r32uint', usage: storageTex(),
     });
     this.cur = 0;
   }
