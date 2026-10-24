@@ -326,6 +326,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   prepass 0.10 ms without the depth slope; a787b20: specular per-path dB). `git log
   --format=%B -- packages/denoiser-realtime` is part of the reading list when updating SPEC or a
   resource table. — spec-author, 2026-10-25
+- Results written the same night can use different versions of a baseline: M5's A-SVGF rows ran
+  anti-lag v1 while M1 §12 (hours later) made v2 the default, and M2-M3's 5.55 ms A-SVGF joint is v1
+  too. When quoting a number in SPEC or a README, write the version / commit next to it (each
+  results doc's Setup table names the frozen commit) and add a TASKS re-measure item instead of
+  mixing versions in one comparison. — spec-author, 2026-10-25
+- Three GPU-time statistics are in use and are not interchangeable: dev-page min of 400 frames
+  (M2-M3), test-bed solo bench median of 100 frames (M1 §12), fastest of several runs to dodge the
+  M5 Pro's slow clock state (M4, M5). Uncontended they agree within a few % (SVGF joint 3.99 vs
+  4.02 ms); the 8-frame `std1080-orbit` replay does not (every pixel young: 6.31 vs 5.61 ms for the
+  same v1 config). Label the statistic with every ms. — spec-author, 2026-10-25
 
 - Clean (mirror-like) specular breaks neighbourhood-statistics tricks tuned on noisy
   diffuse: clamping the slow value to the 3×3 *mean* ± a standard-error window blurs every

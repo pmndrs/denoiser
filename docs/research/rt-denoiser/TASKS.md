@@ -57,6 +57,9 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       marked provisional._ _v0.1 (2026-10-25, spec author): the measured M1/M2/M4 deviations
       are folded in, shadows rewritten as built, measured memory/ms vs PLAN §8 (§10.3), review
       list rewritten (§12, short form §0.2). Recurrent specular left as designed (T3 in flux)._
+      _v0.2 (2026-10-25 night, spec author): recurrent specular + budget (M3), shadows v2, occlusion
+      (M5) and A-SVGF anti-lag v2 folded in; rankings on pooled PSNR; §0 / §10 refreshed; §12 is now
+      the single ordered review list (Questions for Dennis below points to it)._
 - [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [x] (0a035e3, 85783f8, 0047bfb, 10ecb5b) testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
@@ -381,7 +384,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       on. Findings: uniform snap is −0.06 dB pooled (but −10 % FLIP); ours still beats FFX everywhere live —
       found by spec-author (SPEC §12 item 6c), owner metrics agent
 
-- [ ] Recurrent specular (M3) vs SPEC v0/v0.1, measured deviations for the spec author (1080p
+- [x] (spec-author, SPEC v0.2 §5.1, §5.4, §5.6, §5.9–5.12, §6) Recurrent specular (M3) vs SPEC v0/v0.1, measured deviations for the spec author (1080p
       test bed, specular PSNR glossy / orbit unless noted): (1) curvature correction of the
       virtual distance d_v = h/(1 + 2κh), κ from the 4 axis neighbours (D12c was "later"):
       glossy +1.0 dB (mirrors 30.5 → 32.1); (2) stabilization uses surface motion only — the R7
@@ -416,7 +419,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       0.48–0.59 ms (FFX 0.50–0.61). Uniform snap kept on (FLIP), but off is now +0.18 dB pooled
       (§10.5, taste call). Gaps: std1080-orbit frames 0–2 still 0.2–0.5 dB below FFX; `light` −0.10
       vs v1 — owner shadows
-- [ ] SPEC §7 v2 deviations (results/M4.md §10): SH-5 radius = ½ occluder-sized + ½ H18-sized (E in
+- [x] (spec-author, SPEC v0.2 §7.4–7.9, §12 items 5 and the dropped-items note) SPEC §7 v2 deviations (results/M4.md §10): SH-5 radius = ½ occluder-sized + ½ H18-sized (E in
       the geometry byte), SH-4 fresh-pixel 5×5 mean in the spatial input (A = 0 only), pass 0 reads the
       unfiltered r32float copy, `uniformSnap: 'change'` option, the three constants' rationale; §12
       item 6 numbers (6a mostly resolved, 6b at target, 6c snap now costs −0.18 dB) — found by shadows,
@@ -424,7 +427,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Shadows: a real directional-light (sun) path or capture in the test bed (today only the
       `sh.light=directional` stand-in, M4 §10.7) — found by shadows, owner `examples/realtime-denoiser`
 
-- [ ] Occlusion (M5) vs SPEC v0.1 §8, deviations for the spec author (fast test bed, 7 paths, mean pooled
+- [x] (spec-author, SPEC v0.2 §8 rewritten as built, §10, §12 items 1 and 6) Occlusion (M5) vs SPEC v0.1 §8, deviations for the spec author (fast test bed, 7 paths, mean pooled
       PSNR AO / SO; results/M5.md §4): (1) O-2 packing: one **r32float per signal** instead of one rgba16float
       (ĥ_d, ĥ_s) pool (r16float / rg16float are not core storage formats; same 8 B/px for two signals, 4 for
       one; r32float is unfilterable, so the history's Catmull-Rom uses 16 `textureLoad`s): 57.5 / 73.5 B/px
@@ -449,7 +452,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       references (h/(h + 1 + 0.05·d), per-sample mean), so PSNR against our references is not a fair
       comparison until probe P3 returns native's curve — found by occlusion, owner harness builder (report only)
 
-- [ ] SPEC deviations from anti-lag v2 (results/M1.md §12; for the spec author, SPEC §4.6 S-7b, §4.3,
+- [x] (spec-author, SPEC v0.2 §4.1–4.6, §10, §12 item 2) SPEC deviations from anti-lag v2 (results/M1.md §12; for the spec author, SPEC §4.6 S-7b, §4.3,
       §4.5, §10.2, §10.3, §12 item 2): (1) λ's noise floor uses var δ × ΣK² of the composite
       reconstruction kernel (ΣK² ≈ 1/(4πv), v tracked through the iterations) instead of S3's Σw²var/(Σw)²
       (which made 'auto' cap histories at ~13 frames); (2) per-signal floor k: diffuse 2, specular 1
@@ -467,6 +470,23 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Joint SVGF timings: `std1080-orbit` has 8 frames, so a warmed replay times frames where every
       pixel is younger than 4 frames (spatial-variance path); use the test-bed solo bench (orbit, 100
       frames) or a longer capture for cost tables — found by svgf-antilag, owner results / rt-capture
+
+- [ ] Re-measure the rows that still ran A-SVGF anti-lag **v1**: occlusion `occlusion-svgf-auto`
+      (results/M5.md, AO / SO quality, cost, memory 92 / 163 → expected 88 / 156 B/px) and the joint
+      `filter: 'recurrent'` hybrid (recurrent diffuse + A-SVGF specular, 5.98 ms in M2-M3 §4). SPEC v0.2
+      §0.2 / §10.3 quote them as v1 — found by spec-author, owner results / occlusion
+- [ ] Shadows `uniformSnap: 'change'` at 1080p, 7 paths (pooled, penumbra, FLIP per path; it was only
+      measured at 960×540, M4 §10.5). SPEC v0.2 §12 item 5 recommends `'change'` pending this run —
+      found by spec-author, owner shadows / results
+- [ ] Stale comments in `packages/denoiser-realtime/src/shaders/recurrent.ts`: `mVirt` (l. ~549, ~744)
+      is described as "for stabilization", but no pass reads the `m·c_v` bits since the R7 virtual
+      candidate was removed (SPEC v0.2 §5.11–5.12). Behaviour matches SPEC; comments only — found by
+      spec-author, owner `packages/denoiser-realtime`
+- [ ] (only if Dennis picks SPEC §12 item 4c) SVGF output aliasing: let the last à-trous iteration
+      write into the ping-pong target instead of a separate `out` texture (−8 B/px per signal, 132 →
+      124; output valid until the next dispatch, as recurrent's already is). Untested proposal; check
+      that nothing reads the ping buffer after the last iteration — found by spec-author, owner
+      `packages/denoiser-realtime`
 
 ## Probes for the Windows harness
 
@@ -501,29 +521,15 @@ harness builder runs them and returns images/metrics only.)_
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
 
-- **Joint default for `filter: 'recurrent'`** (SPEC §12 item 1). Same-page 1080p test bed
-  (results/M2-M3.md): diffuse recurrent 38.44 / SVGF 39.00 / A-SVGF auto 39.27 dB; specular
-  34.41 / 34.09 / 35.32; joint cost 4.44 (both recurrent) / 4.02 (SVGF) / 5.55 (A-SVGF auto) /
-  5.98 ms (today's `filter: 'recurrent'` default = recurrent diffuse + A-SVGF specular, which
-  `antiLag: 'auto'` SVGF on both signals beats on quality and cost). Memory 105.5 B/px vs SVGF
-  ~132. Provisional: left unchanged; options are SVGF everywhere (cheapest, best diffuse),
-  A-SVGF auto (best quality), or recurrent (best memory, budget-closest with `blurTaps: 4`). — recurrent-spec
+**The list lives in one place: [SPEC.md §12](SPEC.md) (short form §0.3)**, ordered by how much each
+item blocks, each with options, evidence and a recommendation. Add new questions there (spec author)
+or here as a one-line pointer to the evidence, and the spec author folds them in. As of SPEC v0.2:
 
-- **SPEC v0.1 review list.** The taste calls the implementations raised are collected in
-  SPEC.md §0.2 (short) and §12 (with numbers). The biggest: M2 go/no-go, since recurrent
-  diffuse no longer beats SVGF once SVGF's feedback is off (§12 item 1). — spec-author
+1. default filter per signal (diffuse / specular / occlusion; M2/M3 go/no-go; what
+   `filter: 'recurrent'` means on the joint class); 2. SVGF `antiLag` default (`'auto'` v2: +0.25 ms);
+3. 4 ms on the M5 Pro vs ≤ 2× native; 4. memory over 100 B/px; 5. shadows uniform snap;
+6. AO look / hit-distance curve; 7. tuning scene; 8. API items; 9. listing policy.
 
-- **SVGF feedback default.** The brief and SPEC keep the paper's feedback (à-trous
-  iteration 0 → color history) on. Measured on the dev page at 1080p: `feedback: false` is
-  +1.1 dB PSNR (40.5 → 41.6 diffuse) with ~4 % more flicker; feedback compounds blur under
-  a static camera. Provisional: default stays `true`; recommend `false`. — svgf
-  _Measured on the test bed (results/M1.md §4): `feedback: false` wins on all 7 paths
-  (+0.6…+2.6 dB diffuse, FLIP −24…−44 %, no flicker cost). Recommendation stands; it is a
-  defaults change for the package owner (Found along the way), no taste call left._ — results
-
-- **Default occlusion filter** (`OcclusionDenoiser`, T5). SPEC §8 / PLAN plan the recurrent occlusion-only
-  mode; measured (results/M5.md, 1080p, 7 paths) SVGF on ĥ wins every path: AO 38.93 vs 38.02 dB, SO 38.76 vs
-  37.37, at ~the same AO cost (1.37 vs 1.32 ms; SO 1.92 vs 1.32; joint 2.99 vs 2.39) but more memory (84 vs
-  57.5 B/px AO, 148 vs 73.5 both). A-SVGF auto is best (39.05 / 39.52) at 2.2–2.5 ms. Provisional: default left
-  `'recurrent'`; recommendation `'svgf'`. Also the AO look (SPEC §12 item 9): with a = 1 the rational curve
-  makes AO very soft on this scene. — occlusion
+The entries that used to be here (joint default for `filter: 'recurrent'` — recurrent-spec; SPEC v0.1
+review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
+filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
