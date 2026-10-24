@@ -6,7 +6,8 @@
   "description": "Test bed for the clean-room real-time denoisers (denoiser/realtime): analytic WGSL tracer with diffuse GI / specular / shadow signals, converged references, stress paths, PSNR / FLIP / temporal metrics.",
   "scripts": {
     "dev": "vite --port 5220 --strictPort --host 127.0.0.1",
-    "build": "vite build"
+    "build": "vite build",
+    "capture:standard": "node run-headless.mjs --serve --set=standard"
   },
   "dependencies": {
     "@pmndrs/denoiser-ffx": "workspace:*"

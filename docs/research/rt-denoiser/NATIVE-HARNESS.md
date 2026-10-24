@@ -56,11 +56,38 @@ C:\dev\nrd-reference\            (outside any checkout of this repo)
    `accumulate` gives this): last-frame PSNR ≈ 26.5 dB diffuse, 21.5 specular,
    23.6 visibility (noisy input: 16.6 / 12.9 / 14.4). A large miss means a convention
    slipped (motion sign or units, viewZ sign, normal/roughness packing).
-4. **Real captures:** once this branch has the capture exporter (plan milestone M0), run
-   our test bed in Chrome on the same Windows machine to write captures straight into
-   `captures\`. Then replay them through native NRD.
-5. **Same-GPU comparison:** run our WGSL denoisers on the same captures in Chrome on the
-   same GPU (the eval harness does this), so the timings are directly comparable.
+4. **Real captures:** the test bed writes captures from Chrome on the Windows machine
+   (Node ≥ 22, Chrome installed, `yarn install` once at the repo root). In PowerShell,
+   from the repo root:
+   ```
+   $env:RT_CAPTURE_DIR = "C:\dev\nrd-reference"     # captures\ and outputs\ land here
+   node examples/realtime-denoiser/run-headless.mjs --serve --set=standard
+   ```
+   `--serve` starts the test bed's Vite server (port 5220) and stops it afterwards;
+   `--set=standard` writes the standard capture set
+   ([examples/realtime-denoiser/CAPTURES.md](../../../examples/realtime-denoiser/CAPTURES.md):
+   7 paths at 960×540 + `std1080-orbit`, about 10.6 GB) into `C:\dev\nrd-reference\captures\`
+   and runs `tools/rt-capture/validate.mjs` on each (all must say VALID). A smaller set for a
+   first try: `--set=roundtrip` (`rt-orbit`, `rt-cut`, 3.2 GB). `CHROME=<path to chrome.exe>`
+   if Chrome isn't in Program Files or LocalAppData. Then replay them through native NRD into
+   `C:\dev\nrd-reference\outputs\<capture>\<DENOISER>\` (CAPTURE-FORMAT "Outputs from a
+   replay"; frame metadata extras such as per-frame `lights` are informational).
+5. **Same-GPU comparison:** replay our WGSL denoisers over the same captures in Chrome on
+   the same GPU, into the same `outputs\` tree, then score ours and native together:
+   ```
+   $env:RT_CAPTURE_DIR = "C:\dev\nrd-reference"
+   node examples/realtime-denoiser/run-headless.mjs --serve --set=standard --replay=accumulate,svgf,svgf-auto,ffx-shadows,ffx-reflections
+   node tools/rt-capture/compare.mjs std540-orbit       # one capture: every denoiser folder under outputs\std540-orbit\
+   ```
+   The first command replays each capture through each listed denoiser
+   (`outputs\<capture>\<id>\`, with `timings.csv` from WebGPU timestamps after a 50 ms GPU
+   warm-up per frame) and runs `compare.mjs` per capture for those ids; the second scores
+   every folder of one capture, native ones included (`compare.md` / `compare.json` next to
+   them). One replay by hand:
+   `node examples/realtime-denoiser/run-headless.mjs --serve "mode=replay&capture=std540-orbit&denoiser=svgf"`.
+   _Untested on Windows (written and reviewed on macOS): Chrome discovery, headless WebGPU
+   on D3D12, and process cleanup. If headless WebGPU fails, try `CHROME_FLAGS=--enable-features=Vulkan`
+   or report the page log the runner prints._
 
 ## What comes back
 

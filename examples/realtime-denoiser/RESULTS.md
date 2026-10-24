@@ -15,7 +15,8 @@ node run-headless.mjs "signal=shadows&denoiser=ffx-shadows&mode=bench&preset=ful
 node results-table.mjs out/full.json                      # the tables below
 ```
 
-URL options are listed at the top of `src/main.ts`. `noise=inject` replaces the traced
+URL options are listed at the top of `src/main.ts`. Captures of test-bed frames (and
+replaying them) are in [CAPTURES.md](CAPTURES.md). `noise=inject` replaces the traced
 noise by noise drawn around the reference (Bernoulli for visibility, mean-1 multiplicative
 Gamma noise + fireflies for RGB), so the reference is the exact expectation: use it for
 quick correctness checks of a denoiser's math.
@@ -61,6 +62,13 @@ ms are taken while the test bed itself renders 256-spp references between dispat
 the solo bench below for cost. `accumulate` = 32-frame cap. FFX reflections only consumes
 specular; diffuse has no FFX row. "–" = region empty on that path (no disocclusion with
 a static camera, no cut).
+
+_Renamed since (T0.6): the test bed's denoisers now come from the one registry in
+`tools/rt-capture/src/denoisers.ts`; the `accumulate` rows below are today's
+`accumulate-32` (same shader), while `accumulate` now means the replay's unbounded
+reference mean. Also since: geometry beyond the far plane is sky in the guides (depth 1,
+normal 0); those pixels were never scored, but spatial filters near the horizon may move
+by a hair. These tables were not re-measured._
 
 _1920x1080, 96 frames/path, reference 256 spp, FLIP every 12 frames at 41.38 ppd, disoccluded = < 8 frames of valid history._
 
@@ -199,3 +207,56 @@ Specular PSNR by roughness bin (pooled over the path):
   not meaningful.
 - `pixelsPerFrame` in the JSON regions is averaged over all frames of the path,
   including frames where the region is empty.
+
+## Capture round trip (T0.7, our side), 2026-10-25
+
+A capture written by the test bed (`mode=capture`) replayed through `replay()` and scored
+by `tools/rt-capture/compare.mjs` gives the same numbers as the live test bed on the same
+frames (`mode=eval` with the same path / start / frames / size; paths are pure functions
+of the frame index and the tracer's seed is the path frame, so both render identical
+frames). Captures: `rt-orbit` (orbit, frames 0–23) and `rt-cut` (cut, path frames 36–59:
+camera cut at local frame 12), 960×540, all three signals, 256-spp references, 1.59 GB
+each. Both pass `validate.mjs` with no warnings. Apple M5 Pro, Chrome headless (Metal).
+
+```sh
+cd examples/realtime-denoiser
+node run-headless.mjs --serve --set=roundtrip                 # write + validate rt-orbit, rt-cut
+node run-headless.mjs --serve --set=roundtrip --replay=passthrough,accumulate,accumulate-32,ffx-shadows,ffx-reflections,svgf,svgf-auto
+                                                              # replay each, then compare.mjs per capture
+# live side: capture-sets.mjs evalQuery(), e.g.
+node run-headless.mjs --serve "mode=eval&path=cut&start=36&frames=24&w=960&h=540&signal=all&refspp=256&flip=0&denoiser=passthrough,accumulate,accumulate-32,ffx-shadows,ffx-reflections,svgf,svgf-auto"
+```
+
+**Result: match.** Over 30 (capture, signal, denoiser) rows the sequence PSNR and settled
+PSNR agree within **0.001 dB**, and every per-frame PSNR within **0.0006 dB**, which is
+the rounding of the two reports (live 4 decimals, compare.mjs 3). So the replay sees the
+same inputs: the rgba16float test-bed textures (normal, albedo, f0, diffuse, specular) are
+written as the exact f32 value of each half and uploaded as rgba32float, and the r32float
+ones are copied bit for bit; no fp16-vs-f32 gap exists for these denoisers. Flicker
+differs by up to 6.5 % (relative) by definition only: the live number is pooled over all
+pixels of all frames and takes s = 0 for pixels not scored in the previous frame,
+compare.mjs averages per-frame means and skips those pixels (CAPTURE-FORMAT notes it);
+the gap is largest on `rt-cut`, whose camera moves more. `svgf` runs per signal live (one
+instance per signal pair) and jointly (`dispatchBoth`) in replay: identical PSNR.
+
+
+GPU ms (median, timestamps, per frame; live = eval run, replay = `compare.mjs`, 20 ms GPU
+warm-up before each replay dispatch, see below), `rt-orbit`:
+
+| denoiser | live | replay |
+|---|---|---|
+| accumulate (3 signals) | 0.12 + 0.12 + 0.09 | 0.35 |
+| ffx-shadows | 0.155 | 0.157 |
+| ffx-reflections | 0.476 | 0.489 |
+| svgf (live: diffuse + specular instances; replay: joint) | 0.49 + 0.67 | 1.02 |
+| svgf-diffuse / svgf-specular | 0.49 / 0.67 | 0.51 / 0.68 |
+| svgf-auto | 0.72 + 0.96 | 1.47 |
+
+Without the warm-up (`warm=0`) replay timestamps read 4–9× higher (svgf-diffuse 2.11 ms):
+the replay idles the GPU between frames (fetch, upload, readback) and Apple's GPU clocks
+down. The live eval keeps it busy rendering references. The table above used `warm=20`;
+at 1080p that is not enough (`std1080-orbit`, svgf-diffuse: 3.05 ms at 20 ms warm-up,
+2.23 / 2.24 / 2.35 ms at 50 / 100 / 200 ms; at 960×540 0.51 vs 0.58 ms at 20 vs 100 ms,
+noise), so the default is now **`warm=50`**. The live eval's own 1080p timings
+(svgf diffuse 3.70 ms over 8 frames) sit above the warmed replay: measure costs with the
+solo bench or a warmed replay, not the eval (T1.5). Compare like with like on Windows.

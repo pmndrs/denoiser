@@ -76,7 +76,7 @@ export interface ReplayOptions {
   /** Plugin endpoint (default '/__rt-capture'). */
   endpoint?: string;
   /**
-   * Keep the GPU busy for this many ms right before each timed dispatch (default 20; 0 =
+   * Keep the GPU busy for this many ms right before each timed dispatch (default 50; 0 =
    * off). Between replay frames the GPU idles (uploads, readbacks) and clocks down; without
    * this, timestamps on Apple M-series read 4-9x the live test bed's.
    */
@@ -219,7 +219,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
   const frames = manifest.frames.slice(0, opts.maxFrames ?? manifest.frames.length);
 
   const caps = new CaptureTextures(device, manifest, opts.capture, client);
-  const warmMs = opts.warmMs ?? 20;
+  const warmMs = opts.warmMs ?? 50;
   const warmer = warmMs > 0 ? new GpuWarmer(device) : undefined;
   const den = opts.denoiser.create(device, { width, height, signals, settings });
   if (write) await client.rm(outDir);

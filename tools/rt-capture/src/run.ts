@@ -3,7 +3,7 @@
 // same and write the same outputs/<capture>/<output>/ folders.
 //
 //   capture=<name>&denoiser=<id>[&signals=diffuse,specular][&frames=N][&output=<folder>]
-//   [&warm=<ms>]              GPU warm-up before each timed dispatch (default 20, 0 = off)
+//   [&warm=<ms>]              GPU warm-up before each timed dispatch (default 50, 0 = off)
 //   [&<setting>=<value> ...]   every other key not in `reserved` is a denoiser setting
 //                              (recorded in run.json)
 import { DENOISERS } from './denoisers';
