@@ -133,10 +133,15 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 ### M6 (groundwork)
 
-- [~] m6 **M6 groundwork**: TSL nodes for the realtime classes in `denoiser/three` (shadows, diffuse/specular
-      joint, occlusion; filter stays an option at the class default), real-scene example pages in
-      `examples/three-temporal` (ours next to FFX), headless checks, first real-scene numbers
-      (`results/M6-real-scene.md`). Experimental / provisional until Dennis reviews.
+- [x] m6 (6102f7d, 7e96196 + examples/results commit) **M6 groundwork**: TSL nodes for the realtime classes in `denoiser/three`
+      (`realtimeShadows`, `realtimeDiffuse`, `realtimeSpecular`, `realtimeDiffuseSpecular` with `.diffuse` / `.specular`,
+      `realtimeOcclusion` incl. `signal: 'both'`; filter stays a class option; optional `viewZ` / `motionZ` guides);
+      `TemporalDenoiseNode` gained several outputs and a format-converting output blit (r32float). Pages
+      `examples/three-temporal/realtime-shadows.html` (ours vs FFX, split) and `realtime-gi.html` (joint diffuse + SSR
+      specular + AO, vs raw / FFX reflections), runner `run-realtime.mjs`; listed with `deployed: false`. First real-scene
+      numbers (`results/M6-real-scene.md`, static camera vs 4096-ray reference): shadows ours 31.7 / 31.7 dB vs FFX
+      28.5 / 26.2 (wide / close, 960 px, blue noise; penumbra +5…6 dB, FLIP halved); same ranking at 1080p and with white
+      noise (+2.1…3.9 dB). Experimental / provisional. Left: docs page (below), moving-camera reference (below).
 
 ## Found along the way
 
@@ -504,6 +509,24 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (every pass 7–18 % higher on the dev page), while SVGF reads the same on both (4.02 / 4.00). The README /
       M2-M3 §4 budget table is on the dev page; re-time recurrent levers on the test-bed bench before citing
       them against SVGF — found by remeasure, owner `packages/denoiser-realtime` README / results
+
+- [ ] ShadowDenoiser frame 2 after a reset is worse than frame 1 on the real scene in every configuration (−0.8 … −1.3 dB
+      overall, −1.0 … −2.2 dB penumbra; FFX ahead at frame 2 on the wide shot). Repro: `examples/three-temporal`
+      `node run-realtime.mjs shadows --metrics --metrics-only` (rows f1 / f2), results/M6-real-scene.md — found by m6,
+      owner `packages/denoiser-realtime` (shadows)
+- [ ] Real-scene moving-camera numbers: the three-temporal pages only score static views. A deterministic camera path
+      with a 4096-ray reference per pose (static accumulation per pose, ~4 s each at 960×540), written with
+      `tools/rt-capture`'s writer, then replayed through the denoisers (results/M6-real-scene.md last section) — found by
+      m6, owner unassigned (m6 follow-up)
+- [ ] M6 docs page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
+      `pmndrs.github.io/denoiser/docs/guides/`): not written in the groundwork — found by m6, owner unassigned
+- [ ] three-temporal realtime pages: per-pass ms on the light realtime-shadows page read 2–3× the test bed (slow GPU clock);
+      the same ShadowDenoiser reads 0.59 ms at 1080p on the busier GI page (test bed 0.55). For cost tables use the
+      split view (same clock for both) or a busier page — found by m6, owner any agent (FYI)
+- [ ] Deploying the experimental realtime pages (question for Dennis, one line for SPEC §12 "API items"):
+      `three-temporal/realtime-shadows.html` / `realtime-gi.html` are in `examples/_shared/examples.json` with
+      `deployed: false` (local `yarn examples` only) and in the three-temporal Vite build; flip `deployed` + add a shot when
+      `denoiser/realtime` should show on the site — found by m6, owner spec-author (fold into SPEC §12) / Dennis
 
 ## Probes for the Windows harness
 

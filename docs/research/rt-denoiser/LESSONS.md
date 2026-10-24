@@ -131,6 +131,23 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   than 200-frame ones. The 4–5 ms joint pages were stable (5 of 9 runs within 0.03 ms). Report the
   fastest frame for short passes, or time them inside a longer joint dispatch. — remeasure, 2026-10-25
 
+- three.js pages + `denoiser/three` from source: `examples/three-temporal` imports `denoiser/three` from
+  `packages/denoiser/dist` (needs `yarn build:lib` per change). For iteration, a scratch Vite config that
+  `mergeConfig`s `examples/three-temporal/vite.config.ts` and aliases `denoiser/three` →
+  `packages/denoiser/src/three.ts` plus every `@pmndrs/denoiser-*` → its `src/index.ts` serves everything
+  live (`server.hmr: false`); `RT_REALTIME_SRC` pinning works the same way. — m6, 2026-10-25
+- A three.js node that isn't reachable from `pipeline.outputNode` doesn't run (its `updateBefore` never
+  fires): a page that switches views must keep every denoiser it measures in the graph during metrics
+  (`col.add(x.r.mul(0))` is enough), or readbacks silently return a stale frame (AO "converged" at frame 1
+  in realtime-gi before that fix). — m6, 2026-10-25
+- Headless pages that read several full-res RGBA float32 buffers back and run CPU FLIP on them at 1080p can
+  run the tab out of memory; the CDP call then never returns (no error, idle Chrome). Keep single-channel
+  copies, and give every CDP step its own deadline that does not itself wait on the page
+  (`run-realtime.mjs` `--stepTimeout`). — m6, 2026-10-25
+- wgslTagFn (three-mesh-bvh) defines ONE function per tag; helpers go in their own `wgslTagFn` and are
+  interpolated by reference (`${helper}(args)` emits the name and includes the code). Pasting a WGSL string
+  with several `fn`s inside another function body nests them (invalid WGSL). — m6, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
