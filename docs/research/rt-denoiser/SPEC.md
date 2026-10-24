@@ -88,33 +88,34 @@ recurrent vs SVGF swapped, M1 §11).
 Test bed, 1080p, 7 paths × 96 frames, **pooled PSNR** in dB (per-frame mean in brackets
 where it was reported); GPU ms on the M5 Pro at 1080p; internal memory in bytes per pixel.
 
-**Diffuse + specular** (M1 §11–12, M2-M3 §2 and §4):
+**Diffuse + specular** (M1 §11–12, M2-M3 §2 and §4; quality re-run in one page and "bench" ms re-measured on one bench in [REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §2, package at 7782074):
 
 | filter | diffuse PSNR | specular PSNR | joint ms | B/px |
 |---|---|---|---|---|
-| SVGF, `antiLag: 'off'` (package default) | 38.88 (39.00) | 33.46 (34.09) | **3.99** bench / 4.02 dev page | 132 |
-| A-SVGF, `antiLag: 'auto'` (v2) | **39.12** | **35.04** | 4.24 bench | 140 |
-| recurrent, both signals in shared dispatches | 38.26 (38.44) | 34.10 (34.41) | 4.44 dev page (4.05 with `blurTaps: 4`) | **105.5** |
-| `DiffuseSpecularDenoiser({ filter: 'recurrent' })` today: recurrent diffuse + A-SVGF specular | 38.26 | 35.04 | 5.98 (with anti-lag v1; not re-measured with v2) | ≈ 138 |
+| SVGF, `antiLag: 'off'` (package default) | 38.88 (39.00) | 33.46 (34.09) | **4.00** bench / 4.02 dev page | 132 |
+| A-SVGF, `antiLag: 'auto'` (v2) | **39.12** | **35.04** | 4.23 bench | 140 |
+| recurrent, both signals in shared dispatches | 38.26 (38.44) | 34.10 (34.41) | **3.99** bench / 4.44 dev page (4.05 with `blurTaps: 4`, dev page) | **105.5** |
+| `DiffuseSpecularDenoiser({ filter: 'recurrent' })` today: recurrent diffuse + A-SVGF specular | 38.26 | 35.04 (= A-SVGF's, bit-identical) | 4.79 bench (anti-lag v2; v1 on the dev page: 5.98) | ≈ 138 |
 
-**Occlusion** (M5; its A-SVGF rows ran anti-lag **v1**):
+**Occlusion** (M5; A-SVGF row re-measured with anti-lag **v2** in [REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §3, where SVGF and recurrent reproduced M5 exactly; ms = fastest frame of the solo bench, "both" = joint `dispatchBoth` on the same bench, whose medians are 2.62 / 2.89 / 3.10):
 
 | filter | AO PSNR | SO PSNR | ms AO / SO / both | B/px AO / both |
 |---|---|---|---|---|
-| recurrent occlusion-only mode (`OcclusionDenoiser` default) | 38.02 | 37.37 | **1.32 / 1.32 / 2.39** | **57.5 / 73.5** |
-| SVGF on ĥ | 38.93 | 38.76 | 1.37 / 1.92 / 2.99 | 84 / 148 |
-| A-SVGF `auto` on ĥ (v1) | **39.05** | **39.52** | 2.16 / 2.53 / 5.27 | 92 / 163 (v2 would be 88 / 156) |
+| recurrent occlusion-only mode (`OcclusionDenoiser` default) | 38.02 | 37.37 | **1.32 / 1.32 / 2.27** | **57.5 / 73.5** |
+| SVGF on ĥ | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 |
+| A-SVGF `auto` on ĥ (v2) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 |
 | recurrent radiance output's alpha ("free" AO/SO) | 35.15 | 35.47 | 0 extra | 0 extra |
 
 **Shadows** (M4 §10): ours (v2) **37.11** dB, penumbra **28.57**, disoccluded 34.68, FLIP
 0.018, 0.48–0.59 ms, 40 B/px; FFX shadows 31.20 / 23.50 / 32.91 / 0.038, 0.50–0.61 ms. Ahead on
-every path.
+every path. `uniformSnap` at 1080p ([REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §4): `true` (default) 37.11 / 28.57 / FLIP 0.0182,
+`'change'` 37.23 / 28.75 / 0.0186, `false` 37.29 / 28.88 / 0.0198.
 
 **Against PLAN §8:**
 
 | target | measured | status |
 |---|---|---|
-| diffuse + specular ≤ 4 ms (M5 Pro, 1080p) | SVGF 3.99, A-SVGF auto v2 4.24, recurrent 4.44 (4.05 with `blurTaps: 4`) | SVGF at target; the other two 6 % / 11 % over |
+| diffuse + specular ≤ 4 ms (M5 Pro, 1080p) | test-bed bench: SVGF 4.00, A-SVGF auto v2 4.23, recurrent 3.99, `filter: 'recurrent'` hybrid 4.79 (recurrent on the dev page: 4.44, 4.05 with `blurTaps: 4`) | SVGF and recurrent at target; A-SVGF auto 6 % over, hybrid 20 % over |
 | shadows ≤ 0.6 ms | 0.48–0.59 (`thin` 0.59) | at target (`thin` within run-to-run noise) |
 | ≤ 100 B/px (diffuse + specular) | recurrent 105.5 (93.5 with half-res fast history, not built), SVGF 132, A-SVGF 140 | over in every configuration (item 4) |
 | ≤ 2× native on the same GPU | our WGSL has not run on the RTX machine | not measurable yet (item 3) |
@@ -126,7 +127,7 @@ A-SVGF auto, `glossy` by 0.01 dB, and 6 of 7 to plain SVGF), specular (35.04 vs 
 wins only `glossy`, +0.17 dB) and occlusion (SVGF wins every path for both signals: AO +0.91,
 SO +1.39 dB). Recurrent is the leaner option (105.5 vs 132–140 B/px for diffuse + specular, 57.5
 vs 84 for AO) and flickers least on static views, but it is not faster for diffuse + specular
-(4.44 vs 3.99–4.24 ms). The gap looks structural, not a tuning gap: about 20 knobs moved
+(3.99 vs 4.00–4.23 ms on the test-bed bench; 4.44 on the dev page). The gap looks structural, not a tuning gap: about 20 knobs moved
 recurrent specular and the occlusion mode by ≤ ±0.2 dB (M2-M3 §5, M5 §4), and SVGF's
 variance-guided luminance weight keeps beating the recurrent blur's fixed tolerances. Two things
 could still change the ranking: **native NRD on the test-bed captures** (pending; the only native
@@ -134,10 +135,11 @@ comparison so far is a synthetic plane) and **a real scene** (M6, in progress; e
 tuned on the scene it is scored on). Shadows are the clear win: 5.9 dB pooled over FFX shadows at
 the same cost.
 
-Sources: M1 §11–12, M2-M3 §2–4, M4 §10, M5 headline and §5. Benches differ: "bench" = test-bed
-solo bench (`orbit`, median of 100 frames, uncontended); "dev page" = the package's synthetic
-scene (min of 400 frames); M4 and M5 report the fastest clock state. Where they overlap they agree
-within a few % (SVGF joint 3.99 vs 4.02 ms).
+Sources: M1 §11–12, M2-M3 §2–4, M4 §10, M5 headline and §5, [REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md). Benches differ: "bench" = test-bed
+solo bench (`orbit`, uncontended; REMEASURE: median over 9 runs of each run's 200-frame median,
+M1: median of 100 frames); "dev page" = the package's synthetic scene (min of 400 frames); M4 and M5
+report the fastest clock state. For SVGF they agree within a few % (joint 4.00 vs 4.02 ms); the
+recurrent filter reads 11 % higher on the dev page (4.44 vs 3.99), so compare filters on one bench.
 
 ### 0.3 Open for review (short; options, evidence and recommendations in §12)
 

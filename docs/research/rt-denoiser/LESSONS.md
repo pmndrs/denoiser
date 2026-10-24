@@ -120,6 +120,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   Never kill a Chrome whose parent is alive (another agent's run) or Dennis's own Chrome.
   — orchestrator, 2026-10-25
 
+- The test bed builds one registry instance per (signal, id) with `signals: [that signal]`, so `mode=bench`
+  times a joint entry (`svgf`, `recurrent`, `occlusion-*`) as ONE signal's per-signal instance. To time
+  `dispatchBoth`, a scratch wrapper registers `j-<id>` = the entry's `create` called with
+  `signals: ['diffuse', 'specular']` (or `['ao', 'so']`), registered for one signal; the same trick
+  (`settings` overridden in `create`) puts option variants of one id, e.g. `sh.uniformSnap`, in one page
+  so they share references. — remeasure, 2026-10-25
+- Short bench pages are clock-state lotteries: single-signal occlusion pages (1.2–2 ms) spread ±20 % in
+  their run medians over 9 alternating rounds, and 600-frame pages landed in the slow state *more* often
+  than 200-frame ones. The 4–5 ms joint pages were stable (5 of 9 runs within 0.03 ms). Report the
+  fastest frame for short passes, or time them inside a longer joint dispatch. — remeasure, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -377,6 +388,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A per-pixel scalar the spatial pass needs can ride in a spare byte of the packed geometry
   texture (shadows: the 8-bit roughness slot carries the noise estimate E). Its previous-frame
   value comes for free with the reprojection taps, which already load that texture. — shadows, 2026-10-25
+
+- Filter costs depend on the bench scene, and not equally: the recurrent pair reads 4.44 ms on the
+  package dev page but 3.99 ms on the test-bed solo bench (`orbit`; every pass 7–18 % lower), while SVGF
+  reads 4.02 vs 4.00. "Recurrent is slower than SVGF" was a cross-bench comparison; on one bench they cost
+  the same. Rank costs from one bench only. — remeasure, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

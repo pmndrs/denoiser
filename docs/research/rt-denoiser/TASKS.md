@@ -471,14 +471,23 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       pixel is younger than 4 frames (spatial-variance path); use the test-bed solo bench (orbit, 100
       frames) or a longer capture for cost tables — found by svgf-antilag, owner results / rt-capture
 
-- [ ] Re-measure the rows that still ran A-SVGF anti-lag **v1**: occlusion `occlusion-svgf-auto`
+- [x] (remeasure, results/REMEASURE-2026-10-25.md, package at 7782074; comments dda6596) **remeasure**: the SPEC v0.2
+      re-measure items below in one pass at 1080p, 7 paths, one page per comparison, pinned to HEAD of
+      `packages/denoiser-realtime` (joint diffuse + specular incl. the `filter: 'recurrent'` hybrid with anti-lag v2,
+      occlusion with v2, shadows `uniformSnap` true / `'change'` / false, solo ms), the `recurrent.ts` stale-comment
+      fix; SPEC §0.2 numbers updated. Findings: hybrid 38.26 / 35.04 dB at **4.79 ms** (was 5.98, v1 / dev page),
+      still dominated by `svgf-auto` (39.12 / 35.04, 4.23 ms); on the same test-bed bench **recurrent joint 3.99 ms
+      = SVGF `'off'` 4.00** (dev page 4.44); occlusion A-SVGF v2 AO 39.03 / SO 39.68 dB, AO 1.67 / SO 1.61 ms
+      fastest frame (v1 2.16 / 2.53), joint 3.10 ms median, 88 / 156 B/px; shadows `'change'` 37.23 / 28.75 /
+      FLIP 0.0186 between on 37.11 / 28.57 / 0.0182 and off 37.29 / 28.88 / 0.0198
+- [x] (remeasure, REMEASURE-2026-10-25 §2–3) Re-measure the rows that still ran A-SVGF anti-lag **v1**: occlusion `occlusion-svgf-auto`
       (results/M5.md, AO / SO quality, cost, memory 92 / 163 → expected 88 / 156 B/px) and the joint
       `filter: 'recurrent'` hybrid (recurrent diffuse + A-SVGF specular, 5.98 ms in M2-M3 §4). SPEC v0.2
       §0.2 / §10.3 quote them as v1 — found by spec-author, owner results / occlusion
-- [ ] Shadows `uniformSnap: 'change'` at 1080p, 7 paths (pooled, penumbra, FLIP per path; it was only
+- [x] (remeasure, REMEASURE-2026-10-25 §4: `'change'` keeps 3/4 of the snap's FLIP gain and 2/3 of off's PSNR; default not changed) Shadows `uniformSnap: 'change'` at 1080p, 7 paths (pooled, penumbra, FLIP per path; it was only
       measured at 960×540, M4 §10.5). SPEC v0.2 §12 item 5 recommends `'change'` pending this run —
       found by spec-author, owner shadows / results
-- [ ] Stale comments in `packages/denoiser-realtime/src/shaders/recurrent.ts`: `mVirt` (l. ~549, ~744)
+- [x] (remeasure, dda6596: WGSL identical modulo comments over 96 pass variants) Stale comments in `packages/denoiser-realtime/src/shaders/recurrent.ts`: `mVirt` (l. ~549, ~744)
       is described as "for stabilization", but no pass reads the `m·c_v` bits since the R7 virtual
       candidate was removed (SPEC v0.2 §5.11–5.12). Behaviour matches SPEC; comments only — found by
       spec-author, owner `packages/denoiser-realtime`
@@ -487,6 +496,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       124; output valid until the next dispatch, as recurrent's already is). Untested proposal; check
       that nothing reads the ping buffer after the last iteration — found by spec-author, owner
       `packages/denoiser-realtime`
+- [ ] SPEC numbers outside §0.2 still quote the pre-remeasure values: §0.3 item 3 ("A-SVGF auto 4.24 passes,
+      recurrent 4.44 borderline"), §10.3 (hybrid 5.98 ms v1, occlusion A-SVGF v1 ms / B/px), §12 items 1, 3, 5
+      (hybrid cost, recurrent joint cost: 3.99 ms on the test-bed bench vs 4.44 on the dev page, snap evidence now
+      at 1080p). Numbers in results/REMEASURE-2026-10-25.md — found by remeasure, owner spec-author
+- [ ] The recurrent filter's cost depends on the bench scene: dev page 4.44 ms vs test-bed solo bench 3.99 ms
+      (every pass 7–18 % higher on the dev page), while SVGF reads the same on both (4.02 / 4.00). The README /
+      M2-M3 §4 budget table is on the dev page; re-time recurrent levers on the test-bed bench before citing
+      them against SVGF — found by remeasure, owner `packages/denoiser-realtime` README / results
 
 ## Probes for the Windows harness
 
