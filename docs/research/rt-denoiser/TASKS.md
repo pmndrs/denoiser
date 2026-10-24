@@ -228,6 +228,9 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       first; 'auto' documented in the README as the quality option); kernel / iterations /
       α unchanged (per-signal α_min not done). Dev page re-measured: diffuse 40.48 → 41.55,
       specular 43.56 → 45.64 dB; joint 3.98 ms at 1080p._
+- [~] svgf-antilag **A-SVGF anti-lag v2**: diagnose and fix the `'auto'` history cap (below), re-check α_min per
+      signal, cut the +2.1 ms of `'auto'` (target within ~1 ms of `'off'`), results in `results/M1.md`
+      "A-SVGF anti-lag v2" — owner svgf-antilag agent (`src/svgf*.ts`, `src/shaders/svgf*.ts`, `src/shaders/gradient*.ts`)
 - [ ] A-SVGF `antiLag: 'auto'` makes α_min ≤ 0.1 inert: 0.05 and 0.1 give identical output
       (≤ 0.02 dB) on orbit/pan/light, i.e. λ keeps 1/n ≥ ~0.1 everywhere, so histories never
       exceed ~10 frames even on static, unchanged regions (`light` before frame 48). Check

@@ -98,6 +98,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   in a headless page on the test-bed origin, importing the pass generators by `/@fs/<abs path>`
   (a 30-line script; much faster than reading "Invalid ShaderModule" from a run). — recurrent-spec, 2026-10-25
 
+- Port 5300 (the M5 brief's) is held by an unrelated project's Vite server (`upscaler`, since
+  Oct 19); the occlusion runs used 5310 (pinned) / 5311 (live). `lsof -nP -iTCP -sTCP:LISTEN` first. — occlusion, 2026-10-25
+- "Bit-identical" for a shader-generator change can be checked without a GPU: bundle the
+  generator with rolldown (`node_modules/rolldown`, `rolldown({ input, platform: 'node' })`),
+  dump every pass's WGSL for the old and new code over the configurations, and `diff`; then one
+  short eval on two `git archive` snapshots comparing `perFrame` arrays. — occlusion, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -182,6 +189,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   Not worth it here. — recurrent-spec, 2026-10-25
 - Kernel passes are tap-ALU bound: a 4-tap post-blur halved it (0.87 → 0.46 ms joint), the
   per-pixel kernel setup is minor. — recurrent-spec, 2026-10-25
+
+- r32float is not filterable in core WebGPU: a scalar history in r32float (half the bytes of
+  rgba16float) needs Catmull-Rom from 16 `textureLoad`s and a `'f'` (unfilterable) binding. The
+  storage-format choice for one scalar is r32float (r16float / rg16float are not core storage
+  formats). — occlusion, 2026-10-25
 
 ## Conventions
 
@@ -314,6 +326,18 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   radius / tap / anti-lag / firefly / luminance-weight knob moved it more than ±0.2 dB
   (results/M2-M3.md). It is structural, not a tuning gap. — recurrent-spec, 2026-10-25
 
+- A clamp toward a fast history must use the same reprojection as the value it clamps: the
+  recurrent specular filter fetches the slow value with virtual motion but keeps the fast ĥ
+  surface-reprojected (fine for radiance, where only luminance is clamped). Clamping SO (ĥ as
+  the signal) to that surface-reprojected fast ĥ cost 2.5 dB on `pan`; blending the fast ĥ with
+  the virtual fetch by m·confidence fixed it (+0.9 dB SO mean). — occlusion, 2026-10-25
+- SVGF defaults tuned for radiance over-blur a [0, 1] occlusion signal: on ĥ, σ_l = 1.5 and 3
+  à-trous iterations beat σ_l = 4 / 5 iterations by ~1.8 dB AO and ~1.5 dB SO (fast test bed),
+  and are cheaper. Re-tune the value weight when a filter changes signal. — occlusion, 2026-10-25
+- "AO for free from the radiance filter's alpha" is free in cost, not in quality: the radiance
+  pipeline's ĥ inherits radiance-tuned radii, a history shortened by luminance anti-lag, and no
+  ĥ clamp; a dedicated occlusion pass on the same rays is clearly better (results/M5.md). — occlusion, 2026-10-25
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._
@@ -379,3 +403,14 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   renders the page; `pdftotext -f N -l N` finds which page a section is on. Slide decks: the
   `tr/p-0NN.png` images show whether a slide has text or only a picture (TR19's "overlapping
   penumbra" slides are pictures only, so no fix can have come from them). — shadows provenance reviewer, 2026-10-25
+
+- Scratch-registry test beds: Vite's HMR **reloads running headless pages** when any served
+  file changes (the wrapper, a synced package copy), so a batch silently restarts or hangs
+  mid-run (a missing import → stuck until the 45-min timeout). Put `server: { hmr: false }`
+  in the scratch Vite config and still don't touch served files during a batch. Also keep the
+  `RT_REALTIME_SRC` snapshot at the registry's commit: the registry imports new package
+  exports (e.g. `HitDistanceNormalizer`) and an older snapshot breaks every page
+  ("does not provide an export named …" only in the Vite log). — svgf-antilag, 2026-10-25
+- `batch` loops in a zsh script: `jobs -r` is empty in a non-interactive script, so a
+  "max 4 jobs" throttle built on it starts everything at once (7 × 1080p pages + other
+  agents' jobs: 40+ min instead of 5). Use `printf '%s\n' $paths | xargs -P 4 …`. — svgf-antilag, 2026-10-25
