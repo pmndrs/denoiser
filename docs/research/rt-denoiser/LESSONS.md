@@ -255,6 +255,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   no shadow (passthrough = 120 dB), so a 1e-3 residue there cost ours 10 dB of the path mean
   until uniform 5×5 windows snapped the history to the exact value. — shadows, 2026-10-25
 
+- A comparison table goes stale when a baseline's default changes after it was measured: the
+  recurrent README table ("beats A-SVGF on 6/7") was taken minutes before SVGF's `feedback`
+  default flipped to false, and against the new default SVGF wins 6/7. Before quoting "X beats
+  Y", check which options Y ran with (here the SVGF column matched M1's feedback-on numbers
+  exactly) and rerun Y in the same page. — spec-author, 2026-10-25
+- Some measured numbers live only in commit messages (e.g. 25c80aa: joint recurrent 5.41 ms,
+  prepass 0.10 ms without the depth slope; a787b20: specular per-path dB). `git log
+  --format=%B -- packages/denoiser-realtime` is part of the reading list when updating SPEC or a
+  resource table. — spec-author, 2026-10-25
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._

@@ -54,7 +54,9 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       upgrades) and the recurrent pipeline, with a decision for each open item in
       `reblur.md` §7; shared temporal core; shadows and occlusion outlines; WebGPU
       resource/memory budget. _Dennis reviews before M2 is final; M2 may start against v0,
-      marked provisional._
+      marked provisional._ _v0.1 (2026-10-25, spec author): the measured M1/M2/M4 deviations
+      are folded in, shadows rewritten as built, measured memory/ms vs PLAN §8 (§10.3), review
+      list rewritten (§12, short form §0.2). Recurrent specular left as designed (T3 in flux)._
 - [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [x] (0a035e3, 85783f8, 0047bfb, 10ecb5b) testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
@@ -113,18 +115,20 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
 
-- [ ] API additions proposed by SPEC §1.2/§9 (`ShadowInputs.light` done: faade1e, `ShadowLight`): `FrameGuides.f0?`, `ShadowInputs.light`
+- [x] (spec-author, SPEC v0.1 §1.2/§9: superseded by the built API) API additions proposed by SPEC §1.2/§9 (`ShadowInputs.light` done: faade1e, `ShadowLight`): `FrameGuides.f0?`, `ShadowInputs.light`
       (capture `lights` fields), options `inputDemodulated` (default true) and
       `output: 'demodulated' | 'remodulated'` (default demodulated), and how
       `DiffuseSpecularDenoiser.dispatch` returns two outputs — found by spec-author, owner
       `packages/denoiser-core/src/temporal.ts` / T0.5
+      _SPEC v0.1 adopts what was built: `remodulate: boolean` + caller's `inputs.demodulation`
+      (no `f0`, no in-denoiser demodulation), `dispatchBoth()` for two outputs._
 - [ ] Capture format: `*_hitt = 0` means both "miss" and "lobe not sampled"; SPEC C-4 treats
       0 as miss. If probabilistic lobe selection is ever captured, give "not sampled" its
       own value (proposed: negative) — found by spec-author, owner CAPTURE-FORMAT (capture-io)
 - [ ] A-SVGF renderer contract (SPEC §4.6 S-8): the test bed's tracer must split primary
       visibility and shading, and re-shade requested pixels at the previous surface point
       with the previous seed — found by spec-author, owner `examples/realtime-denoiser` (T0.3/T1.4)
-- [ ] M2 first step: time the 8-pass recurrent skeleton with trivial kernels at 1080p
+- [x] (e5e3932, recurrent: 1.03 ms → 0.96 ms both signals; SPEC v0.1 §10.3) M2 first step: time the 8-pass recurrent skeleton with trivial kernels at 1080p
       (SPEC §10.3 says the 4 ms target is at risk) — found by spec-author, owner T2
 
 - [x] (T0.6, wiring) T0.6 wiring notes: the test bed adds `rtCapture()` from `tools/rt-capture/src/vite-plugin`
@@ -163,7 +167,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       'diffuse' ? new DiffuseDenoiser(d, …) : new SpecularDenoiser(d, …))` for ids `svgf`,
       `asvgf`; a joint entry can wrap `DiffuseSpecularDenoiser.dispatchBoth`. Import from
       `../../../packages/denoiser-realtime/src/index` (relative, like FFX). — found by svgf, owner `tools/rt-capture`
-- [ ] SVGF vs SPEC v0 deviations to review (all measured on the dev page, provisional):
+- [x] (spec-author, SPEC v0.1 §1.3, §3.3, §4) SVGF vs SPEC v0 deviations to review (all measured on the dev page, provisional):
       (1) default kernel 3×3 box, not B3 5×5 (equal/better PSNR, 2.6× cheaper per iteration);
       (2) resolved: `DiffuseSpecularDenoiser` now runs both signals per dispatch (SPEC §4.1),
       3.98 ms at 1080p (was 5.85 separate); falls back to two pipelines if structural options differ;
@@ -244,7 +248,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `hitDistance` is optional but feeds the radius clamp and ĥ (AO). The output texture
       rotates between internal buffers (valid until the next dispatch) — don't cache it
       across frames — found by recurrent, owner `tools/rt-capture`
-- [ ] Recurrent vs SPEC v0, measured deviations for the spec author (test bed `fast` preset,
+- [x] (spec-author, SPEC v0.1 §3.5, §5, §6) Recurrent vs SPEC v0, measured deviations for the spec author (test bed `fast` preset,
       7 paths, mean PSNR; SPEC defaults = 36.94 dB): (1) fast-history clamp window = γ·σ/√N
       (standard error of the 3×3 mean) with γ = 1 instead of γ = 2 spreads: +0.37 dB and
       dev-page light switch 29.0 → 34.3 dB 12 frames after (SPEC form alone recovers at the
@@ -287,7 +291,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       M12, H18, RTG1-25 §25.2.1 and TR19 slide 72 directly) — found by shadows, owner a reviewer
       who hasn't read NRD's README. _Done: 6 confirmed, 2 confirmed with a citation correction, none
       unsupported. The same check covers the RTG2-24 source of the recurrent D3b row (still marked "yes")._
-- [ ] Shadows spec deviations (results/M4.md §7): clamp 0.4σ instead of γ = 1, anti-lag restart
+- [x] (spec-author, SPEC v0.1 §7, incl. the reviewer's M12 floor / H18 §4.1 corrections) Shadows spec deviations (results/M4.md §7): clamp 0.4σ instead of γ = 1, anti-lag restart
       at A = 0, uniform snap, W_px² history cap, Catmull-Rom on visibility, g = h/(D−h) stored
       instead of W_eff, radius 0.75·W, anisotropy off (measured worse), tiles folded into
       temporal, 40 B/px — found by shadows, owner spec-author (SPEC.md §7)
@@ -312,6 +316,24 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `shaders/shadow.ts` comments "floored at one pixel" (M12's floor is 1/(kµ·Ω_x^max), 1 px is ours) and
       the two merged comments on line 58; row SH-6: σ ∝ E is H18 §4.1, not §4.2; optionally cite RTG1-13
       Eq. 11 p.170 as precedent for the raw-only history — found by shadows provenance reviewer, owner shadows
+- [ ] **Re-measure recurrent diffuse against today's SVGF defaults, in one page.** The README /
+      T2 claim "recurrent beats A-SVGF on 6/7 paths" was measured against `feedback: true` SVGF
+      (its SVGF column equals M1's feedback-on numbers). Against M1 §4's `feedback: false` runs
+      (same preset: 1080p, 96 frames, blue noise), SVGF wins 6 of 7: recurrent − SVGF = orbit −0.83,
+      pan −1.07, light −0.65, thin −0.23, glossy +0.24, cut −0.67, object −0.82 dB (mean 38.42 vs
+      39.00; A-SVGF auto 39.27), and SVGF diffuse is cheaper (2.11–2.18 vs 2.92 ms). Confirm with
+      `signal=diffuse&mode=eval&preset=full&denoiser=svgf,svgf-auto,recurrent-diffuse` on all 7 paths
+      (feedback off is the default now), then update README and T2. Main input to the M2 go/no-go
+      (SPEC v0.1 §12 item 1) — found by spec-author, owner T2 / results
+- [ ] README (`packages/denoiser-realtime`) stale numbers: recurrent memory is 105.5 B/px both
+      signals / 73.5 diffuse since 25c80aa (the prepass skips the depth slope for recurrent-only
+      pipelines), not 109.5 / 77.5; joint recurrent is 5.41 ms after 25c80aa, not 5.22 — found by
+      spec-author, owner `packages/denoiser-realtime`
+- [ ] PROVENANCE stale rows (M2 additions, R-4 code column): "taps projected exactly from per-pixel
+      clip-space axes (clip = c + kx·P·T + ky·P·B)" — the code uses the affine screen Jacobian since
+      1ecc596 (`tapPixel`, `kern{i}` in `src/shaders/recurrent.ts`); "interim recurrent specular …
+      virtual motion not implemented" is stale since a787b20; the R-9..R-12 rows have no code column —
+      found by spec-author, owner PROVENANCE (second-review agent / T3)
 
 ## Probes for the Windows harness
 
@@ -338,6 +360,10 @@ harness builder runs them and returns images/metrics only.)_
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
+
+- **SPEC v0.1 review list.** The taste calls the implementations raised are collected in
+  SPEC.md §0.2 (short) and §12 (with numbers). The biggest: M2 go/no-go, since recurrent
+  diffuse no longer beats SVGF once SVGF's feedback is off (§12 item 1). — spec-author
 
 - **SVGF feedback default.** The brief and SPEC keep the paper's feedback (à-trous
   iteration 0 → color history) on. Measured on the dev page at 1080p: `feedback: false` is
