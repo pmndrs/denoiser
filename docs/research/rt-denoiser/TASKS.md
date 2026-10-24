@@ -85,7 +85,7 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 - [x] svgf (81758c9, ef0c9a9) **T1.2 SVGF diffuse** ported from `ssgiDev` demo 14 with the review's upgrades.
 - [x] svgf (d6a4780) **T1.3 SVGF specular** (surface reprojection first; roughness-aware weights).
 - [x] svgf (1f8d028) **T1.4 A-SVGF** gradient-driven α (from the paper + BSD reference code).
-- [ ] **T1.5 Results table** vs references (and vs FFX reflections for specular) on the
+- [~] results **T1.5 Results table** vs references (and vs FFX reflections for specular) on the
       test bed's paths; per-pass ms at 1080p.
 
 ### M2–M5 (start after M1 numbers exist; against SPEC v0, provisional until reviewed)
