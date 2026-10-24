@@ -264,7 +264,7 @@ registerDenoiser({
 // ---- shadows (denoiser/realtime ShadowDenoiser) -------------------------------------
 
 /**
- * ShadowDenoiser options from settings: `sh.<option>=v` (numbers or true/false). Input
+ * ShadowDenoiser options from settings: `sh.<option>=v` (numbers, true/false, other strings as is). Input
  * switches for experiments: `sh.light=none` (no light: noise-driven radius),
  * `sh.light=directional` (the sphere light handed over as a directional light toward its
  * centre from the world origin, angular radius asin(R / |position|) x `sh.dirScale`, default
@@ -276,7 +276,7 @@ export function shadowOptions(st: Record<string, string>): ShadowDenoiserOptions
   const o: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(st)) {
     if (SHADOW_INPUT_KEYS.has(k)) continue;
-    if (k.startsWith('sh.')) o[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number(v);
+    if (k.startsWith('sh.')) o[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number.isNaN(Number(v)) ? v : Number(v);
   }
   return o as ShadowDenoiserOptions;
 }
