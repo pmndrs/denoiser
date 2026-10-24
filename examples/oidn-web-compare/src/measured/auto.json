@@ -1,0 +1,461 @@
+[
+ {
+  "when": "2026-10-24T03:12:05.340Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "ours",
+  "label": "denoiser \u00b7 auto \u2192 webnn-gpu",
+  "detail": "auto \u2192 webnn-gpu \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 800.0999999046326,
+  "warmMedianMs": 20.799999952316284,
+  "warmMinMs": 20.5,
+  "warmMaxMs": 29.799999952316284,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.55603725892922,
+  "psnrVsOurs": null,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:12:05.766Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl",
+  "label": "oidn-web 0.5 \u00b7 WGSL",
+  "detail": "wgsl fp16 \u00b7 4 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 67.29999995231628,
+  "warmMedianMs": 50.39999997615814,
+  "warmMinMs": 43.5,
+  "warmMaxMs": 52.199999928474426,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.50782558997174,
+  "psnrVsOurs": 53.23789167169737,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:12:06.004Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl-whole",
+  "label": "oidn-web 0.5 \u00b7 WGSL \u00b7 whole image",
+  "detail": "wgsl fp16 \u00b7 1 tile \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 54.800000071525574,
+  "warmMedianMs": 24.5,
+  "warmMinMs": 23.899999976158142,
+  "warmMaxMs": 24.799999952316284,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.50612131668748,
+  "psnrVsOurs": 54.618856597410485,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:12:08.092Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-webnn",
+  "label": "oidn-web 0.5 \u00b7 WebNN",
+  "detail": "webnn fp16 \u00b7 6 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 1654.6999999284744,
+  "warmMedianMs": 59.700000047683716,
+  "warmMinMs": 59.10000002384186,
+  "warmMaxMs": 62.5,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.514720283415606,
+  "psnrVsOurs": 53.37331474272962,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:12:10.736Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-tfjs",
+  "label": "oidn-web 0.3.5 \u00b7 TensorFlow.js",
+  "detail": "tfjs-webgpu fp32 \u00b7 512\u00b2 tiles, rAF-paced \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 583.8999999761581,
+  "warmMedianMs": 287.7000000476837,
+  "warmMinMs": 215.29999995231628,
+  "warmMaxMs": 388.2999999523163,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.50472251742243,
+  "psnrVsOurs": 54.35452900086233,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:12:12.447Z",
+  "scene": "eiffel",
+  "size": [
+   960,
+   540
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-tfjs-whole",
+  "label": "oidn-web 0.3.5 \u00b7 TensorFlow.js \u00b7 one tile",
+  "detail": "tfjs-webgpu fp32 \u00b7 1 tile \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 349.5,
+  "warmMedianMs": 191.10000002384186,
+  "warmMinMs": 173.29999995231628,
+  "warmMaxMs": 212.60000002384186,
+  "runs": 7,
+  "psnrNoisy": 25.906707317459112,
+  "psnr": 33.50472251742243,
+  "psnrVsOurs": 54.35452900086233,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:29.597Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "ours",
+  "label": "denoiser \u00b7 auto \u2192 webnn-gpu",
+  "detail": "auto \u2192 webnn-gpu \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 775.3000000715256,
+  "warmMedianMs": 29.899999976158142,
+  "warmMinMs": 28.100000023841858,
+  "warmMaxMs": 100.80000007152557,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.71447823092236,
+  "psnrVsOurs": null,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:30.274Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl",
+  "label": "oidn-web 0.5 \u00b7 WGSL",
+  "detail": "wgsl fp16 \u00b7 6 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 100.80000007152557,
+  "warmMedianMs": 79.39999997615814,
+  "warmMinMs": 74.10000002384186,
+  "warmMaxMs": 84.19999992847443,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.65785467188379,
+  "psnrVsOurs": 55.795763803213774,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:30.770Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl-whole",
+  "label": "oidn-web 0.5 \u00b7 WGSL \u00b7 whole image",
+  "detail": "wgsl fp16 \u00b7 1 tile \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 120.60000002384186,
+  "warmMedianMs": 50,
+  "warmMinMs": 47.60000002384186,
+  "warmMaxMs": 53.5,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.65792875721362,
+  "psnrVsOurs": 55.97484521691691,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:32.706Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-webnn",
+  "label": "oidn-web 0.5 \u00b7 WebNN",
+  "detail": "webnn fp16 \u00b7 6 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 1154.2000000476837,
+  "warmMedianMs": 105.79999995231628,
+  "warmMinMs": 100.89999997615814,
+  "warmMaxMs": 118.89999997615814,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.66508605011202,
+  "psnrVsOurs": 56.12409176612165,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:37.518Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-tfjs",
+  "label": "oidn-web 0.3.5 \u00b7 TensorFlow.js",
+  "detail": "tfjs-webgpu fp32 \u00b7 512\u00b2 tiles, rAF-paced \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 602.8999999761581,
+  "warmMedianMs": 597.8999999761581,
+  "warmMinMs": 414.8000000715256,
+  "warmMaxMs": 729.6000000238419,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.66590668673604,
+  "psnrVsOurs": 56.707205915592816,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:13:41.095Z",
+  "scene": "eiffel",
+  "size": [
+   1280,
+   720
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-tfjs-whole",
+  "label": "oidn-web 0.3.5 \u00b7 TensorFlow.js \u00b7 one tile",
+  "detail": "tfjs-webgpu fp32 \u00b7 1 tile \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 1489.3999999761581,
+  "warmMedianMs": 278.60000002384186,
+  "warmMinMs": 201.10000002384186,
+  "warmMaxMs": 402.60000002384186,
+  "runs": 7,
+  "psnrNoisy": 25.908553357999526,
+  "psnr": 33.66039268806636,
+  "psnrVsOurs": 55.313557345992194,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:16:48.753Z",
+  "scene": "eiffel",
+  "size": [
+   1920,
+   1080
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "ours",
+  "label": "denoiser \u00b7 auto \u2192 webnn-gpu",
+  "detail": "auto \u2192 webnn-gpu \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 880.0999999046326,
+  "warmMedianMs": 50.5,
+  "warmMinMs": 49.60000002384186,
+  "warmMaxMs": 323.89999997615814,
+  "runs": 7,
+  "psnrNoisy": 25.933497477692285,
+  "psnr": 33.905674570046955,
+  "psnrVsOurs": null,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:16:50.837Z",
+  "scene": "eiffel",
+  "size": [
+   1920,
+   1080
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl",
+  "label": "oidn-web 0.5 \u00b7 WGSL",
+  "detail": "wgsl fp16 \u00b7 15 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 207.5,
+  "warmMedianMs": 250.59999990463257,
+  "warmMinMs": 191.29999995231628,
+  "warmMaxMs": 350.7999999523163,
+  "runs": 7,
+  "psnrNoisy": 25.933497477692285,
+  "psnr": 33.8307853245055,
+  "psnrVsOurs": 55.24359867412301,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:16:52.027Z",
+  "scene": "eiffel",
+  "size": [
+   1920,
+   1080
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-wgsl-whole",
+  "label": "oidn-web 0.5 \u00b7 WGSL \u00b7 whole image",
+  "detail": "wgsl fp16 \u00b7 1 tile \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 195.10000002384186,
+  "warmMedianMs": 134,
+  "warmMinMs": 129.60000002384186,
+  "warmMaxMs": 152.60000002384186,
+  "runs": 7,
+  "psnrNoisy": 25.933497477692285,
+  "psnr": 33.83613747465367,
+  "psnrVsOurs": 55.75656323753658,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:16:54.494Z",
+  "scene": "eiffel",
+  "size": [
+   1920,
+   1080
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-webnn",
+  "label": "oidn-web 0.5 \u00b7 WebNN",
+  "detail": "webnn fp16 \u00b7 15 tiles \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 859.9000000953674,
+  "warmMedianMs": 219.59999990463257,
+  "warmMinMs": 218.39999997615814,
+  "warmMaxMs": 239.79999995231628,
+  "runs": 7,
+  "psnrNoisy": 25.933497477692285,
+  "psnr": 33.8380920768178,
+  "psnrVsOurs": 55.52352227492926,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ },
+ {
+  "when": "2026-10-24T03:17:04.142Z",
+  "scene": "eiffel",
+  "size": [
+   1920,
+   1080
+  ],
+  "spp": 8,
+  "model": "rt_hdr_calb_cnrm",
+  "contender": "oidn-tfjs",
+  "label": "oidn-web 0.3.5 \u00b7 TensorFlow.js",
+  "detail": "tfjs-webgpu fp32 \u00b7 512\u00b2 tiles, rAF-paced \u00b7 rt_hdr_calb_cnrm",
+  "firstMs": 908.3000000715256,
+  "warmMedianMs": 1241.1000000238419,
+  "warmMinMs": 1164.8000000715256,
+  "warmMaxMs": 1384.5,
+  "runs": 7,
+  "psnrNoisy": 25.933497477692285,
+  "psnr": 33.840267676447475,
+  "psnrVsOurs": 56.11299301515615,
+  "env": {
+   "gpu": "apple metal-3",
+   "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "runtime": "auto \u2192 webnn-gpu",
+   "precision": "fp16"
+  }
+ }
+]

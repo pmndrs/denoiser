@@ -116,6 +116,12 @@
       "tags": ["OIDN", "path tracing", "upscaler", "benchmark"], "shot": "pipeline-lab.png", "deployed": true
     },
     {
+      "id": "oidn-web-compare", "section": "pipeline", "href": "oidn-web-compare/",
+      "title": "denoiser vs oidn-web",
+      "description": "The same path-traced frame through this library and oidn-web (WGSL, WebNN, and its older TensorFlow.js build): split view, difference view and a timing + PSNR benchmark.",
+      "tags": ["OIDN", "path tracing", "benchmark"], "shot": "oidn-web-compare.png", "deployed": false
+    },
+    {
       "id": "bench", "section": "pipeline", "href": "bench/",
       "title": "Benchmark",
       "description": "Cold and warm timings, per-stage stats and fp16-vs-fp32 PSNR for every runtime across image sizes.",
