@@ -15,3 +15,7 @@ export type {
 } from '@pmndrs/denoiser-core';
 export { ShadowDenoiser, type ShadowDenoiserOptions } from './shadow';
 export type { ShadowInputs, ShadowLight } from '@pmndrs/denoiser-core';
+export {
+  OcclusionDenoiser, HitDistanceNormalizer, type OcclusionDenoiserOptions, type OcclusionRecurrentOptions,
+  type OcclusionSvgfOptions, type OcclusionInputs, type OcclusionBothInputs, type OcclusionOutputs,
+} from './occlusion';

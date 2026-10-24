@@ -19,9 +19,9 @@ import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res 
 import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
 import {
-  blurPass, historyFixPass, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG, RP_NO_FIREFLY,
-  RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass, trivialPass,
-  type RecurrentKind,
+  blurPass, formatOf, historyFixPass, isOccKind, isSpecKind, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG,
+  RP_NO_FIREFLY, RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass,
+  trivialPass, type RecurrentKind,
 } from './shaders/recurrent';
 
 /**
@@ -127,6 +127,8 @@ export interface RecurrentTune {
   specCentre: number;
   /** glossy kernel elongation kappa_e (SPEC R-4) */
   elong: number;
+  /** occlusion kinds only: clamp the slow ĥ into the fast-history window in history fix (1) or only shorten A (0) */
+  occClamp: number;
 }
 
 export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius'>> & {
@@ -175,7 +177,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
       postLo: 0.5, postHi: 2.0, postDelta: 0.3,
       stabGammaLo: 1, stabGammaHi: 3, stabBeta: 0.02,
-      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75,
+      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1,
       ...o.tune,
     },
   };
@@ -183,8 +185,9 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
 
 /** Per-frame inputs of one signal. */
 export interface RecurrentFrame {
-  radiance: GPUTexture;
-  /** Hit distance in `.r` (world units, 0 = miss). Optional for diffuse. */
+  /** Radiance (radiance kinds; unused by the occlusion kinds `ao` / `so`). */
+  radiance?: GPUTexture;
+  /** Hit distance in `.r` (world units, 0 = miss). Optional for diffuse, required for `ao` / `so`. */
   hitDistance?: GPUTexture;
   /** Factor the radiance was divided by (for `remodulate`). */
   demodulation?: GPUTexture;
@@ -218,7 +221,7 @@ export function recurrentStructuralKey(o: ResolvedRecurrent) {
 
 /** Per-signal tap counts are compiled in (each signal of a joint pipeline keeps its own). */
 function taps(o: ResolvedRecurrent, k: 'preBlurTaps' | 'blurTaps' | 'postBlurTaps', kind: RecurrentKind) {
-  const n = o[k] || (kind === 'diffuse' ? 8 : 4);
+  const n = o[k] || (isSpecKind(kind) ? 4 : 8);
   return n <= 4 ? 4 : 8;
 }
 
@@ -240,8 +243,14 @@ export class RecurrentPipeline {
   private frameIndex = 0;
   private opts: ResolvedRecurrent;
 
+  /** Occlusion-only pipeline (kinds `ao` / `so`): no pre-blur pass, temporal reads the raw hit distance. */
+  private occ: boolean;
+
   constructor(private device: GPUDevice, signals: { kind: RecurrentKind; opts: ResolvedRecurrent }[], private label: string) {
     const d = device;
+    this.occ = signals.every((s) => isOccKind(s.kind));
+    if (!this.occ && signals.some((s) => isOccKind(s.kind))) throw new Error(`${label}: occlusion and radiance signals can't share a recurrent pipeline`);
+    if (this.occ && signals[0].opts.remodulate) throw new Error(`${label}: remodulate does not apply to occlusion`);
     this.sigs = signals.map((s) => new SignalState(d, s.kind, s.opts, signals.length > 1 ? `${label} ${s.kind}` : label));
     this.opts = signals[0].opts;
     this.rframe = d.createBuffer({ label: `${label} rframe`, size: RF_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -254,7 +263,7 @@ export class RecurrentPipeline {
       this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);
     };
     const T = (k: 'preBlurTaps' | 'blurTaps' | 'postBlurTaps') => signals.map((s) => taps(s.opts, k, s.kind));
-    make('pre_blur', preBlurPass(kinds, T('preBlurTaps')));
+    if (!this.occ) make('pre_blur', preBlurPass(kinds, T('preBlurTaps')));
     make('temporal', temporalPass(kinds));
     make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton
     make('history_fix', historyFixPass(kinds));
@@ -272,7 +281,7 @@ export class RecurrentPipeline {
     });
     for (const s of this.sigs) {
       s.destroyTargets();
-      s.buf = [0, 1, 2, 3].map((i) => tex(`${s.kind} buffer ${i}`, 'rgba16float', width, height, GPUTextureUsage.COPY_SRC));
+      s.buf = [0, 1, 2, 3].map((i) => tex(`${s.kind} buffer ${i}`, formatOf(s.kind), width, height, GPUTextureUsage.COPY_SRC));
       if (this.opts.remodulate) s.out = tex(`${s.kind} output`, 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
       this.writeParams(s);
     }
@@ -291,8 +300,8 @@ export class RecurrentPipeline {
     const f = new Float32Array(RP_SIZE / 4);
     const u = new Uint32Array(f.buffer);
     const res = this.height / 1080;
-    const pre = o.preBlurRadius ?? (s.kind === 'diffuse' ? 25 : 10);
-    const blur = o.blurRadius ?? (s.kind === 'diffuse' ? 45 : 30);
+    const pre = o.preBlurRadius ?? (isSpecKind(s.kind) ? 10 : 25);
+    const blur = o.blurRadius ?? (isSpecKind(s.kind) ? 30 : 45);
     f.set([
       o.hitDistanceScale, o.hitDistanceViewScale, o.maxRadiance, pre * res,
       blur * res, o.minBlurRadius, o.maxAccumulatedFrames, o.fastFrames,
@@ -308,7 +317,7 @@ export class RecurrentPipeline {
     f[35] = o.virtualClampSigma; f[36] = o.virtualAngleScale; f[37] = o.virtualHitTolerance; f[38] = o.virtualHitToleranceRoughness;
     f[39] = o.specularMinRadiusScale;
     f[40] = t.virtCurv; f[41] = t.virtWiden; f[42] = t.detRough; f[43] = t.specCentre;
-    f[44] = t.elong;
+    f[44] = t.elong; f[45] = t.occClamp;
     this.hitFlags.delete(s);
     this.device.queue.writeBuffer(s.params, 0, f);
   }
@@ -326,7 +335,7 @@ export class RecurrentPipeline {
     this.device.queue.writeBuffer(this.rframe, 0, f);
   }
 
-  /** Output of the last frame per signal (rgb = denoised, a = denoised normalized hit distance). */
+  /** Output of the last frame per signal (rgb = denoised, a = denoised normalized hit distance; occlusion kinds: ĥ in .r). */
   get outputs(): (GPUTexture | undefined)[] {
     // after endFrame(), last frame's S lives in q
     return this.sigs.map((s) => s.out ?? s.buf[this.rot[1]]);
@@ -353,6 +362,8 @@ export class RecurrentPipeline {
     motion: GPUTexture, motionZ: GPUTexture | undefined, projection: ArrayLike<number>, prevProjection: ArrayLike<number>,
     prefix: string) {
     this.sigs.forEach((s, i) => {
+      if (isOccKind(s.kind) && !frames[i].hitDistance) throw new Error(`${s.label}: occlusion needs inputs.hitDistance`);
+      if (!isOccKind(s.kind) && !frames[i].radiance) throw new Error(`${s.label}: needs inputs.radiance`);
       if (s.opts.remodulate && !frames[i].demodulation) {
         throw new Error(`${s.label}: remodulate needs inputs.demodulation${s.kind === 'diffuse' ? ' (or guides.albedo)' : ''}`);
       }
@@ -378,8 +389,9 @@ export class RecurrentPipeline {
     };
     const run = (n: string, res: Record<string, Res>, x = gx, y = gy) => runPass(enc, timer, name(n), this.pipes[n], this.group(n, res), x, y);
 
-    run('pre_blur', per((sg, f) => ({ input: f.radiance, hit: f.hitDistance ?? gp.dummy, histPrev: sg.buf[p], outPre: sg.buf[r] })));
-    run('temporal', per((sg) => ({ pre: sg.buf[r], histPrev: sg.buf[p], outAcc: sg.buf[s] }),
+    if (!this.occ) run('pre_blur', per((sg, f) => ({ input: f.radiance!, hit: f.hitDistance ?? gp.dummy, histPrev: sg.buf[p], outPre: sg.buf[r] })));
+    // occlusion: temporal normalizes the raw hit distance itself (ĥ is never pre-blurred, GTC20 s.60)
+    run('temporal', per((sg, f) => ({ pre: this.occ ? f.hitDistance! : sg.buf[r], histPrev: sg.buf[p], outAcc: sg.buf[s] }),
       { fastPrev: this.fast[c ^ 1], dataPrev: this.data[c ^ 1], outFast: this.fast[c], outData: this.data[c] }));
     run('mips', per((sg) => ({ acc: sg.buf[s], outMip: sg.buf[p] }), { outMipZ: this.mipZ! }), Math.ceil(W / 16), Math.ceil(H / 16));
     run('history_fix', per((sg) => ({ acc: sg.buf[s], mip: sg.buf[p], outFix: sg.buf[r] }),

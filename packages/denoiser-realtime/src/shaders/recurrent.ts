@@ -53,7 +53,27 @@
 import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REPROJECT_WGSL } from './common';
 
-export type RecurrentKind = 'diffuse' | 'specular';
+/**
+ * Signal kinds. `ao` / `so` are the occlusion-only mode (SPEC §8 O-2, M5): the same passes
+ * with the radiance channels dropped, one r32float channel per signal (the normalized hit
+ * distance ĥ of diffuse / specular rays). `ao` takes the diffuse kernel, `so` the
+ * specular one (roughness, lobe plane, virtual motion).
+ */
+export type RecurrentKind = 'diffuse' | 'specular' | 'ao' | 'so';
+/** Specular kernel / temporal logic (radiance or occlusion). */
+export const isSpecKind = (k: RecurrentKind) => k === 'specular' || k === 'so';
+/** Occlusion-only signal: buffers hold ĥ alone (r32float), no radiance. */
+export const isOccKind = (k: RecurrentKind) => k === 'ao' || k === 'so';
+/** Storage format of a signal's rotation buffers. */
+export const formatOf = (k: RecurrentKind): GPUTextureFormat => (isOccKind(k) ? 'r32float' : 'rgba16float');
+// WGSL snippets per kind: value type, ĥ of a value, a buffer load, a computed value's store
+// argument, the zero value. Radiance kinds emit exactly the code they did before M5.
+const VT = (k: RecurrentKind) => (isOccKind(k) ? 'f32' : 'vec4f');
+const hOf = (k: RecurrentKind, x: string) => (isOccKind(k) ? x : `${x}.a`);
+const LD = (k: RecurrentKind, tex: string, q: string) => (isOccKind(k) ? `textureLoad(${tex}, ${q}, 0).r` : `textureLoad(${tex}, ${q}, 0)`);
+const ST = (k: RecurrentKind, v: string) => (isOccKind(k) ? `vec4f(${v})` : v);
+const ZERO = (k: RecurrentKind) => (isOccKind(k) ? '0.0' : 'vec4f(0.0)');
+const BIG = (k: RecurrentKind, x: string) => (isOccKind(k) ? x : `vec4f(${x})`);
 
 /** RParams.flags */
 export const RP_HAS_HIT = 1;
@@ -72,7 +92,7 @@ export const RF_SIZE = 48 * 4;
 export const tapSet = (n: number) => (n <= 4 ? [0, 2, 4, 6] : [0, 1, 2, 3, 4, 5, 6, 7]);
 
 /** Slot in the packed data / fast-history channels: diffuse 0, specular 1. */
-export const slotOf = (k: RecurrentKind) => (k === 'diffuse' ? 0 : 1);
+export const slotOf = (k: RecurrentKind) => (isSpecKind(k) ? 1 : 0);
 
 const RSTRUCTS = /* wgsl */ `
 struct RFrame {
@@ -96,7 +116,7 @@ struct RParams {
   lagCurSigma: f32, lagCurHitTol: f32, lagStdErr: f32, virtGamma: f32,
   virtAngle: f32, virtHitLo: f32, virtHitHi: f32, specMinRadius: f32,
   virtCurv: f32, virtWiden: f32, detRough: f32, specCentre: f32,
-  elong: f32, pad6: f32, pad7: f32, pad8: f32,
+  elong: f32, occClamp: f32, pad7: f32, pad8: f32,
 }
 const RP_HAS_HIT = ${RP_HAS_HIT}u;
 const RP_REMODULATE = ${RP_REMODULATE}u;
@@ -232,7 +252,7 @@ fn tapGeoW(k: Kern, n: vec3f, gq: Geo, q: vec2i) -> f32 {
 /** Per-signal helpers: hit-distance curve, kernel construction, radius factors. */
 function signalWgsl(kind: RecurrentKind, i: number): string {
   const P = `P${i}`;
-  const spec = kind === 'specular';
+  const spec = isSpecKind(kind);
   return /* wgsl */ `
 // F-3: ĥ = h / (h + a + b d); miss (0 or non-finite) -> 1.
 fn hNorm${i}(h: f32, d: f32) -> f32 {
@@ -300,7 +320,7 @@ function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean
       let gq = geoTap(geoCur, q);
       let s = ${o.load('q')};
       var w = select(0.0, tapGeoW(k${i}, g.n, gq, q), q0.x >= 0 && gq.z > 0.0);${o.hitWeight ? `
-      w *= Wt(abs(s.a - k${i}.hh) * k${i}.invHitTol);` : ''}${kind === 'specular' ? `
+      w *= Wt(abs(${hOf(kind, 's')} - k${i}.hh) * k${i}.invHitTol);` : ''}${isSpecKind(kind) ? `
       w *= Wt(abs(gq.rough - k${i}.rough) * k${i}.invRoughTol);` : ''}
       sum${i} += s${acc} * w;
       sw${i} += w;
@@ -421,37 +441,42 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 // ---- R2 temporal accumulation (SPEC §5.5, C-6..C-10) ----------------------------
 
 
+// (luminance, ĥ) of a value: the moments the anti-lag detectors and the fast history use.
+const mvec = (k: RecurrentKind, x: string) => (isOccKind(k) ? `vec2f(0.0, ${x})` : `vec2f(luma(${x}.rgb), ${x}.a)`);
+
 // Current-frame anti-lag detector (our addition to C-10, measured: the fast history
 // alone reacts at its own EMA speed): 3x3 mean of this frame's pre-blurred luminance
 // and ĥ vs the reprojected history Hd, in units of the mean's standard error.
 // Reduces the variable `a` in place (SPEC C-10 reduction form).
-const detector = (i: number, a: string, Hd: string, floor = `P${i}.aFast`, meanW = '') => /* wgsl */ `
+// Occlusion kinds (ao / so) have no luminance: the ĥ detector alone (SPEC O-2).
+const detector = (i: number, a: string, Hd: string, floor = `P${i}.aFast`, meanW = '', kind: RecurrentKind = 'diffuse') => /* wgsl */ `
       if ((P${i}.flags & RP_NO_ANTILAG) == 0u && P${i}.lagCurSigma > 0.0 && nn >= 4.0) {
         let m3 = m1_${i} / nn;
         let se = sqrt(max(m2_${i} / nn - m3 * m3, vec2f(0.0)) / nn);
-        let mu = ${meanW ? `mix(vec2f(luma(pc${i}.rgb), pc${i}.a), m3, ${meanW})` : 'm3'};
+        let mu = ${meanW ? `mix(${mvec(kind, `pc${i}`)}, m3, ${meanW})` : 'm3'};${isOccKind(kind) ? `
+        let rI = 0.0;` : `
         let lh = luma(${Hd}.rgb);
-        let rI = abs(mu.x - lh) / (P${i}.lagCurSigma * se.x + 0.02 * max(lh, mu.x) + 1e-4);
-        let rH = abs(mu.y - ${Hd}.a) / (P${i}.lagCurSigma * se.y + P${i}.lagCurHitTol);
+        let rI = abs(mu.x - lh) / (P${i}.lagCurSigma * se.x + 0.02 * max(lh, mu.x) + 1e-4);`}
+        let rH = abs(mu.y - ${hOf(kind, Hd)}) / (P${i}.lagCurSigma * se.y + P${i}.lagCurHitTol);
         ${a} = mix(min(${a}, ${floor}), ${a}, clamp(2.0 - max(rI, rH), 0.0, 1.0));
       }`;
 
 // R2 per-signal body, diffuse (SPEC §5.5).
-const temporalDiffuse = (i: number, sl: number) => /* wgsl */ `
+const temporalDiffuse = (i: number, sl: number, kind: RecurrentKind = 'diffuse') => /* wgsl */ `
   {
     let pre = pc${i};
     var a = 0.0;
     if (hasHist) {
       a = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // C-9: A = frames in the output - 1
-      ${detector(i, 'a', `H${i}`)}
+      ${detector(i, 'a', `H${i}`, `P${i}.aFast`, '', kind)}
     }
     let acc = mix(H${i}, pre, 1.0 / (1.0 + a));     // RTG2 Eq. 49.1, rgb and ĥ
-    textureStore(outAcc${i}, p, acc);
+    textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
     A[${sl}] = a;
     // C-10 fast history: luminance and ĥ of the pre-blurred input, short cap.
     let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
     let fPrev = vec2f(Fh[${2 * sl}], Fh[${2 * sl + 1}]);
-    let fNew = mix(fPrev, vec2f(luma(pre.rgb), pre.a), fw);
+    let fNew = mix(fPrev, ${mvec(kind, 'pre')}, fw);
     fastOut[${2 * sl}] = fNew.x;
     fastOut[${2 * sl + 1}] = fNew.y;
   }`;
@@ -459,7 +484,7 @@ const temporalDiffuse = (i: number, sl: number) => /* wgsl */ `
 // R2 per-signal body, specular (SPEC §5.6, R-7..R-12): surface and virtual history
 // candidates, virtual confidence and clamp, blended in alpha space by the amount of
 // virtual motion m = F_dom(alpha).
-const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
+const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular') => /* wgsl */ `
   {
     let pre = pc${i};
     var a = 0.0;
@@ -474,7 +499,7 @@ const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
       var m = 0.0;
       if ((P${i}.flags & RP_NO_VIRTUAL) == 0u) {
         // R-9: this frame's fast hit distance (surface-reprojected fast history + this frame's ĥ)
-        let hF = mix(fPrev.y, pre.a, 1.0 / (1.0 + min(aS, P${i}.aFast)));
+        let hF = mix(fPrev.y, ${hOf(kind, "pre")}, 1.0 / (1.0 + min(aS, P${i}.aFast)));
         var hV = hDenorm${i}(hF, g.z);
         // D12c: curved reflector, mirror equation 1/d_o + 1/d_i = 2 kappa (thin lens, RTG1 ch. 32 §32.4.3):
         // the virtual image of a point at distance h lies at h / (1 + 2 kappa h) (convex: closer)
@@ -496,8 +521,9 @@ const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
                * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
                * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * g.rough));
             // R-11: clamp to this frame's 3x3 mean +- gamma sigma, the harder the lower the confidence
-            let mu = vec4f(c1_${i}, m1_${i}.y) / nn;
-            let sd = sqrt(max(vec4f(c2_${i}, m2_${i}.y) / nn - mu * mu, vec4f(0.0)));
+            ${isOccKind(kind) ? `let mu = m1_${i}.y / nn;
+            let sd = sqrt(max(m2_${i}.y / nn - mu * mu, 0.0));` : `let mu = vec4f(c1_${i}, m1_${i}.y) / nn;
+            let sd = sqrt(max(vec4f(c2_${i}, m2_${i}.y) / nn - mu * mu, vec4f(0.0)));`}
             // our variant: always clamped, window widening with confidence (mirror input is clean, so a tight clamp is free there)
             let gv = P${i}.virtGamma * (1.0 + P${i}.virtWiden * cv);
             Hv = mix(clamp(Hv, mu - gv * sd, mu + gv * sd), Hv, cv * step(P${i}.virtWiden, 0.0));
@@ -510,7 +536,7 @@ const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
       // and compare against the pixel's own value rather than the 3x3 mean as roughness -> 0
       // (a clean mirror's 3x3 mean is a blur of its reflected edges; our addition)
       let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));
-      ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`)}
+      ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`, kind)}
       // R-8 surface cap (parallax), R-12 blend in alpha space
       let aSurf = min(aD, specCap${i}(g, r.world, r.expPrev));
       let alphaSurf = 1.0 / (1.0 + aSurf);
@@ -519,10 +545,10 @@ const temporalSpecular = (i: number, sl: number) => /* wgsl */ `
       a = 1.0 / mix(alphaSurf, alphaVirt, m) - 1.0;
       mVirt = m * cv;   // stabilization's virtual candidate is trusted as far as R-10 trusts it
     }
-    textureStore(outAcc${i}, p, acc);
+    textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
     A[${sl}] = a;
     let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
-    let fNew = mix(fPrev, vec2f(luma(pre.rgb), pre.a), fw);
+    let fNew = mix(fPrev, ${mvec(kind, 'pre')}, fw);
     fastOut[${2 * sl}] = fNew.x;
     fastOut[${2 * sl + 1}] = fNew.y;
   }`;
@@ -567,6 +593,23 @@ fn reprojectR(p: vec2i, g: Geo, tol: f32) -> Reproj {
 }
 `;
 
+// Occlusion histories are r32float, which core WebGPU cannot filter: the same Catmull-Rom
+// (RTG2 §49.7) as sampleCatmullRom, from 16 textureLoads of one channel (our code).
+const CATMULL_ROM_LOAD = /* wgsl */ `
+fn catmullRomLoad1(tex: texture_2d<f32>, uv: vec2f) -> f32 {
+  let pos = uv * F.dims - 0.5;
+  let t1 = floor(pos);
+  let f = pos - t1;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let b = vec2i(t1) - 1;
+  ${[0, 1, 2, 3].map((y) => `let r${y} = ${[0, 1, 2, 3].map((x) => `textureLoad(tex, clampPix(b + vec2i(${x}, ${y})), 0).r * w${x}.x`).join(' + ')};`).join('\n  ')}
+  return r0 * w0.y + r1 * w1.y + r2 * w2.y + r3 * w3.y;
+}
+`;
+
 export function temporalPass(kinds: RecurrentKind[]): PassDef {
   const b = base(kinds);
   addReproj(b);
@@ -575,17 +618,20 @@ export function temporalPass(kinds: RecurrentKind[]): PassDef {
   b.add('dataPrev', 'texture_2d<u32>', 'i');
   b.add('outFast', 'texture_storage_2d<rgba16float, write>', 'rgba16float');
   b.add('outData', 'texture_storage_2d<r32uint, write>', 'r32uint');
-  kinds.forEach((_, i) => {
+  // occlusion kinds: `pre` is the raw hit distance (no pre-blur pass; normalized on load),
+  // histories are r32float (unfilterable: Catmull-Rom from textureLoad)
+  kinds.forEach((k, i) => {
     b.add(`pre${i}`, 'texture_2d<f32>', 'f');
-    b.add(`histPrev${i}`, 'texture_2d<f32>', 'F');
-    b.add(`outAcc${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`histPrev${i}`, 'texture_2d<f32>', isOccKind(k) ? 'f' : 'F');
+    b.add(`outAcc${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
   });
   const I = kinds.map((_, i) => i);
   const slot = (i: number) => slotOf(kinds[i]);
-  const hasSpec = kinds.includes('specular');
+  const hasSpec = kinds.some(isSpecKind);
+  const hasOcc = kinds.some(isOccKind);
   const nb: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
-  const specCap = (i: number) => /* wgsl */ `
+  const specCap = (i: number, V = isOccKind(kinds[i]) ? `Virt${i}` : 'Virt') => /* wgsl */ `
 // Specular surface-motion cap (SPEC R-7/R-8, our design): the reflection slides by
 // about the parallax angle per frame; history stays sharp while the accumulated
 // slide stays inside the lobe half-angle (applies to the surface candidate only).
@@ -603,9 +649,9 @@ fn specCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
 // against the current surface plane {Xp, np} (a flat reflector's previous texels
 // lie on it); bilinear only (Catmull-Rom here: +0.04 dB for 0.13 ms). Also returns
 // the valid-weighted previous normal, roughness and fast history there.
-struct Virt { H: vec4f, Fv: vec4f, n: vec3f, r: f32, vg: f32 }
-fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> Virt {
-  var o: Virt;
+struct ${V} { H: ${VT(kinds[i])}, Fv: vec4f, n: vec3f, r: f32, vg: f32 }
+fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> ${V} {
+  var o: ${V};
   let pp = uv * F.dims - 0.5;
   let base = vec2i(floor(pp));
   let f = pp - floor(pp);
@@ -617,7 +663,7 @@ fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> Virt {
     let q0 = base + TAP_OFFS[${k}];
     let q = clampPix(q0);
     let gq = geoTap(geoPrev, q);
-    let h = textureLoad(histPrev${i}, q, 0);
+    let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
     let fq = textureLoad(fastPrev, q, 0);
     let ok = all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= P0.planeTol;
     let w = select(0.0, max(bil[${k}], 1e-3), ok);
@@ -633,12 +679,14 @@ fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> Virt {
 }`;
   const code = /* wgsl */ `
 ${head(b, REPROJECT_WGSL)}
-${REPROJECT_R}
-${kinds.map((k, i) => (k === 'specular' ? signalWgsl(k, i) + specCap(i) : '')).join('\n')}
+${REPROJECT_R}${hasOcc ? CATMULL_ROM_LOAD : ''}
+${kinds.map((k, i) => (isSpecKind(k) || isOccKind(k) ? signalWgsl(k, i) + (isSpecKind(k) ? specCap(i) : '') : '')).join('\n')}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
   ...(hasSpec ? [{ name: 'nv', type: 'vec3f', load: (q: string) => `viewNormal(geoTap(geoCur, ${q}).n)` }] : []),
-  ...I.map((i) => ({ name: `pre${i}`, type: 'vec4f', load: (q: string) => `textureLoad(pre${i}, ${q}, 0)` })),
+  // occlusion: F-3 normalization of the raw hit distance on load (tile_z[k] is this texel's depth)
+  ...I.map((i) => ({ name: `pre${i}`, type: VT(kinds[i]), load: (q: string) => (isOccKind(kinds[i])
+    ? `hNorm${i}(textureLoad(pre${i}, ${q}, 0).r, tile_z[k])` : `textureLoad(pre${i}, ${q}, 0)`) })),
 ])}
 
 @compute @workgroup_size(8, 8)
@@ -662,7 +710,7 @@ fn main(${TILE_MAIN}) {
   // C-8: custom-weighted bilinear; valid taps with tiny bilinear weight still count.
   var Ahist = vec2f(0.0);
   var Fh = vec4f(0.0);
-  ${I.map((i) => `var H${i} = vec4f(0.0);\n  var lo${i} = vec4f(1e30);\n  var hi${i} = vec4f(-1e30);`).join('\n  ')}
+  ${I.map((i) => `var H${i} = ${ZERO(kinds[i])};\n  var lo${i} = ${BIG(kinds[i], '1e30')};\n  var hi${i} = ${BIG(kinds[i], '-1e30')};`).join('\n  ')}
   if (hasHist) {
     let wts = max(r.bil, vec4f(1e-3)) * r.valid;
     let sw = wts.x + wts.y + wts.z + wts.w;
@@ -675,7 +723,7 @@ fn main(${TILE_MAIN}) {
       Ahist += vec2f(unpackA(dv, 0u), unpackA(dv, 1u)) * wk;
       Fh += textureLoad(fastPrev, q, 0) * wk;
       ${I.map((i) => `{
-        let h = textureLoad(histPrev${i}, q, 0);
+        let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
         H${i} += h * wk;
         lo${i} = select(lo${i}, min(lo${i}, h), ok);
         hi${i} = select(hi${i}, max(hi${i}, h), ok);
@@ -685,7 +733,7 @@ fn main(${TILE_MAIN}) {
     Fh /= sw;
     ${I.map((i) => `H${i} /= sw;`).join(' ')}
     if (r.allValid) {   // RTG2 §49.7: Catmull-Rom when the footprint is valid, clamped (no ringing)
-      ${I.map((i) => `H${i} = clamp(sampleCatmullRom(histPrev${i}, smp, r.prevUV), lo${i}, hi${i});`).join('\n      ')}
+      ${I.map((i) => `H${i} = clamp(${isOccKind(kinds[i]) ? `catmullRomLoad1(histPrev${i}, r.prevUV)` : `sampleCatmullRom(histPrev${i}, smp, r.prevUV)`}, lo${i}, hi${i});`).join('\n      ')}
     }
   }
   var A = vec2f(0.0);
@@ -699,7 +747,7 @@ fn main(${TILE_MAIN}) {
   let nv = viewNormal(g.n);
   let pl = makePlane(X, nv);
   ${I.map((i) => `let pc${i} = tile_pre${i}[tidx(lid, 0, 0)];
-  var m1_${i} = vec2f(luma(pc${i}.rgb), pc${i}.a);
+  var m1_${i} = ${mvec(kinds[i], `pc${i}`)};
   var m2_${i} = m1_${i} * m1_${i};${kinds[i] === 'specular' ? `
   var c1_${i} = pc${i}.rgb;
   var c2_${i} = pc${i}.rgb * pc${i}.rgb;` : ''}`).join('\n  ')}
@@ -715,7 +763,7 @@ fn main(${TILE_MAIN}) {
       let zq = tile_z[ti];
       let ok = select(0.0, 1.0, inside(qq) && zq > 0.0 && planeDist(pl, q, zq) < P0.geoTolLo);
       nn += ok;
-      ${I.map((i) => `{ let s = tile_pre${i}[ti]; let v = vec2f(luma(s.rgb), s.a) * ok; m1_${i} += v; m2_${i} += v * v;${kinds[i] === 'specular' ? ` let sc = s.rgb * ok; c1_${i} += sc; c2_${i} += sc * sc;` : ''} }`).join('\n      ')}${hasSpec && (x === 0 || y === 0) ? `
+      ${I.map((i) => `{ let s = tile_pre${i}[ti]; let v = ${mvec(kinds[i], 's')} * ok; m1_${i} += v; m2_${i} += v * v;${kinds[i] === 'specular' ? ` let sc = s.rgb * ok; c1_${i} += sc; c2_${i} += sc * sc;` : ''} }`).join('\n      ')}${hasSpec && (x === 0 || y === 0) ? `
       { // curvature along this axis neighbour: dot(n_q - n, dX) / |dX|^2 (positive = convex)
         let dX = viewPosAt(uvOf(q), zq) - X;
         curvSum += dot(tile_nv[ti] - nv, dX) / max(dot(dX, dX), 1e-12) * ok;
@@ -723,7 +771,7 @@ fn main(${TILE_MAIN}) {
       }` : ''}
     }`).join('')}
   }
-  ${I.map((i) => (kinds[i] === 'specular' ? temporalSpecular(i, slot(i)) : temporalDiffuse(i, slot(i)))).join('')}
+  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i]) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
   textureStore(outFast, p, fastOut);
   var mask = 0u;
   if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
@@ -753,9 +801,9 @@ export function mipsPass(kinds: RecurrentKind[]): PassDef {
   b.uniform('F', 'Frame');
   b.add('geoCur', 'texture_2d<u32>', 'i');
   b.add('outMipZ', 'texture_storage_2d<r32float, write>', 'r32float');
-  kinds.forEach((_, i) => {
+  kinds.forEach((k, i) => {
     b.add(`acc${i}`, 'texture_2d<f32>', 'f');
-    b.add(`outMip${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`outMip${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
   });
   const I = kinds.map((_, i) => i);
   const level = (L: number) => {
@@ -772,7 +820,7 @@ export function mipsPass(kinds: RecurrentKind[]): PassDef {
       let a = atlasCoord(${L}, t);
       let inv = select(0.0, 1.0 / zz.y, zz.y > 0.0);
       textureStore(outMipZ, a, vec4f(zz.x * inv));
-      ${I.map((i) => `textureStore(outMip${i}, a, c${i} * inv);`).join('\n      ')}
+      ${I.map((i) => `textureStore(outMip${i}, a, ${ST(kinds[i], `c${i} * inv`)});`).join('\n      ')}
     }
   }
   workgroupBarrier();`;
@@ -782,7 +830,7 @@ ${FRAME_WGSL}
 ${b.wgsl}
 ${ATLAS}
 var<workgroup> sz: array<vec2f, 256>;   // (sum depth, count of non-sky pixels)
-${I.map((i) => `var<workgroup> sc${i}: array<vec4f, 256>;`).join('\n')}
+${I.map((i) => `var<workgroup> sc${i}: array<${VT(kinds[i])}, 256>;`).join('\n')}
 
 // One dispatch, 16x16 workgroups, shared-memory reduction 16 -> 8 -> 4 -> 2
 // (RTG2 §49.5.3), averaging non-sky pixels only.
@@ -798,7 +846,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
     if (gz > 0.0) { w = 1.0; z = gz; }
   }
   sz[li] = vec2f(z, w);
-  ${I.map((i) => `sc${i}[li] = select(vec4f(0.0), textureLoad(acc${i}, p, 0), w > 0.0);`).join('\n  ')}
+  ${I.map((i) => `sc${i}[li] = select(${ZERO(kinds[i])}, ${LD(kinds[i], `acc${i}`, 'p')}, w > 0.0);`).join('\n  ')}
   workgroupBarrier();
   ${[1, 2, 3].map(level).join('\n')}
 }
@@ -808,15 +856,41 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
 
 // ---- R4 history fix (SPEC §5.8: mip repair D7, anti-firefly D9, anti-lag C-10/D11) --
 
+// R4 per-signal body, occlusion kinds (ĥ only): (a) mip repair as radiance, no
+// anti-firefly, (c) the fast-history window on ĥ itself (O-2: ĥ detector only); the slow
+// ĥ is clamped into it when occClamp > 0 (our design, as the radiance luminance clamp).
+const histFixOcc = (i: number, kind: RecurrentKind, sl: number) => /* wgsl */ `
+  {
+    var c = textureLoad(acc${i}, p, 0).r;
+    var a = A[${sl}];
+    if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
+      let m = mipRepair${i}(p, g.z, a, ${isSpecKind(kind) ? 'g.rough' : '1.0'});
+      if (m >= 0.0) { c = m; }
+    }
+    if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
+      ${isSpecKind(kind) ? `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);
+      let muH = mix(fc[${2 * sl + 1}], fMean[${2 * sl + 1}], cw);` : `let muH = fMean[${2 * sl + 1}];`}
+      let sdH = fStd[${2 * sl + 1}];
+      let Lc = clamp(c, muH - P${i}.lagGamma * sdH, muH + P${i}.lagGamma * sdH);
+      let e = abs(c - Lc) / (max(c, Lc) + 1e-3);
+      let cI = clamp(1.0 - e / P${i}.lagEMax, 0.0, 1.0);
+      let cH = clamp(1.0 - abs(c - Lc) / P${i}.lagHitTol, 0.0, 1.0);
+      c = mix(c, Lc, P${i}.occClamp);
+      a = mix(min(a, P${i}.aFast), a, min(cI, cH));
+    }
+    A[${sl}] = a;
+    textureStore(outFix${i}, p, vec4f(c));
+  }`;
+
 export function historyFixPass(kinds: RecurrentKind[]): PassDef {
   const b = base(kinds);
   b.add('fastCur', 'texture_2d<f32>', 'f');
   b.add('mipZ', 'texture_2d<f32>', 'f');
   b.add('dataRW', 'texture_storage_2d<r32uint, read_write>', 'rw-r32uint');
-  kinds.forEach((_, i) => {
+  kinds.forEach((k, i) => {
     b.add(`acc${i}`, 'texture_2d<f32>', 'f');
     b.add(`mip${i}`, 'texture_2d<f32>', 'f');
-    b.add(`outFix${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`outFix${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
   });
   const I = kinds.map((_, i) => i);
   const slot = (i: number) => slotOf(kinds[i]);
@@ -829,7 +903,7 @@ ${head(b, ATLAS)}
 // 3x3 tent at level L with viewZ-only weights (RTG2 p.829), finer level if the
 // normalized weight sum is below the threshold. Returns (value, 1) or (_, 0).
 ${I.map((i) => /* wgsl */ `
-fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> vec4f {
+fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> ${VT(kinds[i])} {
   var L = i32(floor(3.0 * clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho + 0.5));
   loop {
     if (L < 1) { break; }
@@ -840,7 +914,7 @@ fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> vec4f {
     let tol = 1.0 / (P${i}.fixTol * scale * d);
     var sumB = 0.0;
     var sumW = 0.0;
-    var sumC = vec4f(0.0);
+    var sumC = ${ZERO(kinds[i])};
     // unrolled, branchless 3x3 (all loads in flight together)
     ${[...Array(9).keys()].map((k) => `{
       let t = c + vec2i(${(k % 3) - 1}, ${Math.floor(k / 3) - 1});
@@ -848,22 +922,23 @@ fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> vec4f {
       let wb = max(0.0, 1.0 - dt.x / 1.5) * max(0.0, 1.0 - dt.y / 1.5);
       let a = atlasCoord(L, clamp(t, vec2i(0), dims - 1));
       let dm = textureLoad(mipZ, a, 0).r;
-      let v = textureLoad(mip${i}, a, 0);
+      let v = ${LD(kinds[i], `mip${i}`, 'a')};
       let w = select(0.0, wb * Wt(abs(dm - d) * tol), all(t >= vec2i(0)) && all(t < dims) && dm > 0.0);
       sumB += wb;
       sumW += w;
       sumC += v * w;
     }`).join('\n    ')}
-    if (sumW >= P${i}.fixMinWeight * sumB && sumW > 0.0) { return vec4f(sumC / sumW); }
+    if (sumW >= P${i}.fixMinWeight * sumB && sumW > 0.0) { return ${isOccKind(kinds[i]) ? 'sumC / sumW' : 'vec4f(sumC / sumW)'}; }
     L -= 1;
   }
-  return vec4f(-1.0);
+  return ${BIG(kinds[i], '-1.0')};
 }`).join('\n')}
 
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
   { name: 'f', type: 'vec4f', load: (q) => `textureLoad(fastCur, ${q}, 0)` },
-  ...I.map((i) => ({ name: `l${i}`, type: 'f32', load: (q: string) => `luma(textureLoad(acc${i}, ${q}, 0).rgb)` })),
+  // anti-firefly luminance (radiance kinds only; ĥ in [0, 1] has no fireflies)
+  ...I.filter((i) => !isOccKind(kinds[i])).map((i) => ({ name: `l${i}`, type: 'f32', load: (q: string) => `luma(textureLoad(acc${i}, ${q}, 0).rgb)` })),
 ])}
 
 @compute @workgroup_size(8, 8)
@@ -887,7 +962,7 @@ fn main(${TILE_MAIN}) {
   var fSum = fc;
   var fSq = fc * fc;
   var nValid = 1.0;
-  ${I.map((i) => `var l1_${i} = 0.0;\n  var l2_${i} = 0.0;`).join('\n  ')}
+  ${I.filter((i) => !isOccKind(kinds[i])).map((i) => `var l1_${i} = 0.0;\n  var l2_${i} = 0.0;`).join('\n  ')}
   ${nb.map(([x, y]) => /* wgsl */ `
   {
     let qq = p + vec2i(${x}, ${y});
@@ -899,7 +974,7 @@ fn main(${TILE_MAIN}) {
     fSum += f;
     fSq += f * f;
     nValid += ok;
-    ${I.map((i) => `{
+    ${I.filter((i) => !isOccKind(kinds[i])).map((i) => `{
       let l = tile_l${i}[ti] * ok;
       l2_${i} = max(l2_${i}, min(l1_${i}, l));
       l1_${i} = max(l1_${i}, l);
@@ -908,7 +983,7 @@ fn main(${TILE_MAIN}) {
   let fMean = fSum / nValid;
   // window from the spread of the fast history; optionally its standard error (our variant)
   let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0))) / mix(1.0, sqrt(nValid), P0.lagStdErr);
-  ${I.map((i) => /* wgsl */ `
+  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i)) : /* wgsl */ `
   {
     var c = textureLoad(acc${i}, p, 0);
     var a = A[${slot(i)}];
@@ -945,7 +1020,7 @@ fn main(${TILE_MAIN}) {
     }
     A[${slot(i)}] = a;
     textureStore(outFix${i}, p, c);
-  }`).join('')}
+  }`)).join('')}
   textureStore(dataRW, p, vec4u(packData(A.x, A.y, unpackM(dv), dv >> 28u), 0u, 0u, 0u));
 }
 `;
@@ -957,10 +1032,10 @@ fn main(${TILE_MAIN}) {
 export function blurPass(kinds: RecurrentKind[], post: boolean, taps: number[] = kinds.map(() => 8)): PassDef {
   const b = base(kinds);
   b.add('dataTex', 'texture_2d<u32>', 'i');
-  kinds.forEach((_, i) => {
+  kinds.forEach((k, i) => {
     b.add(`src${i}`, 'texture_2d<f32>', 'f');
     if (post) b.add(`acc${i}`, 'texture_2d<f32>', 'f');
-    b.add(`outBlur${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`outBlur${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
   });
   const I = kinds.map((_, i) => i);
   const code = /* wgsl */ `
@@ -985,21 +1060,22 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   {
     let A = unpackA(dv, ${slotOf(kinds[i])}u);
     let An = clamp(A / P${i}.aCap, 0.0, 1.0);
-    let c = textureLoad(src${i}, p, 0);
+    let c = ${LD(kinds[i], `src${i}`, 'p')};
     // R-5: R = max(min(R_max f_A f_r pixSize, c_h h~), R_min pixSize), f_A = 1/(1 + A)
-    var R = max(min(P${i}.maxRadius * radiusRough${i}(g) / (1.0 + A) * ps, hitClamp${i}(g) * hDenorm${i}(c.a, g.z)),
-                P${i}.minRadius * ${kinds[i] === 'specular' ? `mix(1.0, radiusRough${i}(g), P${i}.specMinRadius)` : '1.0'} * ps);
+    var R = max(min(P${i}.maxRadius * radiusRough${i}(g) / (1.0 + A) * ps, hitClamp${i}(g) * hDenorm${i}(${hOf(kinds[i], 'c')}, g.z)),
+                P${i}.minRadius * ${isSpecKind(kinds[i]) ? `mix(1.0, radiusRough${i}(g), P${i}.specMinRadius)` : '1.0'} * ps);
     ${post ? `// D2c: post-blur radius grows where the blur still changed the signal (RTG2 §49.5.6)
-    let la = luma(textureLoad(acc${i}, p, 0).rgb);
-    let lb = luma(c.rgb);
+    ${isOccKind(kinds[i]) ? `let la = textureLoad(acc${i}, p, 0).r;   // occlusion: how much the blur changed ĥ
+    let lb = c;` : `let la = luma(textureLoad(acc${i}, p, 0).rgb);
+    let lb = luma(c.rgb);`}
     R *= mix(P${i}.postLo, P${i}.postHi, clamp(abs(lb - la) / (max(lb, la) + 1e-3) / P${i}.postDelta, 0.0, 1.0));` : ''}
-    let k${i} = kern${i}(g, X, nv, R, An, c.a);
+    let k${i} = kern${i}(g, X, nv, R, An, ${hOf(kinds[i], 'c')});
     var sum${i} = c;
     var sw${i} = 1.0;
     ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
-      rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => `textureLoad(src${i}, ${q}, 0)`,
+      rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => LD(kinds[i], `src${i}`, q),
     })).join('')}
-    textureStore(outBlur${i}, p, sum${i} / sw${i});
+    textureStore(outBlur${i}, p, ${ST(kinds[i], `sum${i} / sw${i}`)});
   }`).join('')}
 }
 `;
@@ -1013,10 +1089,10 @@ export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): Pass
   b.add('motionTex', 'texture_2d<f32>', 'f');
   b.add('smp', 'sampler', 's');
   b.add('dataTex', 'texture_2d<u32>', 'i');
-  kinds.forEach((_, i) => {
+  kinds.forEach((k, i) => {
     b.add(`hCur${i}`, 'texture_2d<f32>', 'f');
-    b.add(`sPrev${i}`, 'texture_2d<f32>', 'F');
-    b.add(`outS${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    b.add(`sPrev${i}`, 'texture_2d<f32>', isOccKind(k) ? 'f' : 'F');
+    b.add(`outS${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
     if (remodulate) {
       b.add(`demod${i}`, 'texture_2d<f32>', 'f');
       b.add(`outRemod${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
@@ -1025,14 +1101,14 @@ export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): Pass
   const I = kinds.map((_, i) => i);
   const nb: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
-  const store = (i: number, v: string) => `textureStore(outS${i}, p, ${v});${remodulate ? `
+  const store = (i: number, v: string, raw = false) => `textureStore(outS${i}, p, ${raw ? v : ST(kinds[i], v)});${remodulate ? `
     textureStore(outRemod${i}, p, vec4f(${v}.rgb * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & RP_REMODULATE) != 0u), ${v}.a));` : ''}`;
   const code = /* wgsl */ `
 ${head(b, HISTORY_SAMPLE_WGSL)}
 
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
-  ...I.map((i) => ({ name: `h${i}`, type: 'vec4f', load: (q: string) => `textureLoad(hCur${i}, ${q}, 0)` })),
+  ...I.map((i) => ({ name: `h${i}`, type: VT(kinds[i]), load: (q: string) => LD(kinds[i], `hCur${i}`, q) })),
 ])}
 
 @compute @workgroup_size(8, 8)
@@ -1042,7 +1118,7 @@ fn main(${TILE_MAIN}) {
   if (!inside(p)) { return; }
   let g = geoTap(geoCur, p);
   if (g.z <= 0.0) {
-    ${I.map((i) => store(i, 'vec4f(0.0)')).join('\n    ')}
+    ${I.map((i) => store(i, 'vec4f(0.0)', true)).join('\n    ')}
     return;
   }
   let X = viewPosAt(uvOf(p), g.z);
@@ -1077,22 +1153,22 @@ fn main(${TILE_MAIN}) {
     var s = h${i};
     if (hasHist && (P${i}.flags & RP_NO_STABILIZE) == 0u) {
       let wts = max(bil, vec4f(1e-3)) * valid;
-      var sp = vec4f(0.0);
-      var lo = vec4f(1e30);
-      var hi = vec4f(-1e30);
+      var sp = ${ZERO(kinds[i])};
+      var lo = ${BIG(kinds[i], '1e30')};
+      var hi = ${BIG(kinds[i], '-1e30')};
       ${[0, 1, 2, 3].map((k) => `{
-        let v = textureLoad(sPrev${i}, clampPix(base + TAP_OFFS[${k}]), 0);
+        let v = ${LD(kinds[i], `sPrev${i}`, `clampPix(base + TAP_OFFS[${k}])`)};
         let ok = wts[${k}] > 0.0;
         sp += v * wts[${k}];
         lo = select(lo, min(lo, v), ok);
         hi = select(hi, max(hi, v), ok);
       }`).join('\n      ')}
       sp /= wts.x + wts.y + wts.z + wts.w;
-      ${kinds[i] === 'specular' ? 'if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev' + i + ', smp, prevUV), lo, hi); }' : '// diffuse: bilinear (Catmull-Rom here: identical PSNR on the test bed, +0.07 ms)'}
+      ${kinds[i] === 'specular' ? 'if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev' + i + ', smp, prevUV), lo, hi); }' : (isOccKind(kinds[i]) ? '// occlusion: bilinear' : '// diffuse: bilinear (Catmull-Rom here: identical PSNR on the test bed, +0.07 ms)')}
       let A = unpackA(dv, ${slotOf(kinds[i])}u);
       let An = clamp(A / P${i}.aCap, 0.0, 1.0);
       let mu = m1_${i} / n;
-      let sd = sqrt(max(m2_${i} / n - mu * mu, vec4f(0.0)));
+      let sd = sqrt(max(m2_${i} / n - mu * mu, ${ZERO(kinds[i])}));
       // window gamma_s sigma + beta_s mu, wider once the pixel has a long, trusted history
       let wnd = mix(P${i}.stabGammaLo, P${i}.stabGammaHi, An) * sd + P${i}.stabBeta * An * abs(mu);
       let spc = clamp(sp, mu - wnd, mu + wnd);
