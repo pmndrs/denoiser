@@ -117,3 +117,12 @@ signal names are the capture's: `visibility` is the test bed's `shadows`.
 in Program Files / Program Files (x86) / LocalAppData (`CHROME=` overrides), passes
 `--use-angle=metal` only on macOS, keeps its profile under `os.tmpdir()` and starts Vite
 with `node` directly (no shell). Untested on Windows so far: see NATIVE-HARNESS phase 5.
+
+## Real-scene captures (three-temporal)
+
+A second capture set comes from the three.js scene of `examples/three-temporal` (moving camera,
+per-pose references, 960×540): `three-orbit` (40 frames) and `three-pan` (32 frames), written by
+`node examples/three-temporal/run-realtime.mjs capture --set=moving` and replayed / scored with
+`examples/three-temporal/replay-captures.mjs`. Recipe, contents and what's missing (specular is SSR,
+not demodulated; AO reference in an extra `ao_ref` buffer):
+[examples/three-temporal/CAPTURES.md](../three-temporal/CAPTURES.md).

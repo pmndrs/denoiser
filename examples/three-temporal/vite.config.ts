@@ -1,10 +1,14 @@
 import { defineConfig } from 'vite';
+import { rtCapture } from '../../tools/rt-capture/src/vite-plugin';
 
 // three + the upscaler (a TempNode subclass) are served as source and deduped:
 // there must be exactly ONE three instance or node classes from one copy are
 // not recognised by the other (same rule as upscale-pipeline).
 export default defineConfig({
   base: './',
+  // rtCapture(): capture I/O endpoints (/__rt-capture/*) for realtime-gi's capture mode (?path=orbit&ref=1);
+  // files go to tools/rt-capture/captures/, or $RT_CAPTURE_DIR/captures/ (dev server only)
+  plugins: [rtCapture()],
   esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: {
     target: 'esnext',

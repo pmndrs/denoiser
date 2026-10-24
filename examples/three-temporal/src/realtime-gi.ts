@@ -16,11 +16,22 @@
 // Split view: left = what you'd have without denoiser/realtime (raw 1-ray diffuse / AO,
 // FFX reflections), right = ours. References accumulate many independent samples while
 // the camera holds still.
+//
+// Moving camera (results/M6-real-scene.md, "moving camera"):
+//   ?path=orbit         the camera follows the scripted 64-frame path of src/realtime/path.ts
+//                       (slow orbit, then a fast pan; loops, denoisers reset at the wrap)
+//   ?path=orbit&ref=1   capture mode: builds the per-pose reference graph (float32 signal targets,
+//                       a stratified visibility reference, 16 diffuse rays/frame, SSR lit by the
+//                       converged references) and exposes __t.capturePath({ name, start, frames,
+//                       refShadow, refDiffuse, refSpec }), which freezes each path pose, renders
+//                       its 1-ray signals and guides, accumulates its references, and writes a
+//                       CAPTURE-FORMAT v0 capture through tools/rt-capture's writer
+//                       (`node run-realtime.mjs capture`, examples/three-temporal/CAPTURES.md).
 import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, uniform, uint, screenCoordinate, pass, mrt, diffuseColor, normalView,
   materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal, velocity, getViewPosition,
-  convertToTexture, renderOutput, uv, select, sample, texture, output,
+  convertToTexture, renderOutput, uv, select, sample, texture, output, mix,
 } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
@@ -32,12 +43,17 @@ import {
   type N, LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, pose, equivalentSphereRadius, blueNoise,
   AccumulateNode, readTexture, nonFiniteCount, psnr, envRadianceWgsl,
 } from './realtime/scene';
+import { PATH_DESCRIPTION, PATH_FRAMES, PAN_START, pathPose } from './realtime/path';
+import { CaptureWriter } from '../../../tools/rt-capture/src/writer';
 
 mountShell({ id: 'three-temporal-realtime-gi' });
 
 const q = new URLSearchParams(location.search);
 const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
 const manual = q.has('manual');
+const pathMode = q.get('path') === 'orbit';
+const capMode = pathMode && q.get('ref') === '1';
+const DIF_RAYS = capMode ? 16 : 4; // diffuse reference rays per pixel per frame
 const ENV_I = 0.28; // shadows.ts's scene.environmentIntensity
 const AO_A = 1, AO_B = 0.05; // OcclusionDenoiser's default hit-distance curve: h / (h + a + b * depth)
 
@@ -159,13 +175,37 @@ async function main() {
       return vec2f( 1.0, 0.0 );
     }
   ` as N;
+  // capture mode: grid x grid stratified white-noise shadow rays (the visibility reference, as in realtime-shadows)
+  const areaVisibility = wgslTagFn`
+    fn areaVisibility( P: vec3f, Nw: vec3f, sky: f32, C: vec3f, U: vec3f, V: vec3f, nL: vec3f, eps: f32, seed: u32, grid: u32 ) -> f32 {
+      if ( sky > 0.5 ) { return 1.0; }
+      let o = P + Nw * eps;
+      var lit = 0.0;
+      var s = seed;
+      for ( var j = 0u; j < grid; j++ ) {
+        for ( var i = 0u; i < grid; i++ ) {
+          let r0 = ${pcgf}( &s );
+          let r1 = ${pcgf}( &s );
+          let toL = C + U * ( ( f32( i ) + r0 ) / f32( grid ) * 2.0 - 1.0 ) + V * ( ( f32( j ) + r1 ) / f32( grid ) * 2.0 - 1.0 ) - o;
+          let dist = length( toL );
+          let dir = toL / dist;
+          if ( dot( Nw, dir ) <= 0.0 || dot( nL, dir ) >= 0.0 ) { continue; }
+          let ray = ${rayStruct}( o, dir, dist );
+          var hit: ${rayIntersectionResultStruct};
+          if ( ! ${raycast}( ray, &hit ) || hit.dist >= dist ) { lit += 1.0; }
+        }
+      }
+      return lit / f32( grid * grid );
+    }
+  ` as N;
 
   const uLightC = uniform(LIGHT_C.clone());
   const uLightU = uniform(LIGHT_U.clone().multiplyScalar(0.3 * LIGHT_ASPECT));
   const uLightV = uniform(LIGHT_V.clone().multiplyScalar(0.3));
   const uLightN = uniform(LIGHT_N.clone());
   const uLightPower = uniform(30);
-  const uFrame = uniform(0, 'uint');
+  const uFrame = uniform(0, 'uint'); // blue-noise frame index of the 1-ray signals (= path frame in capture mode)
+  const uSeed = uniform(0, 'uint');  // white-noise seed of the references: every rendered frame
   const uSplit = uniform(0.5);
   const uRough = uniform(Number(q.get('roughness') ?? 0.12));
   const xi = await blueNoise(uFrame);
@@ -173,6 +213,10 @@ async function main() {
   const camWorld = uniform(new THREE.Matrix4());
   camWorld.onFrameUpdate(() => { camera.updateMatrixWorld(); camWorld.value.copy(camera.matrixWorld); });
   const projInv = uniform(camera.projectionMatrixInverse);
+  // capture mode: the previous PATH pose (not the previous rendered frame) for motion / motion_z
+  const uPrevView = uniform(new THREE.Matrix4());
+  const uPrevViewProj = uniform(new THREE.Matrix4());
+  const sigOpts = capMode ? { type: THREE.FloatType } : {};
 
   // ---- graph ------------------------------------------------------------------------
   const scenePass = pass(scene, camera);
@@ -198,9 +242,9 @@ async function main() {
   const pixelSeed = () => { const px = screenCoordinate.xy.floor(); return uint(px.x).add(uint(px.y).mul(4099)).mul(uint(1973)); };
 
   // 1-ray signals: diffuse (rgb, hit distance) and shadow (visibility, occluder distance)
-  const difRTT = convertToTexture(diffuse1(s0.P, s0.N, s0.sky, eps, vec2(xi(2), xi(3)), uLightC, uLightN, uLightPower, float(ENV_I)));
+  const difRTT = convertToTexture(diffuse1(s0.P, s0.N, s0.sky, eps, vec2(xi(2), xi(3)), uLightC, uLightN, uLightPower, float(ENV_I)), null, null, sigOpts);
   const difHitRTT = convertToTexture(vec4(difRTT.sample(uv()).a, 0, 0, 1));
-  const shRTT = convertToTexture(vec4(areaShadow1(s0.P, s0.N, s0.sky, uLightC, uLightU, uLightV, uLightN, eps, vec2(xi(0), xi(1))), 0, 1));
+  const shRTT = convertToTexture(vec4(areaShadow1(s0.P, s0.N, s0.sky, uLightC, uLightU, uLightV, uLightN, eps, vec2(xi(0), xi(1))), 0, 1), null, null, sigOpts);
   const shDistRTT = convertToTexture(vec4(shRTT.sample(uv()).g, 0, 0, 1));
   // noisy AO, normalized per sample like the reference
   const aoNoisy = (h: N) => select(h.lessThanEqual(0), float(1), h.div(h.add(AO_A).add(s0.depth.mul(AO_B))));
@@ -223,7 +267,13 @@ async function main() {
   // SSR of the lit image. Its diffuse is LAST frame's denoised diffuse (a plain texture of the
   // node's output, not a graph dependency: the specular denoiser runs in the same dispatch).
   const prevDiffuse = texture(new THREE.Texture());
-  const ssrLit = convertToTexture(vec4(albedoD().mul(prevDiffuse.sample(uv()).rgb.add(directOf(shadows.r))), 1));
+  // capture mode: SSR reflects the image lit by this pose's converged references (diffuse + visibility),
+  // so the noisy SSR sample and the SSR reference share one input and no denoiser output enters a capture
+  const refDifTex = texture(new THREE.Texture());
+  const refVisTex = texture(new THREE.Texture());
+  const ssrLit = capMode
+    ? convertToTexture(vec4(albedoD().mul(refDifTex.sample(uv()).rgb.add(directOf(refVisTex.sample(uv()).r))), 1))
+    : convertToTexture(vec4(albedoD().mul(prevDiffuse.sample(uv()).rgb.add(directOf(shadows.r))), 1));
   const ssrNode = ssr(ssrLit, depthTex, sample((uvN: N) => unpackRGBToNormal(nTex.sample(uvN).rgb)), {
     stochastic: true, camera, diffuseNode: dTex, metalnessNode: dTex.a, roughnessNode: nTex.a, envImportanceSampling: true,
   } as N) as N;
@@ -264,9 +314,36 @@ async function main() {
   prevDiffuse.value = gi.getOutputTexture(0);
 
   // references (static camera): 4 white-noise diffuse rays/frame (+ AO), SSR, shadow visibility via ours
-  const difRef = new AccumulateNode(diffuseRef(s0.P, s0.N, s0.sky, eps, pixelSeed().add(uFrame.mul(7919)).add(uint(777)), uint(4), s0.depth, uLightC, uLightN, uLightPower, float(ENV_I)));
+  const difRef = new AccumulateNode(diffuseRef(s0.P, s0.N, s0.sky, eps, pixelSeed().add(uSeed.mul(7919)).add(uint(777)), uint(DIF_RAYS), s0.depth, uLightC, uLightN, uLightPower, float(ENV_I)));
   const specRef = new AccumulateNode(vec4(ssrNode.rgb.mul(ssrMask), ssrMask), 1, [ssrNode]);
   difRef.max = specRef.max = Number(q.get('refFrames') ?? 512);
+  // capture mode only: visibility reference (4 x 4 stratified rays per frame; alpha = receiver mask)
+  const visRef = new AccumulateNode(vec4(
+    areaVisibility(s0.P, s0.N, s0.sky, uLightC, uLightU, uLightV, uLightN, eps, pixelSeed().add(uSeed.mul(7919)).add(uint(12345)), uint(4)),
+    0, 0, float(1).sub(s0.sky)));
+
+  // capture mode: the guides in CAPTURE-FORMAT v0 conventions (float32 targets)
+  const capGuides = capMode ? (() => {
+    const d = depthTex.sample(uv()).r;
+    const sky = s0.sky.greaterThan(0.5);
+    const Pv = getViewPosition(uv(), d, projInv);
+    const P = camWorld.mul(vec4(Pv, 1)).xyz;
+    const ndc = vec2(uv().x.mul(2).sub(1), float(1).sub(uv().y.mul(2)));
+    const prevClip = uPrevViewProj.mul(vec4(P, 1));
+    const motion = ndc.sub(prevClip.xy.div(prevClip.w));
+    const motionZ = select(sky, float(0), uPrevView.mul(vec4(P, 1)).z.sub(Pv.z));
+    const viewz = select(sky, float(-camera.far), Pv.z);
+    const depth = select(sky, float(1), d);
+    const a = dTex.sample(uv());
+    const f32 = { type: THREE.FloatType };
+    return {
+      g1: convertToTexture(vec4(depth, viewz, nTex.sample(uv()).a, motionZ), null, null, f32),
+      normal: convertToTexture(vec4(select(sky, vec3(0), s0.N), 0), null, null, f32),
+      motion: convertToTexture(vec4(motion, 0, 0), null, null, f32),
+      albedo: convertToTexture(vec4(a.rgb.mul(float(1).sub(a.a)), 0), null, null, f32),
+      f0: convertToTexture(vec4(mix(vec3(0.04), a.rgb, a.a), 0), null, null, f32),
+    };
+  })() : null;
 
   const tm = (c: N) => c; // signals are shown through ACES like the lit image
   const colorOf = (sig: Signal, side: 'ours' | 'other' | 'noisy' | 'ref'): N => {
@@ -293,6 +370,13 @@ async function main() {
     } else col = colorOf(sig, view === 'other' ? (sig === 'specular' || sig === 'lit' ? 'other' : 'noisy') : view);
     // metrics: keep every denoiser and signal in the graph (nodes outside it don't run)
     if (modes.all && view !== 'ref') col = col.add(vec3(ao.r.add(aoNoisyRTT.sample(uv()).r).add(gi.specular.r).add(ffxRefl.r).mul(0)));
+    // capture mode: the image shows the diffuse reference; every capture input stays in the graph
+    if (capGuides) {
+      const keep = [capGuides.g1, capGuides.normal, capGuides.motion, capGuides.albedo, capGuides.f0, difRTT, shRTT]
+        .reduce((acc: N, t: N) => acc.add(t.sample(uv()).x), float(0) as N)
+        .add((visRef as N).r).add((difRef as N).r).add((specRef as N).r).add(ssrNode.a);
+      col = (difRef as N).rgb.add(vec3(keep.mul(0)));
+    }
     pipeline.outputNode = (sig === 'ao'
       ? renderOutput(vec4(col, 1), THREE.NoToneMapping, THREE.SRGBColorSpace)
       : renderOutput(vec4(col, 1), THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace)) as N;
@@ -305,10 +389,23 @@ async function main() {
   let prevT = -1, prevRough = -1;
   const setRoughness = (r: number) => { uRough.value = r; floorMat.roughness = r; topMat.roughness = r; };
   setRoughness(uRough.value);
+  let pathFrame = 0, capturing = false;
   const animate = () => {
-    if (moving && modes.view !== 'ref') t += 1 / 60;
-    pose(camera, shot, t);
-    knot.rotation.set(0.4, t * 0.35, 0);
+    uSeed.value = frame;
+    if (capturing) return; // capturePath() sets the pose, uFrame and the reference counters itself
+    if (pathMode) {
+      // scripted path: one path frame per rendered frame; the scene is frozen (knot at t = 0)
+      if (moving && modes.view !== 'ref') {
+        pathFrame = (pathFrame + 1) % PATH_FRAMES;
+        if (pathFrame === 0) resetAll(); // the loop wraps: a camera cut
+      }
+      pathPose(camera, pathFrame);
+      knot.rotation.set(0.4, 0, 0);
+    } else {
+      if (moving && modes.view !== 'ref') t += 1 / 60;
+      pose(camera, shot, t);
+      knot.rotation.set(0.4, t * 0.35, 0);
+    }
     knot.updateMatrixWorld();
     (bvh as N).updateTransforms();
     if (!prevView.equals(camera.matrixWorld) || prevT !== t || prevRough !== uRough.value) { difRef.count.value = 0; specRef.count.value = 0; }
@@ -376,10 +473,144 @@ async function main() {
   copyCanvas.width = W; copyCanvas.height = H;
   const cctx = copyCanvas.getContext('2d')!;
   const tex = (n: N, i = 0): THREE.Texture => (n === ao && aoBoth ? (aoNode as unknown as TemporalDenoiseNode).getOutputTexture(0) : (n as TemporalDenoiseNode).getOutputTexture(i));
+  /**
+   * Capture mode (?path=orbit&ref=1): writes path frames [start, start + frames) as a CAPTURE-FORMAT v0
+   * capture. Per frame: put the camera at the path pose (the previous path pose gives motion /
+   * motion_z), render the 1-ray signals with blue-noise index = path frame, then hold the pose and
+   * accumulate the references (visibility: 4 x 4 stratified white-noise rays per frame; diffuse + AO:
+   * 16 white-noise cosine rays per frame; specular: SSR's own expectation over `refSpec` frames, lit
+   * by the converged diffuse + visibility references, after one frame for the noisy SSR sample).
+   */
+  const capturePath = async (o: { name: string; start?: number; frames?: number; refShadow?: number; refDiffuse?: number; refSpec?: number; write?: boolean }) => {
+    if (!capMode || !capGuides) throw new Error('capturePath needs ?path=orbit&ref=1');
+    const start = o.start ?? 0;
+    const n = Math.min(o.frames ?? PATH_FRAMES - start, PATH_FRAMES - start);
+    const visFrames = Math.max(1, Math.round((o.refShadow ?? 1024) / 16));
+    const difFrames = Math.max(1, Math.round((o.refDiffuse ?? 1024) / DIF_RAYS));
+    const specFrames = Math.max(1, o.refSpec ?? 256);
+    const write = o.write ?? true;
+    visRef.max = visFrames; difRef.max = difFrames; specRef.max = specFrames;
+    capturing = true;
+    setMoving(false);
+    modes.view = 'split'; buildOutput();
+    knot.rotation.set(0.4, 0, 0); knot.updateMatrixWorld(); (bvh as N).updateTransforms();
+    pathPose(camera, start);
+    visRef.count.value = visFrames; difRef.count.value = difFrames; specRef.count.value = specFrames;
+    await frames(3); await idle(); // compile; the renderer sets the camera's WebGPU projection here
+    const N_ = W * H;
+    const chan = (src: Float32Array, cs: number[], fn?: (v: number) => number) => {
+      const out = new Float32Array(N_ * cs.length);
+      for (let i = 0; i < N_; i++) for (let k = 0; k < cs.length; k++) { const v = src[i * 4 + cs[k]]; out[i * cs.length + k] = fn ? fn(v) : v; }
+      return out;
+    };
+    const rd = async (tex: THREE.Texture) => (await readTexture(renderer, tex)).data;
+    const rt = (n2: N) => n2.renderTarget!.texture as THREE.Texture;
+    const lights = [{
+      id: 'panel', type: 'sphere', position: [LIGHT_C.x, LIGHT_C.y, LIGHT_C.z] as [number, number, number],
+      radius: equivalentSphereRadius(0.3), intensity: uLightPower.value, shadow: true,
+    }];
+    const writer = write ? new CaptureWriter(device, o.name) : null;
+    await writer?.begin({
+      scene: 'three-temporal-corner',
+      generator: 'examples/three-temporal realtime-gi.html (capture mode, __t.capturePath)',
+      width: W, height: H, lights, static: true, reversedDepth: false,
+      referenceSpp: Math.min(visFrames * 16, difFrames * DIF_RAYS),
+      // the diffuse signal is the bounce radiance arriving at the surface (never multiplied by albedo);
+      // specular is three's stochastic SSR output, which carries its own GGX sample weight (not demodulated)
+      demodulation: { diffuse: 'albedo', specular: 'none' },
+      extra: {
+        threeTemporal: {
+          path: 'orbit', pathDescription: PATH_DESCRIPTION, start, frames: n, panStart: PAN_START,
+          sampling: 'blue (1-ray signals: spatiotemporal blue noise, index = path frame)',
+          references: {
+            visibility: `${visFrames * 16} rays/pixel (4x4 stratified white noise per frame x ${visFrames} frames) to the rectangular panel`,
+            diffuse: `${difFrames * DIF_RAYS} white-noise cosine rays/pixel (${DIF_RAYS}/frame x ${difFrames} frames), same estimator as the 1-ray signal`,
+            ao: 'ao_ref (extra buffer, 1 ch): mean per-sample normalized hit distance h/(h + 1 + 0.05 * -viewz) of the diffuse reference rays, miss = 1 (OcclusionDenoiser default curve)',
+            specular: `three SSR's own expectation: ${specFrames} stochastic SSR frames at the frozen pose, lit by the converged diffuse + visibility references (the noisy sample sees the same input)`,
+          },
+          light: {
+            note: 'the real light is a rectangular panel; lights[0] is the sphere of equal area at its centre that ShadowDenoiser gets on the page',
+            center: LIGHT_C.toArray(), halfU: uLightU.value.toArray(), halfV: uLightV.value.toArray(), normal: LIGHT_N.toArray(), power: uLightPower.value,
+          },
+          signals: {
+            diffuse: '1 cosine ray/pixel against the scene BVH: miss = environment x 0.28, hit = panel irradiance bounced off a grey 0.5 surface (no secondary shadow ray)',
+            specular: 'three SSRNode (stochastic, envImportanceSampling, maxDistance 4, thickness 0.05): incoming radiance x its GGX sample weight, firefly-clamped by SSR maxLuminance; specular_hitt = SSR ray length (x three\'s specular dominant factor), env misses -> 0',
+            visibility: '1 ray/pixel to a blue-noise point on the panel; occluder_dist = hit distance along it, 0 when lit; 0 with visibility 0 = light below the horizon',
+          },
+          missing: [
+            'specular is not demodulated (no exact E): manifest demodulation.specular = "none"',
+            'no motion of objects: the torus knot is frozen on the path',
+            'no jitter (raster without TAA)',
+            'no so_ref (SSR misses are environment hits, not unoccluded rays)',
+          ],
+          roughness: uRough.value,
+        },
+      },
+    });
+    const prevView = new THREE.Matrix4(), prevProj = new THREE.Matrix4();
+    const t0 = performance.now();
+    const perFrameS: number[] = [];
+    for (let k = 0; k < n; k++) {
+      const tf = performance.now();
+      const f = start + k;
+      pathPose(camera, k === 0 ? f : f - 1);
+      prevView.copy(camera.matrixWorldInverse); prevProj.copy(camera.projectionMatrix);
+      pathPose(camera, f);
+      uPrevView.value.copy(prevView);
+      uPrevViewProj.value.multiplyMatrices(prevProj, prevView);
+      uFrame.value = f;
+      // A: guides + 1-ray signals (the references take their first sample in the same frame)
+      visRef.count.value = 0; difRef.count.value = 0; specRef.count.value = specFrames;
+      await frames(1); await idle();
+      const g1 = await rd(rt(capGuides.g1));
+      const bufs: Record<string, Float32Array | { data: Float32Array; channels: number }> = {
+        depth: chan(g1, [0]), viewz: chan(g1, [1]), roughness: chan(g1, [2]), motion_z: chan(g1, [3]),
+        normal: chan(await rd(rt(capGuides.normal)), [0, 1, 2]),
+        motion: chan(await rd(rt(capGuides.motion)), [0, 1]),
+        albedo: chan(await rd(rt(capGuides.albedo)), [0, 1, 2]),
+        f0: chan(await rd(rt(capGuides.f0)), [0, 1, 2]),
+      };
+      const dif = await rd(rt(difRTT));
+      bufs.diffuse = chan(dif, [0, 1, 2]); bufs.diffuse_hitt = chan(dif, [3]);
+      const sh = await rd(rt(shRTT));
+      bufs.visibility = chan(sh, [0]); bufs.occluder_dist = chan(sh, [1]);
+      // B: hold the pose until the visibility and diffuse references are in
+      const more = Math.max(visFrames, difFrames) - 1;
+      if (more > 0) { await frames(more); await idle(); }
+      refDifTex.value = difRef.result; refVisTex.value = visRef.result;
+      // C: one frame for the noisy SSR sample (SSR now reflects the reference-lit image), then its reference
+      await frames(1); await idle();
+      const ssr = await rd((ssrNode as N).getTextureNode().value);
+      bufs.specular = chan(ssr, [0, 1, 2]);
+      bufs.specular_hitt = chan(ssr, [3], (a) => (a > 1e3 ? 0 : a));
+      specRef.count.value = 0;
+      await frames(specFrames); await idle();
+      const dref = await rd(difRef.result);
+      bufs.diffuse_ref = chan(dref, [0, 1, 2]);
+      bufs.ao_ref = { data: chan(dref, [3]), channels: 1 };
+      bufs.visibility_ref = chan(await rd(visRef.result), [0]);
+      bufs.specular_ref = chan(await rd(specRef.result), [0, 1, 2]);
+      const fc = {
+        view: camera.matrixWorldInverse.elements.slice(), projection: camera.projectionMatrix.elements.slice(),
+        prevView: prevView.elements.slice(), prevProjection: prevProj.elements.slice(),
+        jitter: [0, 0] as [number, number], near: camera.near, far: camera.far,
+        position: camera.position.toArray() as [number, number, number],
+      };
+      await writer?.writeFrame({ reset: k === 0, camera: fc, extra: { pathFrame: f } }, bufs);
+      perFrameS.push((performance.now() - tf) / 1000);
+      log(`capture ${o.name}: frame ${k + 1}/${n} (path frame ${f}) ${perFrameS.at(-1)!.toFixed(2)} s`);
+    }
+    const res = writer ? await writer.finish() : null;
+    capturing = false;
+    const bad = gpuErrors.length;
+    return { name: o.name, path: res?.path ?? null, frames: n, start, refRays: { visibility: visFrames * 16, diffuse: difFrames * DIF_RAYS, specularFrames: specFrames }, seconds: +((performance.now() - t0) / 1000).toFixed(1), perFrameS: perFrameS.map((s) => +s.toFixed(2)), gpuErrors: bad };
+  };
+
   const api = {
     ready: true,
     gpuErrors,
-    info: { three: THREE.REVISION, triangles: tris, w: W, h: H },
+    capturePath,
+    info: { three: THREE.REVISION, triangles: tris, w: W, h: H, pathMode, capMode },
     async step(n: number) { await frames(n); await idle(); },
     setModes(m: { signal?: Signal; view?: View; moving?: boolean; shot?: number; t?: number; roughness?: number; split?: number }) {
       if (m.signal) setSignal(m.signal);
