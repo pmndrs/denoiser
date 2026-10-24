@@ -1,6 +1,6 @@
 # Plan: our own NRD-class real-time denoiser (clean room) — DRAFT for review
 
-_2026-10-24. Branch `feat/rt-denoiser-cleanroom`. Rules: [RULES.md](RULES.md). Research:
+_2026-10-24. Branch `feat/rt-denoiser-cleanroom`. Start here: [HANDOFF.md](HANDOFF.md). Rules: [RULES.md](RULES.md). Research:
 [sources/](sources/). Native comparison: [NATIVE-HARNESS.md](NATIVE-HARNESS.md),
 [CAPTURE-FORMAT.md](CAPTURE-FORMAT.md)._
 
