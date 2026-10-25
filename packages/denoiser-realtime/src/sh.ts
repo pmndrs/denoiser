@@ -9,7 +9,7 @@ export interface ShResolverOptions {
   /**
    * Sharpening s in [0, 1] (SPEC M7-9): blends the L1 evaluation toward ambient + one
    * clamped-cosine light extracted from the payload, renormalized to stay exact at the
-   * guide normal. Needs `guideNormal` in resolve(). Default 0.
+   * guide normal. Applied only when resolve() gets `guideNormal` (else 0). Default 0.75 (as the fused resolve).
    */
   sharpen?: number;
 }
@@ -41,15 +41,17 @@ export class ShResolver {
   private layout: GPUBindGroupLayout;
   private pipeline: GPUComputePipeline;
   private params: GPUBuffer;
+  private noSharpen: GPUBuffer;
   private out?: GPUTexture;
   private sharpen: number;
 
   constructor(device: GPUDevice, options: ShResolverOptions = {}) {
     this.device = device;
-    this.sharpen = options.sharpen ?? 0;
+    this.sharpen = options.sharpen ?? 0.75;
     this.layout = makeLayout(device, 'sh resolve', ['u', 'i', 'f', 'f', 'rgba16float']);
     this.pipeline = makePipeline(device, 'sh resolve', CODE, this.layout);
     this.params = device.createBuffer({ label: 'sh resolve params', size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.noSharpen = device.createBuffer({ label: 'sh resolve params (no sharpening)', size: 16, usage: GPUBufferUsage.UNIFORM });
     this.setSharpen(this.sharpen);
   }
 
@@ -62,10 +64,9 @@ export class ShResolver {
   /**
    * Records the resolve into `enc`. Returns the rgba16float output (owned by the
    * resolver, valid until the next resolve at another size / dispose). `guideNormal`
-   * (the filter's `guides.normal`) is needed only for sharpening.
+   * (the filter's `guides.normal`) enables sharpening; without it the plain L1 evaluation is used.
    */
   encode(enc: GPUCommandEncoder, payload: GPUTexture, detailNormal: GPUTexture, guideNormal?: GPUTexture): GPUTexture {
-    if (this.sharpen > 0 && !guideNormal) throw new Error('ShResolver: sharpen > 0 needs guideNormal');
     const { width, height } = payload;
     if (!this.out || this.out.width !== width || this.out.height !== height) {
       this.out?.destroy();
@@ -75,7 +76,7 @@ export class ShResolver {
     }
     const pass = enc.beginComputePass({ label: 'sh resolve' });
     pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, makeBindGroup(this.device, this.layout, [this.params, payload, detailNormal, guideNormal ?? detailNormal, this.out]));
+    pass.setBindGroup(0, makeBindGroup(this.device, this.layout, [guideNormal ? this.params : this.noSharpen, payload, detailNormal, guideNormal ?? detailNormal, this.out]));
     pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
     pass.end();
     return this.out;
@@ -92,5 +93,6 @@ export class ShResolver {
   dispose() {
     this.out?.destroy();
     this.params.destroy();
+    this.noSharpen.destroy();
   }
 }

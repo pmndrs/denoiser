@@ -220,7 +220,7 @@ async function main() {
   else single = new SpecularDenoiser(device, dOpts);
   (both ?? single)!.configure({ width: W, height: H });
   // SH with resolve 'none': resolve at the detail normal for metrics / display
-  const resolver = shMode && signal !== 'specular' && (q.get('resolve') ?? 'none') === 'none' ? new ShResolver(device, { sharpen: num('sharpen', 0) }) : undefined;
+  const resolver = shMode && signal !== 'specular' && (q.get('resolve') ?? 'none') === 'none' ? new ShResolver(device, q.has('sharpen') ? { sharpen: num('sharpen', 0) } : {}) : undefined;
   const guides: FrameGuides = {
     depth: tex.Depth, normal: guideDetail ? tex.DetailN : tex.Normal, motion: tex.Motion,
     ...(shMode ? { detailNormal: tex.DetailN } : {}),

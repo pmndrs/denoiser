@@ -42,6 +42,7 @@
 //                      m7.ratio (sg|l1), m7.lightSharp, m7.maxRatio, m7.fadeR, m7.truncate=1 (test: f16
 //                      packing rounds toward zero like the plain filter's rgba16float stores on Metal)
 //   svgf-sh-auto       the same with antiLag 'auto'
+//                      (the fused diffuse resolve sharpens by default, shSharpen 0.75: score vsShRef with &refS=0.75)
 //   v1 signals         sh-diffuse / sh-specular / shadow-rgb baselines (svgf-plain, svgf-plain-smooth,
 //                      shadows-lumt, ffx-shadows-lumt; passthrough / accumulate* extended): src/v1-entries.ts
 //

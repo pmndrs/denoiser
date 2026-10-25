@@ -125,7 +125,10 @@ export interface SvgfOptions {
   shEncoding?: ShEncoding;
   /** SH: ringing guard k on |b| relative to Y at the guide normal (SPEC M7-8). Default 1. */
   shGuard?: number;
-  /** SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0. */
+  /**
+   * SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0.75 (SPEC: 0; best or within
+   * 0.05 dB of best on the dev page, test-bed `bumpy` and `bounce`, results/M7.md).
+   */
   shSharpen?: number;
   /**
    * SH: format of the a-trous ping-pong (SPEC M7-3 tune). 'f16' (8 x f16, 16 B/px per buffer) or 'u8'
@@ -145,7 +148,7 @@ export interface SpecularShOptions {
    * itself at the two lobes' dominant directions). Default 'sg'.
    */
   shSpecularRatio?: 'sg' | 'l1';
-  /** Sharpness of the SG light extracted from the payload ('sg'). Default 8. */
+  /** Sharpness of the SG light extracted from the payload ('sg'). Default 2 (SPEC: 8; 2 was best of 2 / 8 / 32 on both test scenes). */
   shLightSharpness?: number;
   /** Clamp of the detail / guide lobe-response ratio. Default 4. */
   shMaxRatio?: number;
@@ -209,12 +212,12 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     payload: o.payload ?? 'radiance',
     resolve: o.resolve ?? 'auto',
     shSpecularRatio: o.shSpecularRatio ?? 'sg',
-    shLightSharpness: o.shLightSharpness ?? 8,
+    shLightSharpness: o.shLightSharpness ?? 2,
     shMaxRatio: o.shMaxRatio ?? 4,
     shFadeRoughness: o.shFadeRoughness ?? 0.2,
     shEncoding: o.shEncoding ?? 'normal-exact',
     shGuard: o.shGuard ?? 1,
-    shSharpen: o.shSharpen ?? 0,
+    shSharpen: o.shSharpen ?? 0.75,
     shPackTruncate: o.shPackTruncate ?? false,
     shPingPacking: o.shPingPacking ?? 'f16',
     specularHistoryScale: o.specularHistoryScale ?? 1,

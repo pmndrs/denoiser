@@ -99,7 +99,7 @@ export interface RealtimeDiffuseOptions extends RadianceCommon {
   detailNormal?: TextureNodeLike;
   /**
    * `payload: 'sh'` with `denoiser.resolve: 'none'`: the node resolves the payload itself (ShResolver), at
-   * `normal` (default: `detailNormal`), with sharpening `sharpen` in [0, 1] (default 0). Without
+   * `normal` (default: `detailNormal`), with sharpening `sharpen` in [0, 1] (default 0.75, as the denoiser's). Without
    * `denoiser.resolve` the node asks the denoiser for its fused resolve (cheaper).
    */
   shResolve?: { normal?: TextureNodeLike; sharpen?: number };
@@ -227,7 +227,7 @@ class ShDiffuseNode extends TemporalDenoiseNode<object> {
     const g: FrameGuides = { ...guides, ...(detail ? { detailNormal: detail } : {}) };
     const out = denoiser.dispatch(rest, g, camera);
     if (out.format !== 'rgba32uint') return [out];
-    this.resolver ??= new ShResolver(denoiser.device, { sharpen: this.opts.shResolve?.sharpen ?? 0 });
+    this.resolver ??= new ShResolver(denoiser.device, this.opts.shResolve?.sharpen !== undefined ? { sharpen: this.opts.shResolve.sharpen } : {});
     return [this.resolver.resolve(out, resolveNormal ?? detail ?? guides.normal, guides.normal)];
   }
 
