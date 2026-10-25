@@ -543,3 +543,9 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   new Y"), so the fence strip is not enough: skip inline expressions and numbers by eye. Most lines in NRD's notes
   are "how" (weights, tests, pass moves, tap counts: ~417 dropped vs ~200 kept), so keep a per-release tally in a
   scratch file as you go rather than counting at the end. — release auditor, 2026-10-25
+- Change audits from `git diff --numstat` (rule 3c): always add `-w`. NRD converted line endings in several
+  releases, so raw counts show whole files "rewritten" (`NRDDescs.h` at v2.5.0: 331 of 335 lines raw, 0 with `-w`;
+  SH host files at v4.15.0: 30 % raw vs 5 %). Don't trust a direct diff across years either: git loses renames across
+  directory reshuffles and counts every old file as deleted. Chain consecutive-release diffs instead, and split removed
+  lines into edited vs deleted files (`--name-status` status per path) so file merges (packaging) don't read as
+  rewrites. — change auditor, 2026-10-25
