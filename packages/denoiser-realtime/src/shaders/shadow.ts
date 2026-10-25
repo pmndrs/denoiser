@@ -1095,6 +1095,7 @@ var<workgroup> sS: array<vec3f, 100>;   // the same for S = v-hat tau-hat
 @compute @workgroup_size(8, 8)
 fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
   let tile = list[wid.x];
+  let mode = activeTile[tile];
   let t0 = vec2i(i32((tile % SP.tilesX) * 8u), i32((tile / SP.tilesX) * 8u));
   let base = t0 - 1;
   for (var i = li; i < 100u; i += 64u) {
@@ -1105,15 +1106,17 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
     if ((at & 1u) != 0u) { vq = textureLoad(curTex, q, 0).r; }
     else { vq = textureLoad(boxTex, q, 0).r; }
     sC[i] = vq;
-    var tq: vec3f;
-    if ((at & 2u) != 0u) { tq = textureLoad(trCur, q, 0).rgb; }
-    else { tq = tauHist(q); }
-    sS[i] = vq * tq;
+    // the colour's box only in tau tiles (v-only tiles take S = v tau below)
+    if ((mode & 2u) != 0u) {
+      var tq: vec3f;
+      if ((at & 2u) != 0u) { tq = textureLoad(trCur, q, 0).rgb; }
+      else { tq = tauHist(q); }
+      sS[i] = vq * tq;
+    }
   }
   workgroupBarrier();
   let p = t0 + vec2i(lid.xy);
   if (!inside(p)) { return; }
-  let mode = activeTile[tile];
   let vAct = (mode & 1u) != 0u;
   let tAct = (mode & 2u) != 0u;
   let cur = textureLoad(curTex, p, 0).r;
