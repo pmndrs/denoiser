@@ -554,14 +554,18 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       and the cost table; when the native replay of the test-bed / three.js captures lands, fill "Against NVIDIA NRD"
       (comparison context only, RULES §6); when the realtime pages deploy, switch their links to live URLs and add them
       to `docs/site/examples/index.mdx` — found by m6-docs, owner docs
-- [ ] API (awkward to document): `HitDistanceNormalizer` has no default curve. Its params buffer starts zeroed, so every
+- [x] (api-fixes, a5ed52e: constructor writes a 1, b 0.05, far ∞; `encode()` documented `@internal` (the build has no
+      `stripInternal`, so it stays in the .d.ts); OcclusionDenoiser output byte-identical on an occlusion-svgf replay;
+      docs page + README updated) API (awkward to document): `HitDistanceNormalizer` has no default curve. Its params buffer starts zeroed, so every
       hit normalizes to ĥ = 1 until `setCurve()` is called; default it to the denoiser's (a 1, b 0.05, far ∞) in the
       constructor. Its public `encode()` also takes the internal `PassTimer` and a `'geo'` depth mode that only the
       package can produce: mark it `@internal` — found by m6-docs, owner `packages/denoiser-realtime`
 - [ ] API (awkward to document): `antiLag` means three things: SVGF `'off' | 'auto' | 'gradient'`, recurrent a boolean,
       `ShadowDenoiser` a number (a gain, default 64). Rename the boolean / numeric ones before the API leaves experimental
       (e.g. `historyAntiLag`, `antiLagGain`) — found by m6-docs, owner spec-author (SPEC §12 "API items") / Dennis
-- [ ] API: `realtimeOcclusion()` returns `TwoOutputNodeObject` for a single signal too, so `.specular` type-checks on an
+- [x] (api-fixes, a5ed52e: overloads by `denoiser.signal`: 'both' → `TwoOutputNodeObject`, one signal →
+      `OcclusionNodeObject<'diffuse' | 'specular'>` (new export), non-literal signal → union; three-temporal and the docs
+      snippets type-check) API: `realtimeOcclusion()` returns `TwoOutputNodeObject` for a single signal too, so `.specular` type-checks on an
       AO-only node but is no output (only the active signal's getter is defined; what three's node proxy returns for it is
       untested). Narrow the return type by
       `signal` (overloads) — found by m6-docs, owner `packages/denoiser-three`

@@ -176,6 +176,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `examples/three-temporal/src/` plus a tsconfig extending that example's (`include` the scratch file) type-checks
   against `denoiser/realtime` and `denoiser/three` through the built dist, so check that dist is newer than the last
   src commit first. — m6-docs, 2026-10-25
+- "Output unchanged" checks while other agents edit the package: copy `packages/denoiser-realtime/src` to the
+  scratchpad (A), copy A again with only your edited file swapped in (B), serve the replay page with
+  `RT_REALTIME_SRC=<A or B> RT_NO_HMR=1` on a spare port (`BASE=http://127.0.0.1:<port>/` for `run-headless.mjs`),
+  run the same query with `&output=<name>` on each and `diff -rq -x run.json -x timings.csv`. Their WIP is in both
+  snapshots, so only your change can differ. Small GPU checks need no page: put a `.ts` module in the snapshot dir
+  (Vite's `fs.allow` includes it) and `cdp.evalJs("import('/@fs<dir>/check.ts').then(m => m.check())", true)` from
+  `lib/headless.mjs`'s `openPage`. Snippet type checks also work from the scratchpad: symlink the repo's
+  `node_modules` next to the scratch `.ts` (tsconfig `paths` does not apply package `exports` subpaths like
+  `denoiser/three`). — api-fixes, 2026-10-25
+- TS overloads keyed on an option literal (`realtimeOcclusion`'s `denoiser.signal`): add a last overload with the
+  plain option type and a union return, or a caller holding a non-literal `signal` stops compiling. — api-fixes, 2026-10-25
 
 ## WebGPU / WGSL
 
