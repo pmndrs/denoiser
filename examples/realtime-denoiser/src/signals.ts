@@ -154,7 +154,7 @@ export class SceneSignals {
    * of `refs` (refSpp samples, rounded to a square grid). Submits its own work.
    */
   render(index: number, cur: FrameState, prev: FrameState, opts: {
-    reset: boolean; seed?: number; refs?: Signal[]; refSpp?: number; inject?: InjectOptions;
+    reset: boolean; seed?: number; refs?: Signal[]; refSpp?: number; refSalt?: number; inject?: InjectOptions;
   }): FrameCamera {
     const d = this.device;
     const cam = this.camera(cur, prev);
@@ -168,7 +168,7 @@ export class SceneSignals {
     f.set(cur.light.pos, 88); f[91] = cur.light.radius;
     f.set(cur.light.radiance, 92); f[95] = FAR;
     f.set(cur.obj, 96); f[99] = OBJ_RADIUS;
-    f.set(prev.obj, 100);
+    f.set(prev.obj, 100); u[103] = opts.refSalt ?? 0;
     d.queue.writeBuffer(this.u, 0, b);
 
     const wg: [number, number] = [Math.ceil(this.width / 8), Math.ceil(this.height / 8)];
@@ -185,21 +185,7 @@ export class SceneSignals {
     d.queue.submit([enc.finish()]);
 
     const refs = opts.refs ?? [];
-    const grid = Math.max(1, Math.round(Math.sqrt(opts.refSpp ?? 256)));
-    const total = grid * grid;
-    for (const s of refs) {
-      const chunks = Math.ceil(total / REF_CHUNK);
-      for (let c = 0; c < chunks; c++) {
-        const start = c * REF_CHUNK;
-        const count = Math.min(REF_CHUNK, total - start);
-        const g = this.refGroup(s, c);
-        d.queue.writeBuffer(this.refU[c], 0, new Uint32Array([start, count, grid, c === chunks - 1 ? 1 : 0]));
-        const e = d.createCommandEncoder({ label: `rt ref ${s} ${c}` });
-        const p = e.beginComputePass();
-        p.setPipeline(this.pipes[`ref_${s}`]); p.setBindGroup(0, g); p.dispatchWorkgroups(...wg); p.end();
-        d.queue.submit([e.finish()]);
-      }
-    }
+    this.dispatchRefs(refs, opts.refSpp ?? 256);
 
     if (opts.inject) {
       for (const s of refs.filter((x) => !isOccSignal(x))) {   // ao / so stay the traced hit distances
@@ -219,6 +205,38 @@ export class SceneSignals {
     }
     this.frameMeta = { index, reset: opts.reset, camera: cam, light: cur.light, obj: cur.obj };
     return cam;
+  }
+
+  /**
+   * Re-render the references of `refs` for the frame last passed to render(), with `refSpp`
+   * samples and seed salt `refSalt` (0 = the standard references), into the same *Ref
+   * textures (E-1: a second, independent or higher-spp reference set; copy the first set
+   * away before calling this). Only the salt slot of the scene uniform is rewritten.
+   */
+  renderRefs(refs: Signal[], refSpp: number, refSalt = 0) {
+    this.device.queue.writeBuffer(this.u, 103 * 4, new Uint32Array([refSalt]));
+    this.dispatchRefs(refs, refSpp);
+  }
+
+  /** chunked reference accumulation (REF_CHUNK samples per submit) */
+  private dispatchRefs(refs: Signal[], refSpp: number) {
+    const d = this.device;
+    const wg: [number, number] = [Math.ceil(this.width / 8), Math.ceil(this.height / 8)];
+    const grid = Math.max(1, Math.round(Math.sqrt(refSpp)));
+    const total = grid * grid;
+    for (const s of refs) {
+      const chunks = Math.ceil(total / REF_CHUNK);
+      for (let c = 0; c < chunks; c++) {
+        const start = c * REF_CHUNK;
+        const count = Math.min(REF_CHUNK, total - start);
+        const g = this.refGroup(s, c);
+        d.queue.writeBuffer(this.refU[c], 0, new Uint32Array([start, count, grid, c === chunks - 1 ? 1 : 0]));
+        const e = d.createCommandEncoder({ label: `rt ref ${s} ${c}` });
+        const p = e.beginComputePass();
+        p.setPipeline(this.pipes[`ref_${s}`]); p.setBindGroup(0, g); p.dispatchWorkgroups(...wg); p.end();
+        d.queue.submit([e.finish()]);
+      }
+    }
   }
 
   /** the noisy input / reference / hit-distance textures of a signal */

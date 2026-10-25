@@ -77,7 +77,7 @@ struct U {
   lightPos: vec3f, lightRadius: f32,
   lightRadiance: vec3f, far: f32,
   objPos: vec3f, objRadius: f32,
-  objPrevPos: vec3f, _pad1: f32,
+  objPrevPos: vec3f, refSalt: u32, // refSalt: reference seed salt (0 = the standard references; E-1)
 };
 // reference accumulation chunk: samples [start, start + count) of a g x g grid
 struct R { start: u32, count: u32, grid: u32, last: u32 };
@@ -265,7 +265,8 @@ fn noisySeed(pix: vec2u, salt: u32) -> u32 {
   return pcg(pix.x + pcg(pix.y + pcg(u.frame * 9781u + u.seedOffset + salt * 0x68bc21ebu)));
 }
 fn refSeed(pix: vec2u, salt: u32) -> u32 {
-  return pcg(pix.x * 7919u + pcg(pix.y + 0x9e3779b9u + salt * 0x2c1b3c6du));
+  // u.refSalt = 0 gives the standard references bit for bit; any other value an independent set
+  return pcg(pix.x * 7919u + pcg(pix.y + 0x9e3779b9u + salt * 0x2c1b3c6du + u.refSalt * 0x85ebca6bu));
 }
 
 fn basis(n: vec3f) -> mat3x3f {

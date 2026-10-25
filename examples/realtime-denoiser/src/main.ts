@@ -15,6 +15,17 @@
 //   &mode=view|eval|bench|capture|replay     (default view)
 //   &preset=fast|full                        fast = 960x540 (default), full = 1920x1080
 //   &w=&h=  &frames=N (truncate the path)  &refspp=256  &refs=all (render every reference)
+//   &refsalt=S                reference seed salt (default 0 = the standard references; any other
+//                             value renders an independent reference set of the same estimator)
+//   &ref2spp=N [&ref2salt=S] [&flip2=0]   eval (E-1): also render a SECOND reference set (N spp,
+//                             salt S, default 1) and score every pair against it too
+//                             (results.<signal>.<id>.vsRef2, same fields; regions keep the first
+//                             reference's masks), plus the reference noise floor per signal
+//                             (results.refFloor.<signal>: the second reference scored against the
+//                             first). No denoiser is required in this mode (floor only).
+//   &denoiser=<id>@<key>=<v>[@<key>=<v>]   a variant: the registry entry <id> with these settings
+//                             on top of the page's (e.g. shadows@sh.clampGeometry=false next to
+//                             shadows in one page, sharing references); results key = the full string
 //   &sampling=blue|white      sampler of the 1-spp signals (default blue: spatiotemporal blue
 //                             noise, src/bluenoise.ts; white = PCG per pixel/frame); references
 //                             are the same either way
@@ -75,12 +86,17 @@ const FRAMES = Math.min(Number(q.get('frames') ?? path.frames), path.frames - ST
 const RESETS = path.resets.filter((r) => r > START && r < START + FRAMES).map((r) => r - START);
 const isResetAt = (f: number) => f === 0 || RESETS.includes(f);
 const REFSPP = Number(q.get('refspp') ?? (mode === 'view' ? 64 : 256));
+const REFSALT = Number(q.get('refsalt') ?? 0);
+// E-1: second reference set (eval only): every pair is also scored against it, plus the noise floor
+const REF2SPP = mode === 'eval' ? Number(q.get('ref2spp') ?? 0) : 0;
+const REF2SALT = Number(q.get('ref2salt') ?? 1);
 const CAPTURE = mode === 'capture'
   ? q.get('name') ?? `testbed-${path.id}${START ? `-s${START}` : ''}-${FRAMES}f-${W}x${H}`
   : null;
 // URL keys the test bed reads itself; every other key is a denoiser setting (registry `settings`)
 const TESTBED_KEYS = new Set(['signal', 'signals', 'denoiser', 'path', 'mode', 'preset', 'w', 'h', 'frames', 'start', 'refspp', 'refs',
-  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling', 'dump', 'dumpRect']);
+  'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling', 'dump', 'dumpRect',
+  'refsalt', 'ref2spp', 'ref2salt', 'flip2']);
 const INJECT = q.get('noise') === 'inject'
   ? { k: Number(q.get('k') ?? 2), fireflyRate: Number(q.get('ffRate') ?? 0.01), fireflyGain: Number(q.get('ffGain') ?? 20) }
   : undefined;
@@ -143,6 +159,12 @@ interface Pair {
   flip: { frame: number; noisy: number; den: number }[];
   timings: Map<string, number[]>;
   lastOut?: GPUTexture;
+  /** results key: the denoiser id, or the full variant string (id@key=v) */
+  key: string;
+  /** E-1: scores against the second reference set (&ref2spp) */
+  scorer2?: Scorer;
+  frames2: FrameScore[];
+  flip2: { frame: number; noisy: number; den: number }[];
 }
 
 async function main() {
@@ -182,15 +204,18 @@ async function main() {
   const denParam = q.get('denoiser') ?? (mode === 'capture' ? '' : null);
   for (const s of signals) {
     const ids = (denParam ?? defaultDenoisers(s).join(',')).split(',').filter(Boolean);
-    for (const id of ids) {
+    for (const key of ids) {
+      // variant syntax id@key=v@key2=v2: extra settings for this pair only
+      const [id, ...over] = key.split('@');
       const entry = denoiserById(id);
       if (!entry) throw new Error(`unknown denoiser "${id}" (have: ${DENOISERS.map((d) => d.id).join(', ')})`);
       if (!entry.signals.includes(s)) { log(`skip ${id}: does not consume ${s}`); continue; }
-      const den = entry.entry.create(device, { width: W, height: H, signals: [toCaptureSignal(s)], settings });
-      pairs.push({ signal: s, entry, den, frames: [], flip: [], timings: new Map() });
+      const own = { ...settings, ...Object.fromEntries(over.map((kv) => { const i = kv.indexOf('='); return [kv.slice(0, i), kv.slice(i + 1)]; })) };
+      const den = entry.entry.create(device, { width: W, height: H, signals: [toCaptureSignal(s)], settings: own });
+      pairs.push({ signal: s, entry, den, frames: [], flip: [], timings: new Map(), key, frames2: [], flip2: [] });
     }
   }
-  if (!pairs.length && mode !== 'capture') throw new Error('no (signal, denoiser) pair to run');
+  if (!pairs.length && mode !== 'capture' && !REF2SPP) throw new Error('no (signal, denoiser) pair to run');
   if (pairs.length && !refsNeeded.length && mode !== 'bench') throw new Error('refspp=0 renders no references: nothing to score against');
 
   const stateAt = (f: number) => {
@@ -262,6 +287,19 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
   const age = new HistoryAge(device, W, H);
   const scorePipe = Scorer.pipeline(device);
   for (const p of pairs) p.scorer = new Scorer(device, W, H, scorePipe);
+  // E-1 second reference set: own textures (copies), a second scorer per pair, a floor scorer per signal
+  const ref2 = new Map<Signal, GPUTexture>();
+  const floor = new Map<Signal, { scorer: Scorer; frames: FrameScore[]; flip: { frame: number; noisy: number; den: number }[] }>();
+  if (REF2SPP > 0) {
+    if (INJECT) throw new Error('ref2spp does not combine with noise=inject');
+    for (const s of refs) {
+      const r = scene.signal(s).ref;
+      ref2.set(s, device.createTexture({ label: `ref2 ${s}`, size: [W, H], format: r.format, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST }));
+      floor.set(s, { scorer: new Scorer(device, W, H, scorePipe), frames: [], flip: [] });
+    }
+    for (const p of pairs) p.scorer2 = new Scorer(device, W, H, scorePipe);
+  }
+  const FLIP2 = REF2SPP > 0 && q.get('flip2') !== '0';
   const packer = FLIP ? new LdrPacker(device, W, H) : undefined;
   const view = new PanelView(device, [...document.querySelectorAll<HTMLCanvasElement>('canvas.panel')], W, H);
   const t0 = performance.now();
@@ -275,10 +313,29 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
 
   for (let f = 0; f < FRAMES; f++) {
     const { reset, cur, prev } = stateAt(f);
-    const cam = scene.render(START + f, cur, prev, { reset, refs, refSpp: REFSPP, inject: INJECT });
+    let cam: FrameCamera;
+    if (REF2SPP > 0) {
+      // second set first (rendered into the *Ref textures, copied away), then the first set in place
+      cam = scene.render(START + f, cur, prev, { reset, refs: [] });
+      scene.renderRefs(refs, REF2SPP, REF2SALT);
+      const enc = device.createCommandEncoder({ label: 'ref2 copy' });
+      for (const [s, t] of ref2) enc.copyTextureToTexture({ texture: scene.signal(s).ref }, { texture: t }, [W, H]);
+      device.queue.submit([enc.finish()]);
+      scene.renderRefs(refs, REFSPP, REFSALT);
+    } else cam = scene.render(START + f, cur, prev, { reset, refs, refSpp: REFSPP, refSalt: REFSALT, inject: INJECT });
     const frame = frameOf(f, reset, cam);
     if (writer) await writer.writeFrame({ index: f, reset, camera: cam, extra: frameExtra(scene.frameMeta!, START + f) }, captureBuffers(scene, signals, refs.length > 0));
     age.update(T, reset);
+    const scoreArgs = (sig: ReturnType<SceneSignals['signal']>, s: Signal, reset: boolean) => ({
+      depth: T.depth, rough: T.roughness, age: age.current, motion: T.motion,
+      pen: isOccSignal(s) ? sig.ref : refs.includes('shadows') ? T.visibilityRef : undefined, contact: isOccSignal(s),
+      scalar: sig.scalar, validPrev: !reset, ageK: f - lastReset(f) >= AGE_K ? AGE_K : 0,
+    });
+    // reference noise floor: the second set scored against the first (as "denoised" and "noisy")
+    for (const [s, fl] of floor) {
+      const sig = scene.signal(s);
+      fl.frames.push(await fl.scorer.score({ noisy: ref2.get(s)!, den: ref2.get(s)!, ref: sig.ref, ...scoreArgs(sig, s, reset) }));
+    }
     for (const p of pairs) {
       const den = dispatch(p, frame);
       const sig = scene.signal(p.signal);
@@ -291,15 +348,17 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
         ageK: f - lastReset(f) >= AGE_K ? AGE_K : 0,
       });
       p.frames.push(r);
+      // same masks (pen / contact from the first reference), error against the second set
+      if (p.scorer2) p.frames2.push(await p.scorer2.score({ noisy: sig.noisy, den, ref: ref2.get(p.signal)!, ...scoreArgs(sig, p.signal, reset) }));
       if (f >= 2) snapTimings(p);
       if (f === DUMP) {
         if (!dumps[p.signal]) { await dump(p.signal, 'noisy', sig.noisy); await dump(p.signal, 'ref', sig.ref); }
-        await dump(p.signal, p.entry.id, den);
+        await dump(p.signal, p.key, den);
       }
     }
     if (packer && f % FLIP_EVERY === FLIP_EVERY - 1) {
       const tf = performance.now();
-      for (const s of new Set(pairs.map((p) => p.signal))) {
+      for (const s of new Set([...pairs.map((p) => p.signal), ...floor.keys()])) {
         const sig = scene.signal(s);
         const prep = async (tex: GPUTexture) => {
           const u = unpackLdr(await packer.pack(tex, sig.ref, T.depth, sig.scalar), W, H);
@@ -308,9 +367,15 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
         const ref = await prep(sig.ref);
         const noisy = await prep(sig.noisy);
         const flipNoisy = flipMean(ref.prep, noisy.prep, ref.mask);
+        // E-1: FLIP against the second set too (non-receivers take the first set's value in every
+        // packed image; both sets are identical there)
+        const r2 = FLIP2 && ref2.has(s) ? await prep(ref2.get(s)!) : undefined;
+        const flipNoisy2 = r2 ? flipMean(r2.prep, noisy.prep, ref.mask) : NaN;
+        if (r2) { const fl = flipMean(ref.prep, r2.prep, ref.mask); floor.get(s)!.flip.push({ frame: f, noisy: fl, den: fl }); }
         for (const p of pairs.filter((pp) => pp.signal === s)) {
           const d: FlipPrepared = p.lastOut === sig.noisy ? noisy.prep : (await prep(p.lastOut!)).prep;
           p.flip.push({ frame: f, noisy: flipNoisy, den: flipMean(ref.prep, d, ref.mask) });
+          if (r2) p.flip2.push({ frame: f, noisy: flipNoisy2, den: flipMean(r2.prep, d, ref.mask) });
         }
       }
       flipMs += performance.now() - tf;
@@ -322,9 +387,9 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       // &show=age: panel 1 shows the ground-truth history age (white = >= ageK frames)
       const p0 = q.get('show') === 'age' ? { tex: age.current, mode: 2, exposure: 1 / AGE_K } : { tex: sig.noisy, mode: sig.scalar ? 0 : 1 };
       view.show([p0, { tex: p.lastOut!, mode: sig.scalar ? 0 : 1 }, { tex: sig.ref, mode: sig.scalar ? 0 : 1 }], sig.ref);
-      log(`frame ${f}: ${pairs.map((pp) => { const l = pp.frames[pp.frames.length - 1]; return `${pp.signal}/${pp.entry.id} ${psnr(l.regions[0][1], l.regions[0][2]).toFixed(2)} dB`; }).join('  ')}  (noisy ${psnr(last.regions[0][0], last.regions[0][2]).toFixed(2)})`);
+      log(`frame ${f}: ${pairs.map((pp) => { const l = pp.frames[pp.frames.length - 1]; return `${pp.signal}/${pp.key} ${psnr(l.regions[0][1], l.regions[0][2]).toFixed(2)} dB`; }).join('  ')}  (noisy ${psnr(last.regions[0][0], last.regions[0][2]).toFixed(2)})`);
     }
-    else if (!pairs.length && f % 8 === 0) log(`frame ${f}`);
+    else if (!pairs.length && f % 8 === 0) log(`frame ${f}${[...floor].map(([s, fl]) => { const l = fl.frames[fl.frames.length - 1]; return `  floor ${s} ${psnr(l.regions[0][1], l.regions[0][2]).toFixed(2)} dB`; }).join('')}`);
     out.frame = f;
   }
   if (writer) {
@@ -339,9 +404,8 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     const resets = [0, ...RESETS];
     return !resets.some((r) => f >= r && f < r + SETTLE);
   });
-  const results: Record<string, Record<string, unknown>> = {};
-  for (const p of pairs) {
-    const F = p.frames;
+  // one result record from a pair's per-frame scores (E-1: called again on the second-reference scores)
+  const summarize = (sig: Signal, F: FrameScore[], flips: { frame: number; noisy: number; den: number }[], id: string, gpu: Map<string, number[]>) => {
     const perFramePsnr = (k: 0 | 1, region = 0) => F.map((r) => psnr(r.regions[region][k], r.regions[region][2]));
     // PSNR of the mean MSE over frames (mask) and pixels: sum of squared errors / sum of counts
     const pooledPsnr = (k: 0 | 1, region = 0, mask?: boolean[]) => {
@@ -373,11 +437,10 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     const all = pooled(0);
     const allCount = F.reduce((a, r) => a + r.regions[0][2], 0);
     const den = perFramePsnr(1), noisy = perFramePsnr(0);
-    const gpuMs = Object.fromEntries([...p.timings].map(([k, v]) => [k, r4(median(v))]));
+    const gpuMs = Object.fromEntries([...gpu].map(([k, v]) => [k, r4(median(v))]));
     const afterReset = RESETS.map((r) => den[r]).filter((x) => x !== undefined);
-    results[p.signal] ??= {};
-    results[p.signal][p.entry.id] = {
-      denoiser: p.entry.id,
+    return {
+      denoiser: id,
       psnrNoisy: r4(mean(noisy)),
       psnrDen: r4(mean(den)),
       psnrDenSettled: r4(mean(den.filter((_, f) => settledMask[f]))),
@@ -392,7 +455,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       psnrDenCapped: r4(mean(den.map(capDb))),
       psnrDenSettledCapped: r4(mean(den.filter((_, f) => settledMask[f]).map(capDb))),
       psnrCapDb: PSNR_CAP_DB,
-      regions: Object.fromEntries(REGIONS.map((name, i) => [isOccSignal(p.signal) && name === 'penumbra' ? 'contact' : name, pooled(i)])),
+      regions: Object.fromEntries(REGIONS.map((name, i) => [isOccSignal(sig) && name === 'penumbra' ? 'contact' : name, pooled(i)])),
       biasDen: all.biasDen,
       biasNoisy: r4(allCount ? errN / allCount : NaN),
       energyDen: r4(lumR ? lumD / lumR - 1 : NaN),
@@ -405,18 +468,28 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       flickerMcDen: r4(tsum[3] ? tsum[0] / tsum[3] : NaN),
       tpsnrNoisy: r4(psnr(dn2, tsum[3])),
       tpsnrDen: r4(psnr(tsum[1], tsum[3])),
-      flipNoisy: r4(mean(p.flip.map((x) => x.noisy))),
-      flipDen: r4(mean(p.flip.map((x) => x.den))),
-      flipFrames: p.flip.map((x) => x.frame),
+      flipNoisy: r4(mean(flips.map((x) => x.noisy))),
+      flipDen: r4(mean(flips.map((x) => x.den))),
+      flipFrames: flips.map((x) => x.frame),
       gpuMs,
       nonFiniteInputs: nfIn, nonFiniteDenoised: nfDen,
       // [psnrNoisy, psnrDen, flickerMcDen, psnrDenDisoccluded]
       perFrame: F.map((r, f) => [noisy[f], den[f], r.temporal[3] ? r.temporal[0] / r.temporal[3] : NaN, psnr(r.regions[2][1], r.regions[2][2])].map(r4)),
     };
+  };
+  const results: Record<string, Record<string, unknown>> = {};
+  for (const p of pairs) {
+    results[p.signal] ??= {};
+    const rec: Record<string, unknown> = summarize(p.signal, p.frames, p.flip, p.key, p.timings);
+    if (p.scorer2) rec.vsRef2 = summarize(p.signal, p.frames2, p.flip2, p.key, new Map());
+    results[p.signal][p.key] = rec;
   }
+  // E-1 noise floor: the second reference scored against the first (psnrDen*, regions, flipDen)
+  const refFloor = Object.fromEntries([...floor].map(([s, fl]) => [s, summarize(s, fl.frames, fl.flip, 'ref2-vs-ref', new Map())]));
   const summary = {
     mode, path: path.id, start: START, width: W, height: H, frames: FRAMES, refSpp: REFSPP, sampling: SAMPLING, inject: INJECT ?? null,
     capture: captureInfo,
+    refSalt: REFSALT, ...(REF2SPP > 0 ? { ref2Spp: REF2SPP, ref2Salt: REF2SALT, refFloor } : {}),
     resets: [0, ...RESETS], ageK: AGE_K, flipEvery: FLIP ? FLIP_EVERY : 0, flipPpd: +PPD.toFixed(2), query: location.search,
     adapter: adapterDescription(device), userAgent: navigator.userAgent,
     demodulation: DEMODULATION, seconds: +((performance.now() - t0) / 1000).toFixed(1), flipSeconds: +(flipMs / 1000).toFixed(1),
@@ -453,12 +526,12 @@ async function runBench(device: GPUDevice, scene: SceneSignals, pairs: Pair[], {
       return { median: r4(s[Math.floor(s.length / 2)]), p25: r4(s[Math.floor(s.length * 0.25)]), p90: r4(s[Math.floor(s.length * 0.9)]), min: r4(s[0]), n: s.length };
     };
     results[p.signal] ??= {};
-    results[p.signal][p.entry.id] = {
+    results[p.signal][p.key] = {
       gpuMs: p.timings.has('total') ? st(p.timings.get('total')!) : null,
       passesMs: Object.fromEntries([...p.timings].filter(([k]) => k !== 'total').map(([k, v]) => [k, st(v).median])),
       wallMs: st(wall),
     };
-    log(`${p.signal}/${p.entry.id}: ${JSON.stringify(results[p.signal][p.entry.id])}`);
+    log(`${p.signal}/${p.key}: ${JSON.stringify(results[p.signal][p.key])}`);
   }
   out.results = { mode: 'bench', path: path.id, width: W, height: H, frames: N, sampling: SAMPLING, query: location.search, adapter: adapterDescription(device), userAgent: navigator.userAgent, results };
   out.ready = true;
