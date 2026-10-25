@@ -965,6 +965,8 @@ harness builder runs them and returns images/metrics only.)_
       shared by diffuse, specular, shadows and AO vs four internal tests. PROVENANCE: FSR3 is MIT (allowed, RULES §2).
       — orchestrator, owner: unassigned (queued after target D)
 
+- [ ] **Codex audit handoff, reviewed (2026-10-26):** read [sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md) and [sources/audit-current-state.md](sources/audit-current-state.md) (never the originals) with the staleness notes in [reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md). — clean reviewer, owner: orchestrator (fold into the queue)
+
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_

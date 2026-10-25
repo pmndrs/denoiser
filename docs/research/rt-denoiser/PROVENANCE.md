@@ -79,6 +79,20 @@ release audit's level of detail; checked the five public references (SVGF §4.2,
 survey, PBRT §9.6, A-SVGF) exist and say what is claimed. **Verdict: pass, no redactions; implementers may
 read it.** Review: [reviews/nrd-review-targets-review.md](reviews/nrd-review-targets-review.md).
 
+**Clean review of the Codex audit handoff (2026-10-26):** two files from Dennis's external auditor
+(`clean-agent-public-research-prompt.txt`, `current-denoiser-state-audit.txt`, kept outside the repo; the prompt's author
+had the separate NRD source audit in context, the state audit's subagent did not). Reviewer status **clean** (no NRD code,
+README, release notes, fork or port, nothing under or named quarantine). Checked every line for formulas, thresholds,
+constants, defaults, pass structure, data layouts, internal tests, NRD names, non-public algorithm names,
+parameter-encoding targets and mechanism phrasing, against the release audit and TASKS target D; checked the nine
+public references (Eto 2023, Rodriguez 2020, Mara 2017, SVGF, Igehy 1999, Mehta 2012, A-SVGF, Heitz 2018, Panteleev
+2020) exist and say what is claimed; spot-checked the claims about our code and results. **Verdicts: research prompt
+pass with three clauses redacted (design-hint disclaimers about distance data and another denoiser's history repair);
+state audit pass, no redactions.** Several premises are stale since 1a2861a / 4457481 / 694937c (shadows). Review:
+[reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md); reviewed copies:
+[sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md),
+[sources/audit-current-state.md](sources/audit-current-state.md).
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").
