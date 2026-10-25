@@ -32,6 +32,8 @@
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //   occlusion-*        AO / SO (derived signals `ao` / `so`): src/occlusion-entries.ts
+//   v1 signals         sh-diffuse / sh-specular / shadow-rgb baselines (svgf-plain, svgf-plain-smooth,
+//                      shadows-lumt, ffx-shadows-lumt; passthrough / accumulate* extended): src/v1-entries.ts
 //
 // Settings come from the replay page's URL (?denoiser=accumulate&maxFrames=64 ...).
 import type { TemporalDenoiser } from '../../../packages/denoiser-core/src/temporal';
@@ -46,6 +48,7 @@ import type { ShadowDenoiserOptions, ShadowLight } from '../../../packages/denoi
 import type { DenoiserEntry, ReplayDenoiser, ReplayFrame } from './replay';
 import type { CaptureLight, SignalName } from './format';
 import { registerOcclusionDenoisers } from './occlusion-entries';
+import { registerV1Denoisers } from './v1-entries';
 
 export const DENOISERS = new Map<string, DenoiserEntry>();
 
@@ -327,3 +330,6 @@ registerDenoiser({
 
 // ---- occlusion (signals ao / so, T5): src/occlusion-entries.ts --------------------------
 registerOcclusionDenoisers({ register: registerDenoiser, perSignal, recurrentOptions, svgfOptions });
+
+// ---- CAPTURE-FORMAT v1 signals (sh-diffuse, sh-specular, shadow-rgb): src/v1-entries.ts -------------
+registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, shadowOptions, shadowLightOf });

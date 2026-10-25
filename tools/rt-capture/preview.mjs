@@ -9,11 +9,14 @@
 //
 // Mappings: rgb signals Reinhard + gamma 2.2 (the metrics' tonemap); visibility clamp;
 // normal n·0.5+0.5; motion in pixels (±max → 0..1, x→R, y→G); viewz/depth/hitt/motion_z
-// normalized over non-sky pixels.
+// normalized over non-sky pixels. v1: normal_geom and *_dir like normal; transmittance and
+// shadow_rgb_ref clamped rgb + gamma; *_sh_ref = the payload evaluated at `normal` (YCoCg -> rgb,
+// Reinhard). --strip works for the v1 signals too: sh-diffuse / sh-specular (noisy = diffuse /
+// specular, reference = *_ref), shadow-rgb (noisy = visibility x transmittance, reference = shadow_rgb_ref).
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { deflateSync } from 'node:zlib';
-import { OUTPUTS_DIR, TOOL_DIR, frameDir, readBuffer, readF32, readManifest, resolveCapture } from './lib/capture.mjs';
+import { OUTPUTS_DIR, TOOL_DIR, V1_SIGNALS, frameDir, readBuffer, readF32, readManifest, resolveCapture } from './lib/capture.mjs';
 
 const args = process.argv.slice(2);
 const VALUE_OPTS = new Set(['frame', 'buffers', 'strip', 'denoisers', 'outputs']);
@@ -64,7 +67,20 @@ function toRgb(name, data, ch, depth) {
   const out = new Float32Array(N * 3);
   const sky = (i) => depth && !(depth[i] > 0 && depth[i] < 1);
   const base = name.replace(/_ref$/, '');
-  if (['diffuse', 'specular', 'albedo', 'f0'].includes(base) && ch === 3) {
+  if (name === 'diffuse_sh_ref' || name === 'specular_sh_ref') {
+    // the payload at `normal` (the sampling normal of diffuse; an approximation for specular's D_s)
+    const n = readBuffer(capDir, curFrame, 'normal');
+    for (let i = 0; i < N; i++) {
+      const y = data[6 * i] + data[6 * i + 1] * n[3 * i] + data[6 * i + 2] * n[3 * i + 1] + data[6 * i + 3] * n[3 * i + 2];
+      const co = data[6 * i + 4], cg = data[6 * i + 5];
+      const rgb = [y + co - cg, y + cg, y - co - cg];
+      for (let c = 0; c < 3; c++) out[3 * i + c] = g(rgb[c] > 0 ? rgb[c] / (1 + rgb[c]) : 0);
+    }
+  } else if (['transmittance', 'shadow_rgb_ref', 'shadow-rgb'].includes(name)) {
+    for (let i = 0; i < N * 3; i++) out[i] = g(data[i]);
+  } else if (name === 'normal_geom' || name.endsWith('_dir')) {
+    for (let i = 0; i < N * 3; i++) out[i] = data[i] * 0.5 + 0.5;
+  } else if (['diffuse', 'specular', 'albedo', 'f0', 'sh-diffuse', 'sh-specular'].includes(base) && ch === 3) {
     const tm = base === 'albedo' || base === 'f0' ? (x) => x : (x) => (x > 0 ? x / (1 + x) : 0);
     for (let i = 0; i < N * 3; i++) out[i] = g(tm(data[i]));
   } else if (base === 'visibility' || name === 'roughness') {
@@ -95,9 +111,36 @@ function hstack(images) {
 
 const written = [];
 const PFM = args.includes('--pfm');
+let curFrame = 0;
 for (const f of frames) {
+  curFrame = f;
   const depth = readBuffer(capDir, f, 'depth');
   const strip = opt('strip');
+  if (strip && V1_SIGNALS[strip]) {
+    // v1 signal: noisy from its input buffers, outputs <strip>.f32 (3 ch), reference V1_SIGNALS[strip].reference
+    const refName = V1_SIGNALS[strip].reference;
+    let noisy;
+    if (strip === 'shadow-rgb') {
+      const v = readBuffer(capDir, f, 'visibility'), t = readBuffer(capDir, f, 'transmittance');
+      noisy = new Float32Array(N * 3);
+      for (let i = 0; i < N * 3; i++) noisy[i] = v[Math.floor(i / 3)] * t[i];
+    } else noisy = readBuffer(capDir, f, V1_SIGNALS[strip].needs[0]);
+    const panels = [toRgb(strip, noisy, 3, depth)];
+    const names = ['noisy'];
+    const dens = (opt('denoisers') ?? '').split(',').filter(Boolean);
+    const list = dens.length ? dens : (existsSync(outRoot) ? (await import('./lib/capture.mjs')).listDirs(outRoot) : []);
+    for (const d of list) {
+      const p = path.join(outRoot, d, frameDir(f), `${strip}.f32`);
+      if (!existsSync(p)) continue;
+      panels.push(toRgb(strip, readF32(p), 3, depth)); names.push(d);
+    }
+    if (chOf[refName]) { panels.push(toRgb(strip, readBuffer(capDir, f, refName), 3, depth)); names.push('reference'); }
+    const { rgb, w } = hstack(panels);
+    const file = path.join(outDir, `${frameDir(f)}_${strip}_strip.png`);
+    writeFileSync(file, png(rgb, w, H));
+    written.push(`${file}  [${names.join(' | ')}]`);
+    continue;
+  }
   if (strip) {
     const ch = chOf[strip];
     const dens = (opt('denoisers') ?? '').split(',').filter(Boolean);

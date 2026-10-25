@@ -1,4 +1,4 @@
-// Browser-side capture writer (CAPTURE-FORMAT v0): reads GPU textures back to f32 and
+// Browser-side capture writer (CAPTURE-FORMAT v0 / v1): reads GPU textures back to f32 and
 // POSTs them to the rt-capture Vite plugin, which writes captures/<name>/.
 //
 //   const w = new CaptureWriter(device, 'room-pan');
@@ -9,16 +9,19 @@
 //   await w.finish();   // writes capture.json
 //
 // Textures need TEXTURE_BINDING; any float color format or depth format works (see
-// gpu-readback.ts). Channel counts come from the v0 table; unknown names pass
-// { texture | data, channels }.
+// gpu-readback.ts). Channel counts come from the v0/v1 table; unknown names pass
+// { texture | data, channels }. A buffer with more than 4 channels (v1 `*_sh_ref`, 6) is written from
+// several textures: { parts: [{ texture, channels: 4 }, { texture, channels: 2 }] } (interleaved per pixel).
+// The manifest says version 1 when any v1 buffer (format.ts V1_BUFFERS) is written, else 0.
 import type { FrameCamera } from '../../../packages/denoiser-core/src/temporal';
 import { readTextures } from './gpu-readback';
 import {
-  BUFFER_CHANNELS, CaptureClient, fromFrameCamera, frameDir, stringifyManifest,
+  BUFFER_CHANNELS, CaptureClient, V1_BUFFERS, fromFrameCamera, frameDir, stringifyManifest,
   type CaptureCamera, type CaptureFrame, type CaptureLight, type CaptureManifest,
 } from './format';
 
-export type CaptureBufferSource = GPUTexture | Float32Array | { texture: GPUTexture; channels: number } | { data: Float32Array; channels: number };
+export type CaptureBufferSource = GPUTexture | Float32Array | { texture: GPUTexture; channels: number } | { data: Float32Array; channels: number }
+  | { parts: { texture: GPUTexture; channels: number }[] };
 
 export interface CaptureMeta {
   scene: string;
@@ -86,7 +89,8 @@ export class CaptureWriter {
     const entries = names.map((name) => {
       const src = buffers[name];
       const known = (BUFFER_CHANNELS as Record<string, number>)[name];
-      const channels = 'channels' in src && typeof src.channels === 'number' ? src.channels : known;
+      const channels = 'parts' in src ? src.parts.reduce((a, p) => a + p.channels, 0)
+        : 'channels' in src && typeof src.channels === 'number' ? src.channels : known;
       if (!channels) throw new Error(`CaptureWriter: unknown buffer "${name}" needs { texture | data, channels }`);
       if (known && channels !== known) throw new Error(`CaptureWriter: ${name} has ${known} channels in v0 (got ${channels})`);
       return { name, channels, src };
@@ -99,13 +103,26 @@ export class CaptureWriter {
       if (want !== got) throw new Error(`CaptureWriter: frame ${index} buffers [${got}] differ from frame 0 [${want}]`);
     }
     const gpu = entries.filter((e) => e.src instanceof GPUTexture || 'texture' in e.src);
+    const multi = entries.filter((e) => 'parts' in e.src);
     const texOf = (s: CaptureBufferSource) => (s instanceof GPUTexture ? s : (s as { texture: GPUTexture }).texture);
-    for (const e of gpu) {
-      const t = texOf(e.src);
-      if (t.width !== meta.width || t.height !== meta.height) throw new Error(`CaptureWriter: ${e.name} is ${t.width}x${t.height}, capture is ${meta.width}x${meta.height}`);
+    const partsOf = (s: CaptureBufferSource) => (s as { parts: { texture: GPUTexture; channels: number }[] }).parts;
+    for (const t of [...gpu.map((e) => texOf(e.src)), ...multi.flatMap((e) => partsOf(e.src).map((p) => p.texture))]) {
+      if (t.width !== meta.width || t.height !== meta.height) throw new Error(`CaptureWriter: ${t.label} is ${t.width}x${t.height}, capture is ${meta.width}x${meta.height}`);
     }
-    const read = await readTextures(this.device, gpu.map((e) => ({ texture: texOf(e.src), channels: e.channels })));
+    const items = [...gpu.map((e) => ({ texture: texOf(e.src), channels: e.channels })), ...multi.flatMap((e) => partsOf(e.src))];
+    const read = await readTextures(this.device, items);
     const data = new Map<string, Float32Array>(gpu.map((e, i) => [e.name, read[i]]));
+    let k = gpu.length;
+    for (const e of multi) { // interleave the parts per pixel
+      const parts = partsOf(e.src).map((p) => ({ ch: p.channels, d: read[k++] }));
+      const out = new Float32Array(N * e.channels);
+      let c0 = 0;
+      for (const { ch, d } of parts) {
+        for (let i = 0; i < N; i++) for (let c = 0; c < ch; c++) out[i * e.channels + c0 + c] = d[i * ch + c];
+        c0 += ch;
+      }
+      data.set(e.name, out);
+    }
     for (const e of entries) {
       if (data.has(e.name)) continue;
       const d = e.src instanceof Float32Array ? e.src : (e.src as { data: Float32Array }).data;
@@ -119,7 +136,7 @@ export class CaptureWriter {
     const dir = `${this.path}/${frameDir(index)}`;
     // keep a bounded amount of uploads in flight (a 1080p frame with every buffer is ~265 MB)
     for (const [name, d] of data) {
-      const body = (d.byteOffset === 0 && d.byteLength === d.buffer.byteLength && gpu.some((e) => e.name === name) ? d.buffer : d.slice().buffer) as ArrayBuffer;
+      const body = (d.byteOffset === 0 && d.byteLength === d.buffer.byteLength && (gpu.some((e) => e.name === name) || multi.some((e) => e.name === name)) ? d.buffer : d.slice().buffer) as ArrayBuffer;
       this.pending.push(this.client.put(`${dir}/${name}.f32`, body));
       this.pendingBytes += body.byteLength;
     }
@@ -134,7 +151,7 @@ export class CaptureWriter {
     this.pending = [];
     this.pendingBytes = 0;
     const manifest: CaptureManifest = {
-      version: 0,
+      version: [...this.buffers.keys()].some((b) => (V1_BUFFERS as readonly string[]).includes(b)) ? 1 : 0,
       scene: meta.scene,
       ...(meta.generator ? { generator: meta.generator } : {}),
       width: meta.width, height: meta.height,

@@ -1,4 +1,4 @@
-// Shared Node helpers for capture format v0 (docs/research/rt-denoiser/CAPTURE-FORMAT.md):
+// Shared Node helpers for capture format v0 / v1 (docs/research/rt-denoiser/CAPTURE-FORMAT.md):
 // paths, manifest + raw f32 I/O, column-major mat4 math, the pixel <-> NDC convention
 // and the replay metrics. No dependencies.
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -17,9 +17,20 @@ export const BUFFER_CHANNELS = {
   diffuse: 3, diffuse_hitt: 1, diffuse_ref: 3,
   specular: 3, specular_hitt: 1, specular_ref: 3,
   visibility: 1, occluder_dist: 1, visibility_ref: 1,
+  // v1 (SPEC v0.3 M7-4, §7.10.4)
+  normal_geom: 3, diffuse_dir: 3, specular_dir: 3, diffuse_sh_ref: 6, specular_sh_ref: 6,
+  transmittance: 3, translucent_dist: 1, shadow_rgb_ref: 3,
 };
+/** Buffers that make a capture version 1. */
+export const V1_BUFFERS = ['normal_geom', 'diffuse_dir', 'specular_dir', 'diffuse_sh_ref', 'specular_sh_ref', 'transmittance', 'translucent_dist', 'shadow_rgb_ref'];
 /** Noisy signals a denoiser replaces (output name = input name). */
 export const SIGNALS = ['diffuse', 'specular', 'visibility'];
+/** v1 signals (output `<name>.f32`, 3 ch): the buffers they need and the reference they are scored against. */
+export const V1_SIGNALS = {
+  'sh-diffuse': { needs: ['diffuse', 'diffuse_dir'], reference: 'diffuse_ref' },
+  'sh-specular': { needs: ['specular', 'specular_dir'], reference: 'specular_ref' },
+  'shadow-rgb': { needs: ['visibility', 'transmittance'], reference: 'shadow_rgb_ref' },
+};
 
 export const frameDir = (i) => `frame_${String(i).padStart(4, '0')}`;
 
@@ -153,9 +164,12 @@ export const PSNR_CAP_DB = 60;
 /**
  * Score one frame. `out`, `ref`: Float32Array with `ch` channels; `depth`: 1 ch.
  * `prevS`: Float32Array of the previous frame's signed error (NaN = not scored) or null.
+ * `opts.clamp` (v1 shadow-rgb): rgb clamped to [0, 1] instead of Reinhard, penumbra = any channel of
+ * the reference in (0.02, 0.98), bias over penumbra pixels (as for scalar shadows).
  * Returns the per-frame numbers plus `s` (this frame's signed error) for the next call.
  */
-export function scoreFrame(out, ref, depth, ch, prevS) {
+export function scoreFrame(out, ref, depth, ch, prevS, opts = {}) {
+  if (opts.clamp) return scoreFrameClamp(out, ref, depth, ch, prevS);
   const n = depth.length;
   const s = new Float32Array(n).fill(NaN);
   let sse = 0, cnt = 0, bias = 0, biasCnt = 0, sseP = 0, cntP = 0, flick = 0, flickCnt = 0, nonFinite = 0;
@@ -189,6 +203,102 @@ export function scoreFrame(out, ref, depth, ch, prevS) {
     nonFinite,
     s,
   };
+}
+
+function scoreFrameClamp(out, ref, depth, ch, prevS) {
+  const n = depth.length;
+  const s = new Float32Array(n).fill(NaN);
+  const cl = (x) => Math.min(Math.max(x, 0), 1);
+  let sse = 0, cnt = 0, bias = 0, biasCnt = 0, sseP = 0, cntP = 0, flick = 0, flickCnt = 0, nonFinite = 0;
+  for (let i = 0; i < n; i++) {
+    for (let c = 0; c < ch; c++) if (!Number.isFinite(out[i * ch + c])) nonFinite++;
+    if (!isScored(depth[i])) continue;
+    let e2 = 0, es = 0, pen = false;
+    for (let c = 0; c < ch; c++) {
+      const o = out[i * ch + c], r = ref[i * ch + c];
+      const e = (Number.isFinite(o) ? cl(o) : 0) - cl(r);
+      e2 += e * e; es += e;
+      if (r > 0.02 && r < 0.98) pen = true;
+    }
+    es /= ch;
+    s[i] = es;
+    sse += e2; cnt += ch;
+    if (pen) { bias += es; biasCnt++; sseP += e2; cntP += ch; }
+    if (prevS && !Number.isNaN(prevS[i])) { flick += Math.abs(es - prevS[i]); flickCnt++; }
+  }
+  const psnr = (e, k) => (k ? 10 * Math.log10(1 / Math.max(e / k, 1e-12)) : NaN);
+  return {
+    psnr: psnr(sse, cnt), psnrPenumbra: psnr(sseP, cntP), penumbraPixels: cntP / ch,
+    sse, sseCount: cnt, ssePenumbra: sseP, ssePenumbraCount: cntP,
+    bias: biasCnt ? bias / biasCnt : NaN, flicker: prevS && flickCnt ? flick / flickCnt : NaN,
+    pixels: cnt / ch, nonFinite, s,
+  };
+}
+
+// ---- v1 helpers (CAPTURE-FORMAT v1 "Outputs and scoring") ------------------------------------
+
+export const reinhard = (x) => (x > 0 ? x / (1 + x) : 0);
+/** cos(5 deg): the bump mask is angle(normal, normal_geom) > 5 deg. */
+export const BUMP_COS = Math.cos((5 * Math.PI) / 180);
+
+/**
+ * SPEC M7-8 guard + M7-9 diffuse resolve of one payload p6 = (a, b.x, b.y, b.z, Co, Cg) at the detail
+ * normal nd, guide normal ng, guard k, sharpening s. Returns [r, g, b, trimmed (0/1), floored (0/1)].
+ */
+export function shResolve(p6, o, nd, ng, k = 1, s = 0) {
+  const a = p6[o], bx = p6[o + 1], by = p6[o + 2], bz = p6[o + 3], co = p6[o + 4], cg = p6[o + 5];
+  const yg = a + bx * ng[0] + by * ng[1] + bz * ng[2];
+  const bl = Math.hypot(bx, by, bz);
+  const f = Math.min(1, (k * Math.max(yg, 0)) / Math.max(bl, 1e-6));
+  const px = bx * f, py = by * f, pz = bz * f;
+  const ap = yg - (px * ng[0] + py * ng[1] + pz * ng[2]);
+  const rco = Math.min(Math.max(co / Math.max(yg, 1e-4), -2), 2), rcg = Math.min(Math.max(cg / Math.max(yg, 1e-4), -2), 2);
+  const yd = ap + px * nd[0] + py * nd[1] + pz * nd[2];
+  let y = Math.max(0, yd);
+  const pl = bl * f;
+  if (s > 0 && pl > 1e-8) {
+    const I = 2 * pl, dx = px / pl, dy = py / pl, dz = pz / pl, am = Math.max(ap - 0.5 * pl, 0);
+    const ysd = am + I * Math.max(0, nd[0] * dx + nd[1] * dy + nd[2] * dz);
+    const ysg = am + I * Math.max(0, ng[0] * dx + ng[1] * dy + ng[2] * dz);
+    y = y + (ysd * yg / Math.max(ysg, 1e-4) - y) * s;
+  }
+  const c1 = y * rco, c2 = y * rcg;
+  return [Math.max(y + c1 - c2, 0), Math.max(y + c2, 0), Math.max(y - c1 - c2, 0), f < 1 ? 1 : 0, yd < 0 ? 1 : 0];
+}
+
+/** Gaussian sigma = 2 px, radius 6: the M7-13 detail-band low-pass (same taps as the live test bed). */
+const BAND_W = Array.from({ length: 13 }, (_, i) => Math.exp(-((i - 6) ** 2) / 8));
+/**
+ * Masked, normalized separable Gaussian of a 3-channel image over the pixels with mask[i] = 1:
+ * G(x) = sum w m x / sum w m (the mask is folded into the inner sums, so it is exact in 2D).
+ */
+export function maskedBlur3(x, mask, W, H) {
+  const tmp = new Float64Array(W * H * 4), out = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) for (let px = 0; px < W; px++) {
+    let s0 = 0, s1 = 0, s2 = 0, sw = 0;
+    for (let k = -6; k <= 6; k++) {
+      const q = px + k;
+      if (q < 0 || q >= W) continue;
+      const j = y * W + q;
+      if (!mask[j]) continue;
+      const w = BAND_W[k + 6];
+      s0 += w * x[3 * j]; s1 += w * x[3 * j + 1]; s2 += w * x[3 * j + 2]; sw += w;
+    }
+    const i = y * W + px;
+    tmp[4 * i] = s0; tmp[4 * i + 1] = s1; tmp[4 * i + 2] = s2; tmp[4 * i + 3] = sw;
+  }
+  for (let y = 0; y < H; y++) for (let px = 0; px < W; px++) {
+    let s0 = 0, s1 = 0, s2 = 0, sw = 0;
+    for (let k = -6; k <= 6; k++) {
+      const q = y + k;
+      if (q < 0 || q >= H) continue;
+      const j = q * W + px, w = BAND_W[k + 6];
+      s0 += w * tmp[4 * j]; s1 += w * tmp[4 * j + 1]; s2 += w * tmp[4 * j + 2]; sw += w * tmp[4 * j + 3];
+    }
+    const i = y * W + px, d = Math.max(sw, 1e-8);
+    out[3 * i] = s0 / d; out[3 * i + 1] = s1 / d; out[3 * i + 2] = s2 / d;
+  }
+  return out;
 }
 
 export const mean = (xs) => {
