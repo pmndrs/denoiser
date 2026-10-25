@@ -409,6 +409,63 @@ Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spat
 images only through a stand-in (the test bed's sphere light handed over as a directional light,
 M4.md §10.7). Provisional: tuned and scored on the same scene.
 
+## Directional payload: `payload: 'sh'` (provisional, SPEC v0.3 §8.5 / M7)
+
+A plain denoised value is right for the normal the filter used and nothing else. With
+**normal-mapped** surfaces that's a bad trade: filter with the detail normal and the
+weights reject neighbours across every bump (noise stays); filter with the smooth normal
+and the bump shading is averaged away. `payload: 'sh'` filters a small function of
+direction per pixel instead (L1 spherical harmonics of the luma, chroma without direction,
+YCoCg: six channels in one `rgba32uint` per buffer) with the **smooth** normal, and
+evaluates it afterwards at the **detail** normal.
+
+```ts
+import { DiffuseDenoiser, ShResolver } from 'denoiser/realtime';
+
+const gi = new DiffuseDenoiser(device, { payload: 'sh', resolve: 'fused' });  // SVGF only
+gi.configure({ width, height });
+const rgb = gi.dispatch(
+  { radiance: diffuseDemod, direction: rayDirection },      // world direction of each 1-spp ray
+  { depth, normal: smoothNormal, detailNormal: shadingNormal, motion },
+  camera,
+); // rgba16float, demodulated, resolved at detailNormal
+```
+
+- **Inputs.** Per frame either `direction` (rgb, world-space direction of the sampled ray; the
+  denoiser encodes on load around `guides.detailNormal`) with `radiance`, or an encoded `sh`
+  texture (rgba32uint, 8 × f16 `a, b.xyz, Co, Cg, –, –`, SPEC M7-2). `guides.normal` is the
+  filter's (smooth) normal, `guides.detailNormal` the normal the rays were sampled around and
+  the payload is resolved at (falls back to `guides.normal`). Without either input it throws.
+- **Output.** `resolve: 'fused'` (the specular default): rgb resolved in the last à-trous pass
+  (remodulated with `remodulate: true`). `resolve: 'none'` (the diffuse default): the
+  resolve-ready payload (rgba32uint: `a', b'.xyz, ρCo, ρCg, Y_g`); resolve it with
+  `ShResolver` (compute pass, diffuse), or in your own shader with `SH_RESOLVE_WGSL`
+  (`shUnpack`, `shResolveDiffuse(p, nDetail, sharpen, nGuide)`,
+  `shResolveSpecular(p, nDetail, nGuide, view, roughness, lightSharp, rhoMax, fadeR)`), e.g.
+  to light any BSDF with the payload.
+- **Options.** `shSharpen` (0, diffuse fused resolve: blend toward ambient + one extracted light),
+  `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
+  `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (8), `shMaxRatio` (4), `shFadeRoughness` (0.2).
+  `payload` is structural; `filter: 'recurrent'` with `payload: 'sh'` throws (not built);
+  `historyFilter: 'catmull-rom'` is ignored in SH mode (the history is unfilterable; bilinear).
+- **three.js:** `realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })`
+  returns the resolved rgb (fused by default; with `resolve: 'none'` the node resolves with
+  `ShResolver` at `shResolve.normal`).
+- **Equal to the plain filter where the normals agree:** resolved at the guide normal the SH
+  filter scores like plain SVGF (test bed, 7 paths: within 0.05 dB at equal f16 rounding; results/M7.md). A fixed difference: SH packs f16 by rounding to
+  nearest, the plain buffers' `rgba16float` stores truncate on Metal, so SH reads ~0.1 dB better.
+
+### Results (provisional; full tables in `docs/research/rt-denoiser/results/M7.md`)
+
+Dev page, normal-mapped floor and wall (25° bumps), diffuse, scored against the exact irradiance at the
+detail normal (960×540, 30 frames): plain SVGF with the smooth normal 34.41 dB (bumps averaged away),
+with the detail normal 33.74 (neighbours rejected, noisy), **SH 36.80**, SH with `shSharpen: 0.5` 37.17.
+Specular SH does **not** pay on glossy bumps under a sharp light (plain with the detail normal is best;
+L1 can't hold glints), so treat specular SH as experimental. Cost (1080p, contended dev-page bench):
+diffuse 2.25 → 3.04 ms (1.35×), diffuse + specular 4.01 → 6.11 ms (1.52×). Memory: diffuse 116 B/px
+(108 with the fused resolve; plain 76), diffuse + specular 204 (plain 132), +8 with `antiLag: 'auto'`.
+
+
 ## Dev page
 
 `yarn workspace @pmndrs/denoiser-realtime dev` (port 5240), then
@@ -419,5 +476,7 @@ M4.md §10.7). Provisional: tuned and scored on the same scene.
 `antiLag=off|auto|gradient`, `kernel`, `iters`, `feedback=0|1`, `history`,
 `alpha`, `view=out|noisy|ref|err|histlen`, `gain`, `stopAt=N`, `filter=recurrent`,
 `r.<option>=…` / `t.<tune>=…` (recurrent options), `skeleton=1`, `specularFilter=svgf|recurrent`,
-`still=1` (lights don't move), `hit=0`, `--shot=file.png`,
+`still=1` (lights don't move), `hit=0`, SH (M7): `payload=sh`, `resolve=none|fused`, `sharpen`, `guard`,
+`enc`, `specRatio=sg|l1`, `lightSharp`, `maxRatio`, `fadeR`, `bumps=deg` (detail-normal bumps; reference =
+irradiance at the detail normal), `dirs=1` (directional samples), `guideNormal=detail`, `--shot=file.png`,
 `--json=file.json`. See the shader headers for sources.
