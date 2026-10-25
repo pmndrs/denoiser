@@ -1,94 +1,167 @@
-# Native comparison, round 2 (in progress)
+# Native comparison, round 2 (handoff)
 
-_Harness builder, 2026-10-26. Answers the "new scope" brief: ours at `feat/rt-denoiser-cleanroom` @ `90aa679`
-(shadows v2.2), native NRD v4.18.0 (`e06852b`) with defaults, one RTX 3060 Laptop GPU (driver 592.00).
-Round 1 (same captures, ours @ `7a8b980`, the locked-clock cost table, P1–P3, jitter) is
-[PHASE4-5.md](PHASE4-5.md). Images, metrics, timings and build facts only. This file grows as steps
-finish; each step is pushed when done._
+_Harness builder, 2026-10-26. Ours at `feat/rt-denoiser-cleanroom` @ `90aa679` (shadows v2.2), native
+NRD v4.18.0 (`e06852b`) with defaults, one RTX 3060 Laptop GPU (driver 592.00). Harness commits
+`fead856`, `f6545c4` (outside the repo). Round 1 (the locked-clock cost table, P1–P3, jitter) is in
+[PHASE4-5.md](PHASE4-5.md). Images, metrics, timings and build facts only._
 
-## Scope decisions (for the orchestrator to review)
+## For the orchestrator: is native's low shadow score a harness issue? Checked; most likely not.
 
-- **Not run: P4's version comparison (SIGMA v4.9.4 / v4.11.0) and P5 (ReBLUR v3.3.1 / v3.4.0).**
-  Building old tags means porting the harness to older integration APIs (NRD 3.x is a substantially
-  different API), about 5–9 h with a real risk the old tags don't build with today's toolchain. Ours
-  already beats current native on every signal we can score, so how native changed since the 2021
-  descriptions doesn't change a decision for us now. P4's useful half, current SIGMA vs our
-  `shadows` v2.2 on moving shadows with the dynamic / static / boil fields, **is** run (knot captures,
-  below). If a version comparison is still wanted, say which question it would answer, and it can be
-  scoped to SIGMA alone.
-- **P2, P3 and the jitter re-check are already answered** in [PHASE4-5.md](PHASE4-5.md) (pushed in
-  `24f9f4e` on this branch; not yet merged into cleanroom, which is why TASKS still shows them open):
-  - **P2:** no, input conventions don't explain native specular.
-  - **P3:** the curve table is there.
-  - **Jitter:** pixel units confirmed on `std540-orbit`.
-- Roundtrip, the standard set and `three-orbit` / `three-pan` were captured and validated in round 1;
-  the standard capture set is unchanged since, so they are reused.
+You flagged native's shadow results as suspicious. The fair concern is that the harness feeds SIGMA
+wrong inputs. These are the black-box checks on SIGMA, each changing one harness convention:
 
-## Done so far
+| check | result |
+|---|---|
+| penumbra input vs geometry | the packed penumbra matches a CPU recomputation from the capture's matrices, light and occluder distance (`synthetic-static`, exact to float precision) |
+| light size given to the penumbra helper × 0.5 … 16 | no setting helps; larger only adds positive bias. Static-penumbra boil on `three-knot-still`: 0.216 / 0.216 / 0.218 at ×1 / ×4 / ×16 |
+| viewZ sign (ours negative vs positive, with −`motion_z`) | identical (SIGMA bit-for-bit on `three-knot-still`; ≤ 0.01 dB on `std540-orbit`) |
+| motion vectors / history | `three-knot-still` has a static camera and a static scene (max \|motion\| 7e-7): SIGMA still boils at 0.22 in static penumbrae, against the reference's 0.005 |
+| stabilization setting (`maxStabilizedFrameNum` 0 / 5 / 7) | active (outputs differ) but nearly inert: boil 0.244 → 0.239 on `std540-orbit`, 0.223 → 0.216 on `three-knot-still` |
+| jitter units | pixel units confirmed (round 1) |
+| determinism, D3D12 debug layer, NRI validation | clean |
 
-1. Merged cleanroom @ `90aa679`; rebuilt the library (the `denoiser-realtime` type workaround is
-   still needed, SETUP.md); re-applied the Windows fix to `run-realtime.mjs`.
-2. Harness rebuilt (SH diffuse + translucent-shadow support for P6 / P7) and **native re-run on all
-   captures with that one build**. Every native output is bit-identical to round 1's, except SIGMA:
-   a last-bit rounding change in its penumbra input (the harness's position math moved into a
-   function) changes its output by up to 0.015 on ~4 % of pixels (scores move ≤ 0.01 dB).
-3. Ours at HEAD replayed on the whole standard set (the documented `--replay` list). One run failed
-   at startup with a Chrome WebGPU device error ("valid external Instance reference no longer exists",
-   under heavy GPU load) and passed on retry.
-4. Everything re-scored with the new `compare.mjs` (dynamic / static / boil fields).
+So with the camera, the scene and the inputs all held fixed, SIGMA's output barely uses temporal
+history. Its spatial smoothing barely responds to the penumbra size either. The output is
+lightly smoothed noise; see the knot strip below.
 
-## Standard set (8 captures), pooled PSNR (dB)
+Its public settings header is consistent with a deliberately short history: `SigmaSettings` default
+`maxStabilizedFrameNum` is 5, the maximum is 7, and the default accumulation time is 0.084 s. Our
+captures have wide penumbrae (sphere lights of radius 0.4–0.9 m) at 1 spp, and on such content any
+long-history filter wins. Even our plain `accumulate` beats SIGMA everywhere except inside moving
+shadows. I read this as a design difference, not a harness bug, with medium confidence: the one
+thing I can't do is compare against a known-good SIGMA integration.
 
-Diffuse and specular: ours at HEAD gives the same numbers as round 1 (those denoisers didn't change);
-native is unchanged. See PHASE4-5.md's tables. Shadows:
+Other places a harness choice could cost native, in order of likelihood:
 
-| # | denoiser | side | std set | settled (7× 540) | penumbra | 7× 960×540 | 1080p orbit |
+1. **REBLUR diffuse on the real scene** (32.9 / 33.2 dB) sits ~5 dB below RELAX (37.6 / 38.7) and ours.
+   REBLUR takes the hit distance normalized with default parameters (A = 3, B = 0.1, C = 20), which
+   are scale-dependent; P2 showed REBLUR specular moves ±2 dB with hit-distance scale. **Not tested on
+   diffuse or the real scene: worth a sweep before reading much into REBLUR's real-scene rows.**
+2. **Specular**: the conventions are ruled out on the synthetic captures (P2). Native stays ~4 dB
+   behind on every capture set.
+3. **Normals** are quantized (encoding 2, ~10 bit, because encoding 4 doesn't build). This is small,
+   and it affects REBLUR and RELAX equally.
+4. **Lights on the real scene** are a rectangle passed as an equal-area sphere (stated in its
+   manifest). Ours and native get the same sphere.
+5. **AO** isn't comparable: the real scene's `ao_ref` is on our normalization curve (P3, round 1).
+
+On "native shadows slower": in GPU time native SIGMA is faster than ours (0.96 vs 1.07 ms at 1080p,
+round 1, locked clocks; ours was then v2.1). In quality it converges much slower, or not at all, on
+these captures (tables below).
+
+## Diffuse (pooled PSNR, dB)
+
+| # | denoiser | side | std set (8) | three-orbit | three-pan | three-knot-static | three-knot-orbit |
 |---|---|---|---|---|---|---|---|
-| 1 | `shadows` (v2.2) | ours | **35.67** | 36.31 | 26.80 | 35.51 | 36.81 |
-| 2 | `ffx-shadows` | ours | **31.42** | 29.91 | 23.77 | 30.85 | 35.40 |
-| 3 | `accumulate` | ours | **23.67** | 26.51 | 15.50 | 23.55 | 24.46 |
-| 4 | `SIGMA_SHADOW` | native | **22.04** | 22.05 | 12.51 | 21.92 | 22.87 |
+| 1 | `svgf-auto` | ours | **37.80** | 39.83 | **40.39** | **42.09** | 39.82 |
+| 2 | `svgf` | ours | 37.69 | **39.89** | 40.27 | 41.82 | **39.88** |
+| 3 | `recurrent` | ours | 36.57 | 38.78 | 39.55 | 37.94 | 38.78 |
+| 4 | `RELAX_DIFFUSE_SPECULAR` | native | 34.68 | 37.59 | 38.73 | 36.27 | 37.59 |
+| 5 | `REBLUR_DIFFUSE_SPECULAR` | native | 33.63 | 32.93 | 33.18 | 32.22 | 32.93 |
+| 6 | `accumulate` | ours | 21.76 | 28.53 | 26.47 | 26.61 | 28.53 |
 
-### Shadows: dynamic region and boil (test-bed captures with moving shadows)
+## Specular
 
-`dynamic` = pixels whose reference visibility changed by > 0.05 within the last 4 frames.
-`boil` = RMS of the output's second temporal difference along the history ÷ √6, so lower means
-calmer. The reference's own boil (its noise floor) is in italics.
+| # | denoiser | side | std set (8) | three-orbit | three-pan | three-knot-static | three-knot-orbit |
+|---|---|---|---|---|---|---|---|
+| 1 | `svgf-auto` (= `recurrent-svgfspec`) | ours | **34.24** | **45.33** | **47.58** | **45.99** | **45.26** |
+| 2 | `svgf` | ours | 33.58 | 44.34 | 46.11 | 45.67 | 44.27 |
+| 3 | `recurrent` | ours | 32.78 | 43.02 | 44.29 | 42.46 | 42.95 |
+| 4 | `RELAX_DIFFUSE_SPECULAR` | native | 29.73 | 41.41 | 42.67 | 42.39 | 41.36 |
+| 5 | `REBLUR_DIFFUSE_SPECULAR` | native | 29.69 | 39.91 | 41.65 | 40.42 | 39.95 |
+| 6 | `accumulate` | ours | 22.90 | 39.28 | 37.34 | 40.83 | 39.23 |
+| 7 | `ffx-reflections` | ours | 20.86 | 39.11 | 40.85 | 39.52 | 39.05 |
 
-| capture | denoiser | side | pooled | penumbra | dynamic | static penumbra | boil dynamic | boil static penumbra | flicker dynamic | dyn px/frame |
-|---|---|---|---|---|---|---|---|---|---|---|
-| std540-object | `shadows` | ours | **33.85** | 25.96 | 22.24 | 27.08 | 0.0497 | 0.0172 | 0.0447 | 7615 |
-| std540-object | `ffx-shadows` | ours | **30.50** | 23.73 | 19.76 | 24.82 | 0.0461 | 0.0193 | 0.0436 | 7615 |
-| std540-object | `accumulate` | ours | **21.70** | 14.75 | 7.82 | 16.44 | 0.0769 | 0.0654 | 0.1158 | 7615 |
-| std540-object | `SIGMA_SHADOW` | native | **21.12** | 12.98 | 16.31 | 12.80 | 0.0939 | 0.2639 | 0.0689 | 7615 |
-| std540-object | noisy input / *reference boil* | – | 16.61 | 8.45 | 9.15 | 8.53 | *0.0448* | *0.0026* | 0.3770 | 7615 |
-| std540-light | `shadows` | ours | **33.76** | 25.49 | 24.92 | 27.61 | 0.1930 | 0.0108 | 0.0235 | 29431 |
-| std540-light | `ffx-shadows` | ours | **29.48** | 23.33 | 23.66 | 23.74 | 0.1950 | 0.0127 | 0.0229 | 29431 |
-| std540-light | `SIGMA_SHADOW` | native | **24.74** | 15.68 | 17.04 | 16.45 | 0.2327 | 0.1616 | 0.0539 | 29431 |
-| std540-light | `accumulate` | ours | **13.76** | 12.07 | 5.31 | 13.18 | 0.0387 | 0.0350 | 0.1673 | 29431 |
-| std540-light | noisy input / *reference boil* | – | 17.67 | 8.31 | 11.40 | 8.40 | *0.2000* | *0.0024* | 0.2070 | 29431 |
-| std540-orbit | `shadows` | ours | **35.00** | 25.11 | 20.63 | 26.87 | 0.0595 | 0.0349 | 0.0459 | 5975 |
-| std540-orbit | `ffx-shadows` | ours | **31.07** | 23.12 | 18.90 | 24.66 | 0.0582 | 0.0337 | 0.0526 | 5975 |
-| std540-orbit | `accumulate` | ours | **25.82** | 16.10 | 16.71 | 15.92 | 0.0751 | 0.0744 | 0.0843 | 5975 |
-| std540-orbit | `SIGMA_SHADOW` | native | **22.84** | 12.38 | 11.82 | 12.50 | 0.2848 | 0.2387 | 0.1824 | 5975 |
-| std540-orbit | noisy input / *reference boil* | – | 18.81 | 8.29 | 7.51 | 8.48 | *0.0612* | *0.0314* | 0.4260 | 5975 |
+The real-scene and knot specular is three's SSR (not demodulated; noisy input already 33–36 dB).
 
-- **Static penumbrae: native SIGMA boils hard**: 0.16–0.26, against 0.011–0.035 for `shadows` v2.2
-  and a reference floor of 0.002–0.031.
-- **Inside moving shadows:** `shadows` and `ffx-shadows` boil about as much as the reference itself
-  (std540-light: 0.193 / 0.195 vs the reference's 0.200; std540-object: 0.050 vs 0.045). SIGMA is above
-  the reference there (0.23 / 0.094).
-- **SIGMA beats `accumulate` only in the dynamic region** (16.3 vs 7.8 dB on std540-object), where
-  accumulation ghosts.
+## Shadows, with the dynamic region and boil
 
-## Pending (in this order)
+All sets at a glance (pooled):
 
-1. Knot captures `three-knot-static` (48 frames, nearly done), `three-knot-orbit` (40),
-   `three-knot-still` (32). This GPU writes ~1 frame a minute, so about 1.5 h.
-2. Native + ours (HEAD) on the knot captures and `three-orbit` / `three-pan`; the shadows table above
-   for the knot captures; a frame strip of the knot shadow; real-scene columns of the per-signal
-   tables.
-3. v1 captures (`--set=v1`, 8.6 GB) and P6 (native `REBLUR_DIFFUSE_SH` / `RELAX_DIFFUSE_SH`) and P7
-   (`SIGMA_SHADOW_TRANSLUCENCY`, plus `SIGMA_SHADOW` on visibility alone).
-4. Same-GPU cost table on `std1080-orbit` (ours at HEAD + native, clocks locked as in round 1,
-   medians and the fastest run).
+| # | denoiser | side | std set (8) | three-orbit | three-pan | knot-static | knot-orbit | knot-still |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `shadows` v2.2 | ours | **35.67** | **30.96** | **31.13** | **32.41** | **30.97** | **32.33** |
+| 2 | `ffx-shadows` | ours | 31.42 | 26.32 | 27.86 | 28.68 | 26.34 | 28.89 |
+| 3 | `accumulate` | ours | 23.67 | 25.96 | 25.73 | 28.94 | 25.96 | 27.57 |
+| 4 | `SIGMA_SHADOW` | native | 22.04 | 24.93 | 25.79 | 21.50 | 24.93 | 21.47 |
+
+Detail on the captures where shadows move:
+- `dynamic` = pixels whose reference changed by > 0.05 within 4 frames.
+- `boil` = RMS second temporal difference along the history ÷ √6, so lower is calmer.
+- *Italics* = the reference's own boil (its noise floor).
+- Full tables per capture are in `<capture>/compare.md`.
+
+| capture | denoiser | side | pooled | penumbra | dynamic | static penumbra | boil dynamic | boil static penumbra | dyn px/frame |
+|---|---|---|---|---|---|---|---|---|---|
+| three-knot-static | `shadows` | ours | **32.41** | 26.61 | 19.64 | 26.81 | 0.0203 | 0.0085 | 761 |
+| three-knot-static | `accumulate` | ours | 28.94 | 20.06 | 18.21 | 20.09 | 0.0369 | 0.0313 | 761 |
+| three-knot-static | `ffx-shadows` | ours | 28.68 | 23.06 | 16.59 | 23.23 | 0.0395 | 0.0094 | 761 |
+| three-knot-static | `SIGMA_SHADOW` | native | 21.50 | 12.53 | 8.81 | 12.60 | 0.3639 | 0.2135 | 761 |
+| three-knot-static | *reference* / noisy | – | 16.85 | 7.84 | 7.45 | 7.85 | *0.0212* | *0.0049* | |
+| three-knot-orbit | `shadows` | ours | **30.97** | 26.95 | 18.04 | 29.55 | 0.0489 | 0.0103 | 6913 |
+| three-knot-orbit | `ffx-shadows` | ours | 26.34 | 22.67 | 15.02 | 24.05 | 0.0463 | 0.0123 | 6913 |
+| three-knot-orbit | `accumulate` | ours | 25.96 | 19.96 | 15.77 | 20.13 | 0.0443 | 0.0448 | 6913 |
+| three-knot-orbit | `SIGMA_SHADOW` | native | 24.93 | 17.36 | 11.95 | 18.51 | 0.2215 | 0.0968 | 6913 |
+| three-knot-orbit | *reference* / noisy | – | 16.06 | 7.80 | 7.76 | 7.82 | *0.0730* | *0.0108* | |
+| three-knot-still (control) | `shadows` | ours | **32.33** | 26.55 | – | 26.55 | – | 0.0096 | 0 |
+| three-knot-still | `SIGMA_SHADOW` | native | 21.47 | 12.53 | – | 12.53 | – | 0.2164 | 0 |
+| three-knot-still | *reference* | – | 16.79 | 7.81 | – | 7.81 | – | *0.0048* | |
+| std540-object | `shadows` | ours | **33.85** | 25.96 | 22.24 | 27.08 | 0.0497 | 0.0172 | 7615 |
+| std540-object | `ffx-shadows` | ours | 30.50 | 23.73 | 19.76 | 24.82 | 0.0461 | 0.0193 | 7615 |
+| std540-object | `SIGMA_SHADOW` | native | 21.12 | 12.98 | 16.31 | 12.80 | 0.0939 | 0.2639 | 7615 |
+| std540-object | *reference* / noisy | – | 16.61 | 8.45 | 9.15 | 8.53 | *0.0448* | *0.0026* | |
+| std540-light | `shadows` | ours | **33.76** | 25.49 | 24.92 | 27.61 | 0.1930 | 0.0108 | 29431 |
+| std540-light | `ffx-shadows` | ours | 29.48 | 23.33 | 23.66 | 23.74 | 0.1950 | 0.0127 | 29431 |
+| std540-light | `SIGMA_SHADOW` | native | 24.74 | 15.68 | 17.04 | 16.45 | 0.2327 | 0.1616 | 29431 |
+| std540-light | *reference* / noisy | – | 17.67 | 8.31 | 11.40 | 8.40 | *0.2000* | *0.0024* | |
+
+- **Moving shadows.** `shadows` v2.2 leads in the dynamic region on every capture. Its boil
+  there is at or below the reference's own on the knot captures (0.020 vs 0.021 on knot-static).
+  SIGMA boils 0.09–0.36 in the dynamic region and 0.10–0.26 in static penumbrae.
+- **`three-knot-orbit` and `three-orbit` score nearly the same.** Same camera path; the rotating knot
+  adds a small shadow region (6913 vs 6483 dynamic px/frame).
+
+Knot shadow strip, `three-knot-static`, frames 12 / 24 / 36 / 47. Panels: noisy | SIGMA | `shadows` |
+`ffx-shadows` | reference.
+
+![f12](three-knot-static/strip_f12_visibility.png)
+![f24](three-knot-static/strip_f24_visibility.png)
+![f36](three-knot-static/strip_f36_visibility.png)
+![f47](three-knot-static/strip_f47_visibility.png)
+
+## AO (pooled; real-scene captures only)
+
+| # | denoiser | side | three-orbit | three-pan | three-knot-static | three-knot-orbit |
+|---|---|---|---|---|---|---|
+| 1 | `occlusion-svgf` | ours | **33.42** | **33.55** | 39.96 | **33.43** |
+| 2 | `occlusion-svgf-auto` | ours | 33.10 | 33.47 | **40.42** | 33.10 |
+| 3 | `occlusion-recurrent` | ours | 32.53 | 32.59 | 35.60 | 32.53 |
+| – | `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` | native | not comparable | not comparable | not comparable | not comparable |
+
+There's no SO reference anywhere, and the standard set has no AO reference.
+
+## Not done (left for the next session or the orchestrator's call)
+
+- **P6 and P7 weren't run.** The harness supports them now:
+  - `reblur-sh` / `relax-sh` read out colour, SG resolve and SH resolve as `sh-diffuse`, plus memory
+    in `run.json`;
+  - `sigma-translucency` gives `shadow-rgb` + `visibility`, with `--translucency-mode 0|1` for the
+    two ways a translucent layer can feed the penumbra input.
+
+  The v1 captures were stopped to hand off. A partial `v1-bumpy` is on disk; rewrite it with
+  `--set=v1` before use.
+- **Cost re-run at HEAD.** Round 1's locked-clock table stands (all within 2× native). Shadows moved
+  v2.1 → v2.2 since; not re-timed.
+- **P4's version comparison and P5** were skipped by decision (scope note in the earlier interim).
+  The knot results above cover P4's moving-shadow question with current SIGMA.
+- **REBLUR hit-distance sweep on diffuse / real scene** (item 1 above). Worth doing before trusting
+  REBLUR's real-scene rows.
+
+## What changed since the interim push
+
+- `three-knot-static` (48), `three-knot-orbit` (40), `three-knot-still` (32) captured and VALID:
+  25–29 s per frame on this GPU, 2048-ray visibility references.
+- Native and ours at HEAD on the knot captures and `three-orbit` / `three-pan`; all scored with
+  `compare.mjs` (dynamic / static / boil) and `score-captures.mjs` (AO, FLIP).
+- SIGMA checks above. Harness probe switches added: `--sigma-stab`, `--viewz-positive`,
+  `--light-size-scale`.

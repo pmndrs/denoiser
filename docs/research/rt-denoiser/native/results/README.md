@@ -1,6 +1,6 @@
 # Native NRD results (black box)
 
-**Round 2 (ours at HEAD, shadows dynamic / boil, knot captures, P6 / P7; in progress): [ROUND2.md](ROUND2.md).**
+**Round 2 (handoff: ours at HEAD, knot captures, shadows dynamic / boil, SIGMA harness checks): [ROUND2.md](ROUND2.md).**
 
 **Phases 4–5 (ours vs native on the standard set and the real scene, same-GPU cost, P2, P3, jitter): [PHASE4-5.md](PHASE4-5.md).** The rest of this page is the phase 1–3 smoke test.
 
