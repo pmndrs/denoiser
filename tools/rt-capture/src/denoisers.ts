@@ -29,6 +29,10 @@
 //   shadows            denoiser/realtime ShadowDenoiser (visibility; provisional, SPEC v0 §7): the
 //                      light comes from the frame's `lights` (test bed / per-frame extras) or the
 //                      manifest's; settings `sh.<option>=v` (see shadowOptions())
+//   shadows-translucent  ShadowDenoiser({ translucency: true }) (SPEC v0.3 §7.10, M8; provisional): on shadow-rgb
+//                      the coloured shadow v̂·τ̂ (rgba16float, v̂ in alpha), and on visibility the opaque v̂ of the
+//                      same instance (exactly the `shadows` output when there is no transmittance); `tr.hit=none`
+//                      drops translucent_dist; sh.<option> settings as `shadows`
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //   occlusion-*        AO / SO (derived signals `ao` / `so`): src/occlusion-entries.ts
@@ -320,6 +324,35 @@ registerDenoiser({
             ...(light ? { light } : {}),
           }, frame.guides, frame.camera),
         };
+      },
+      resetHistory() { den.resetHistory(); },
+      gpuTimings() { return new Map(den.gpuTimings ?? []); },
+      dispose() { den.dispose(); },
+    };
+  },
+});
+
+registerDenoiser({
+  id: 'shadows-translucent', description: 'denoiser/realtime ShadowDenoiser with translucency (M8, coloured shadows, provisional)', signals: ['shadow-rgb', 'visibility'],
+  create: (device, ctx) => {
+    const den = new ShadowDenoiser(device, { ...shadowOptions(ctx.settings), translucency: true });
+    den.configure({ width: ctx.width, height: ctx.height });
+    const noTrHit = ctx.settings['tr.hit'] === 'none';
+    const rgb = ctx.signals.includes('shadow-rgb');
+    return {
+      signals: ctx.signals,
+      dispatch(frame: ReplayFrame) {
+        const inp = rgb ? frame.inputs['shadow-rgb'] : frame.inputs.visibility;
+        if (!inp) throw new Error(`shadows-translucent: capture has no ${rgb ? 'shadow-rgb' : 'visibility'} input`);
+        const light = shadowLightOf(frame.meta?.lights as CaptureLight[] | undefined) ?? shadowLightOf(frame.manifest.lights);
+        const tr = rgb ? frame.inputs['shadow-rgb']! : undefined;
+        const out = den.dispatch({
+          visibility: inp.visibility, ...(inp.hitDistance ? { hitDistance: inp.hitDistance } : {}), ...(light ? { light } : {}),
+          ...(tr ? { translucency: tr.translucency } : {}), ...(tr?.translucencyHitDistance && !noTrHit ? { translucencyHitDistance: tr.translucencyHitDistance } : {}),
+        }, frame.guides, frame.camera);
+        // visibility: the opaque v̂ in r32float (wide path), else the output (alpha = v̂; scalar readers take .r = v̂ τ̂_r)
+        const vis = den.debugTexture('visibility') ?? out;
+        return { ...(rgb ? { 'shadow-rgb': out } : {}), ...(ctx.signals.includes('visibility') ? { visibility: vis } : {}) };
       },
       resetHistory() { den.resetHistory(); },
       gpuTimings() { return new Map(den.gpuTimings ?? []); },
