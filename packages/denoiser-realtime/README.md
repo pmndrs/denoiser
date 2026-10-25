@@ -15,7 +15,7 @@ reflection denoisers (`denoiser/ffx` keeps working).
 | `OcclusionDenoiser` | AO / SO from hit distance (provisional, [Occlusion](#occlusion-provisional)) | `TemporalDenoiser<OcclusionInputs>` (+ `dispatchBoth`) |
 
 Classes are named by what they denoise; the algorithm is an option:
-`filter: 'svgf'` (the default for every signal, with `antiLag: 'auto'`; occlusion: `'off'`) or `filter: 'recurrent'`
+`filter: 'svgf'` (the default for every signal, with `antiLag: 'auto'`) or `filter: 'recurrent'`
 (opt-in, the memory-lean filter; see [Recurrent filter](#recurrent-filter-provisional)). Defaults
 as decided by Dennis on 2026-10-25 (SPEC §12); everything stays experimental.
 
@@ -273,14 +273,13 @@ diffuse + A-SVGF specular mix 5.98 ms. On the test-bed bench with anti-lag v2 (S
 occlusion (SO, from the specular ray) as the **normalized hit distance** of the renderer's
 1-spp rays, ĥ = h / (h + a + b·depth) (SPEC F-3 / §8; a = `hitDistanceScale` = 1 world unit,
 b = `hitDistanceViewScale` = 0.05; miss → 1). Output: ĥ in `.r` (1 = open, → 0 at contact).
-**Default filter `'svgf'`** (since 2026-10-25, SPEC §12 item 1; it was `'recurrent'`), with
-**`antiLag: 'off'`** (SPEC §12 item 2; the radiance classes default to `'auto'`). Provisional: defaults
-were tuned on the test bed it is scored on.
+**Default filter `'svgf'`** (since 2026-10-25, SPEC §12 item 1; it was `'recurrent'`), with SVGF's
+default `antiLag: 'auto'`. Provisional: defaults were tuned on the test bed it is scored on.
 
 ```ts
 import { OcclusionDenoiser } from 'denoiser/realtime';
 
-const ao = new OcclusionDenoiser(device);                                // filter 'svgf', antiLag 'off'; or { filter: 'recurrent' }
+const ao = new OcclusionDenoiser(device);                                // filter 'svgf'; or { filter: 'recurrent' }
 ao.configure({ width, height });
 const aoTex = ao.dispatch({ hitDistance: diffuseHitT }, guides, camera); // ĥ in .r
 
@@ -298,8 +297,9 @@ const { diffuse, specular } = both.dispatchBoth(
 - `filter: 'svgf'` (default): SVGF (unchanged `SvgfPipeline`) on ĥ written as a gray image by a
   normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
   `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
-  1080p). `antiLag` defaults to `'off'` here (radiance: `'auto'`): `'auto'` is level on AO on the test bed
-  and 0.1–0.3 dB behind on the three.js scene, +0.9 dB on SO, and 0.8 ms dearer for AO + SO on the RTX bench.
+  1080p). `antiLag` as for radiance (`'auto'` by default). `'off'` is the cheaper option (AO + SO −0.2 ms on the
+  M5 Pro, −0.8 ms on the RTX bench, 4 B/px less per signal) at AO contact −0.6 dB, AO flicker +15 % and SO −0.9 dB
+  on the test bed; it was briefly the default and was reverted (`docs/research/rt-denoiser/results/OCCLUSION-ANTILAG.md`).
 - `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image). It
   starts at the denoiser's default curve (a 1, b 0.05); `setCurve(a, b, far)` changes it.
 - "Free" AO / SO: `filter: 'recurrent'` radiance outputs keep the denoised ĥ in alpha. It costs
@@ -313,14 +313,14 @@ mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `resu
 |---|---|---|---|---|---|---|
 | noisy 1 spp | 14.55 | 9.65 | 17.65 | 14.72 | | |
 | `recurrent` | 38.02 | 31.09 | 37.37 | 33.47 | **1.32** / **1.32** / **2.39** | **57.5** / **73.5** |
-| `svgf`, `antiLag: 'off'` (**the default**) | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.92 / 2.99 | 84 / 148 |
-| `svgf`, `antiLag: 'auto'` (anti-lag v1; re-measured with v2: 39.03 / 39.68 dB, 1.67 / 1.61 / 3.10 ms median joint, 88 / 156 B/px, REMEASURE §3) | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.53 / 5.27 | 92 / 163 |
+| `svgf`, `antiLag: 'off'` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.92 / 2.99 | 84 / 148 |
+| `svgf`, `antiLag: 'auto'` (anti-lag v1; **the default**, re-measured with v2: 39.03 / 39.68 dB, 1.67 / 1.61 / 3.10 ms median joint, 88 / 156 B/px, REMEASURE §3) | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.53 / 5.27 | 92 / 163 |
 | recurrent radiance alpha ("free") | 35.15 | 27.64 | 35.47 | 32.10 | 0 extra | 0 extra |
 
 (Medians run 15–60 % above the fastest-clock numbers; `results/M5.md` §5.)
 
 SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB AO,
-+1.4 dB SO), A-SVGF `auto` is best on SO (+0.9 dB over `'off'`) and level on AO; recurrent is the memory-lean option and flickers
++1.4 dB SO), A-SVGF `auto` is best overall; recurrent is the memory-lean option and flickers
 least on the static-light path. The radiance alpha is 2.9 dB (AO) / 1.9 dB (SO) below the
 dedicated recurrent mode and doubles FLIP: "nearly free" holds for cost, not for quality. On the
 three.js scene with a moving camera (AO only, `docs/research/rt-denoiser/native/results/PHASE4-5.md`)

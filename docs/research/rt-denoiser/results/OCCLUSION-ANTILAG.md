@@ -1,5 +1,11 @@
 # Occlusion SVGF: `antiLag` default `'off'` (2026-10-26)
 
+**Decision (orchestrator, 2026-10-26): reverted.** `OcclusionDenoiser` inherits SVGF's `'auto'` again. Under TASKS
+rule 9, `'off'` loses to `'auto'` on the test bed (AO contact −0.6 dB, AO flicker +15 %, SO −0.9 dB), and the cost
+saving (AO + SO −0.2 ms M5 Pro / −0.8 ms RTX, −4 B/px per signal) plus the small real-scene AO gain
+(+0.07…+0.33 dB) don't outweigh that. `'off'` stays the documented cheaper option. The revert's byte checks are at the
+end of this page. What follows is the record of the flip as it was made.
+
 **Decision (Dennis, 2026-10-25; SPEC §12 item 2):** `OcclusionDenoiser` with `filter: 'svgf'` defaults to
 `antiLag: 'off'`, independently of SVGF radiance's `'auto'` default. `'auto'` stays an option. Code:
 `resolveOcclusion` in `packages/denoiser-realtime/src/occlusion.ts` (`antiLag: svgf.antiLag ?? 'off'`);
@@ -72,3 +78,18 @@ SO alone 1.77 vs 1.61 (fastest; on SO `'auto'` is the cheaper one there). On the
 - SO: `'auto'` is 0.9 dB better on the test bed (pan +1.6, cut +1.1, object +2.4), with no real-scene
   reference to check it. A caller who uses SO should pass `{ antiLag: 'auto' }`.
 - Cost: `'off'` saves 0.2 ms joint on the M5 Pro and 0.8 ms on the RTX bench, plus 4 B/px per signal.
+
+## Revert byte checks (2026-10-26)
+
+`resolveOcclusion` no longer sets `antiLag`, so it inherits SVGF's default `'auto'`. Apart from comments, the code
+is the 64acae0 version again. The two snapshots: the `'off'`-default build (aa118bf's `occlusion.ts`) and the
+revert (only `occlusion.ts` swapped). The setup and replays are the same as above, 32 files per pair:
+
+| pair | `std540-orbit` | `three-orbit` |
+|---|---|---|
+| revert: class default vs `occlusion-svgf-auto` (explicit `'auto'`) | identical | identical |
+| explicit `'auto'`, revert vs `'off'` build | identical | identical |
+| explicit `'off'` (`occlusion-svgf`), revert vs `'off'` build | identical | identical |
+| `occlusion-recurrent`, revert vs `'off'` build | identical | identical |
+| `'off'` build: class default vs `occlusion-svgf` (sanity) | identical | identical |
+| class default, revert vs `'off'` build (should differ) | 31 / 32 differ | 31 / 32 differ |

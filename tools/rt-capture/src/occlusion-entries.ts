@@ -6,8 +6,9 @@
 //
 //   occlusion-recurrent        OcclusionDenoiser, recurrent occlusion-only mode (ao + so in shared
 //                              dispatches when both are requested)
-//   occlusion-svgf             OcclusionDenoiser, SVGF on ĥ, antiLag 'off' (= OcclusionDenoiser's default, byte-checked;
-//                              pinned anyway, SVGF radiance defaults to 'auto');  occlusion-svgf-auto  the same, antiLag 'auto'
+//   occlusion-svgf             OcclusionDenoiser, SVGF on ĥ, antiLag 'off' (pinned: SVGF's default is 'auto' since
+//                              2026-10-25);  occlusion-svgf-auto  the same, antiLag 'auto' (= OcclusionDenoiser's default,
+//                              byte-checked; an 'off' default was tried and reverted, results/OCCLUSION-ANTILAG.md)
 //   occlusion-radiance-alpha   AO / SO "for free": the recurrent RADIANCE denoiser (DiffuseDenoiser /
 //                              SpecularDenoiser on radiance + hit distance) and its output alpha (ĥ)
 //   occlusion-accumulate-32    normalized ĥ through the accumulate-32 baseline (needs viewz + motion_z)

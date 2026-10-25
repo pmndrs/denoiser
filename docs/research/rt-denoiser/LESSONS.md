@@ -732,3 +732,6 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   occlusion A/B reproduced REMEASURE §3 to the last digit). Before calling a mean gap "level", read the per-path and
   per-region rows: occlusion AO `'off'` vs `'auto'` was −0.10 dB mean but −0.6 dB in contact, almost all of it on
   `object`. — occlusion-antilag-off, 2026-10-26
+- Judge a default flip region by region (contact, dynamic, flicker), not by the pooled mean: the occlusion `'off'` flip
+  looked "level" at −0.10 dB pooled but lost 0.6 dB in contact, added 15 % AO flicker, and was reverted under rule 9.
+  — occlusion-antilag-off, 2026-10-26
