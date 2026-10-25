@@ -9,11 +9,13 @@
 //   realtimeSpecular(radiance, opts)               SpecularDenoiser       -> rgb
 //   realtimeDiffuseSpecular({ diffuse, specular }) DiffuseSpecularDenoiser -> .diffuse / .specular nodes
 //   realtimeOcclusion(hitDistance, opts)           OcclusionDenoiser      -> ĥ in .r (.diffuse / .specular with signal 'both')
+//   realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })
+//                                                  DiffuseDenoiser, SH    -> rgb resolved at the detail normal
 //
 // The algorithm stays an option of the class (`denoiser: { filter: ... }`); the
 // nodes never pick a filter or a default of their own.
 import {
-  DiffuseDenoiser, DiffuseSpecularDenoiser, OcclusionDenoiser, ShadowDenoiser, SpecularDenoiser,
+  DiffuseDenoiser, DiffuseSpecularDenoiser, OcclusionDenoiser, ShadowDenoiser, ShResolver, SpecularDenoiser,
 } from '@pmndrs/denoiser-realtime';
 import type {
   DiffuseDenoiserOptions, DiffuseSpecularDenoiserOptions, OcclusionDenoiserOptions, ShadowDenoiserOptions,
@@ -78,6 +80,19 @@ export interface RealtimeDiffuseOptions extends RadianceCommon {
   hitDistance?: TextureNodeLike;
   demodulation?: TextureNodeLike;
   denoiser?: DiffuseDenoiserOptions;
+  /**
+   * `denoiser.payload: 'sh'` (directional, SPEC M7): world-space direction of each sample's ray (rgb).
+   * Then pass the smooth (geometric / vertex) normal as `normal` and the normal-mapped one as `detailNormal`.
+   */
+  direction?: TextureNodeLike;
+  /** `payload: 'sh'`: the normal-mapped normal the rays were sampled around (same space / encoding options as `normal`). */
+  detailNormal?: TextureNodeLike;
+  /**
+   * `payload: 'sh'` with `denoiser.resolve: 'none'`: the node resolves the payload itself (ShResolver), at
+   * `normal` (default: `detailNormal`), with sharpening `sharpen` in [0, 1] (default 0). Without
+   * `denoiser.resolve` the node asks the denoiser for its fused resolve (cheaper).
+   */
+  shResolve?: { normal?: TextureNodeLike; sharpen?: number };
 }
 
 export interface RealtimeSpecularOptions extends RadianceCommon {
@@ -181,6 +196,34 @@ class BothNode<I extends object> extends TemporalDenoiseNode<I> {
   }
 }
 
+/**
+ * Directional (SH) diffuse: the detail normal rides along as an input (`guide.detailNormal`) and is
+ * moved into the guides here; a resolve-ready payload (resolve 'none', rgba32uint) is resolved with
+ * ShResolver so the node's output stays rgb.
+ */
+class ShDiffuseNode extends TemporalDenoiseNode<object> {
+  private resolver?: ShResolver;
+  constructor(create: (d: GPUDevice) => TemporalDenoiser<object>, inputs: Record<string, TextureNodeLike>,
+    guides: TemporalGuideNodes, camera: Camera, private readonly opts: RealtimeDiffuseOptions) {
+    super(create, inputs, guides, camera, opts.node);
+  }
+
+  protected dispatchDenoiser(denoiser: TemporalDenoiser<object>, inputs: Record<string, GPUTexture>, guides: FrameGuides, camera: FrameCamera): GPUTexture[] {
+    const { 'guide.detailNormal': detail, 'guide.resolveNormal': resolveNormal, ...rest } = inputs;
+    const g: FrameGuides = { ...guides, ...(detail ? { detailNormal: detail } : {}) };
+    const out = denoiser.dispatch(rest, g, camera);
+    if (out.format !== 'rgba32uint') return [out];
+    this.resolver ??= new ShResolver(denoiser.device, { sharpen: this.opts.shResolve?.sharpen ?? 0 });
+    return [this.resolver.resolve(out, resolveNormal ?? detail ?? guides.normal, guides.normal)];
+  }
+
+  dispose() {
+    this.resolver?.dispose();
+    this.resolver = undefined;
+    super.dispose();
+  }
+}
+
 function twoOutputs<I extends object>(node: BothNode<I>): TwoOutputNodeObject<I> {
   const obj = denoiseNodeObject(node) as TwoOutputNodeObject<I>;
   Object.defineProperty(node, 'diffuse', { get: () => node.getOutputNode(0), configurable: true });
@@ -220,6 +263,17 @@ export function realtimeDiffuse(radiance: TextureNodeLike, options: RealtimeDiff
   const inputs: Record<string, TextureNodeLike> = { radiance: radianceTexture(radiance, scale, sanitize) };
   if (options.hitDistance) inputs.hitDistance = scalarTexture(options.hitDistance, scale, sanitize);
   if (options.demodulation) inputs.demodulation = options.demodulation;
+  const d = options.denoiser as { payload?: string; resolve?: string } | undefined;
+  if (d?.payload === 'sh') {
+    if (!options.direction) throw new Error("realtimeDiffuse: payload 'sh' needs `direction`");
+    inputs.direction = toSignalTexture(options.direction, scale, (n) => vec4(n.xyz, 0), { force: !options.direction.isTextureNode });
+    if (options.detailNormal) inputs['guide.detailNormal'] = worldNormalTexture(options.detailNormal, options);
+    if (options.shResolve?.normal) inputs['guide.resolveNormal'] = worldNormalTexture(options.shResolve.normal, options);
+    const den = { ...options.denoiser, resolve: d.resolve ?? 'fused' } as DiffuseDenoiserOptions;
+    return denoiseNodeObject(new ShDiffuseNode(
+      (device) => new DiffuseDenoiser(device, den) as unknown as TemporalDenoiser<object>, inputs, guidesOf(options), options.camera, options,
+    ));
+  }
   return denoiseNodeObject(new TemporalDenoiseNode(
     (device) => new DiffuseDenoiser(device, options.denoiser), inputs, guidesOf(options), options.camera, options.node,
   ));
