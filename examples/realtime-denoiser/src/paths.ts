@@ -147,6 +147,44 @@ export const PATHS: PathDef[] = [
   },
 ];
 
+// ---- shadow motion separation (shadows-motion, results/SHADOWS-MOTION.md): one thing moves per path
+// (camera / light / occluder) or nothing (frozen control), under a hard local light (sphere r 4 cm, ~1.6-2.6 m
+// above the occluders: near-hard edges, contact shadows) or a wide "sun" (sphere r 8 at distance 100, angular
+// radius 0.08 rad: wide penumbrae; replay it with `sh.light=directional` for the directional code path).
+// Motion profile s(f), 80 frames: 0..24 forward (0 -> 1), 25..40 hold, 41..64 reverse (1 -> 0), 65..79 hold.
+// Every path is at s = 0 on frame 0 and from frame 64 on, where it equals its frozen control frame for frame.
+export const SM_FRAMES = 80;
+/** motion phase of frame f: 0 = reset frame, 1 move, 2 hold, 3 reverse, 4 hold (results/SHADOWS-MOTION.md) */
+export const smPhase = (f: number) => (f === 0 ? 0 : f <= 24 ? 1 : f <= 40 ? 2 : f <= 64 ? 3 : 4);
+const smS = (f: number) => (f <= 24 ? f / 24 : f <= 40 ? 1 : f <= 64 ? 1 - (f - 40) / 24 : 0);
+const SM_EYE: V3 = [0.6, 2.4, 7.8];
+const SM_TARGET: V3 = [0.6, 0.5, 1.6];
+const smHard = (s: number) => light([1.4 + 1.44 * s, 3.0, 1.9], 0.04);   // 6 cm per frame while moving
+const SM_SUN_EL = (50 * Math.PI) / 180, SM_SUN_AZ = Math.atan2(4, 3);
+const smSun = (s: number): LightState => {
+  const az = SM_SUN_AZ + 0.25 * s;   // 0.6 deg per frame while moving
+  return light([100 * Math.cos(SM_SUN_EL) * Math.sin(az), 100 * Math.sin(SM_SUN_EL), 100 * Math.cos(SM_SUN_EL) * Math.cos(az)], 8);
+};
+/** camera orbit about SM_TARGET by 0.25 s rad (~7 cm per frame while moving) */
+const smEye = (s: number): V3 => {
+  const a = 0.25 * s, dx = SM_EYE[0] - SM_TARGET[0], dz = SM_EYE[2] - SM_TARGET[2];
+  return [SM_TARGET[0] + dx * Math.cos(a) + dz * Math.sin(a), SM_EYE[1], SM_TARGET[2] - dx * Math.sin(a) + dz * Math.cos(a)];
+};
+const smObj = (s: number): V3 => [1.2 + 1.4 * s, OBJ_RADIUS, 1.1];   // rests on the floor, ~6 cm per frame
+for (const [lk, lf, about] of [['hard', smHard, 'hard local light (r 4 cm)'], ['sun', smSun, 'wide sun (0.08 rad)']] as const) {
+  const mk = (motion: string, what: string, at: (s: number) => FrameState): PathDef => ({
+    id: `sm-${lk}-${motion}`, label: `${lk}: ${motion}`, frames: SM_FRAMES, resets: [],
+    about: `shadow motion separation, ${about}: ${what}; move 1-24, hold 25-40, reverse 41-64, hold 65-79`,
+    at: (f) => at(smS(f)),
+  });
+  PATHS.push(
+    mk('camera', 'camera orbit only', (s) => state(smEye(s), SM_TARGET, lf(0), smObj(0))),
+    mk('light', 'light motion only', (s) => state(SM_EYE, SM_TARGET, lf(s), smObj(0))),
+    mk('object', 'occluder (sphere on the floor) motion only', (s) => state(SM_EYE, SM_TARGET, lf(0), smObj(s))),
+    mk('frozen', 'nothing moves (control; = every sm path at s = 0)', () => state(SM_EYE, SM_TARGET, lf(0), smObj(0))),
+  );
+}
+
 export const pathById = (id: string) => PATHS.find((p) => p.id === id);
 
 /** frame f of path p is a history reset (first frame or a camera cut) */

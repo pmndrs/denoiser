@@ -30,6 +30,11 @@ export const CAPTURE_SETS = {
     { name: 'v1-glass-moving', path: 'glass-moving', start: 0, frames: 40, w: 960, h: 540, signals: 'shadow-rgb' },  // M8: moving panel, static camera
     { name: 'v1-glass-still', path: 'glass-still', start: 0, frames: 16, w: 960, h: 540, signals: 'shadow-rgb' },    // M8: frozen control (boil)
   ],
+  // Shadow motion separation (results/SHADOWS-MOTION.md): camera / light / occluder motion and a frozen control
+  // under a hard local light and a wide sun, each with move / hold / reverse / hold (paths sm-*, 80 frames),
+  // shadows only (visibility + occluder distance + guides), 960x540.
+  'shadow-motion': ['hard', 'sun'].flatMap((l) => ['camera', 'light', 'object', 'frozen'].map((mo) => (
+    { name: `sm-${l}-${mo}`, path: `sm-${l}-${mo}`, start: 0, frames: 80, w: 960, h: 540, signals: 'shadows' }))),
   // T0.7 round trip (small): orbit + cut across its reset
   roundtrip: [
     { name: 'rt-orbit', path: 'orbit', start: 0, frames: 24, w: 960, h: 540 },

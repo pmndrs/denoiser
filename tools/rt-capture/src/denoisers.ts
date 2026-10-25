@@ -286,10 +286,11 @@ registerDenoiser({
  * switches for experiments: `sh.light=none` (no light: noise-driven radius),
  * `sh.light=directional` (the sphere light handed over as a directional light toward its
  * centre from the world origin, angular radius asin(R / |position|) x `sh.dirScale`, default
- * 1: tests the directional code path on sphere-lit images) and `sh.hit=none` (drop the
- * occluder distance).
+ * 1: tests the directional code path on sphere-lit images), `sh.hit=none` (drop the
+ * occluder distance) and `sh.noHistory=true` (reset the history before every frame: the no-history
+ * first-frame control of results/SHADOWS-MOTION.md).
  */
-const SHADOW_INPUT_KEYS = new Set(['sh.light', 'sh.hit', 'sh.dirScale']);
+const SHADOW_INPUT_KEYS = new Set(['sh.light', 'sh.hit', 'sh.dirScale', 'sh.noHistory']);
 export function shadowOptions(st: Record<string, string>): ShadowDenoiserOptions {
   const o: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(st)) {
@@ -316,11 +317,13 @@ registerDenoiser({
     const asDirectional = ctx.settings['sh.light'] === 'directional';
     const dirScale = Number(ctx.settings['sh.dirScale'] ?? 1);
     const noHit = ctx.settings['sh.hit'] === 'none';
+    const noHistory = ctx.settings['sh.noHistory'] === 'true';
     return {
       signals: ['visibility'],
       dispatch(frame: ReplayFrame) {
         const inp = frame.inputs.visibility;
         if (!inp) throw new Error('shadows: capture has no visibility input');
+        if (noHistory) den.resetHistory();
         // per-frame lights (test bed extras, CAPTURE-FORMAT v1 proposal) before the capture's
         let light = noLight ? undefined
           : shadowLightOf(frame.meta?.lights as CaptureLight[] | undefined) ?? shadowLightOf(frame.manifest.lights);
