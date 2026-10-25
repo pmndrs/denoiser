@@ -105,7 +105,7 @@ recurrent vs SVGF swapped, M1 §11).
 | recurrent diffuse | §5 | yes (M2) | opt-in, memory-lean; not the default (item 1, decided) |
 | recurrent specular | §5.6 | yes (M3) | opt-in; `filter: 'recurrent'` on the joint class = recurrent for both signals (item 1, decided) |
 | shadows | §7 | yes (M4, v2.2) | provisional; §7 describes v2, the v2.1 / v2.2 note at its top has the rest; `uniformSnap: 'change'` default (item 5, decided) |
-| occlusion | §8 | yes (M5) | default filter `'svgf'` (item 1, decided); AO curve kept (item 6) |
+| occlusion | §8 | yes (M5) | default filter `'svgf'` (item 1, decided) with `antiLag: 'off'` (item 2, decided); AO curve kept (item 6) |
 | TSL nodes, real-scene pages | — | yes (M6) | outside this spec; the real scene is the second scoring scene (item 7); the pages stay local (decided) |
 | SH/SG directional | §8.5 | yes (M7) | provisional (results/M7.md); payload, resolve and scope as recommended (items 10–12, decided) |
 | translucent shadows | §7.10 | yes (M8) | provisional (results/M8.md); output and storage limit as recommended (items 13–14, decided) |
@@ -129,8 +129,8 @@ where it was reported); GPU ms on the M5 Pro at 1080p; internal memory in bytes 
 | filter | AO PSNR | SO PSNR | ms AO / SO / both | B/px AO / both |
 |---|---|---|---|---|
 | recurrent occlusion-only mode (`OcclusionDenoiser` default until 2026-10-25) | 38.02 | 37.37 | **1.32 / 1.32 / 2.27** | **57.5 / 73.5** |
-| SVGF on ĥ, `antiLag: 'off'` | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 |
-| A-SVGF `auto` on ĥ (v2; **`OcclusionDenoiser` default** since 2026-10-25: `'svgf'` + SVGF's default anti-lag) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 |
+| SVGF on ĥ, `antiLag: 'off'` (**`OcclusionDenoiser` default** since 2026-10-25, item 2) | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 |
+| A-SVGF `auto` on ĥ (v2; the class default for a few hours on 2026-10-25, via SVGF's default; opt-in since) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 |
 | recurrent radiance output's alpha ("free" AO/SO) | 35.15 | 35.47 | 0 extra | 0 extra |
 
 **Shadows** (M4 §10): ours (v2) **37.11** dB, penumbra **28.57**, disoccluded 34.68, FLIP
@@ -204,7 +204,7 @@ recurrent filter reads 11 % higher on the dev page (4.44 vs 3.99), so compare fi
    opt-in, memory-lean filter; `DiffuseSpecularDenoiser({ filter: 'recurrent' })` = recurrent for
    both signals (the hybrid stays reachable explicitly). Re-check if a fixed native integration
    changes the ranking.
-2. **SVGF `antiLag` default** (q02): `'auto'` (v2).
+2. **SVGF `antiLag` default** (q02): `'auto'` (v2). `OcclusionDenoiser`'s SVGF defaults to `'off'` (§12 item 2).
 3. **Cost target** (q03): ≤ 2× native on the same GPU is binding (met: 1.00–1.48×); 4 ms on the
    M5 Pro is a guide ± 10 %.
 4. **Memory** (q04): ~140 B/px accepted for the SVGF default; recurrent is the ≤ 100 B/px option.
@@ -1791,7 +1791,7 @@ diffuse filter (2.02 ms), because per-tap geometry loads and plane tests dominat
 only the pre-blur goes away. Untried levers: bilinear history instead of the 16-load Catmull-Rom
 (temporal 0.47 ms), 4-tap blur, a single-signal fast history as r32float (−8 B/px).
 
-### 8.3 SVGF on ĥ (`filter: 'svgf'`, new in v0.2; the default since v0.4, with SVGF's default `antiLag: 'auto'`)
+### 8.3 SVGF on ĥ (`filter: 'svgf'`, new in v0.2; the default since v0.4, with `antiLag: 'off'` by default)
 
 Not in v0.1. A normalization pass (`HitDistanceNormalizer`, also exported for a noisy AO / SO
 preview) writes ĥ as a gray rgba16float image; the unchanged SVGF pipeline (§4) filters it with
@@ -1806,7 +1806,9 @@ preview) writes ĥ as a gray rgba16float image; the unchanged SVGF pipeline (§4
 
 At 1080p the radiance defaults give 38.44 / 36.96 and the occlusion defaults 38.93 / 38.76:
 fewer, tighter iterations keep contact detail. M5 ran the committed anti-lag **v1**; A-SVGF on ĥ
-with v2 is unmeasured (TASKS).
+with v2: AO / SO 39.03 / 39.68 (REMEASURE §3). **Default `antiLag: 'off'`** (§12 item 2, set in
+`resolveOcclusion`, not inherited from SVGF's `'auto'`): AO 0.1 dB below `'auto'` on the test bed and
+0.1–0.3 dB above it on the real scene, SO 0.9 dB below, cheaper (results/OCCLUSION-ANTILAG.md).
 
 ### 8.4 Not adopted, not built, native comparison
 
@@ -2377,6 +2379,7 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 
 2. **SVGF `antiLag` default** (the svgf-antilag agent's proposal in TASKS).
    **Decided 2026-10-25 (Dennis): (a).** `'auto'` (v2) is the default (64a1123); `'off'` stays an option.
+   **Occlusion (Dennis, 2026-10-25): `OcclusionDenoiser` with `filter: 'svgf'` defaults to `'off'`**, independently of the radiance default; `'auto'` stays an option. Evidence: AO about level on the test bed (`'off'` 38.93 vs 39.03 dB, contact −0.6, mostly `object`) and ahead on the real scene (+0.07…+0.33 dB, contact +0.2…+0.4), ~10 % more flicker, SO −0.9 dB, AO + SO 0.8 ms cheaper on the RTX bench (4.15 vs 4.95 ms; M5 Pro 2.89 vs 3.10); byte checks and A/B in [results/OCCLUSION-ANTILAG.md](results/OCCLUSION-ANTILAG.md).
    - *Evidence* (M1 §12). `'auto'` v2 vs `'off'`: diffuse 39.12 vs 38.88 (+0.24), specular 35.04
      vs 33.46 (+1.58; `glossy` +3.8, `'off'`'s specular lag), FLIP 0.033 / 0.046 vs 0.036 / 0.051,
      lower flicker; light-flip recovery 4 / 3 frames vs 5 / 8; joint 4.24 vs 3.99 ms (+0.25; v1

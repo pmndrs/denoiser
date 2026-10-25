@@ -18,8 +18,8 @@ pass cites its public source in the shader header and in
 
 > [!WARNING]
 > **Experimental.** The API, the option names and the defaults may still change. The
-> defaults were decided on 2026-10-25 (SVGF for every signal, with `antiLag: 'auto'`; the
-> recurrent filter is opt-in) and will be re-checked on more scenes. Every quality number
+> defaults were decided on 2026-10-25 (SVGF for every signal, with `antiLag: 'auto'`, `'off'` for
+> occlusion; the recurrent filter is opt-in) and will be re-checked on more scenes. Every quality number
 > below was measured on our own analytic test bed and one three.js scene, and the defaults
 > were tuned on the same scenes, so treat the numbers as provisional. GPU times are from an
 > Apple M5 Pro unless noted; the comparison with native NRD ran on an RTX 3060 Laptop GPU.
@@ -353,7 +353,7 @@ depth; 0 gives a pure world-space AO radius).
 ```ts
 import { OcclusionDenoiser } from 'denoiser/realtime';
 
-const ao = new OcclusionDenoiser(device);       // filter 'svgf' (antiLag 'auto'); or { filter: 'recurrent' }
+const ao = new OcclusionDenoiser(device);       // filter 'svgf' (antiLag 'off'); or { filter: 'recurrent' }
 ao.configure({ width, height });
 const aoTex = ao.dispatch({ hitDistance: diffuseHit }, { depth, normal, motion }, camera);
 
@@ -370,19 +370,21 @@ const { diffuse: aoOut, specular: soOut } = both.dispatchBoth(
 - `signal`: `'diffuse'` (AO, default), `'specular'` (SO, needs `guides.roughness`) or
   `'both'` (use `dispatchBoth()`).
 - Output: ĥ in `.r`. With `'svgf'` it is rgba16float gray, with `'recurrent'` r32float.
-- **The default filter is `'svgf'`** (since 2026-10-25; it was `'recurrent'`), with SVGF's
-  default `antiLag: 'auto'`. `'recurrent'` is the memory-lean option.
+- **The default filter is `'svgf'`** (since 2026-10-25; it was `'recurrent'`), with
+  `antiLag: 'off'` (the lighting classes default to `'auto'`). `{ antiLag: 'auto' }` is the
+  better choice for SO; `'recurrent'` is the memory-lean option.
 
 | `OcclusionDenoiser` | AO PSNR | SO PSNR | GPU ms AO / SO / both | memory AO / both |
 |---|---|---|---|---|
-| **`{}`** (`'svgf'`, `antiLag: 'auto'`, the default) | **39.03 dB** | **39.68 dB** | 1.67 / 1.61 / 2.75 | 88 / 156 B/px |
-| `{ antiLag: 'off' }` (plain SVGF) | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 B/px |
+| **`{}`** (`'svgf'`, `antiLag: 'off'`, the default) | 38.93 dB | 38.76 dB | 1.37 / 1.92 / 2.54 | 84 / 148 B/px |
+| `{ antiLag: 'auto' }` (A-SVGF) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 B/px |
 | `{ filter: 'recurrent' }` | 38.02 | 37.37 | **1.32 / 1.32 / 2.27** | **57.5 / 73.5 B/px** |
 
 Test bed, 1080p, 7 paths, pooled PSNR on ĥ, fastest-clock GPU time (medians run 15–60 %
 higher). SVGF wins every path on both signals. On the three.js scene with a moving camera
 (AO only) plain SVGF leads (33.4 / 33.6 dB orbit / pan), `'auto'` is 0.1–0.3 dB behind and
-recurrent 0.9 dB behind. Sources:
+recurrent 0.9 dB behind. That, and `'off'` costing 0.8 ms less for AO + SO next to native NRD,
+made `'off'` the occlusion default; `'auto'` flickers slightly less. Sources:
 [M5](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M5.md),
 [REMEASURE](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/REMEASURE-2026-10-25.md),
 [native phases 4–5](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/native/results/PHASE4-5.md).
@@ -421,7 +423,7 @@ one table above when it matters.
 | `SpecularDenoiser`, recurrent | 2.79 | |
 | `DiffuseSpecularDenoiser`, SVGF `'auto'` (default) / `'off'` / recurrent | 4.23 / 4.00 / 3.99 | 140 / 132 / 105.5 B/px |
 | `ShadowDenoiser` | 0.55–0.72 | 48 B/px + 16 B per 8×8 tile (≈ 100 MB) |
-| `OcclusionDenoiser` AO, SVGF `'auto'` (default) / `'off'` / recurrent | 1.67 / 1.37 / 1.32 | 88 / 84 / 57.5 B/px (182 / 174 / 119 MB) |
+| `OcclusionDenoiser` AO, SVGF `'off'` (default) / `'auto'` / recurrent | 1.37 / 1.67 / 1.32 | 84 / 88 / 57.5 B/px (174 / 182 / 119 MB) |
 | for reference: `FfxShadowDenoiser` / `FfxReflectionDenoiser` | 0.49 / 1.66 | |
 
 Anti-lag `'auto'` adds 4 B/px per signal (`antiLag: 'off'` saves it and about 0.25 ms for

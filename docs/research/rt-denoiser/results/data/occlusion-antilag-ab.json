@@ -1,0 +1,4689 @@
+{
+ "testbed": {
+  "orbit": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=orbit",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 15.3846,
+      "psnrDen": 39.6874,
+      "psnrDenSettled": 39.8396,
+      "psnrDenFirstFrame": 36.9725,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.3792,
+      "psnrDenPooled": 39.6436,
+      "psnrDenSettledPooled": 39.8252,
+      "psnrNoisyCapped": 15.3846,
+      "psnrDenCapped": 39.6874,
+      "psnrDenSettledCapped": 39.8396,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1620180,
+        "psnrNoisy": 15.3792,
+        "psnrDen": 39.6436,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 39.6436,
+        "psnrDenMean": 39.6874,
+        "psnrDenCapped": 39.6874
+       },
+       "contact": {
+        "pixelsPerFrame": 28491,
+        "psnrNoisy": 9.4186,
+        "psnrDen": 32.6322,
+        "biasDen": 0.0047,
+        "psnrDenPooled": 32.6322,
+        "psnrDenMean": 32.6553,
+        "psnrDenCapped": 32.6553
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 119619,
+        "psnrNoisy": 12.6108,
+        "psnrDen": 35.3249,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 35.3249,
+        "psnrDenMean": 35.3639,
+        "psnrDenCapped": 35.3639
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 371763,
+        "psnrNoisy": 15.5296,
+        "psnrDen": 43.1971,
+        "biasDen": -0.001,
+        "psnrDenPooled": 43.1971,
+        "psnrDenMean": 43.2123,
+        "psnrDenCapped": 43.2123
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 488969,
+        "psnrNoisy": 16.07,
+        "psnrDen": 40.9654,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.9654,
+        "psnrDenMean": 41.5619,
+        "psnrDenCapped": 41.5619
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 701105,
+        "psnrNoisy": 15.2623,
+        "psnrDen": 37.8711,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 37.8711,
+        "psnrDenMean": 37.878,
+        "psnrDenCapped": 37.878
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 58343,
+        "psnrNoisy": 12.1126,
+        "psnrDen": 41.1719,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 41.1719,
+        "psnrDenMean": 41.1896,
+        "psnrDenCapped": 41.1896
+       },
+       "dynamic": {
+        "pixelsPerFrame": 10172,
+        "psnrNoisy": 11.2078,
+        "psnrDen": 26.0435,
+        "biasDen": 0.0124,
+        "psnrDenPooled": 26.0435,
+        "psnrDenMean": 26.0838,
+        "psnrDenCapped": 26.0838
+       },
+       "static": {
+        "pixelsPerFrame": 1610008,
+        "psnrNoisy": 15.4237,
+        "psnrDen": 40.2907,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 40.2907,
+        "psnrDenMean": 40.3314,
+        "psnrDenCapped": 40.3314
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 10172,
+        "psnrNoisy": 8.215,
+        "psnrDen": 24.416,
+        "biasDen": 0.0502,
+        "psnrDenPooled": 24.416,
+        "psnrDenMean": 24.4895,
+        "psnrDenCapped": 24.4895
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1577328,
+        "psnrNoisy": 12.4324,
+        "psnrDen": 38.6615,
+        "biasDen": 0.006,
+        "psnrDenPooled": 38.6615,
+        "psnrDenMean": 38.6972,
+        "psnrDenCapped": 38.6972
+       }
+      },
+      "biasDen": -0.0007,
+      "biasNoisy": 0,
+      "energyDen": -0.0008,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1157,
+      "flickerDen": 0.0046,
+      "flickerMcNoisy": 0.108,
+      "flickerMcDen": 0.0063,
+      "tpsnrNoisy": 12.387,
+      "tpsnrDen": 38.0023,
+      "flipNoisy": 0.0992,
+      "flipDen": 0.0168,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 3.0052,
+       "normalize": 1.8911,
+       "temporal": 4.5535,
+       "variance": 2.58,
+       "atrous_0": 3.2067,
+       "atrous_1": 4.1216,
+       "atrous_2": 4.0389,
+       "total": 32.3358
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 15.3846,
+      "psnrDen": 39.6048,
+      "psnrDenSettled": 39.7475,
+      "psnrDenFirstFrame": 36.9725,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.3792,
+      "psnrDenPooled": 39.5684,
+      "psnrDenSettledPooled": 39.7373,
+      "psnrNoisyCapped": 15.3846,
+      "psnrDenCapped": 39.6048,
+      "psnrDenSettledCapped": 39.7475,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1620180,
+        "psnrNoisy": 15.3792,
+        "psnrDen": 39.5684,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 39.5684,
+        "psnrDenMean": 39.6048,
+        "psnrDenCapped": 39.6048
+       },
+       "contact": {
+        "pixelsPerFrame": 28491,
+        "psnrNoisy": 9.4186,
+        "psnrDen": 32.4908,
+        "biasDen": 0.0055,
+        "psnrDenPooled": 32.4908,
+        "psnrDenMean": 32.5111,
+        "psnrDenCapped": 32.5111
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 119619,
+        "psnrNoisy": 12.6108,
+        "psnrDen": 35.2513,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 35.2513,
+        "psnrDenMean": 35.2891,
+        "psnrDenCapped": 35.2891
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 371763,
+        "psnrNoisy": 15.5296,
+        "psnrDen": 43.0464,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 43.0464,
+        "psnrDenMean": 43.0621,
+        "psnrDenCapped": 43.0621
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 488969,
+        "psnrNoisy": 16.07,
+        "psnrDen": 40.83,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.83,
+        "psnrDenMean": 41.348,
+        "psnrDenCapped": 41.348
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 701105,
+        "psnrNoisy": 15.2623,
+        "psnrDen": 37.8316,
+        "biasDen": -0.002,
+        "psnrDenPooled": 37.8316,
+        "psnrDenMean": 37.838,
+        "psnrDenCapped": 37.838
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 58343,
+        "psnrNoisy": 12.1126,
+        "psnrDen": 41.0232,
+        "biasDen": -0.0026,
+        "psnrDenPooled": 41.0232,
+        "psnrDenMean": 41.055,
+        "psnrDenCapped": 41.055
+       },
+       "dynamic": {
+        "pixelsPerFrame": 10172,
+        "psnrNoisy": 11.2078,
+        "psnrDen": 26.0673,
+        "biasDen": 0.0104,
+        "psnrDenPooled": 26.0673,
+        "psnrDenMean": 26.0974,
+        "psnrDenCapped": 26.0974
+       },
+       "static": {
+        "pixelsPerFrame": 1610008,
+        "psnrNoisy": 15.4237,
+        "psnrDen": 40.1991,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 40.1991,
+        "psnrDenMean": 40.2336,
+        "psnrDenCapped": 40.2336
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 10172,
+        "psnrNoisy": 8.215,
+        "psnrDen": 24.4426,
+        "biasDen": 0.05,
+        "psnrDenPooled": 24.4426,
+        "psnrDenMean": 24.5161,
+        "psnrDenCapped": 24.5161
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1577328,
+        "psnrNoisy": 12.4324,
+        "psnrDen": 38.8317,
+        "biasDen": 0.0058,
+        "psnrDenPooled": 38.8317,
+        "psnrDenMean": 38.8728,
+        "psnrDenCapped": 38.8728
+       }
+      },
+      "biasDen": -0.0021,
+      "biasNoisy": 0,
+      "energyDen": -0.0023,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1157,
+      "flickerDen": 0.0041,
+      "flickerMcNoisy": 0.108,
+      "flickerMcDen": 0.0061,
+      "tpsnrNoisy": 12.387,
+      "tpsnrDen": 38.1512,
+      "flipNoisy": 0.0992,
+      "flipDen": 0.0187,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.383,
+       "normalize": 1.6666,
+       "gradient_create": 0.5563,
+       "gradient_atrous_0": 0.2599,
+       "gradient_atrous_1": 0.2075,
+       "gradient_atrous_2": 0.2074,
+       "gradient_atrous_3": 0.1981,
+       "gradient_lambda": 0.2717,
+       "temporal": 4.011,
+       "variance": 2.1472,
+       "atrous_0": 3.5014,
+       "atrous_1": 3.5884,
+       "atrous_2": 4.034,
+       "total": 32.8872
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 18.9537,
+      "psnrDen": 40.4344,
+      "psnrDenSettled": 40.4876,
+      "psnrDenFirstFrame": 38.3697,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.9492,
+      "psnrDenPooled": 40.4238,
+      "psnrDenSettledPooled": 40.4824,
+      "psnrNoisyCapped": 18.9537,
+      "psnrDenCapped": 40.4344,
+      "psnrDenSettledCapped": 40.4876,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1620180,
+        "psnrNoisy": 18.9492,
+        "psnrDen": 40.4238,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 40.4238,
+        "psnrDenMean": 40.4344,
+        "psnrDenCapped": 40.4344
+       },
+       "contact": {
+        "pixelsPerFrame": 164113,
+        "psnrNoisy": 15.2727,
+        "psnrDen": 35.9425,
+        "biasDen": -0.001,
+        "psnrDenPooled": 35.9425,
+        "psnrDenMean": 35.9661,
+        "psnrDenCapped": 35.9661
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 119619,
+        "psnrNoisy": 15.2961,
+        "psnrDen": 37.5115,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 37.5115,
+        "psnrDenMean": 37.5666,
+        "psnrDenCapped": 37.5666
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 371763,
+        "psnrNoisy": 35.1101,
+        "psnrDen": 40.2781,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.2781,
+        "psnrDenMean": 40.3121,
+        "psnrDenCapped": 40.3121
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 488969,
+        "psnrNoisy": 21.4325,
+        "psnrDen": 40.3857,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 40.3857,
+        "psnrDenMean": 40.4802,
+        "psnrDenCapped": 40.4802
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 701105,
+        "psnrNoisy": 17.1452,
+        "psnrDen": 40.5202,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.5202,
+        "psnrDenMean": 40.5433,
+        "psnrDenCapped": 40.5433
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 58343,
+        "psnrNoisy": 12.247,
+        "psnrDen": 40.5459,
+        "biasDen": -0.0017,
+        "psnrDenPooled": 40.5459,
+        "psnrDenMean": 40.5478,
+        "psnrDenCapped": 40.5478
+       },
+       "dynamic": {
+        "pixelsPerFrame": 5104,
+        "psnrNoisy": 11.588,
+        "psnrDen": 22.7477,
+        "biasDen": 0.0121,
+        "psnrDenPooled": 22.7477,
+        "psnrDenMean": 22.6216,
+        "psnrDenCapped": 22.6216
+       },
+       "static": {
+        "pixelsPerFrame": 1615076,
+        "psnrNoisy": 19.0106,
+        "psnrDen": 41.2958,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 41.2958,
+        "psnrDenMean": 41.3111,
+        "psnrDenCapped": 41.3111
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 5104,
+        "psnrNoisy": 8.5928,
+        "psnrDen": 25.665,
+        "biasDen": 0.0276,
+        "psnrDenPooled": 25.665,
+        "psnrDenMean": 25.5076,
+        "psnrDenCapped": 25.5076
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1582396,
+        "psnrNoisy": 16.0805,
+        "psnrDen": 43.0572,
+        "biasDen": 0.0031,
+        "psnrDenPooled": 43.0572,
+        "psnrDenMean": 43.0738,
+        "psnrDenCapped": 43.0738
+       }
+      },
+      "biasDen": -0.0008,
+      "biasNoisy": 0,
+      "energyDen": -0.0009,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0588,
+      "flickerDen": 0.0032,
+      "flickerMcNoisy": 0.0539,
+      "flickerMcDen": 0.0032,
+      "tpsnrNoisy": 16.0166,
+      "tpsnrDen": 42.3636,
+      "flipNoisy": 0.0585,
+      "flipDen": 0.0164,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.1553,
+       "normalize": 1.8986,
+       "temporal": 4.0947,
+       "variance": 4.3642,
+       "atrous_0": 3.8739,
+       "atrous_1": 4.1984,
+       "atrous_2": 4.3488,
+       "total": 34.623
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 18.9537,
+      "psnrDen": 40.8681,
+      "psnrDenSettled": 40.9399,
+      "psnrDenFirstFrame": 38.5182,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.9492,
+      "psnrDenPooled": 40.8554,
+      "psnrDenSettledPooled": 40.9354,
+      "psnrNoisyCapped": 18.9537,
+      "psnrDenCapped": 40.8681,
+      "psnrDenSettledCapped": 40.9399,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1620180,
+        "psnrNoisy": 18.9492,
+        "psnrDen": 40.8554,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 40.8554,
+        "psnrDenMean": 40.8681,
+        "psnrDenCapped": 40.8681
+       },
+       "contact": {
+        "pixelsPerFrame": 164113,
+        "psnrNoisy": 15.2727,
+        "psnrDen": 36.3241,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 36.3241,
+        "psnrDenMean": 36.3366,
+        "psnrDenCapped": 36.3366
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 119619,
+        "psnrNoisy": 15.2961,
+        "psnrDen": 37.544,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 37.544,
+        "psnrDenMean": 37.576,
+        "psnrDenCapped": 37.576
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 371763,
+        "psnrNoisy": 35.1101,
+        "psnrDen": 41.6104,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 41.6104,
+        "psnrDenMean": 41.6441,
+        "psnrDenCapped": 41.6441
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 488969,
+        "psnrNoisy": 21.4325,
+        "psnrDen": 41.0183,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 41.0183,
+        "psnrDenMean": 41.1095,
+        "psnrDenCapped": 41.1095
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 701105,
+        "psnrNoisy": 17.1452,
+        "psnrDen": 40.4353,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.4353,
+        "psnrDenMean": 40.4632,
+        "psnrDenCapped": 40.4632
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 58343,
+        "psnrNoisy": 12.247,
+        "psnrDen": 40.4227,
+        "biasDen": -0.0017,
+        "psnrDenPooled": 40.4227,
+        "psnrDenMean": 40.429,
+        "psnrDenCapped": 40.429
+       },
+       "dynamic": {
+        "pixelsPerFrame": 5104,
+        "psnrNoisy": 11.588,
+        "psnrDen": 23.5955,
+        "biasDen": 0.0105,
+        "psnrDenPooled": 23.5955,
+        "psnrDenMean": 23.4672,
+        "psnrDenCapped": 23.4672
+       },
+       "static": {
+        "pixelsPerFrame": 1615076,
+        "psnrNoisy": 19.0106,
+        "psnrDen": 41.6385,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 41.6385,
+        "psnrDenMean": 41.6567,
+        "psnrDenCapped": 41.6567
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 5104,
+        "psnrNoisy": 8.5928,
+        "psnrDen": 25.8315,
+        "biasDen": 0.0278,
+        "psnrDenPooled": 25.8315,
+        "psnrDenMean": 25.6795,
+        "psnrDenCapped": 25.6795
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1582396,
+        "psnrNoisy": 16.0805,
+        "psnrDen": 42.9382,
+        "biasDen": 0.0031,
+        "psnrDenPooled": 42.9382,
+        "psnrDenMean": 42.9569,
+        "psnrDenCapped": 42.9569
+       }
+      },
+      "biasDen": -0.0008,
+      "biasNoisy": 0,
+      "energyDen": -0.0009,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0588,
+      "flickerDen": 0.0033,
+      "flickerMcNoisy": 0.0539,
+      "flickerMcDen": 0.0032,
+      "tpsnrNoisy": 16.0166,
+      "tpsnrDen": 42.2864,
+      "flipNoisy": 0.0585,
+      "flipDen": 0.0161,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.4865,
+       "normalize": 2.0768,
+       "gradient_create": 0.6036,
+       "gradient_atrous_0": 0.2506,
+       "gradient_atrous_1": 0.2686,
+       "gradient_atrous_2": 0.2168,
+       "gradient_atrous_3": 0.251,
+       "gradient_lambda": 0.3008,
+       "temporal": 3.8561,
+       "variance": 2.903,
+       "atrous_0": 3.779,
+       "atrous_1": 3.9894,
+       "atrous_2": 4.0916,
+       "total": 35.4384
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "pan": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=pan",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 17.7656,
+      "psnrDen": 42.0983,
+      "psnrDenSettled": 42.2147,
+      "psnrDenFirstFrame": 39.7092,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.607,
+      "psnrDenPooled": 39.5598,
+      "psnrDenSettledPooled": 39.4612,
+      "psnrNoisyCapped": 17.7656,
+      "psnrDenCapped": 42.0983,
+      "psnrDenSettledCapped": 42.2147,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1301150,
+        "psnrNoisy": 14.607,
+        "psnrDen": 39.5598,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 39.5598,
+        "psnrDenMean": 42.0983,
+        "psnrDenCapped": 42.0983
+       },
+       "contact": {
+        "pixelsPerFrame": 36375,
+        "psnrNoisy": 9.7619,
+        "psnrDen": 34.7169,
+        "biasDen": 0.0004,
+        "psnrDenPooled": 34.7169,
+        "psnrDenMean": 33.6878,
+        "psnrDenCapped": 33.6878
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 311804,
+        "psnrNoisy": 14.7378,
+        "psnrDen": 37.7097,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 37.7097,
+        "psnrDenMean": 41.9495,
+        "psnrDenCapped": 41.566
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 453268,
+        "psnrNoisy": 15.7514,
+        "psnrDen": 42.9995,
+        "biasDen": -0.0013,
+        "psnrDenPooled": 42.9995,
+        "psnrDenMean": 44.3001,
+        "psnrDenCapped": 44.3001
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 373370,
+        "psnrNoisy": 15.4086,
+        "psnrDen": 39.1416,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 39.1416,
+        "psnrDenMean": 41.7594,
+        "psnrDenCapped": 41.7594
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 416595,
+        "psnrNoisy": 13.3774,
+        "psnrDen": 37.6024,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 37.6024,
+        "psnrDenMean": 41.6022,
+        "psnrDenCapped": 41.6022
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 57916,
+        "psnrNoisy": 12.7165,
+        "psnrDen": 42.2857,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 42.2857,
+        "psnrDenMean": 42.2297,
+        "psnrDenCapped": 42.2297
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6867,
+        "psnrNoisy": 11.343,
+        "psnrDen": 26.1853,
+        "biasDen": 0.0102,
+        "psnrDenPooled": 26.1853,
+        "psnrDenMean": 26.5593,
+        "psnrDenCapped": 26.5593
+       },
+       "static": {
+        "pixelsPerFrame": 1294283,
+        "psnrNoisy": 14.6329,
+        "psnrDen": 40.0664,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 40.0664,
+        "psnrDenMean": 42.4017,
+        "psnrDenCapped": 42.4017
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6867,
+        "psnrNoisy": 8.3504,
+        "psnrDen": 24.3609,
+        "biasDen": 0.0509,
+        "psnrDenPooled": 24.3609,
+        "psnrDenMean": 25.1399,
+        "psnrDenCapped": 25.1399
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1215193,
+        "psnrNoisy": 11.6081,
+        "psnrDen": 38.3168,
+        "biasDen": 0.0066,
+        "psnrDenPooled": 38.3168,
+        "psnrDenMean": 41.5089,
+        "psnrDenCapped": 41.4926
+       }
+      },
+      "biasDen": -0.0011,
+      "biasNoisy": 0,
+      "energyDen": -0.0012,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1481,
+      "flickerDen": 0.0077,
+      "flickerMcNoisy": 0.1318,
+      "flickerMcDen": 0.0069,
+      "tpsnrNoisy": 11.5809,
+      "tpsnrDen": 37.7702,
+      "flipNoisy": 0.1036,
+      "flipDen": 0.0178,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.8158,
+       "normalize": 2.1753,
+       "temporal": 3.8736,
+       "variance": 2.9797,
+       "atrous_0": 3.2112,
+       "atrous_1": 3.4016,
+       "atrous_2": 3.3957,
+       "total": 29.9727
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 17.7656,
+      "psnrDen": 41.5162,
+      "psnrDenSettled": 41.5769,
+      "psnrDenFirstFrame": 39.7092,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.607,
+      "psnrDenPooled": 39.4017,
+      "psnrDenSettledPooled": 39.2902,
+      "psnrNoisyCapped": 17.7656,
+      "psnrDenCapped": 41.5162,
+      "psnrDenSettledCapped": 41.5769,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1301150,
+        "psnrNoisy": 14.607,
+        "psnrDen": 39.4017,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 39.4017,
+        "psnrDenMean": 41.5162,
+        "psnrDenCapped": 41.5162
+       },
+       "contact": {
+        "pixelsPerFrame": 36375,
+        "psnrNoisy": 9.7619,
+        "psnrDen": 34.7541,
+        "biasDen": 0.0009,
+        "psnrDenPooled": 34.7541,
+        "psnrDenMean": 33.5885,
+        "psnrDenCapped": 33.5885
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 311804,
+        "psnrNoisy": 14.7378,
+        "psnrDen": 37.6919,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 37.6919,
+        "psnrDenMean": 41.88,
+        "psnrDenCapped": 41.538
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 453268,
+        "psnrNoisy": 15.7514,
+        "psnrDen": 42.6631,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 42.6631,
+        "psnrDenMean": 43.4794,
+        "psnrDenCapped": 43.4794
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 373370,
+        "psnrNoisy": 15.4086,
+        "psnrDen": 39.0329,
+        "biasDen": -0.002,
+        "psnrDenPooled": 39.0329,
+        "psnrDenMean": 41.2835,
+        "psnrDenCapped": 41.2835
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 416595,
+        "psnrNoisy": 13.3774,
+        "psnrDen": 37.4764,
+        "biasDen": -0.0027,
+        "psnrDenPooled": 37.4764,
+        "psnrDenMean": 41.0183,
+        "psnrDenCapped": 41.0183
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 57916,
+        "psnrNoisy": 12.7165,
+        "psnrDen": 42.0075,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 42.0075,
+        "psnrDenMean": 41.8367,
+        "psnrDenCapped": 41.8367
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6867,
+        "psnrNoisy": 11.343,
+        "psnrDen": 26.1957,
+        "biasDen": 0.0082,
+        "psnrDenPooled": 26.1957,
+        "psnrDenMean": 26.5718,
+        "psnrDenCapped": 26.5718
+       },
+       "static": {
+        "pixelsPerFrame": 1294283,
+        "psnrNoisy": 14.6329,
+        "psnrDen": 39.8868,
+        "biasDen": -0.0024,
+        "psnrDenPooled": 39.8868,
+        "psnrDenMean": 41.8071,
+        "psnrDenCapped": 41.8071
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6867,
+        "psnrNoisy": 8.3504,
+        "psnrDen": 24.3764,
+        "biasDen": 0.0508,
+        "psnrDenPooled": 24.3764,
+        "psnrDenMean": 25.156,
+        "psnrDenCapped": 25.156
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1215193,
+        "psnrNoisy": 11.6081,
+        "psnrDen": 38.4489,
+        "biasDen": 0.0065,
+        "psnrDenPooled": 38.4489,
+        "psnrDenMean": 41.6428,
+        "psnrDenCapped": 41.6235
+       }
+      },
+      "biasDen": -0.0023,
+      "biasNoisy": 0,
+      "energyDen": -0.0026,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1481,
+      "flickerDen": 0.0076,
+      "flickerMcNoisy": 0.1318,
+      "flickerMcDen": 0.0067,
+      "tpsnrNoisy": 11.5809,
+      "tpsnrDen": 37.8878,
+      "flipNoisy": 0.1036,
+      "flipDen": 0.0199,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.0291,
+       "normalize": 2.0426,
+       "gradient_create": 0.6133,
+       "gradient_atrous_0": 0.2648,
+       "gradient_atrous_1": 0.2518,
+       "gradient_atrous_2": 0.2494,
+       "gradient_atrous_3": 0.2514,
+       "gradient_lambda": 0.2493,
+       "temporal": 3.4007,
+       "variance": 3.3727,
+       "atrous_0": 3.0034,
+       "atrous_1": 3.0392,
+       "atrous_2": 3.055,
+       "total": 28.7935
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 23.7952,
+      "psnrDen": 40.6063,
+      "psnrDenSettled": 40.8257,
+      "psnrDenFirstFrame": 40.221,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.1153,
+      "psnrDenPooled": 35.8641,
+      "psnrDenSettledPooled": 35.7032,
+      "psnrNoisyCapped": 23.7952,
+      "psnrDenCapped": 40.5109,
+      "psnrDenSettledCapped": 40.7215,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1301150,
+        "psnrNoisy": 18.1153,
+        "psnrDen": 35.8641,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 35.8641,
+        "psnrDenMean": 40.6063,
+        "psnrDenCapped": 40.5109
+       },
+       "contact": {
+        "pixelsPerFrame": 150407,
+        "psnrNoisy": 15.0626,
+        "psnrDen": 33.8115,
+        "biasDen": 0.0011,
+        "psnrDenPooled": 33.8115,
+        "psnrDenMean": 33.559,
+        "psnrDenCapped": 33.559
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 311804,
+        "psnrNoisy": 19.4025,
+        "psnrDen": 38.1371,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 38.1371,
+        "psnrDenMean": 43.6655,
+        "psnrDenCapped": 42.9544
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 453268,
+        "psnrNoisy": 32.844,
+        "psnrDen": 40.5565,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 40.5565,
+        "psnrDenMean": 45.8913,
+        "psnrDenCapped": 44.9648
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 373370,
+        "psnrNoisy": 20.9752,
+        "psnrDen": 34.1506,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 34.1506,
+        "psnrDenMean": 40.3038,
+        "psnrDenCapped": 40.3038
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 416595,
+        "psnrNoisy": 14.942,
+        "psnrDen": 34.4683,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 34.4683,
+        "psnrDenMean": 39.5269,
+        "psnrDenCapped": 39.5269
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 57916,
+        "psnrNoisy": 12.172,
+        "psnrDen": 40.7481,
+        "biasDen": 0.0017,
+        "psnrDenPooled": 40.7481,
+        "psnrDenMean": 40.8459,
+        "psnrDenCapped": 40.8459
+       },
+       "dynamic": {
+        "pixelsPerFrame": 78696,
+        "psnrNoisy": 14.1676,
+        "psnrDen": 25.3367,
+        "biasDen": -0.0038,
+        "psnrDenPooled": 25.3367,
+        "psnrDenMean": 26.656,
+        "psnrDenCapped": 26.656
+       },
+       "static": {
+        "pixelsPerFrame": 1222454,
+        "psnrNoisy": 18.5507,
+        "psnrDen": 40.5813,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 40.5813,
+        "psnrDenMean": 44.3369,
+        "psnrDenCapped": 44.2414
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 78696,
+        "psnrNoisy": 11.1198,
+        "psnrDen": 30.4448,
+        "biasDen": 0.0187,
+        "psnrDenPooled": 30.4448,
+        "psnrDenMean": 31.4044,
+        "psnrDenCapped": 31.4044
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1143365,
+        "psnrNoisy": 15.4656,
+        "psnrDen": 43.1441,
+        "biasDen": 0.0033,
+        "psnrDenPooled": 43.1441,
+        "psnrDenMean": 47.4198,
+        "psnrDenCapped": 46.3212
+       }
+      },
+      "biasDen": -0.0005,
+      "biasNoisy": 0,
+      "energyDen": -0.0006,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0812,
+      "flickerDen": 0.0079,
+      "flickerMcNoisy": 0.0702,
+      "flickerMcDen": 0.0043,
+      "tpsnrNoisy": 15.0094,
+      "tpsnrDen": 39.8511,
+      "flipNoisy": 0.0619,
+      "flipDen": 0.0225,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.266,
+       "normalize": 2.2584,
+       "temporal": 3.5775,
+       "variance": 5.798,
+       "atrous_0": 3.0823,
+       "atrous_1": 3.5126,
+       "atrous_2": 3.7538,
+       "total": 33.9983
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 23.7952,
+      "psnrDen": 41.9885,
+      "psnrDenSettled": 42.2126,
+      "psnrDenFirstFrame": 40.5549,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.1153,
+      "psnrDenPooled": 37.4335,
+      "psnrDenSettledPooled": 37.2827,
+      "psnrNoisyCapped": 23.7952,
+      "psnrDenCapped": 41.8572,
+      "psnrDenSettledCapped": 42.0694,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1301150,
+        "psnrNoisy": 18.1153,
+        "psnrDen": 37.4335,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 37.4335,
+        "psnrDenMean": 41.9885,
+        "psnrDenCapped": 41.8572
+       },
+       "contact": {
+        "pixelsPerFrame": 150407,
+        "psnrNoisy": 15.0626,
+        "psnrDen": 35.5539,
+        "biasDen": 0,
+        "psnrDenPooled": 35.5539,
+        "psnrDenMean": 35.4732,
+        "psnrDenCapped": 35.4732
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 311804,
+        "psnrNoisy": 19.4025,
+        "psnrDen": 39.1055,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 39.1055,
+        "psnrDenMean": 44.3587,
+        "psnrDenCapped": 43.6079
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 453268,
+        "psnrNoisy": 32.844,
+        "psnrDen": 42.5958,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 42.5958,
+        "psnrDenMean": 47.1969,
+        "psnrDenCapped": 46.1836
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 373370,
+        "psnrNoisy": 20.9752,
+        "psnrDen": 36.0678,
+        "biasDen": -0.0013,
+        "psnrDenPooled": 36.0678,
+        "psnrDenMean": 41.6892,
+        "psnrDenCapped": 41.6892
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 416595,
+        "psnrNoisy": 14.942,
+        "psnrDen": 35.6788,
+        "biasDen": 0.0001,
+        "psnrDenPooled": 35.6788,
+        "psnrDenMean": 40.4259,
+        "psnrDenCapped": 40.4259
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 57916,
+        "psnrNoisy": 12.172,
+        "psnrDen": 40.6302,
+        "biasDen": 0.0017,
+        "psnrDenPooled": 40.6302,
+        "psnrDenMean": 40.7167,
+        "psnrDenCapped": 40.7167
+       },
+       "dynamic": {
+        "pixelsPerFrame": 78696,
+        "psnrNoisy": 14.1676,
+        "psnrDen": 27.4711,
+        "biasDen": -0.0028,
+        "psnrDenPooled": 27.4711,
+        "psnrDenMean": 28.902,
+        "psnrDenCapped": 28.902
+       },
+       "static": {
+        "pixelsPerFrame": 1222454,
+        "psnrNoisy": 18.5507,
+        "psnrDen": 41.1377,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 41.1377,
+        "psnrDenMean": 44.8029,
+        "psnrDenCapped": 44.6716
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 78696,
+        "psnrNoisy": 11.1198,
+        "psnrDen": 32.0786,
+        "biasDen": 0.0159,
+        "psnrDenPooled": 32.0786,
+        "psnrDenMean": 32.7705,
+        "psnrDenCapped": 32.7705
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1143365,
+        "psnrNoisy": 15.4656,
+        "psnrDen": 43.0598,
+        "biasDen": 0.0033,
+        "psnrDenPooled": 43.0598,
+        "psnrDenMean": 47.3078,
+        "psnrDenCapped": 46.2428
+       }
+      },
+      "biasDen": -0.0005,
+      "biasNoisy": 0,
+      "energyDen": -0.0006,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0812,
+      "flickerDen": 0.007,
+      "flickerMcNoisy": 0.0702,
+      "flickerMcDen": 0.0041,
+      "tpsnrNoisy": 15.0094,
+      "tpsnrDen": 40.6473,
+      "flipNoisy": 0.0619,
+      "flipDen": 0.021,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.8863,
+       "normalize": 1.7751,
+       "gradient_create": 0.5242,
+       "gradient_atrous_0": 0.258,
+       "gradient_atrous_1": 0.2009,
+       "gradient_atrous_2": 0.238,
+       "gradient_atrous_3": 0.3075,
+       "gradient_lambda": 0.3689,
+       "temporal": 3.8248,
+       "variance": 3.1382,
+       "atrous_0": 4.3757,
+       "atrous_1": 3.5137,
+       "atrous_2": 3.2943,
+       "total": 31.0387
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "light": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=light",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 15.6183,
+      "psnrDen": 40.0695,
+      "psnrDenSettled": 40.1551,
+      "psnrDenFirstFrame": 38.0654,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.6183,
+      "psnrDenPooled": 40.0544,
+      "psnrDenSettledPooled": 40.155,
+      "psnrNoisyCapped": 15.6183,
+      "psnrDenCapped": 40.0695,
+      "psnrDenSettledCapped": 40.1551,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 15.6183,
+        "psnrDen": 40.0544,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 40.0544,
+        "psnrDenMean": 40.0695,
+        "psnrDenCapped": 40.0695
+       },
+       "contact": {
+        "pixelsPerFrame": 26584,
+        "psnrNoisy": 9.3821,
+        "psnrDen": 33.6671,
+        "biasDen": 0.006,
+        "psnrDenPooled": 33.6671,
+        "psnrDenMean": 33.7183,
+        "psnrDenCapped": 33.7183
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 15.8428,
+        "psnrDen": 44.0944,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 44.0944,
+        "psnrDenMean": 44.1258,
+        "psnrDenCapped": 44.1258
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.0206,
+        "psnrDen": 40.8673,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 40.8673,
+        "psnrDenMean": 40.8837,
+        "psnrDenCapped": 40.8837
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 15.6232,
+        "psnrDen": 38.3846,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 38.3846,
+        "psnrDenMean": 38.3969,
+        "psnrDenCapped": 38.3969
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 12.1928,
+        "psnrDen": 42.6621,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 42.6621,
+        "psnrDenMean": 42.7041,
+        "psnrDenCapped": 42.7041
+       },
+       "dynamic": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 15.6183,
+        "psnrDen": 40.0544,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 40.0544,
+        "psnrDenMean": 40.0695,
+        "psnrDenCapped": 40.0695
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694800,
+        "psnrNoisy": 12.2135,
+        "psnrDen": 51.0722,
+        "biasDen": 0.0015,
+        "psnrDenPooled": 51.0722,
+        "psnrDenMean": 51.3164,
+        "psnrDenCapped": 51.3164
+       }
+      },
+      "biasDen": -0.0004,
+      "biasNoisy": 0,
+      "energyDen": -0.0004,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1062,
+      "flickerDen": 0.0015,
+      "flickerMcNoisy": 0.1062,
+      "flickerMcDen": 0.0015,
+      "tpsnrNoisy": 12.2135,
+      "tpsnrDen": 51.0722,
+      "flipNoisy": 0.0936,
+      "flipDen": 0.0143,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 3.1692,
+       "normalize": 2.4148,
+       "temporal": 4.4817,
+       "variance": 2.3323,
+       "atrous_0": 3.3719,
+       "atrous_1": 4.0808,
+       "atrous_2": 3.8906,
+       "total": 31.7823
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 15.6183,
+      "psnrDen": 40.2003,
+      "psnrDenSettled": 40.2951,
+      "psnrDenFirstFrame": 38.0654,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.6183,
+      "psnrDenPooled": 40.1823,
+      "psnrDenSettledPooled": 40.2948,
+      "psnrNoisyCapped": 15.6183,
+      "psnrDenCapped": 40.2003,
+      "psnrDenSettledCapped": 40.2951,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 15.6183,
+        "psnrDen": 40.1823,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 40.1823,
+        "psnrDenMean": 40.2003,
+        "psnrDenCapped": 40.2003
+       },
+       "contact": {
+        "pixelsPerFrame": 26584,
+        "psnrNoisy": 9.3821,
+        "psnrDen": 34.1745,
+        "biasDen": 0.0064,
+        "psnrDenPooled": 34.1745,
+        "psnrDenMean": 34.2534,
+        "psnrDenCapped": 34.2534
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 15.8428,
+        "psnrDen": 44.2792,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 44.2792,
+        "psnrDenMean": 44.3174,
+        "psnrDenCapped": 44.3174
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.0206,
+        "psnrDen": 40.9606,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 40.9606,
+        "psnrDenMean": 40.979,
+        "psnrDenCapped": 40.979
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 15.6232,
+        "psnrDen": 38.5161,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 38.5161,
+        "psnrDenMean": 38.531,
+        "psnrDenCapped": 38.531
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 12.1928,
+        "psnrDen": 42.9073,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 42.9073,
+        "psnrDenMean": 42.9582,
+        "psnrDenCapped": 42.9582
+       },
+       "dynamic": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 15.6183,
+        "psnrDen": 40.1823,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 40.1823,
+        "psnrDenMean": 40.2003,
+        "psnrDenCapped": 40.2003
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694800,
+        "psnrNoisy": 12.2135,
+        "psnrDen": 55.6988,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 55.6988,
+        "psnrDenMean": 57.4098,
+        "psnrDenCapped": 57.4098
+       }
+      },
+      "biasDen": -0.0016,
+      "biasNoisy": 0,
+      "energyDen": -0.0017,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1062,
+      "flickerDen": 0.0008,
+      "flickerMcNoisy": 0.1062,
+      "flickerMcDen": 0.0008,
+      "tpsnrNoisy": 12.2135,
+      "tpsnrDen": 55.6988,
+      "flipNoisy": 0.0936,
+      "flipDen": 0.0152,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.2997,
+       "normalize": 1.9625,
+       "gradient_create": 0.7035,
+       "gradient_atrous_0": 0.2451,
+       "gradient_atrous_1": 0.2392,
+       "gradient_atrous_2": 0.2689,
+       "gradient_atrous_3": 0.2652,
+       "gradient_lambda": 0.2477,
+       "temporal": 4.329,
+       "variance": 1.7223,
+       "atrous_0": 3.5089,
+       "atrous_1": 4.0378,
+       "atrous_2": 4.128,
+       "total": 31.735
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 19.3266,
+      "psnrDen": 43.9766,
+      "psnrDenSettled": 44.1058,
+      "psnrDenFirstFrame": 39.3404,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 19.3265,
+      "psnrDenPooled": 43.9187,
+      "psnrDenSettledPooled": 44.1054,
+      "psnrNoisyCapped": 19.3266,
+      "psnrDenCapped": 43.9766,
+      "psnrDenSettledCapped": 44.1058,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 19.3265,
+        "psnrDen": 43.9187,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 43.9187,
+        "psnrDenMean": 43.9766,
+        "psnrDenCapped": 43.9766
+       },
+       "contact": {
+        "pixelsPerFrame": 164661,
+        "psnrNoisy": 15.1955,
+        "psnrDen": 38.3078,
+        "biasDen": -0.0019,
+        "psnrDenPooled": 38.3078,
+        "psnrDenMean": 38.3957,
+        "psnrDenCapped": 38.3957
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 35.7651,
+        "psnrDen": 48.875,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 48.875,
+        "psnrDenMean": 49.3422,
+        "psnrDenCapped": 49.3422
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 21.3517,
+        "psnrDen": 44.4253,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 44.4253,
+        "psnrDenMean": 44.4585,
+        "psnrDenCapped": 44.4585
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 17.6615,
+        "psnrDen": 42.4909,
+        "biasDen": 0.0001,
+        "psnrDenPooled": 42.4909,
+        "psnrDenMean": 42.5335,
+        "psnrDenCapped": 42.5335
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 12.3602,
+        "psnrDen": 42.1676,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 42.1676,
+        "psnrDenMean": 42.1924,
+        "psnrDenCapped": 42.1924
+       },
+       "dynamic": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 19.3265,
+        "psnrDen": 43.9187,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 43.9187,
+        "psnrDenMean": 43.9766,
+        "psnrDenCapped": 43.9766
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694800,
+        "psnrNoisy": 16.0316,
+        "psnrDen": 47.3484,
+        "biasDen": 0.0016,
+        "psnrDenPooled": 47.3484,
+        "psnrDenMean": 47.3745,
+        "psnrDenCapped": 47.3745
+       }
+      },
+      "biasDen": -0.0002,
+      "biasNoisy": 0,
+      "energyDen": -0.0002,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0513,
+      "flickerDen": 0.0016,
+      "flickerMcNoisy": 0.0513,
+      "flickerMcDen": 0.0016,
+      "tpsnrNoisy": 16.0316,
+      "tpsnrDen": 47.3484,
+      "flipNoisy": 0.0546,
+      "flipDen": 0.0119,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.4107,
+       "normalize": 1.9389,
+       "temporal": 4.5398,
+       "variance": 2.0506,
+       "atrous_0": 3.3749,
+       "atrous_1": 4.0864,
+       "atrous_2": 4.2145,
+       "total": 29.2896
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 19.3266,
+      "psnrDen": 43.8956,
+      "psnrDenSettled": 44.0159,
+      "psnrDenFirstFrame": 39.5388,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 19.3265,
+      "psnrDenPooled": 43.8464,
+      "psnrDenSettledPooled": 44.0156,
+      "psnrNoisyCapped": 19.3266,
+      "psnrDenCapped": 43.8956,
+      "psnrDenSettledCapped": 44.0159,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 19.3265,
+        "psnrDen": 43.8464,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 43.8464,
+        "psnrDenMean": 43.8956,
+        "psnrDenCapped": 43.8956
+       },
+       "contact": {
+        "pixelsPerFrame": 164661,
+        "psnrNoisy": 15.1955,
+        "psnrDen": 38.2361,
+        "biasDen": -0.002,
+        "psnrDenPooled": 38.2361,
+        "psnrDenMean": 38.2865,
+        "psnrDenCapped": 38.2865
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 35.7651,
+        "psnrDen": 49.0867,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 49.0867,
+        "psnrDenMean": 49.3134,
+        "psnrDenCapped": 49.3134
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 21.3517,
+        "psnrDen": 44.3464,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 44.3464,
+        "psnrDenMean": 44.3781,
+        "psnrDenCapped": 44.3781
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 17.6615,
+        "psnrDen": 42.3876,
+        "biasDen": 0.0001,
+        "psnrDenPooled": 42.3876,
+        "psnrDenMean": 42.4334,
+        "psnrDenCapped": 42.4334
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 12.3602,
+        "psnrDen": 42.1206,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 42.1206,
+        "psnrDenMean": 42.1577,
+        "psnrDenCapped": 42.1577
+       },
+       "dynamic": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 19.3265,
+        "psnrDen": 43.8464,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 43.8464,
+        "psnrDenMean": 43.8956,
+        "psnrDenCapped": 43.8956
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694800,
+        "psnrNoisy": 16.0316,
+        "psnrDen": 47.1383,
+        "biasDen": 0.0016,
+        "psnrDenPooled": 47.1383,
+        "psnrDenMean": 47.165,
+        "psnrDenCapped": 47.165
+       }
+      },
+      "biasDen": -0.0002,
+      "biasNoisy": 0,
+      "energyDen": -0.0002,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0513,
+      "flickerDen": 0.0016,
+      "flickerMcNoisy": 0.0513,
+      "flickerMcDen": 0.0016,
+      "tpsnrNoisy": 16.0316,
+      "tpsnrDen": 47.1383,
+      "flipNoisy": 0.0546,
+      "flipDen": 0.0119,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.1612,
+       "normalize": 1.7223,
+       "gradient_create": 0.6636,
+       "gradient_atrous_0": 0.2622,
+       "gradient_atrous_1": 0.254,
+       "gradient_atrous_2": 0.2421,
+       "gradient_atrous_3": 0.2782,
+       "gradient_lambda": 0.2838,
+       "temporal": 3.5852,
+       "variance": 2.0159,
+       "atrous_0": 4.2542,
+       "atrous_1": 4.1744,
+       "atrous_2": 3.7618,
+       "total": 29.6963
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "thin": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=thin",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 14.4141,
+      "psnrDen": 35.5846,
+      "psnrDenSettled": 35.6184,
+      "psnrDenFirstFrame": 34.5425,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.407,
+      "psnrDenPooled": 35.5779,
+      "psnrDenSettledPooled": 35.6148,
+      "psnrNoisyCapped": 14.4141,
+      "psnrDenCapped": 35.5846,
+      "psnrDenSettledCapped": 35.6184,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1591818,
+        "psnrNoisy": 14.407,
+        "psnrDen": 35.5779,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 35.5779,
+        "psnrDenMean": 35.5846,
+        "psnrDenCapped": 35.5846
+       },
+       "contact": {
+        "pixelsPerFrame": 33629,
+        "psnrNoisy": 9.9801,
+        "psnrDen": 33.7751,
+        "biasDen": 0.0031,
+        "psnrDenPooled": 33.7751,
+        "psnrDenMean": 33.8023,
+        "psnrDenCapped": 33.8023
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 95221,
+        "psnrNoisy": 13.7688,
+        "psnrDen": 38.1731,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 38.1731,
+        "psnrDenMean": 38.1717,
+        "psnrDenCapped": 38.1717
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 484534,
+        "psnrNoisy": 17.3174,
+        "psnrDen": 42.134,
+        "biasDen": -0.001,
+        "psnrDenPooled": 42.134,
+        "psnrDenMean": 42.1159,
+        "psnrDenCapped": 42.1159
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 534665,
+        "psnrNoisy": 15.5863,
+        "psnrDen": 34.0782,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 34.0782,
+        "psnrDenMean": 34.0946,
+        "psnrDenCapped": 34.0946
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 557936,
+        "psnrNoisy": 12.2455,
+        "psnrDen": 34.4286,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 34.4286,
+        "psnrDenMean": 34.4713,
+        "psnrDenCapped": 34.4713
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 14682,
+        "psnrNoisy": 13.3773,
+        "psnrDen": 43.1681,
+        "biasDen": -0.0013,
+        "psnrDenPooled": 43.1681,
+        "psnrDenMean": 43.3051,
+        "psnrDenCapped": 43.3051
+       },
+       "dynamic": {
+        "pixelsPerFrame": 44990,
+        "psnrNoisy": 12.5686,
+        "psnrDen": 26.2501,
+        "biasDen": 0.0159,
+        "psnrDenPooled": 26.2501,
+        "psnrDenMean": 26.2248,
+        "psnrDenCapped": 26.2248
+       },
+       "static": {
+        "pixelsPerFrame": 1546828,
+        "psnrNoisy": 14.4741,
+        "psnrDen": 36.6573,
+        "biasDen": -0.001,
+        "psnrDenPooled": 36.6573,
+        "psnrDenMean": 36.6773,
+        "psnrDenCapped": 36.6773
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 44990,
+        "psnrNoisy": 9.5909,
+        "psnrDen": 24.303,
+        "biasDen": 0.0519,
+        "psnrDenPooled": 24.303,
+        "psnrDenMean": 24.2722,
+        "psnrDenCapped": 24.2722
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1519100,
+        "psnrNoisy": 11.4742,
+        "psnrDen": 33.8969,
+        "biasDen": 0.0125,
+        "psnrDenPooled": 33.8969,
+        "psnrDenMean": 33.9044,
+        "psnrDenCapped": 33.9044
+       }
+      },
+      "biasDen": -0.0005,
+      "biasNoisy": 0,
+      "energyDen": -0.0006,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1458,
+      "flickerDen": 0.0074,
+      "flickerMcNoisy": 0.1411,
+      "flickerMcDen": 0.0136,
+      "tpsnrNoisy": 11.4069,
+      "tpsnrDen": 32.9865,
+      "flipNoisy": 0.1264,
+      "flipDen": 0.0243,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 3.2602,
+       "normalize": 2.5165,
+       "temporal": 4.306,
+       "variance": 2.2245,
+       "atrous_0": 3.9856,
+       "atrous_1": 3.6695,
+       "atrous_2": 3.4788,
+       "total": 33.6478
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 14.4141,
+      "psnrDen": 35.6153,
+      "psnrDenSettled": 35.6503,
+      "psnrDenFirstFrame": 34.5425,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.407,
+      "psnrDenPooled": 35.6089,
+      "psnrDenSettledPooled": 35.6471,
+      "psnrNoisyCapped": 14.4141,
+      "psnrDenCapped": 35.6153,
+      "psnrDenSettledCapped": 35.6503,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1591818,
+        "psnrNoisy": 14.407,
+        "psnrDen": 35.6089,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 35.6089,
+        "psnrDenMean": 35.6153,
+        "psnrDenCapped": 35.6153
+       },
+       "contact": {
+        "pixelsPerFrame": 33629,
+        "psnrNoisy": 9.9801,
+        "psnrDen": 33.818,
+        "biasDen": 0.0042,
+        "psnrDenPooled": 33.818,
+        "psnrDenMean": 33.8435,
+        "psnrDenCapped": 33.8435
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 95221,
+        "psnrNoisy": 13.7688,
+        "psnrDen": 38.1345,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 38.1345,
+        "psnrDenMean": 38.1328,
+        "psnrDenCapped": 38.1328
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 484534,
+        "psnrNoisy": 17.3174,
+        "psnrDen": 41.9376,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 41.9376,
+        "psnrDenMean": 41.9299,
+        "psnrDenCapped": 41.9299
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 534665,
+        "psnrNoisy": 15.5863,
+        "psnrDen": 34.089,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 34.089,
+        "psnrDenMean": 34.1056,
+        "psnrDenCapped": 34.1056
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 557936,
+        "psnrNoisy": 12.2455,
+        "psnrDen": 34.5184,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 34.5184,
+        "psnrDenMean": 34.5651,
+        "psnrDenCapped": 34.5651
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 14682,
+        "psnrNoisy": 13.3773,
+        "psnrDen": 42.3666,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 42.3666,
+        "psnrDenMean": 42.5552,
+        "psnrDenCapped": 42.5552
+       },
+       "dynamic": {
+        "pixelsPerFrame": 44990,
+        "psnrNoisy": 12.5686,
+        "psnrDen": 26.3994,
+        "biasDen": 0.0133,
+        "psnrDenPooled": 26.3994,
+        "psnrDenMean": 26.3719,
+        "psnrDenCapped": 26.3719
+       },
+       "static": {
+        "pixelsPerFrame": 1546828,
+        "psnrNoisy": 14.4741,
+        "psnrDen": 36.6511,
+        "biasDen": -0.0026,
+        "psnrDenPooled": 36.6511,
+        "psnrDenMean": 36.6699,
+        "psnrDenCapped": 36.6699
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 44990,
+        "psnrNoisy": 9.5909,
+        "psnrDen": 24.3206,
+        "biasDen": 0.0518,
+        "psnrDenPooled": 24.3206,
+        "psnrDenMean": 24.2896,
+        "psnrDenCapped": 24.2896
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1519100,
+        "psnrNoisy": 11.4742,
+        "psnrDen": 33.9739,
+        "biasDen": 0.0123,
+        "psnrDenPooled": 33.9739,
+        "psnrDenMean": 33.9821,
+        "psnrDenCapped": 33.9821
+       }
+      },
+      "biasDen": -0.0022,
+      "biasNoisy": 0,
+      "energyDen": -0.0024,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1458,
+      "flickerDen": 0.0068,
+      "flickerMcNoisy": 0.1411,
+      "flickerMcDen": 0.0134,
+      "tpsnrNoisy": 11.4069,
+      "tpsnrDen": 33.0509,
+      "flipNoisy": 0.1264,
+      "flipDen": 0.0254,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.16,
+       "normalize": 1.9501,
+       "gradient_create": 0.6143,
+       "gradient_atrous_0": 0.2415,
+       "gradient_atrous_1": 0.2827,
+       "gradient_atrous_2": 0.2488,
+       "gradient_atrous_3": 0.2665,
+       "gradient_lambda": 0.2665,
+       "temporal": 3.4003,
+       "variance": 1.8437,
+       "atrous_0": 2.9396,
+       "atrous_1": 3.1916,
+       "atrous_2": 2.9534,
+       "total": 28.7423
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 15.9971,
+      "psnrDen": 38.0766,
+      "psnrDenSettled": 38.0215,
+      "psnrDenFirstFrame": 37.2681,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.9751,
+      "psnrDenPooled": 38.0655,
+      "psnrDenSettledPooled": 38.0155,
+      "psnrNoisyCapped": 15.9971,
+      "psnrDenCapped": 38.0766,
+      "psnrDenSettledCapped": 38.0215,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1591818,
+        "psnrNoisy": 15.9751,
+        "psnrDen": 38.0655,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 38.0655,
+        "psnrDenMean": 38.0766,
+        "psnrDenCapped": 38.0766
+       },
+       "contact": {
+        "pixelsPerFrame": 131599,
+        "psnrNoisy": 13.474,
+        "psnrDen": 35.28,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 35.28,
+        "psnrDenMean": 35.2991,
+        "psnrDenCapped": 35.2991
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 95221,
+        "psnrNoisy": 18.3835,
+        "psnrDen": 39.0676,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 39.0676,
+        "psnrDenMean": 39.1911,
+        "psnrDenCapped": 39.1911
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 484534,
+        "psnrNoisy": 30.4964,
+        "psnrDen": 41.5695,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 41.5695,
+        "psnrDenMean": 41.6331,
+        "psnrDenCapped": 41.6331
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 534665,
+        "psnrNoisy": 16.0229,
+        "psnrDen": 36.1487,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 36.1487,
+        "psnrDenMean": 36.2598,
+        "psnrDenCapped": 36.2598
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 557936,
+        "psnrNoisy": 13.3495,
+        "psnrDen": 38.2183,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 38.2183,
+        "psnrDenMean": 38.2696,
+        "psnrDenCapped": 38.2696
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 14682,
+        "psnrNoisy": 13.7255,
+        "psnrDen": 42.2287,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 42.2287,
+        "psnrDenMean": 42.2849,
+        "psnrDenCapped": 42.2849
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18202,
+        "psnrNoisy": 12.0044,
+        "psnrDen": 25.1573,
+        "biasDen": 0.007,
+        "psnrDenPooled": 25.1573,
+        "psnrDenMean": 25.0303,
+        "psnrDenCapped": 25.0303
+       },
+       "static": {
+        "pixelsPerFrame": 1573616,
+        "psnrNoisy": 16.0508,
+        "psnrDen": 39.1135,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 39.1135,
+        "psnrDenMean": 39.1226,
+        "psnrDenCapped": 39.1226
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18202,
+        "psnrNoisy": 8.9997,
+        "psnrDen": 30.7247,
+        "biasDen": 0.0171,
+        "psnrDenPooled": 30.7247,
+        "psnrDenMean": 30.3723,
+        "psnrDenCapped": 30.3723
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1545888,
+        "psnrNoisy": 13.0317,
+        "psnrDen": 40.8025,
+        "biasDen": 0.005,
+        "psnrDenPooled": 40.8025,
+        "psnrDenMean": 40.8307,
+        "psnrDenCapped": 40.8307
+       }
+      },
+      "biasDen": -0.0002,
+      "biasNoisy": 0,
+      "energyDen": -0.0002,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1163,
+      "flickerDen": 0.0058,
+      "flickerMcNoisy": 0.1082,
+      "flickerMcDen": 0.0051,
+      "tpsnrNoisy": 12.9551,
+      "tpsnrDen": 40.3616,
+      "flipNoisy": 0.0996,
+      "flipDen": 0.0232,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.2553,
+       "normalize": 1.8417,
+       "temporal": 3.7699,
+       "variance": 2.7942,
+       "atrous_0": 3.3009,
+       "atrous_1": 3.2677,
+       "atrous_2": 4.1605,
+       "total": 33.7247
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 15.9971,
+      "psnrDen": 38.3349,
+      "psnrDenSettled": 38.3113,
+      "psnrDenFirstFrame": 36.6082,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.9751,
+      "psnrDenPooled": 38.3264,
+      "psnrDenSettledPooled": 38.309,
+      "psnrNoisyCapped": 15.9971,
+      "psnrDenCapped": 38.3349,
+      "psnrDenSettledCapped": 38.3113,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1591818,
+        "psnrNoisy": 15.9751,
+        "psnrDen": 38.3264,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 38.3264,
+        "psnrDenMean": 38.3349,
+        "psnrDenCapped": 38.3349
+       },
+       "contact": {
+        "pixelsPerFrame": 131599,
+        "psnrNoisy": 13.474,
+        "psnrDen": 35.4432,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 35.4432,
+        "psnrDenMean": 35.4558,
+        "psnrDenCapped": 35.4558
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 95221,
+        "psnrNoisy": 18.3835,
+        "psnrDen": 39.2214,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 39.2214,
+        "psnrDenMean": 39.3111,
+        "psnrDenCapped": 39.3111
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 484534,
+        "psnrNoisy": 30.4964,
+        "psnrDen": 42.2157,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 42.2157,
+        "psnrDenMean": 42.2738,
+        "psnrDenCapped": 42.2738
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 534665,
+        "psnrNoisy": 16.0229,
+        "psnrDen": 36.5677,
+        "biasDen": 0.0003,
+        "psnrDenPooled": 36.5677,
+        "psnrDenMean": 36.6495,
+        "psnrDenCapped": 36.6495
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 557936,
+        "psnrNoisy": 13.3495,
+        "psnrDen": 38.1121,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 38.1121,
+        "psnrDenMean": 38.1765,
+        "psnrDenCapped": 38.1765
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 14682,
+        "psnrNoisy": 13.7255,
+        "psnrDen": 42.0848,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 42.0848,
+        "psnrDenMean": 42.1496,
+        "psnrDenCapped": 42.1496
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18202,
+        "psnrNoisy": 12.0044,
+        "psnrDen": 25.7451,
+        "biasDen": 0.0064,
+        "psnrDenPooled": 25.7451,
+        "psnrDenMean": 25.5731,
+        "psnrDenCapped": 25.5731
+       },
+       "static": {
+        "pixelsPerFrame": 1573616,
+        "psnrNoisy": 16.0508,
+        "psnrDen": 39.2848,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 39.2848,
+        "psnrDenMean": 39.3015,
+        "psnrDenCapped": 39.3015
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18202,
+        "psnrNoisy": 8.9997,
+        "psnrDen": 30.3688,
+        "biasDen": 0.0179,
+        "psnrDenPooled": 30.3688,
+        "psnrDenMean": 30.0192,
+        "psnrDenCapped": 30.0192
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1545888,
+        "psnrNoisy": 13.0317,
+        "psnrDen": 40.6418,
+        "biasDen": 0.0051,
+        "psnrDenPooled": 40.6418,
+        "psnrDenMean": 40.6738,
+        "psnrDenCapped": 40.6738
+       }
+      },
+      "biasDen": -0.0002,
+      "biasNoisy": 0,
+      "energyDen": -0.0002,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1163,
+      "flickerDen": 0.0059,
+      "flickerMcNoisy": 0.1082,
+      "flickerMcDen": 0.0052,
+      "tpsnrNoisy": 12.9551,
+      "tpsnrDen": 40.1797,
+      "flipNoisy": 0.0996,
+      "flipDen": 0.0228,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.7572,
+       "normalize": 1.6091,
+       "gradient_create": 0.5512,
+       "gradient_atrous_0": 0.2277,
+       "gradient_atrous_1": 0.2146,
+       "gradient_atrous_2": 0.216,
+       "gradient_atrous_3": 0.2385,
+       "gradient_lambda": 0.2542,
+       "temporal": 3.7572,
+       "variance": 2.2872,
+       "atrous_0": 3.4321,
+       "atrous_1": 3.6425,
+       "atrous_2": 4.6594,
+       "total": 33.272
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "glossy": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=glossy",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 12.87,
+      "psnrDen": 41.6695,
+      "psnrDenSettled": 41.7268,
+      "psnrDenFirstFrame": 39.0464,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 12.803,
+      "psnrDenPooled": 41.6321,
+      "psnrDenSettledPooled": 41.7029,
+      "psnrNoisyCapped": 12.87,
+      "psnrDenCapped": 41.6695,
+      "psnrDenSettledCapped": 41.7268,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1554336,
+        "psnrNoisy": 12.803,
+        "psnrDen": 41.6321,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 41.6321,
+        "psnrDenMean": 41.6695,
+        "psnrDenCapped": 41.6695
+       },
+       "contact": {
+        "pixelsPerFrame": 132264,
+        "psnrNoisy": 10.0812,
+        "psnrDen": 37.5048,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 37.5048,
+        "psnrDenMean": 37.5261,
+        "psnrDenCapped": 37.5261
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 10942,
+        "psnrNoisy": 12.9942,
+        "psnrDen": 36.349,
+        "biasDen": -0.001,
+        "psnrDenPooled": 36.349,
+        "psnrDenMean": 36.2064,
+        "psnrDenCapped": 36.2064
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 302650,
+        "psnrNoisy": 13.0996,
+        "psnrDen": 41.7778,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.7778,
+        "psnrDenMean": 41.8407,
+        "psnrDenCapped": 41.8407
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 560984,
+        "psnrNoisy": 14.4722,
+        "psnrDen": 43.0538,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 43.0538,
+        "psnrDenMean": 43.0613,
+        "psnrDenCapped": 43.0613
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 527183,
+        "psnrNoisy": 11.8681,
+        "psnrDen": 40.3112,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 40.3112,
+        "psnrDenMean": 40.4057,
+        "psnrDenCapped": 40.4057
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 163519,
+        "psnrNoisy": 11.2113,
+        "psnrDen": 42.2234,
+        "biasDen": -0.0013,
+        "psnrDenPooled": 42.2234,
+        "psnrDenMean": 42.1009,
+        "psnrDenCapped": 42.1009
+       },
+       "dynamic": {
+        "pixelsPerFrame": 207,
+        "psnrNoisy": 8.4855,
+        "psnrDen": 25.5177,
+        "biasDen": 0.0002,
+        "psnrDenPooled": 25.5177,
+        "psnrDenMean": 26.0486,
+        "psnrDenCapped": 26.0486
+       },
+       "static": {
+        "pixelsPerFrame": 1554129,
+        "psnrNoisy": 12.8039,
+        "psnrDen": 41.6553,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 41.6553,
+        "psnrDenMean": 41.6935,
+        "psnrDenCapped": 41.6935
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 207,
+        "psnrNoisy": 5.4623,
+        "psnrDen": 25.1153,
+        "biasDen": 0.0334,
+        "psnrDenPooled": 25.1153,
+        "psnrDenMean": 25.7693,
+        "psnrDenCapped": 25.7693
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1536949,
+        "psnrNoisy": 9.7778,
+        "psnrDen": 40.4295,
+        "biasDen": 0.0069,
+        "psnrDenPooled": 40.4295,
+        "psnrDenMean": 40.4723,
+        "psnrDenCapped": 40.4723
+       }
+      },
+      "biasDen": -0.0009,
+      "biasNoisy": 0,
+      "energyDen": -0.0011,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.206,
+      "flickerDen": 0.0043,
+      "flickerMcNoisy": 0.194,
+      "flickerMcDen": 0.0069,
+      "tpsnrNoisy": 9.7768,
+      "tpsnrDen": 40.4102,
+      "flipNoisy": 0.171,
+      "flipDen": 0.0202,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.5509,
+       "normalize": 1.8244,
+       "temporal": 4.6261,
+       "variance": 1.4034,
+       "atrous_0": 2.1652,
+       "atrous_1": 2.7613,
+       "atrous_2": 2.401,
+       "total": 26.3352
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 12.87,
+      "psnrDen": 41.8948,
+      "psnrDenSettled": 41.9667,
+      "psnrDenFirstFrame": 39.0464,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 12.803,
+      "psnrDenPooled": 41.854,
+      "psnrDenSettledPooled": 41.9433,
+      "psnrNoisyCapped": 12.87,
+      "psnrDenCapped": 41.8948,
+      "psnrDenSettledCapped": 41.9667,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1554336,
+        "psnrNoisy": 12.803,
+        "psnrDen": 41.854,
+        "biasDen": -0.0027,
+        "psnrDenPooled": 41.854,
+        "psnrDenMean": 41.8948,
+        "psnrDenCapped": 41.8948
+       },
+       "contact": {
+        "pixelsPerFrame": 132264,
+        "psnrNoisy": 10.0812,
+        "psnrDen": 38.2327,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 38.2327,
+        "psnrDenMean": 38.2725,
+        "psnrDenCapped": 38.2725
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 10942,
+        "psnrNoisy": 12.9942,
+        "psnrDen": 35.9569,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 35.9569,
+        "psnrDenMean": 35.7215,
+        "psnrDenCapped": 35.7215
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 302650,
+        "psnrNoisy": 13.0996,
+        "psnrDen": 41.7934,
+        "biasDen": -0.003,
+        "psnrDenPooled": 41.7934,
+        "psnrDenMean": 41.8515,
+        "psnrDenCapped": 41.8515
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 560984,
+        "psnrNoisy": 14.4722,
+        "psnrDen": 43.1525,
+        "biasDen": -0.0026,
+        "psnrDenPooled": 43.1525,
+        "psnrDenMean": 43.1636,
+        "psnrDenCapped": 43.1636
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 527183,
+        "psnrNoisy": 11.8681,
+        "psnrDen": 40.6795,
+        "biasDen": -0.0025,
+        "psnrDenPooled": 40.6795,
+        "psnrDenMean": 40.7609,
+        "psnrDenCapped": 40.7609
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 163519,
+        "psnrNoisy": 11.2113,
+        "psnrDen": 42.5123,
+        "biasDen": -0.0028,
+        "psnrDenPooled": 42.5123,
+        "psnrDenMean": 42.4217,
+        "psnrDenCapped": 42.4217
+       },
+       "dynamic": {
+        "pixelsPerFrame": 207,
+        "psnrNoisy": 8.4855,
+        "psnrDen": 25.1763,
+        "biasDen": 0.0018,
+        "psnrDenPooled": 25.1763,
+        "psnrDenMean": 25.6759,
+        "psnrDenCapped": 25.6759
+       },
+       "static": {
+        "pixelsPerFrame": 1554129,
+        "psnrNoisy": 12.8039,
+        "psnrDen": 41.8805,
+        "biasDen": -0.0027,
+        "psnrDenPooled": 41.8805,
+        "psnrDenMean": 41.9223,
+        "psnrDenCapped": 41.9223
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 207,
+        "psnrNoisy": 5.4623,
+        "psnrDen": 25.0876,
+        "biasDen": 0.0328,
+        "psnrDenPooled": 25.0876,
+        "psnrDenMean": 25.8122,
+        "psnrDenCapped": 25.8122
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1536949,
+        "psnrNoisy": 9.7778,
+        "psnrDen": 40.8509,
+        "biasDen": 0.0065,
+        "psnrDenPooled": 40.8509,
+        "psnrDenMean": 40.8957,
+        "psnrDenCapped": 40.8957
+       }
+      },
+      "biasDen": -0.0027,
+      "biasNoisy": 0,
+      "energyDen": -0.0033,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.206,
+      "flickerDen": 0.0031,
+      "flickerMcNoisy": 0.194,
+      "flickerMcDen": 0.0065,
+      "tpsnrNoisy": 9.7768,
+      "tpsnrDen": 40.8295,
+      "flipNoisy": 0.171,
+      "flipDen": 0.0207,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.9418,
+       "normalize": 1.5544,
+       "gradient_create": 0.577,
+       "gradient_atrous_0": 0.2217,
+       "gradient_atrous_1": 0.2571,
+       "gradient_atrous_2": 0.2005,
+       "gradient_atrous_3": 0.1835,
+       "gradient_lambda": 0.2523,
+       "temporal": 3.2044,
+       "variance": 1.6544,
+       "atrous_0": 2.7297,
+       "atrous_1": 3.1329,
+       "atrous_2": 3.0242,
+       "total": 28.3256
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 15.426,
+      "psnrDen": 38.3703,
+      "psnrDenSettled": 38.2013,
+      "psnrDenFirstFrame": 39.9193,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.3622,
+      "psnrDenPooled": 38.2931,
+      "psnrDenSettledPooled": 38.157,
+      "psnrNoisyCapped": 15.426,
+      "psnrDenCapped": 38.3703,
+      "psnrDenSettledCapped": 38.2013,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1554336,
+        "psnrNoisy": 15.3622,
+        "psnrDen": 38.2931,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 38.2931,
+        "psnrDenMean": 38.3703,
+        "psnrDenCapped": 38.3703
+       },
+       "contact": {
+        "pixelsPerFrame": 291890,
+        "psnrNoisy": 13.8513,
+        "psnrDen": 38.9662,
+        "biasDen": -0.0031,
+        "psnrDenPooled": 38.9662,
+        "psnrDenMean": 39.0339,
+        "psnrDenCapped": 39.0339
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 10942,
+        "psnrNoisy": 17.2451,
+        "psnrDen": 38.0273,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 38.0273,
+        "psnrDenMean": 38.9402,
+        "psnrDenCapped": 38.9402
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 302650,
+        "psnrNoisy": 29.3151,
+        "psnrDen": 39.5818,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 39.5818,
+        "psnrDenMean": 39.6873,
+        "psnrDenCapped": 39.6873
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 560984,
+        "psnrNoisy": 19.2917,
+        "psnrDen": 36.8689,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 36.8689,
+        "psnrDenMean": 36.9132,
+        "psnrDenCapped": 36.9132
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 527183,
+        "psnrNoisy": 13.209,
+        "psnrDen": 38.7236,
+        "biasDen": -0.003,
+        "psnrDenPooled": 38.7236,
+        "psnrDenMean": 38.8053,
+        "psnrDenCapped": 38.8053
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 163519,
+        "psnrNoisy": 10.9692,
+        "psnrDen": 41.7813,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 41.7813,
+        "psnrDenMean": 41.6761,
+        "psnrDenCapped": 41.6761
+       },
+       "dynamic": {
+        "pixelsPerFrame": 33696,
+        "psnrNoisy": 14.6339,
+        "psnrDen": 26.8046,
+        "biasDen": 0.03,
+        "psnrDenPooled": 26.8046,
+        "psnrDenMean": 26.8357,
+        "psnrDenCapped": 26.8357
+       },
+       "static": {
+        "pixelsPerFrame": 1520640,
+        "psnrNoisy": 15.3798,
+        "psnrDen": 39.7807,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 39.7807,
+        "psnrDenMean": 39.8067,
+        "psnrDenCapped": 39.8067
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 33696,
+        "psnrNoisy": 11.6377,
+        "psnrDen": 35.5346,
+        "biasDen": 0.0097,
+        "psnrDenPooled": 35.5346,
+        "psnrDenMean": 35.5482,
+        "psnrDenCapped": 35.5482
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1503460,
+        "psnrNoisy": 12.347,
+        "psnrDen": 42.1339,
+        "biasDen": 0.0051,
+        "psnrDenPooled": 42.1339,
+        "psnrDenMean": 42.1411,
+        "psnrDenCapped": 42.1411
+       }
+      },
+      "biasDen": -0.0014,
+      "biasNoisy": 0,
+      "energyDen": -0.0019,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1294,
+      "flickerDen": 0.0045,
+      "flickerMcNoisy": 0.1228,
+      "flickerMcDen": 0.0052,
+      "tpsnrNoisy": 12.3302,
+      "tpsnrDen": 41.8067,
+      "flipNoisy": 0.1228,
+      "flipDen": 0.0285,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.0203,
+       "normalize": 1.2547,
+       "temporal": 3.1603,
+       "variance": 2.3997,
+       "atrous_0": 3.0652,
+       "atrous_1": 3.3935,
+       "atrous_2": 3.3493,
+       "total": 29.5092
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 15.426,
+      "psnrDen": 39.0219,
+      "psnrDenSettled": 38.9007,
+      "psnrDenFirstFrame": 39.2068,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 15.3622,
+      "psnrDenPooled": 38.9719,
+      "psnrDenSettledPooled": 38.8692,
+      "psnrNoisyCapped": 15.426,
+      "psnrDenCapped": 39.0219,
+      "psnrDenSettledCapped": 38.9007,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1554336,
+        "psnrNoisy": 15.3622,
+        "psnrDen": 38.9719,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 38.9719,
+        "psnrDenMean": 39.0219,
+        "psnrDenCapped": 39.0219
+       },
+       "contact": {
+        "pixelsPerFrame": 291890,
+        "psnrNoisy": 13.8513,
+        "psnrDen": 39.1964,
+        "biasDen": -0.0034,
+        "psnrDenPooled": 39.1964,
+        "psnrDenMean": 39.2624,
+        "psnrDenCapped": 39.2624
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 10942,
+        "psnrNoisy": 17.2451,
+        "psnrDen": 38.2666,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 38.2666,
+        "psnrDenMean": 38.9263,
+        "psnrDenCapped": 38.9263
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 302650,
+        "psnrNoisy": 29.3151,
+        "psnrDen": 40.8175,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 40.8175,
+        "psnrDenMean": 40.8893,
+        "psnrDenCapped": 40.8893
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 560984,
+        "psnrNoisy": 19.2917,
+        "psnrDen": 37.8866,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 37.8866,
+        "psnrDenMean": 37.8813,
+        "psnrDenCapped": 37.8813
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 527183,
+        "psnrNoisy": 13.209,
+        "psnrDen": 38.7968,
+        "biasDen": -0.003,
+        "psnrDenPooled": 38.7968,
+        "psnrDenMean": 38.8677,
+        "psnrDenCapped": 38.8677
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 163519,
+        "psnrNoisy": 10.9692,
+        "psnrDen": 41.6945,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 41.6945,
+        "psnrDenMean": 41.591,
+        "psnrDenCapped": 41.591
+       },
+       "dynamic": {
+        "pixelsPerFrame": 33696,
+        "psnrNoisy": 14.6339,
+        "psnrDen": 28.2411,
+        "biasDen": 0.0247,
+        "psnrDenPooled": 28.2411,
+        "psnrDenMean": 28.2115,
+        "psnrDenCapped": 28.2115
+       },
+       "static": {
+        "pixelsPerFrame": 1520640,
+        "psnrNoisy": 15.3798,
+        "psnrDen": 40.1639,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.1639,
+        "psnrDenMean": 40.1846,
+        "psnrDenCapped": 40.1846
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 33696,
+        "psnrNoisy": 11.6377,
+        "psnrDen": 35.7401,
+        "biasDen": 0.0098,
+        "psnrDenPooled": 35.7401,
+        "psnrDenMean": 35.6611,
+        "psnrDenCapped": 35.6611
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1503460,
+        "psnrNoisy": 12.347,
+        "psnrDen": 42.0392,
+        "biasDen": 0.0051,
+        "psnrDenPooled": 42.0392,
+        "psnrDenMean": 42.0487,
+        "psnrDenCapped": 42.0487
+       }
+      },
+      "biasDen": -0.0015,
+      "biasNoisy": 0,
+      "energyDen": -0.0021,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1294,
+      "flickerDen": 0.0046,
+      "flickerMcNoisy": 0.1228,
+      "flickerMcDen": 0.0052,
+      "tpsnrNoisy": 12.3302,
+      "tpsnrDen": 41.739,
+      "flipNoisy": 0.1228,
+      "flipDen": 0.0277,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.2066,
+       "normalize": 1.412,
+       "gradient_create": 0.5747,
+       "gradient_atrous_0": 0.2681,
+       "gradient_atrous_1": 0.2525,
+       "gradient_atrous_2": 0.2281,
+       "gradient_atrous_3": 0.2323,
+       "gradient_lambda": 0.3191,
+       "temporal": 3.2946,
+       "variance": 2.1155,
+       "atrous_0": 3.2457,
+       "atrous_1": 3.0971,
+       "atrous_2": 3.1481,
+       "total": 34.0102
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "cut": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=cut",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 14.7938,
+      "psnrDen": 40.3229,
+      "psnrDenSettled": 40.4773,
+      "psnrDenFirstFrame": 36.9725,
+      "psnrDenAfterCut": 39.9751,
+      "psnrNoisyPooled": 14.7486,
+      "psnrDenPooled": 40.1587,
+      "psnrDenSettledPooled": 40.3755,
+      "psnrNoisyCapped": 14.7938,
+      "psnrDenCapped": 40.3229,
+      "psnrDenSettledCapped": 40.4773,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1534465,
+        "psnrNoisy": 14.7486,
+        "psnrDen": 40.1587,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 40.1587,
+        "psnrDenMean": 40.3229,
+        "psnrDenCapped": 40.3229
+       },
+       "contact": {
+        "pixelsPerFrame": 29267,
+        "psnrNoisy": 9.6042,
+        "psnrDen": 33.2554,
+        "biasDen": 0.0031,
+        "psnrDenPooled": 33.2554,
+        "psnrDenMean": 33.3769,
+        "psnrDenCapped": 33.3769
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 90006,
+        "psnrNoisy": 12.8601,
+        "psnrDen": 35.9805,
+        "biasDen": 0.0001,
+        "psnrDenPooled": 35.9805,
+        "psnrDenMean": 36.8472,
+        "psnrDenCapped": 36.8472
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 491952,
+        "psnrNoisy": 14.077,
+        "psnrDen": 40.9146,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.9146,
+        "psnrDenMean": 41.5541,
+        "psnrDenCapped": 41.5541
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 422716,
+        "psnrNoisy": 15.8825,
+        "psnrDen": 40.9739,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.9739,
+        "psnrDenMean": 41.4227,
+        "psnrDenCapped": 41.4227
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 533280,
+        "psnrNoisy": 15.1966,
+        "psnrDen": 38.9598,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 38.9598,
+        "psnrDenMean": 40.1399,
+        "psnrDenCapped": 40.1399
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 86517,
+        "psnrNoisy": 12.2542,
+        "psnrDen": 41.2114,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 41.2114,
+        "psnrDenMean": 41.2771,
+        "psnrDenCapped": 41.2771
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6018,
+        "psnrNoisy": 10.8581,
+        "psnrDen": 25.7018,
+        "biasDen": 0.0116,
+        "psnrDenPooled": 25.7018,
+        "psnrDenMean": 25.1171,
+        "psnrDenCapped": 25.1171
+       },
+       "static": {
+        "pixelsPerFrame": 1528447,
+        "psnrNoisy": 14.7734,
+        "psnrDen": 40.6451,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 40.6451,
+        "psnrDenMean": 40.7623,
+        "psnrDenCapped": 40.7623
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6018,
+        "psnrNoisy": 7.8569,
+        "psnrDen": 24.3017,
+        "biasDen": 0.0498,
+        "psnrDenPooled": 24.3017,
+        "psnrDenMean": 24.312,
+        "psnrDenCapped": 24.312
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1485378,
+        "psnrNoisy": 11.7671,
+        "psnrDen": 38.969,
+        "biasDen": 0.0063,
+        "psnrDenPooled": 38.969,
+        "psnrDenMean": 39.0555,
+        "psnrDenCapped": 39.0555
+       }
+      },
+      "biasDen": -0.0008,
+      "biasNoisy": 0,
+      "energyDen": -0.0008,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1378,
+      "flickerDen": 0.0049,
+      "flickerMcNoisy": 0.1278,
+      "flickerMcDen": 0.0065,
+      "tpsnrNoisy": 11.7416,
+      "tpsnrDen": 38.4995,
+      "flipNoisy": 0.1133,
+      "flipDen": 0.0169,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.518,
+       "normalize": 1.8983,
+       "temporal": 3.9249,
+       "variance": 1.7843,
+       "atrous_0": 3.9178,
+       "atrous_1": 2.5089,
+       "atrous_2": 2.9511,
+       "total": 31.2689
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 14.7938,
+      "psnrDen": 40.2113,
+      "psnrDenSettled": 40.3388,
+      "psnrDenFirstFrame": 36.9725,
+      "psnrDenAfterCut": 39.9751,
+      "psnrNoisyPooled": 14.7486,
+      "psnrDenPooled": 40.0665,
+      "psnrDenSettledPooled": 40.2552,
+      "psnrNoisyCapped": 14.7938,
+      "psnrDenCapped": 40.2113,
+      "psnrDenSettledCapped": 40.3388,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1534465,
+        "psnrNoisy": 14.7486,
+        "psnrDen": 40.0665,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.0665,
+        "psnrDenMean": 40.2113,
+        "psnrDenCapped": 40.2113
+       },
+       "contact": {
+        "pixelsPerFrame": 29267,
+        "psnrNoisy": 9.6042,
+        "psnrDen": 33.2602,
+        "biasDen": 0.0039,
+        "psnrDenPooled": 33.2602,
+        "psnrDenMean": 33.412,
+        "psnrDenCapped": 33.412
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 90006,
+        "psnrNoisy": 12.8601,
+        "psnrDen": 35.9124,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 35.9124,
+        "psnrDenMean": 36.6535,
+        "psnrDenCapped": 36.6535
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 491952,
+        "psnrNoisy": 14.077,
+        "psnrDen": 40.8456,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 40.8456,
+        "psnrDenMean": 41.5138,
+        "psnrDenCapped": 41.5138
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 422716,
+        "psnrNoisy": 15.8825,
+        "psnrDen": 40.9269,
+        "biasDen": -0.0018,
+        "psnrDenPooled": 40.9269,
+        "psnrDenMean": 41.3431,
+        "psnrDenCapped": 41.3431
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 533280,
+        "psnrNoisy": 15.1966,
+        "psnrDen": 38.8372,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 38.8372,
+        "psnrDenMean": 39.8558,
+        "psnrDenCapped": 39.8558
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 86517,
+        "psnrNoisy": 12.2542,
+        "psnrDen": 41.0627,
+        "biasDen": -0.0029,
+        "psnrDenPooled": 41.0627,
+        "psnrDenMean": 41.1842,
+        "psnrDenCapped": 41.1842
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6018,
+        "psnrNoisy": 10.8581,
+        "psnrDen": 25.6944,
+        "biasDen": 0.01,
+        "psnrDenPooled": 25.6944,
+        "psnrDenMean": 25.0596,
+        "psnrDenCapped": 25.0596
+       },
+       "static": {
+        "pixelsPerFrame": 1528447,
+        "psnrNoisy": 14.7734,
+        "psnrDen": 40.5426,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 40.5426,
+        "psnrDenMean": 40.6453,
+        "psnrDenCapped": 40.6453
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6018,
+        "psnrNoisy": 7.8569,
+        "psnrDen": 24.3244,
+        "biasDen": 0.0496,
+        "psnrDenPooled": 24.3244,
+        "psnrDenMean": 24.3263,
+        "psnrDenCapped": 24.3263
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1485378,
+        "psnrNoisy": 11.7671,
+        "psnrDen": 39.1421,
+        "biasDen": 0.0061,
+        "psnrDenPooled": 39.1421,
+        "psnrDenMean": 39.2381,
+        "psnrDenCapped": 39.2381
+       }
+      },
+      "biasDen": -0.0021,
+      "biasNoisy": 0,
+      "energyDen": -0.0024,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1378,
+      "flickerDen": 0.0044,
+      "flickerMcNoisy": 0.1278,
+      "flickerMcDen": 0.0063,
+      "tpsnrNoisy": 11.7416,
+      "tpsnrDen": 38.6564,
+      "flipNoisy": 0.1133,
+      "flipDen": 0.0189,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.4132,
+       "normalize": 1.5788,
+       "gradient_create": 0.5627,
+       "gradient_atrous_0": 0.1803,
+       "gradient_atrous_1": 0.2092,
+       "gradient_atrous_2": 0.204,
+       "gradient_atrous_3": 0.2132,
+       "gradient_lambda": 0.2257,
+       "temporal": 2.9402,
+       "variance": 1.6811,
+       "atrous_0": 2.9162,
+       "atrous_1": 2.658,
+       "atrous_2": 2.6249,
+       "total": 29.6431
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 19.4391,
+      "psnrDen": 38.669,
+      "psnrDenSettled": 38.5531,
+      "psnrDenFirstFrame": 38.3697,
+      "psnrDenAfterCut": 39.727,
+      "psnrNoisyPooled": 19.3892,
+      "psnrDenPooled": 38.5874,
+      "psnrDenSettledPooled": 38.4855,
+      "psnrNoisyCapped": 19.4391,
+      "psnrDenCapped": 38.669,
+      "psnrDenSettledCapped": 38.5531,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1534465,
+        "psnrNoisy": 19.3892,
+        "psnrDen": 38.5874,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 38.5874,
+        "psnrDenMean": 38.669,
+        "psnrDenCapped": 38.669
+       },
+       "contact": {
+        "pixelsPerFrame": 173001,
+        "psnrNoisy": 15.8815,
+        "psnrDen": 35.0958,
+        "biasDen": -0.0002,
+        "psnrDenPooled": 35.0958,
+        "psnrDenMean": 35.156,
+        "psnrDenCapped": 35.156
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 90006,
+        "psnrNoisy": 16.1263,
+        "psnrDen": 36.4886,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 36.4886,
+        "psnrDenMean": 37.6652,
+        "psnrDenCapped": 37.6652
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 491952,
+        "psnrNoisy": 29.7132,
+        "psnrDen": 36.7325,
+        "biasDen": -0.0018,
+        "psnrDenPooled": 36.7325,
+        "psnrDenMean": 37.7321,
+        "psnrDenCapped": 37.7321
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 422716,
+        "psnrNoisy": 21.5567,
+        "psnrDen": 38.7934,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 38.7934,
+        "psnrDenMean": 39.162,
+        "psnrDenCapped": 39.162
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 533280,
+        "psnrNoisy": 17.5938,
+        "psnrDen": 40.7633,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.7633,
+        "psnrDenMean": 41.5092,
+        "psnrDenCapped": 41.5092
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 86517,
+        "psnrNoisy": 12.4674,
+        "psnrDen": 40.6229,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 40.6229,
+        "psnrDenMean": 40.6255,
+        "psnrDenCapped": 40.6255
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18594,
+        "psnrNoisy": 14.1624,
+        "psnrDen": 22.8612,
+        "biasDen": -0.018,
+        "psnrDenPooled": 22.8612,
+        "psnrDenMean": 22.9467,
+        "psnrDenCapped": 22.9467
+       },
+       "static": {
+        "pixelsPerFrame": 1515871,
+        "psnrNoisy": 19.5153,
+        "psnrDen": 41.154,
+        "biasDen": -0.001,
+        "psnrDenPooled": 41.154,
+        "psnrDenMean": 41.2286,
+        "psnrDenCapped": 41.2286
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18594,
+        "psnrNoisy": 11.1366,
+        "psnrDen": 27.8745,
+        "biasDen": 0.022,
+        "psnrDenPooled": 27.8745,
+        "psnrDenMean": 27.7679,
+        "psnrDenCapped": 27.7679
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1472802,
+        "psnrNoisy": 16.5569,
+        "psnrDen": 43.5885,
+        "biasDen": 0.0028,
+        "psnrDenPooled": 43.5885,
+        "psnrDenMean": 43.7069,
+        "psnrDenCapped": 43.7069
+       }
+      },
+      "biasDen": -0.0012,
+      "biasNoisy": 0,
+      "energyDen": -0.0014,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0582,
+      "flickerDen": 0.0036,
+      "flickerMcNoisy": 0.0532,
+      "flickerMcDen": 0.0031,
+      "tpsnrNoisy": 16.4245,
+      "tpsnrDen": 41.9682,
+      "flipNoisy": 0.0546,
+      "flipDen": 0.0169,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.1288,
+       "normalize": 1.3613,
+       "temporal": 3.4065,
+       "variance": 4.2641,
+       "atrous_0": 2.6191,
+       "atrous_1": 2.8898,
+       "atrous_2": 2.8793,
+       "total": 27.1918
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 19.4391,
+      "psnrDen": 39.77,
+      "psnrDenSettled": 39.7469,
+      "psnrDenFirstFrame": 38.5182,
+      "psnrDenAfterCut": 40.793,
+      "psnrNoisyPooled": 19.3892,
+      "psnrDenPooled": 39.7295,
+      "psnrDenSettledPooled": 39.7166,
+      "psnrNoisyCapped": 19.4391,
+      "psnrDenCapped": 39.77,
+      "psnrDenSettledCapped": 39.7469,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1534465,
+        "psnrNoisy": 19.3892,
+        "psnrDen": 39.7295,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 39.7295,
+        "psnrDenMean": 39.77,
+        "psnrDenCapped": 39.77
+       },
+       "contact": {
+        "pixelsPerFrame": 173001,
+        "psnrNoisy": 15.8815,
+        "psnrDen": 36.1549,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 36.1549,
+        "psnrDenMean": 36.1892,
+        "psnrDenCapped": 36.1892
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 90006,
+        "psnrNoisy": 16.1263,
+        "psnrDen": 37.003,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 37.003,
+        "psnrDenMean": 38.0737,
+        "psnrDenCapped": 38.0737
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 491952,
+        "psnrNoisy": 29.7132,
+        "psnrDen": 38.6582,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 38.6582,
+        "psnrDenMean": 39.5629,
+        "psnrDenCapped": 39.5629
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 422716,
+        "psnrNoisy": 21.5567,
+        "psnrDen": 39.8504,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 39.8504,
+        "psnrDenMean": 40.1484,
+        "psnrDenCapped": 40.1484
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 533280,
+        "psnrNoisy": 17.5938,
+        "psnrDen": 40.7505,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 40.7505,
+        "psnrDenMean": 41.4794,
+        "psnrDenCapped": 41.4794
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 86517,
+        "psnrNoisy": 12.4674,
+        "psnrDen": 40.5149,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 40.5149,
+        "psnrDenMean": 40.5095,
+        "psnrDenCapped": 40.5095
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18594,
+        "psnrNoisy": 14.1624,
+        "psnrDen": 24.5745,
+        "biasDen": -0.0146,
+        "psnrDenPooled": 24.5745,
+        "psnrDenMean": 24.5115,
+        "psnrDenCapped": 24.5115
+       },
+       "static": {
+        "pixelsPerFrame": 1515871,
+        "psnrNoisy": 19.5153,
+        "psnrDen": 41.8742,
+        "biasDen": -0.001,
+        "psnrDenPooled": 41.8742,
+        "psnrDenMean": 42.0142,
+        "psnrDenCapped": 42.0142
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18594,
+        "psnrNoisy": 11.1366,
+        "psnrDen": 28.544,
+        "biasDen": 0.0203,
+        "psnrDenPooled": 28.544,
+        "psnrDenMean": 28.3422,
+        "psnrDenCapped": 28.3422
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1472802,
+        "psnrNoisy": 16.5569,
+        "psnrDen": 43.5167,
+        "biasDen": 0.0029,
+        "psnrDenPooled": 43.5167,
+        "psnrDenMean": 43.6509,
+        "psnrDenCapped": 43.6509
+       }
+      },
+      "biasDen": -0.0011,
+      "biasNoisy": 0,
+      "energyDen": -0.0013,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0582,
+      "flickerDen": 0.0035,
+      "flickerMcNoisy": 0.0532,
+      "flickerMcDen": 0.0031,
+      "tpsnrNoisy": 16.4245,
+      "tpsnrDen": 42.1201,
+      "flipNoisy": 0.0546,
+      "flipDen": 0.0162,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 2.2168,
+       "normalize": 1.4275,
+       "gradient_create": 0.5419,
+       "gradient_atrous_0": 0.1642,
+       "gradient_atrous_1": 0.2165,
+       "gradient_atrous_2": 0.1863,
+       "gradient_atrous_3": 0.2271,
+       "gradient_lambda": 0.2668,
+       "temporal": 3.2209,
+       "variance": 2.452,
+       "atrous_0": 2.9169,
+       "atrous_1": 2.6218,
+       "atrous_2": 3.0469,
+       "total": 31.4481
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  },
+  "object": {
+   "query": "signal=ao,so&mode=eval&preset=full&denoiser=occlusion-svgf,occlusion-svgf-auto&path=object",
+   "signals": {
+    "ao": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 14.2547,
+      "psnrDen": 36.0461,
+      "psnrDenSettled": 36.11,
+      "psnrDenFirstFrame": 36.2298,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.2542,
+      "psnrDenPooled": 35.8669,
+      "psnrDenSettledPooled": 35.923,
+      "psnrNoisyCapped": 14.2547,
+      "psnrDenCapped": 36.0461,
+      "psnrDenSettledCapped": 36.11,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1530358,
+        "psnrNoisy": 14.2542,
+        "psnrDen": 35.8669,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 35.8669,
+        "psnrDenMean": 36.0461,
+        "psnrDenCapped": 36.0461
+       },
+       "contact": {
+        "pixelsPerFrame": 34944,
+        "psnrNoisy": 9.3518,
+        "psnrDen": 29.1908,
+        "biasDen": 0.0084,
+        "psnrDenPooled": 29.1908,
+        "psnrDenMean": 31.3767,
+        "psnrDenCapped": 31.3767
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 22664,
+        "psnrNoisy": 11.6471,
+        "psnrDen": 29.8097,
+        "biasDen": -0.0103,
+        "psnrDenPooled": 29.8097,
+        "psnrDenMean": 32.3714,
+        "psnrDenCapped": 32.3714
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 282014,
+        "psnrNoisy": 13.8559,
+        "psnrDen": 38.8602,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 38.8602,
+        "psnrDenMean": 39.9272,
+        "psnrDenCapped": 39.9272
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 520276,
+        "psnrNoisy": 14.9031,
+        "psnrDen": 36.2557,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 36.2557,
+        "psnrDenMean": 36.4567,
+        "psnrDenCapped": 36.4567
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 656739,
+        "psnrNoisy": 14.4437,
+        "psnrDen": 34.7123,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 34.7123,
+        "psnrDenMean": 35.1887,
+        "psnrDenCapped": 35.1887
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 71329,
+        "psnrNoisy": 11.1887,
+        "psnrDen": 36.8903,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 36.8903,
+        "psnrDenMean": 39.1244,
+        "psnrDenCapped": 39.1244
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18102,
+        "psnrNoisy": 10.7779,
+        "psnrDen": 21.873,
+        "biasDen": -0.0033,
+        "psnrDenPooled": 21.873,
+        "psnrDenMean": 22.982,
+        "psnrDenCapped": 22.982
+       },
+       "static": {
+        "pixelsPerFrame": 1512256,
+        "psnrNoisy": 14.3185,
+        "psnrDen": 37.3438,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 37.3438,
+        "psnrDenMean": 37.3582,
+        "psnrDenCapped": 37.3582
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18102,
+        "psnrNoisy": 7.4435,
+        "psnrDen": 28.5732,
+        "biasDen": 0.0226,
+        "psnrDenPooled": 28.5732,
+        "psnrDenMean": 31.329,
+        "psnrDenCapped": 31.329
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1493283,
+        "psnrNoisy": 10.9789,
+        "psnrDen": 48.4694,
+        "biasDen": 0.0022,
+        "psnrDenPooled": 48.4694,
+        "psnrDenMean": 48.6708,
+        "psnrDenCapped": 48.6708
+       }
+      },
+      "biasDen": -0.0006,
+      "biasNoisy": 0,
+      "energyDen": -0.0007,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1425,
+      "flickerDen": 0.0026,
+      "flickerMcNoisy": 0.1419,
+      "flickerMcDen": 0.0025,
+      "tpsnrNoisy": 10.914,
+      "tpsnrDen": 45.1299,
+      "flipNoisy": 0.1228,
+      "flipDen": 0.0232,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.6725,
+       "normalize": 1.4042,
+       "temporal": 2.1822,
+       "variance": 1.2073,
+       "atrous_0": 1.859,
+       "atrous_1": 1.966,
+       "atrous_2": 1.9436,
+       "total": 14.7485
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 14.2547,
+      "psnrDen": 36.5896,
+      "psnrDenSettled": 36.6185,
+      "psnrDenFirstFrame": 36.2298,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 14.2542,
+      "psnrDenPooled": 36.5164,
+      "psnrDenSettledPooled": 36.5411,
+      "psnrNoisyCapped": 14.2547,
+      "psnrDenCapped": 36.5896,
+      "psnrDenSettledCapped": 36.6185,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1530358,
+        "psnrNoisy": 14.2542,
+        "psnrDen": 36.5164,
+        "biasDen": -0.002,
+        "psnrDenPooled": 36.5164,
+        "psnrDenMean": 36.5896,
+        "psnrDenCapped": 36.5896
+       },
+       "contact": {
+        "pixelsPerFrame": 34944,
+        "psnrNoisy": 9.3518,
+        "psnrDen": 32.1014,
+        "biasDen": 0.0068,
+        "psnrDenPooled": 32.1014,
+        "psnrDenMean": 32.7566,
+        "psnrDenCapped": 32.7566
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 22664,
+        "psnrNoisy": 11.6471,
+        "psnrDen": 32.6495,
+        "biasDen": -0.0076,
+        "psnrDenPooled": 32.6495,
+        "psnrDenMean": 33.9709,
+        "psnrDenCapped": 33.9709
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 282014,
+        "psnrNoisy": 13.8559,
+        "psnrDen": 39.8559,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 39.8559,
+        "psnrDenMean": 40.3983,
+        "psnrDenCapped": 40.3983
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 520276,
+        "psnrNoisy": 14.9031,
+        "psnrDen": 36.5377,
+        "biasDen": -0.002,
+        "psnrDenPooled": 36.5377,
+        "psnrDenMean": 36.6171,
+        "psnrDenCapped": 36.6171
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 656739,
+        "psnrNoisy": 14.4437,
+        "psnrDen": 35.4573,
+        "biasDen": -0.002,
+        "psnrDenPooled": 35.4573,
+        "psnrDenMean": 35.684,
+        "psnrDenCapped": 35.684
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 71329,
+        "psnrNoisy": 11.1887,
+        "psnrDen": 38.6344,
+        "biasDen": -0.0025,
+        "psnrDenPooled": 38.6344,
+        "psnrDenMean": 39.7442,
+        "psnrDenCapped": 39.7442
+       },
+       "dynamic": {
+        "pixelsPerFrame": 18102,
+        "psnrNoisy": 10.7779,
+        "psnrDen": 24.5994,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 24.5994,
+        "psnrDenMean": 25.1941,
+        "psnrDenCapped": 25.1941
+       },
+       "static": {
+        "pixelsPerFrame": 1512256,
+        "psnrNoisy": 14.3185,
+        "psnrDen": 37.3475,
+        "biasDen": -0.002,
+        "psnrDenPooled": 37.3475,
+        "psnrDenMean": 37.3569,
+        "psnrDenCapped": 37.3569
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 18102,
+        "psnrNoisy": 7.4435,
+        "psnrDen": 30.906,
+        "biasDen": 0.0174,
+        "psnrDenPooled": 30.906,
+        "psnrDenMean": 33.4159,
+        "psnrDenCapped": 33.4159
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1493283,
+        "psnrNoisy": 10.9789,
+        "psnrDen": 51.1939,
+        "biasDen": 0.0014,
+        "psnrDenPooled": 51.1939,
+        "psnrDenMean": 51.9338,
+        "psnrDenCapped": 51.9338
+       }
+      },
+      "biasDen": -0.002,
+      "biasNoisy": 0,
+      "energyDen": -0.0022,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.1425,
+      "flickerDen": 0.0017,
+      "flickerMcNoisy": 0.1419,
+      "flickerMcDen": 0.0016,
+      "tpsnrNoisy": 10.914,
+      "tpsnrDen": 47.6378,
+      "flipNoisy": 0.1228,
+      "flipDen": 0.0244,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.4655,
+       "normalize": 1.3322,
+       "gradient_create": 0.4644,
+       "gradient_atrous_0": 0.1682,
+       "gradient_atrous_1": 0.1657,
+       "gradient_atrous_2": 0.1647,
+       "gradient_atrous_3": 0.1551,
+       "gradient_lambda": 0.1606,
+       "temporal": 2.2482,
+       "variance": 1.1855,
+       "atrous_0": 1.9026,
+       "atrous_1": 1.7858,
+       "atrous_2": 2.033,
+       "total": 15.0597
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    },
+    "so": {
+     "occlusion-svgf": {
+      "denoiser": "occlusion-svgf",
+      "psnrNoisy": 16.4382,
+      "psnrDen": 36.7007,
+      "psnrDenSettled": 36.9258,
+      "psnrDenFirstFrame": 37.7289,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.4372,
+      "psnrDenPooled": 36.179,
+      "psnrDenSettledPooled": 36.4578,
+      "psnrNoisyCapped": 16.4382,
+      "psnrDenCapped": 36.7007,
+      "psnrDenSettledCapped": 36.9258,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1530358,
+        "psnrNoisy": 16.4372,
+        "psnrDen": 36.179,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 36.179,
+        "psnrDenMean": 36.7007,
+        "psnrDenCapped": 36.7007
+       },
+       "contact": {
+        "pixelsPerFrame": 194373,
+        "psnrNoisy": 14.2751,
+        "psnrDen": 32.1889,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 32.1889,
+        "psnrDenMean": 33.6646,
+        "psnrDenCapped": 33.6646
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 22664,
+        "psnrNoisy": 16.9966,
+        "psnrDen": 28.214,
+        "biasDen": -0.0059,
+        "psnrDenPooled": 28.214,
+        "psnrDenMean": 33.389,
+        "psnrDenCapped": 33.389
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 282014,
+        "psnrNoisy": 31.2453,
+        "psnrDen": 36.2927,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 36.2927,
+        "psnrDenMean": 38.7484,
+        "psnrDenCapped": 38.7484
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 520276,
+        "psnrNoisy": 17.5445,
+        "psnrDen": 38.0931,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 38.0931,
+        "psnrDenMean": 39.8031,
+        "psnrDenCapped": 39.8031
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 656739,
+        "psnrNoisy": 15.1923,
+        "psnrDen": 34.8958,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 34.8958,
+        "psnrDenMean": 35.8334,
+        "psnrDenCapped": 35.8334
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 71329,
+        "psnrNoisy": 11.1119,
+        "psnrDen": 38.8797,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 38.8797,
+        "psnrDenMean": 39.9332,
+        "psnrDenCapped": 39.9332
+       },
+       "dynamic": {
+        "pixelsPerFrame": 32176,
+        "psnrNoisy": 13.6886,
+        "psnrDen": 21.1385,
+        "biasDen": -0.0032,
+        "psnrDenPooled": 21.1385,
+        "psnrDenMean": 21.2409,
+        "psnrDenCapped": 21.2409
+       },
+       "static": {
+        "pixelsPerFrame": 1498182,
+        "psnrNoisy": 16.5204,
+        "psnrDen": 40.9162,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 40.9162,
+        "psnrDenMean": 40.9629,
+        "psnrDenCapped": 40.9629
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 32176,
+        "psnrNoisy": 10.4706,
+        "psnrDen": 25.5782,
+        "biasDen": 0.0258,
+        "psnrDenPooled": 25.5782,
+        "psnrDenMean": 25.9747,
+        "psnrDenCapped": 25.9747
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1479210,
+        "psnrNoisy": 13.2561,
+        "psnrDen": 44.8166,
+        "biasDen": 0.0028,
+        "psnrDenPooled": 44.8166,
+        "psnrDenMean": 44.843,
+        "psnrDenCapped": 44.843
+       }
+      },
+      "biasDen": -0.0005,
+      "biasNoisy": 0,
+      "energyDen": -0.0006,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0992,
+      "flickerDen": 0.0035,
+      "flickerMcNoisy": 0.0989,
+      "flickerMcDen": 0.0033,
+      "tpsnrNoisy": 13.1737,
+      "tpsnrDen": 40.3994,
+      "flipNoisy": 0.0954,
+      "flipDen": 0.0221,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.4912,
+       "normalize": 1.3723,
+       "temporal": 2.2291,
+       "variance": 1.2794,
+       "atrous_0": 2.1304,
+       "atrous_1": 1.9817,
+       "atrous_2": 2.0839,
+       "total": 14.8651
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     },
+     "occlusion-svgf-auto": {
+      "denoiser": "occlusion-svgf-auto",
+      "psnrNoisy": 16.4382,
+      "psnrDen": 38.7949,
+      "psnrDenSettled": 38.9302,
+      "psnrDenFirstFrame": 37.5096,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.4372,
+      "psnrDenPooled": 38.5745,
+      "psnrDenSettledPooled": 38.7163,
+      "psnrNoisyCapped": 16.4382,
+      "psnrDenCapped": 38.7949,
+      "psnrDenSettledCapped": 38.9302,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1530358,
+        "psnrNoisy": 16.4372,
+        "psnrDen": 38.5745,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 38.5745,
+        "psnrDenMean": 38.7949,
+        "psnrDenCapped": 38.7949
+       },
+       "contact": {
+        "pixelsPerFrame": 194373,
+        "psnrNoisy": 14.2751,
+        "psnrDen": 35.5669,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 35.5669,
+        "psnrDenMean": 35.9156,
+        "psnrDenCapped": 35.9156
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 22664,
+        "psnrNoisy": 16.9966,
+        "psnrDen": 33.4298,
+        "biasDen": -0.0034,
+        "psnrDenPooled": 33.4298,
+        "psnrDenMean": 35.9168,
+        "psnrDenCapped": 35.9168
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 282014,
+        "psnrNoisy": 31.2453,
+        "psnrDen": 41.2744,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 41.2744,
+        "psnrDenMean": 41.8251,
+        "psnrDenCapped": 41.8251
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 520276,
+        "psnrNoisy": 17.5445,
+        "psnrDen": 40.0434,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 40.0434,
+        "psnrDenMean": 40.4648,
+        "psnrDenCapped": 40.4648
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 656739,
+        "psnrNoisy": 15.1923,
+        "psnrDen": 36.9595,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 36.9595,
+        "psnrDenMean": 37.4019,
+        "psnrDenCapped": 37.4019
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 71329,
+        "psnrNoisy": 11.1119,
+        "psnrDen": 39.6749,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 39.6749,
+        "psnrDenMean": 40.2319,
+        "psnrDenCapped": 40.2319
+       },
+       "dynamic": {
+        "pixelsPerFrame": 32176,
+        "psnrNoisy": 13.6886,
+        "psnrDen": 25.2468,
+        "biasDen": -0.0037,
+        "psnrDenPooled": 25.2468,
+        "psnrDenMean": 25.068,
+        "psnrDenCapped": 25.068
+       },
+       "static": {
+        "pixelsPerFrame": 1498182,
+        "psnrNoisy": 16.5204,
+        "psnrDen": 41.0975,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 41.0975,
+        "psnrDenMean": 41.1387,
+        "psnrDenCapped": 41.1387
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 32176,
+        "psnrNoisy": 10.4706,
+        "psnrDen": 29.2513,
+        "biasDen": 0.0187,
+        "psnrDenPooled": 29.2513,
+        "psnrDenMean": 28.9131,
+        "psnrDenCapped": 28.9131
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1479210,
+        "psnrNoisy": 13.2561,
+        "psnrDen": 44.6938,
+        "biasDen": 0.0029,
+        "psnrDenPooled": 44.6938,
+        "psnrDenMean": 44.7225,
+        "psnrDenCapped": 44.7225
+       }
+      },
+      "biasDen": -0.0004,
+      "biasNoisy": 0,
+      "energyDen": -0.0005,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0992,
+      "flickerDen": 0.0034,
+      "flickerMcNoisy": 0.0989,
+      "flickerMcDen": 0.0032,
+      "tpsnrNoisy": 13.1737,
+      "tpsnrDen": 42.3281,
+      "flipNoisy": 0.0954,
+      "flipDen": 0.0212,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 1.5817,
+       "normalize": 1.2801,
+       "gradient_create": 0.4593,
+       "gradient_atrous_0": 0.1625,
+       "gradient_atrous_1": 0.1628,
+       "gradient_atrous_2": 0.148,
+       "gradient_atrous_3": 0.1502,
+       "gradient_lambda": 0.164,
+       "temporal": 2.1119,
+       "variance": 1.1857,
+       "atrous_0": 2.0126,
+       "atrous_1": 1.9613,
+       "atrous_2": 2.1294,
+       "total": 15.3254
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0
+     }
+    }
+   }
+  }
+ },
+ "realScene": {
+  "three-orbit": [
+   {
+    "capture": "three-orbit",
+    "denoiser": "ref",
+    "pooled": 120,
+    "settled": 120,
+    "contact": 120,
+    "flicker": 0,
+    "boil": 0.014450106956014307,
+    "boilContact": 0.04768157685645555
+   },
+   {
+    "capture": "three-orbit",
+    "denoiser": "noisy",
+    "pooled": 12.523849594813273,
+    "settled": 12.54983750900376,
+    "contact": 8.349927243973182,
+    "flicker": 0.33743326966899956,
+    "boil": 0.23590951692496834,
+    "boilContact": 0.3907024964790416
+   },
+   {
+    "capture": "three-orbit",
+    "denoiser": "oal-ab-default-after",
+    "pooled": 33.42893053080393,
+    "settled": 33.41155156858024,
+    "contact": 21.26311916155368,
+    "flicker": 0.009120188538280205,
+    "boil": 0.009933056164343495,
+    "boilContact": 0.033583107540320206
+   },
+   {
+    "capture": "three-orbit",
+    "denoiser": "oal-ab-auto",
+    "pooled": 33.10487481679138,
+    "settled": 33.01868486904348,
+    "contact": 20.839896761403537,
+    "flicker": 0.00844285058203431,
+    "boil": 0.009194665534123424,
+    "boilContact": 0.031739729219124144
+   }
+  ],
+  "three-pan": [
+   {
+    "capture": "three-pan",
+    "denoiser": "ref",
+    "pooled": 120,
+    "settled": 120,
+    "contact": 120,
+    "flicker": 0,
+    "boil": 0.012920995544640866,
+    "boilContact": 0.049372723513428175
+   },
+   {
+    "capture": "three-pan",
+    "denoiser": "noisy",
+    "pooled": 12.738615843824759,
+    "settled": 12.774967042337412,
+    "contact": 8.238357798129046,
+    "flicker": 0.32917151818647256,
+    "boil": 0.23120630026832636,
+    "boilContact": 0.3941934359019245
+   },
+   {
+    "capture": "three-pan",
+    "denoiser": "oal-ab-default-after",
+    "pooled": 33.55203021656929,
+    "settled": 33.89649114042409,
+    "contact": 20.42713646154517,
+    "flicker": 0.009864143386193718,
+    "boil": 0.009880932563920758,
+    "boilContact": 0.03609403821688047
+   },
+   {
+    "capture": "three-pan",
+    "denoiser": "oal-ab-auto",
+    "pooled": 33.47552570774771,
+    "settled": 33.7955842599049,
+    "contact": 20.2347974103928,
+    "flicker": 0.009289649078723674,
+    "boil": 0.00912840462149529,
+    "boilContact": 0.03417346634049151
+   }
+  ]
+ }
+}

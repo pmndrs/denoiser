@@ -708,14 +708,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] `packages/denoiser-realtime/dev/main.ts` header comment still says `filter=recurrent&signal=both` defaults to "recurrent
       diffuse + SVGF antiLag 'auto' specular"; since 6be4f23 it runs both signals recurrent (pass `specularFilter=svgf` for the
       mix). Comment only — found by apply-decisions, owner package dev page (M7 agent's file)
-- [ ] `OcclusionDenoiser()` now means SVGF with SVGF's default `antiLag: 'auto'` (= registry `occlusion-svgf-auto`; the
+- [x] (occlusion-antilag-off, decided by Dennis 2026-10-25; results/OCCLUSION-ANTILAG.md: class default byte-identical to `occlusion-svgf`, explicit `'auto'` / `'off'` / recurrent unchanged on `std540-orbit` + `three-orbit`; SPEC §8.3 / §12 item 2, README, docs page) `OcclusionDenoiser()` now means SVGF with SVGF's default `antiLag: 'auto'` (= registry `occlusion-svgf-auto`; the
       `occlusion-svgf` entry pins `'off'` since 6be4f23). On the real scene `'off'` is 0.1–0.3 dB better on AO and 0.8 ms
       cheaper for AO + SO on the RTX bench (4.15 vs 4.95 ms); on the test bed `'auto'` is +0.1 AO / +0.9 dB SO. If occlusion
       should default to `'off'`, that's a one-line base option in `resolveOcclusion` (A/B per rule 9) — found by
       apply-decisions, owner Dennis / occlusion
 - [ ] Real-scene pages: `realtime-gi.html`'s AO (`realtimeOcclusion()` with class defaults) switched from recurrent to SVGF
       `'auto'`, so results/M6-real-scene.md's AO rows labelled "default" describe the old default — found by apply-decisions,
-      owner results / three-temporal (FYI)
+      owner results / three-temporal (FYI). Since occlusion-antilag-off the class default is `'off'` = M6's `occlusion-svgf` rows
 - [ ] **SPEC §8.5 deviations from the M7 build** (results/M7.md §8) — found by m7-sh, owner spec author:
       (a) M7-5: the à-trous luminance weight evaluates every tap's payload at the **centre's** direction (normal, or
       the dominant direction for specular), not the tap's own (cheaper, +0.01–0.02 dB dev page); temporal and
@@ -738,7 +738,8 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] **SVGF `antiLag` default is now `'auto'` (64a1123, Dennis q02)**: everything that relied on the implicit default runs
       `'auto'` now: registry `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain`, `svgf-plain-smooth` (so `svgf` = `svgf-auto` in
       new runs; pin `antiLag: 'off'` there if the ids should keep their meaning), and `OcclusionDenoiser({ filter: 'svgf' })`
-      (its own defaults pass no `antiLag`). `svgf-sh` pins `'off'`. — found by m7-sh, owners registry / occlusion
+      (its own defaults pass no `antiLag`). `svgf-sh` pins `'off'`. — found by m7-sh, owners registry / occlusion.
+      _Occlusion part done (occlusion-antilag-off): `OcclusionDenoiser` sets `antiLag: 'off'` itself._
 - [x] (reviews/nrd-review-targets-review.md) **Clean review of `sources/nrd-review-targets.md`** (c94934a): all 8
       targets, the evaluation agreement and the no-action list pass; no redactions; the five public references check
       out. Implementers may read it. Non-blocking notes for the evaluator: entry 1 says to test the recurrent option

@@ -727,3 +727,8 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   `rt-denoiser-sources/` now holds only allowed material.) When a clean review finds nothing to
   redact, still update the reviewed file's status line, so readers don't keep treating it as "pending".
   — clean reviewer (nrd-review-targets), 2026-10-25
+- A default flip whose byte check proves "new default = registry id X, old default = registry id Y" turns the A/B into one
+  eval page with `denoiser=X,Y` (no snapshots needed), and earlier runs of X / Y are still valid evidence (the
+  occlusion A/B reproduced REMEASURE §3 to the last digit). Before calling a mean gap "level", read the per-path and
+  per-region rows: occlusion AO `'off'` vs `'auto'` was −0.10 dB mean but −0.6 dB in contact, almost all of it on
+  `object`. — occlusion-antilag-off, 2026-10-26

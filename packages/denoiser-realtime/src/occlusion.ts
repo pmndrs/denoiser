@@ -5,7 +5,8 @@
 // SVGF beat the recurrent mode on every test-bed path for AO and SO, and on the real scene).
 //
 //   filter 'svgf' (default)       SVGF (Schied et al. 2017) on ĥ written as a gray image
-//                                 (src/svgf.ts unchanged; its luminance is ĥ)
+//                                 (src/svgf.ts unchanged; its luminance is ĥ); antiLag 'off' by
+//                                 default (SVGF radiance defaults to 'auto'; SPEC §12)
 //   filter 'recurrent'            the recurrent pipeline's occlusion-only mode (SPEC O-2;
 //                                 the memory-lean option): the same passes as the radiance
 //                                 filter with the radiance channels dropped, one r32float per
@@ -81,8 +82,11 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
   const { hitDistanceScale = DEFAULT_A, hitDistanceViewScale = DEFAULT_B, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
   // occlusion defaults (test bed, fast preset, 7 paths; T5 / results/M5.md): a tighter luminance
   // weight and 3 à-trous iterations (AO 36.12 -> 37.93 dB, SO 34.78 -> 36.24 vs the radiance
-  // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default)
-  const base = { sigmaLuminance: 1.5, atrousIterations: 3, ...svgf, remodulate: false };
+  // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default).
+  // antiLag 'off' unless set (SPEC §12, Dennis 2026-10-25), independently of SVGF radiance's 'auto':
+  // AO level on the test bed and +0.1-0.3 dB on the real scene, ~0.8 ms cheaper for AO + SO (RTX
+  // bench); 'auto' is ~0.9 dB better on SO and stays available
+  const base = { sigmaLuminance: 1.5, atrousIterations: 3, ...svgf, antiLag: svgf.antiLag ?? 'off', remodulate: false };
   const perSignal = signals.map((k) => resolveOptions(k === 'specular' && svgf.temporalAlpha === undefined ? { ...base, temporalAlpha: 0.3 } : base));
   return { filter, signals, o: perSignal[0], perSignal, hitDistanceScale, hitDistanceViewScale };
 }
