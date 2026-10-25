@@ -4,7 +4,8 @@
 // signals rendered into textures when they aren't textures already) and hands
 // over to TemporalDenoiseNode.
 //
-//   realtimeShadows(visibility, opts)              ShadowDenoiser         -> visibility in .r
+//   realtimeShadows(visibility, opts)              ShadowDenoiser         -> visibility in .r (with `translucency`:
+//                                                                            coloured shadow in .rgb, visibility in .a)
 //   realtimeDiffuse(radiance, opts)                DiffuseDenoiser        -> rgb (+ ĥ in .a with the recurrent filter)
 //   realtimeSpecular(radiance, opts)               SpecularDenoiser       -> rgb
 //   realtimeDiffuseSpecular({ diffuse, specular }) DiffuseSpecularDenoiser -> .diffuse / .specular nodes
@@ -22,7 +23,7 @@ import type {
   SpecularDenoiserOptions,
 } from '@pmndrs/denoiser-realtime';
 import type { FrameCamera, FrameGuides, ShadowInputs, ShadowLight, TemporalDenoiser } from '@pmndrs/denoiser-core';
-import { float, vec4 } from 'three/tsl';
+import { float, vec3, vec4 } from 'three/tsl';
 import type { Camera, Node } from 'three/webgpu';
 import { finite1, finite3, toSignalTexture, worldNormalTexture } from './tsl';
 import { TemporalDenoiseNode, denoiseNodeObject } from './TemporalDenoiseNode';
@@ -54,6 +55,15 @@ export interface RealtimeShadowsOptions extends RealtimeGuideOptions {
   hitDistance?: TextureNodeLike;
   /** The shadow-casting light (sphere or directional). Read every frame when it is a function. */
   light?: ShadowLightSource;
+  /**
+   * Coloured shadows through translucent layers (experimental, SPEC v0.3 §7.10): the rgb transmittance
+   * of the layers the shadow ray crossed (1 where none; ignored where visibility is 0), a vec3 node or
+   * a texture node's .rgb. Turns on the denoiser's `translucency` option: the result's .rgb is then the
+   * coloured shadow to multiply the light by, `.visibility` (= .a) the opaque visibility.
+   */
+  translucency?: TextureNodeLike;
+  /** With `translucency`: distance to the nearest translucent layer, 0 = none (a float node or a texture node's .r). */
+  translucencyHitDistance?: TextureNodeLike;
   denoiser?: ShadowDenoiserOptions;
 }
 
@@ -233,21 +243,31 @@ function twoOutputs<I extends object>(node: BothNode<I>): TwoOutputNodeObject<I>
 
 // ---- public factories ---------------------------------------------------------------
 
+/** `realtimeShadows()`'s node: `.light` can be reassigned; `.visibility` is the opaque visibility (.a with `translucency`, else .r). */
+export type ShadowNodeObject = TemporalDenoiseNodeObject<ShadowInputs> & { light: ShadowLightSource | undefined; readonly visibility: Node<'float'> };
+
 /**
  * `ShadowDenoiser` (denoiser/realtime, experimental) as a TSL node: penumbra-aware
  * shadow denoising of 1-ray visibility, fractional visibility kept.
  *
  * @param visibility - 1-spp visibility in [0, 1] (1 = lit): a float node or a texture node (.r).
- * @returns a node whose value is the denoised visibility in .r (rgba16float). Has
- *   `.resetHistory()`; `.light` can be reassigned.
+ * @returns a node whose value is the denoised visibility in .r (rgba16float); with `translucency`, the
+ *   coloured shadow in .rgb and the opaque visibility in .a. `.visibility` is the opaque visibility either
+ *   way. Has `.resetHistory()`; `.light` can be reassigned.
  */
-export function realtimeShadows(visibility: TextureNodeLike, options: RealtimeShadowsOptions): TemporalDenoiseNodeObject<ShadowInputs> & { light: ShadowLightSource | undefined } {
+export function realtimeShadows(visibility: TextureNodeLike, options: RealtimeShadowsOptions): ShadowNodeObject {
   const scale = options.resolutionScale ?? 1;
   const inputs: Record<string, TextureNodeLike> = { visibility: toSignalTexture(visibility, scale, (n) => vec4(n, 0, 0, 1)) };
   if (options.hitDistance) inputs.hitDistance = scalarTexture(options.hitDistance, scale, false);
-  return denoiseNodeObject(new ShadowNode(
-    (device) => new ShadowDenoiser(device, options.denoiser), inputs, guidesOf(options), options.camera, options,
-  )) as TemporalDenoiseNodeObject<ShadowInputs> & { light: ShadowLightSource | undefined };
+  const tr = !!options.translucency;
+  if (options.translucency) inputs.translucency = toSignalTexture(options.translucency, scale, (n) => vec4(vec3(n), 1));
+  if (tr && options.translucencyHitDistance) inputs.translucencyHitDistance = scalarTexture(options.translucencyHitDistance, scale, false);
+  const node = new ShadowNode(
+    (device) => new ShadowDenoiser(device, tr ? { ...options.denoiser, translucency: true } : options.denoiser), inputs, guidesOf(options), options.camera, options,
+  );
+  const obj = denoiseNodeObject(node) as ShadowNodeObject;
+  Object.defineProperty(node, 'visibility', { get: () => (node.getOutputNode(0) as unknown as Record<'a' | 'r', Node<'float'>>)[tr ? 'a' : 'r'], configurable: true });
+  return obj;
 }
 
 /**
