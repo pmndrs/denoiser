@@ -284,6 +284,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   uniform, so `if (c) { … } workgroupBarrier();` is legal. `dot4I8Packed` (`packed_4x8_integer_dot_product`, available
   in Chrome) was not faster than `dot(unpack4x8snorm(a), unpack4x8snorm(b))` on the M5 Pro. — shadows-reset, 2026-10-25
 
+- **rgba16float storage writes truncate on this GPU** (Chrome → Metal, M5 Pro): `textureStore` of 1 + 0.9 ulp
+  stores 1.0, while `pack2x16float` rounds to nearest (measured with a 64-texel probe). Every f16 storage
+  write loses ~½ ulp on average, an EMA history compounds it (~1/α writes), and plain SVGF comes out
+  ~0.1–0.16 dB darker/worse than the same filter packing f16 by hand. Compare filters at equal rounding (the
+  SH regression needed a truncating pack to match plain within 0.02 dB). — m7-sh, 2026-10-25
+- Quick WebGPU probes don't need a server: a one-file `index.html` under the scratchpad and
+  `BASE=file://<path>/index.html node packages/denoiser-realtime/dev/run-headless.mjs x=1` (the page sets
+  `window.__rt`). Size readback buffers for `bytesPerRow` × rows, or `mapAsync` hangs the run silently.
+  — m7-sh, 2026-10-25
+
 ## Conventions
 
 - Motion is an NDC delta, current − previous, +y up (three's `velocity`); row 0 of capture
