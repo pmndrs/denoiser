@@ -15,6 +15,7 @@
 // Only the nodes a view shows are in the graph, so the per-denoiser GPU timings are real.
 // ?path=orbit: the camera follows the scripted path of src/realtime/path.ts (the moving-camera
 // captures with per-pose references are written by realtime-gi.html?path=orbit&ref=1, CAPTURES.md).
+// ?path=knot-static / knot-orbit: the same with the torus knot rotating (moving-occluder captures).
 import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, uniform, uint, screenCoordinate, pass, mrt, output, diffuseColor, normalView,
@@ -30,7 +31,7 @@ import {
   type N, LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, pose, equivalentSphereRadius, blueNoise,
   AccumulateNode, readTexture, nonFiniteCount,
 } from './realtime/scene';
-import { PATH_FRAMES, pathPose } from './realtime/path';
+import { PATH_FRAMES, pathName, scenePose } from './realtime/path';
 
 mountShell({ id: 'three-temporal-realtime-shadows' });
 
@@ -38,7 +39,8 @@ const q = new URLSearchParams(location.search);
 const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
 const manual = q.has('manual');
 const sampler = q.get('sampler') === 'white' ? 'white' : 'blue';
-const pathMode = q.get('path') === 'orbit'; // scripted camera path (src/realtime/path.ts)
+// scripted path (src/realtime/path.ts): orbit (knot frozen), knot-static / knot-orbit (knot rotating)
+const pathMode = pathName(q.get('path'));
 // &sh.<option>=<value>: ShadowDenoiser options (numbers / true / false / strings), for experiments
 const shOptions: Record<string, unknown> = {};
 for (const [k, v] of q) if (k.startsWith('sh.')) shOptions[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number.isNaN(Number(v)) ? v : Number(v);
@@ -249,16 +251,15 @@ async function main() {
   let t = Number(q.get('t') ?? 0), frame = 0, moving = !q.has('paused'), shot = Number(q.get('shot') ?? 0);
   const prevView = new THREE.Matrix4();
   let prevLight = -1, prevT = -1;
-  let pathFrame = 0;
+  let pathFrame = 0, prevPathFrame = -1;
   const animate = () => {
     if (pathMode) {
-      // ?path=orbit: the scripted path of src/realtime/path.ts (realtime-gi writes captures of it); knot frozen
+      // ?path=...: the scripted path of src/realtime/path.ts (realtime-gi writes captures of it)
       if (moving && modes.view !== 'ref') {
         pathFrame = (pathFrame + 1) % PATH_FRAMES;
         if (pathFrame === 0) { ffx.resetHistory(); ours.resetHistory(); }
       }
-      pathPose(camera, pathFrame);
-      knot.rotation.set(0.4, 0, 0);
+      scenePose(pathMode, camera, knot, pathFrame);
     } else {
       if (moving && modes.view !== 'ref') t += 1 / 60;
       pose(camera, shot, t);
@@ -266,7 +267,8 @@ async function main() {
     }
     knot.updateMatrixWorld();
     (bvh as N).updateTransforms();
-    if (!prevView.equals(camera.matrixWorld) || prevLight !== lightHalf || prevT !== t) refAccum.count.value = 0;
+    if (!prevView.equals(camera.matrixWorld) || prevLight !== lightHalf || prevT !== t || prevPathFrame !== pathFrame) refAccum.count.value = 0;
+    prevPathFrame = pathFrame;
     prevView.copy(camera.matrixWorld);
     prevLight = lightHalf; prevT = t;
     uFrame.value = frame;

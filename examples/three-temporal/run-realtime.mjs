@@ -19,6 +19,8 @@
 //        realtime-gi.html?path=orbit&ref=1: writes CAPTURE-FORMAT v0 captures of the scripted camera
 //        path with a converged reference per pose (CAPTURES.md here), then tools/rt-capture/validate.mjs.
 //        Default set "moving": three-orbit (path frames 0-39) and three-pan (32-63; the pan starts at 8).
+//        --set=knot-static / --set=knot-orbit: the moving-occluder captures (torus knot rotating, CAPTURES.md):
+//        three-knot-static (48 frames, static camera) / three-knot-orbit (path frames 0-39); --path= overrides.
 //
 // Screenshots go to ./out/ (or $OUT); --json=file writes the results. Exit 1 if a check fails.
 import { spawn, spawnSync } from 'node:child_process';
@@ -263,13 +265,15 @@ async function runPathShots(cdp) {
 }
 
 // The moving-camera capture set (CAPTURES.md): name:start:frames on the 64-frame path of src/realtime/path.ts
-export const CAPTURE_SETS = { moving: 'three-orbit:0:40,three-pan:32:32' };
+export const CAPTURE_SETS = { moving: 'three-orbit:0:40,three-pan:32:32', 'knot-static': 'three-knot-static:0:48', 'knot-orbit': 'three-knot-orbit:0:40', 'knot-still': 'three-knot-still:0:32' };
+// scripted path (src/realtime/path.ts) of each set; one page load per path
+const SET_PATHS = { moving: 'orbit', 'knot-static': 'knot-static', 'knot-orbit': 'knot-orbit', 'knot-still': 'knot-still' };
 
 async function runCapture(cdp) {
   const T = makeT(cdp);
   const info = await T('window.__t.info');
   console.log('  ', JSON.stringify(info));
-  if (!info.capMode) throw new Error('page is not in capture mode (needs path=orbit&ref=1)');
+  if (!info.capMode) throw new Error('page is not in capture mode (needs path=<orbit|knot-static|knot-orbit>&ref=1)');
   const windows = (opt('windows') ?? CAPTURE_SETS[opt('set', 'moving')]).split(',').map((w) => {
     const [name, start, frames] = w.split(':');
     return { name, start: Number(start ?? 0), frames: Number(frames ?? 64) };
@@ -292,7 +296,8 @@ async function runCapture(cdp) {
 async function main() {
   setTimeout(() => { console.error('FAILED: timed out'); process.exit(3); }, Number(opt('timeout', 1_800_000))).unref();
   const page = scenario === 'smoke' ? opt('page', 'shadows.html') : `${opt('page', scenario === 'gi' || scenario === 'capture' ? 'realtime-gi' : 'realtime-shadows').replace(/\.html$/, '')}.html`;
-  const extra = [scenario === 'capture' ? 'path=orbit&ref=1' : scenario === 'path' ? 'path=orbit' : '', opt('query', '')].filter(Boolean).join('&');
+  const pathQ = `path=${opt('path', SET_PATHS[opt('set', 'moving')] ?? 'orbit')}`;
+  const extra = [scenario === 'capture' ? `${pathQ}&ref=1` : scenario === 'path' ? pathQ : '', opt('query', '')].filter(Boolean).join('&');
   const url = `http://127.0.0.1:${PORT}/${page}?manual=1${extra ? '&' + extra : ''}`;
   console.log(url);
   const { cdp, close } = await openPage(url);

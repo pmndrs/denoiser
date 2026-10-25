@@ -10,13 +10,28 @@
 // The pose is a pure function of the path frame, so a capture's frame i, a live run's frame i
 // and a re-run months later see the same camera. The scene itself is frozen on the path (the
 // torus knot does not rotate), so the motion comes from the camera alone (`static: true`).
+//
+// Moving-occluder paths (results/M4.md "Moving shadows"): the same, with the torus knot rotating at
+// the free-running pages' rate (t * 0.35 rad, t += 1/60 per frame), so its soft shadow sweeps the
+// back wall and floor while those receivers stay still (no motion vector follows the shadow):
+//   knot-static   static camera on the knot, its pedestal and its shadow (KNOT_VIEW)
+//   knot-orbit    the orbit's camera (frames 0..39 slow orbit, then the pan) with the knot rotating
+//   knot-still    control: knot-static's camera with the knot frozen (static wide penumbrae only)
 import * as THREE from 'three/webgpu';
 import { SHOTS } from './scene';
 
 export const PATH_FRAMES = 64;
 export const PAN_START = 40;
-export const PATH_NAMES = ['orbit'] as const;
+export const PATH_NAMES = ['orbit', 'knot-static', 'knot-orbit', 'knot-still'] as const;
 export type PathName = (typeof PATH_NAMES)[number];
+/** `?path=` value -> path name (undefined = free-running page). */
+export const pathName = (v: string | null): PathName | undefined => PATH_NAMES.find((n) => n === v);
+
+/** Knot rotation of the moving-occluder paths: rad per path frame (the free-running pages' rate) and fixed tilt. */
+export const KNOT_RATE = 0.35 / 60;
+export const KNOT_TILT = 0.4;
+/** knot-static camera: the knot, its pedestal and its shadow on the back wall / floor, close up. */
+export const KNOT_VIEW = { position: new THREE.Vector3(0.55, 1.05, 0.55), target: new THREE.Vector3(1.55, 0.6, -1.95) };
 
 const T = SHOTS[0].target;
 const A0 = 0.10, DA = 0.008;          // orbit angle at frame 0 and per frame (rad)
@@ -54,4 +69,28 @@ export function pathPose(camera: THREE.PerspectiveCamera, f: number) {
   camera.updateMatrixWorld();
 }
 
+/** Knot yaw (rad) at path frame `f` of path `name` (0 = frozen). */
+export function knotAngle(name: PathName, f: number): number {
+  return name === 'orbit' || name === 'knot-still' ? 0 : KNOT_RATE * Math.max(0, Math.min(PATH_FRAMES - 1, f));
+}
+
+/** Puts `camera` and the knot at path frame `f` of path `name` (updates their matrices). */
+export function scenePose(name: PathName, camera: THREE.PerspectiveCamera, knot: THREE.Object3D, f: number) {
+  if (name === 'knot-static' || name === 'knot-still') {
+    camera.position.copy(KNOT_VIEW.position);
+    camera.lookAt(KNOT_VIEW.target);
+    camera.updateMatrixWorld();
+  } else pathPose(camera, f);
+  knot.rotation.set(KNOT_TILT, knotAngle(name, f), 0);
+  knot.updateMatrixWorld();
+}
+
 export const PATH_DESCRIPTION = 'orbit: frames 0-39 slow orbit around the wide shot (0.46 deg/frame, dolly in), 40-63 fast pan (6 cm/frame slide + 1.6 deg/frame yaw left); torus knot frozen';
+
+export const PATH_DESCRIPTIONS: Record<PathName, string> = {
+  orbit: PATH_DESCRIPTION,
+  'knot-static': 'knot-static: static close-up camera on the torus knot, its pedestal and its shadow on the back wall / floor; the knot rotates 0.35/60 rad per frame about its tilted axis (the free-running pages\' rate)',
+  'knot-still': 'knot-still: control for knot-static: the same static camera, torus knot frozen',
+  'knot-orbit': 'knot-orbit: the orbit path\'s camera (frames 0-39 slow orbit, 40-63 fast pan) with the torus knot rotating 0.35/60 rad per frame',
+};
+
