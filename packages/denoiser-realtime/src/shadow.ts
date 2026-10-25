@@ -357,6 +357,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private pipes: Partial<Record<'temporalDepth' | 'temporalFloat', GPUComputePipeline>> = {};
   private tilesPipe: GPUComputePipeline;
   private spatialPipes: GPUComputePipeline[];
+  // translucency: the tau tiles' passes (the v-only tiles run spatialPipes / lastPipe over `list`)
+  private spatialTauPipes: GPUComputePipeline[] = [];
+  private spatialVLayout?: GPUBindGroupLayout;
+  private lastTauPipe?: GPUComputePipeline;
+  private listTau?: GPUBuffer;
 
   private geo: GPUTexture[] = [];
   private hist: GPUTexture[] = [];
@@ -388,7 +393,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       this.translucency = { packed, compose: !(o.stabilize > 0) };
     }
     const tr = this.translucency;
-    if (o.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device, PASSES.length);
+    if (o.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device, PASSES.length + 3);
     this.frame = device.createBuffer({ label: 'shadows frame', size: FRAME_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.params = device.createBuffer({ label: 'shadows params', size: SP_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.dummy = device.createTexture({ label: 'shadows dummy', size: [1, 1], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING });
@@ -406,20 +411,33 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.layouts = {
       temporalDepth: layout(device, 'shadows temporal (depth)', temporalKinds('d')),
       temporalFloat: layout(device, 'shadows temporal (float)', temporalKinds('f')),
-      tiles: layout(device, 'shadows tiles', ['u', 'sbr', 'sb', 'sb', 'sb', 'sb']),
+      tiles: layout(device, 'shadows tiles', tr ? ['u', 'sbr', 'sb', 'sb', 'sb', 'sb', 'sb'] : ['u', 'sbr', 'sb', 'sb', 'sb', 'sb']),
       spatial: layout(device, 'shadows spatial', spatialKinds),
       stabilize: layout(device, 'shadows stabilize', stabKinds),
     };
     if (tr) {
-      if (o.spatialPasses > 0) this.lastPipe = pipeline(device, 'shadows stabilize (translucency)', shadowStabilizeTrWgsl(tr), this.layouts.stabilize);
+      if (o.spatialPasses > 0) {
+        // compose reads the tile mode at run time; stabilize is specialized per list
+        this.lastPipe = pipeline(device, 'shadows stabilize (translucency, v tiles)', shadowStabilizeTrWgsl(tr, tr.compose ? true : false), this.layouts.stabilize);
+        this.lastTauPipe = tr.compose ? this.lastPipe : pipeline(device, 'shadows stabilize (translucency, tau tiles)', shadowStabilizeTrWgsl(tr, true), this.layouts.stabilize);
+      }
     } else if (o.stabilize > 0 && o.spatialPasses > 0) {
       this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     this.tilesPipe = pipeline(device, 'shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
-    this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
-      shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr),
-      this.layouts.spatial));
+    if (tr && !tr.packed) {
+      // wide path: the v-only tiles run the opaque denoiser's own spatial passes (same code, same cost)
+      this.spatialVLayout = layout(device, 'shadows spatial (v tiles)', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']);
+      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE), this.spatialVLayout!));
+    } else {
+      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
+        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, false), this.layouts.spatial));
+    }
+    if (tr) {
+      this.spatialTauPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i} (tau tiles)`,
+        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, true), this.layouts.spatial));
+    }
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
@@ -462,12 +480,13 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.tileStats = d.createBuffer({ label: 'shadows tile stats', size: tiles * 8, usage: GPUBufferUsage.STORAGE });
     this.tileMinG = d.createBuffer({ label: 'shadows tile scale', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
     this.list = d.createBuffer({ label: 'shadows tile list', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
+    if (tr) this.listTau = d.createBuffer({ label: 'shadows tau tile list', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
     this.activeTile = d.createBuffer({ label: 'shadows active tiles', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
     this.args = d.createBuffer({
-      label: 'shadows indirect args', size: 16,
+      label: 'shadows indirect args', size: 32,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
     });
-    d.queue.writeBuffer(this.args, 0, new Uint32Array([0, 1, 1, 0]));
+    d.queue.writeBuffer(this.args, 0, new Uint32Array([0, 1, 1, 0, 0, 1, 1, 0]));
     this.cur = 0;
     this.needsReset = true;
   }
@@ -510,11 +529,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
     const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
-    const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false) => {
+    const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false, argsOffset = 0) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });
       cp.setPipeline(p);
       cp.setBindGroup(0, g);
-      if (indirect) cp.dispatchWorkgroupsIndirect(this.args!, 0);
+      if (indirect) cp.dispatchWorkgroupsIndirect(this.args!, argsOffset);
       else cp.dispatchWorkgroups(x, y);
       cp.end();
     };
@@ -543,16 +562,27 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     pass('temporal', tp, group(d, this.layouts[kind], temporalRes), this.tilesX, this.tilesY);
     if (o.spatialPasses > 0) {
       enc.clearBuffer(this.args!, 0, 4);
-      pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!, this.activeTile!]),
+      if (tr) enc.clearBuffer(this.args!, 16, 4);
+      pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!, this.activeTile!, ...(tr ? [this.listTau!] : [])]),
         Math.ceil(this.tilesX / 8), Math.ceil(this.tilesY / 8));
       const src = [tr?.packed ? fCur : vOut, this.tTex!];
       const dst = o.spatialPasses === 1 ? [this.out] : [this.tTex!, this.out];
       const trSrc = tr ? [tr.packed ? this.dummy : this.trHist[cur], trT!] : [];
       const trDst = tr ? (o.spatialPasses === 1 ? [trOut!] : [trT!, trOut!]) : [];
       for (let i = 0; i < o.spatialPasses; i++) {
-        const res: Res[] = [this.frame, this.params, this.geo[cur], this.hist[cur], src[i], this.tileMinG!, this.list!, dst[i]!];
-        if (tr) res.push(this.activeTile!, trSrc[i], ...(tr.packed ? [] : [this.trHist[cur]]), trDst[i]);
-        pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, res), 0, 1, true);
+        const res = (list: GPUBuffer): Res[] => {
+          const r: Res[] = [this.frame, this.params, this.geo[cur], this.hist[cur], src[i], this.tileMinG!, list, dst[i]!];
+          if (tr) r.push(this.activeTile!, trSrc[i], ...(tr.packed ? [] : [this.trHist[cur]]), trDst[i]);
+          return r;
+        };
+        if (!tr) {
+          pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, res(this.list!)), 0, 1, true);
+        } else {
+          // v-only tiles (wide path: the opaque passes and bindings exactly), then the tau tiles
+          const vRes = tr.packed ? res(this.list!) : res(this.list!).slice(0, 8);
+          pass(`spatial${i}`, this.spatialPipes[i], group(d, this.spatialVLayout ?? this.layouts.spatial, vRes), 0, 1, true, 0);
+          pass(`spatial${i} tau`, this.spatialTauPipes[i], group(d, this.layouts.spatial, res(this.listTau!)), 0, 1, true, 16);
+        }
       }
     }
     let result = this.out;
@@ -566,14 +596,12 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     if (tr) {
       if (this.lastPipe) {
         const fPrev = this.fOut.length === 2 ? this.fOut[prev] : this.dummy;
-        let res: (Res | null)[];
-        if (tr.packed) {
-          res = [this.frame, this.params, this.out, this.tTex!, tr.compose ? this.dummy : fPrev, guides.motion, this.hist[cur], this.list!, this.activeTile!, fCur, trOut!];
-        } else {
-          res = [this.frame, this.params, this.out, this.tTex!, tr.compose ? this.dummy : this.stab[prev], guides.motion, this.hist[cur], this.list!, this.activeTile!,
-            tr.compose ? null : this.stab[cur], this.trHist[cur], trOut!, tr.compose ? null : fPrev, fCur];
-        }
-        pass('stabilize', this.lastPipe, group(d, this.layouts.stabilize, res), 0, 1, true);
+        const res = (list: GPUBuffer): (Res | null)[] => (tr.packed
+          ? [this.frame, this.params, this.out!, this.tTex!, tr.compose ? this.dummy : fPrev, guides.motion, this.hist[cur], list, this.activeTile!, fCur, trOut!]
+          : [this.frame, this.params, this.out!, this.tTex!, tr.compose ? this.dummy : this.stab[prev], guides.motion, this.hist[cur], list, this.activeTile!,
+            tr.compose ? null : this.stab[cur], this.trHist[cur], trOut!, tr.compose ? null : fPrev, fCur]);
+        pass('stabilize', this.lastPipe, group(d, this.layouts.stabilize, res(this.list!)), 0, 1, true, 0);
+        pass('stabilize tau', this.lastTauPipe!, group(d, this.layouts.stabilize, res(this.listTau!)), 0, 1, true, 16);
       }
       result = fCur;
       if (tr.packed) this.visResult = undefined;
@@ -673,11 +701,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.stab = [];
     this.trHist = [];
     this.fOut = [];
-    for (const b of [this.tileStats, this.tileMinG, this.args, this.list, this.activeTile]) b?.destroy();
+    for (const b of [this.tileStats, this.tileMinG, this.args, this.list, this.listTau, this.activeTile]) b?.destroy();
     this.geo = [];
     this.hist = [];
     this.tTex = this.out = this.trT = this.trOut = this.visResult = undefined;
-    this.tileStats = this.tileMinG = this.args = this.list = this.activeTile = undefined;
+    this.tileStats = this.tileMinG = this.args = this.list = this.listTau = this.activeTile = undefined;
   }
 
   dispose(): void {

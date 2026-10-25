@@ -694,7 +694,8 @@ ${paramsWgsl(tr)}
 @group(0) @binding(3) var<storage, read_write> args: array<atomic<u32>>;   // [count, 1, 1]
 @group(0) @binding(4) var<storage, read_write> list: array<u32>;
 @group(0) @binding(5) var<storage, read_write> activeTile: array<u32>;   // 1 = in the list (stabilize's box source)
-
+${tr ? `@group(0) @binding(6) var<storage, read_write> listTau: array<u32>;   // tau tiles (args[4..7]); list = v-only tiles
+` : ''}
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   if (gid.x >= SP.tilesX || gid.y >= SP.tilesY) { return; }
@@ -716,7 +717,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 ${tr ? `  // tau tiles (M8-5): lit samples both attenuated and clear in the 3x3 tiles, or tau differs from raw T
   let isTr = (fl & 24u) == 24u || (fl & 32u) != 0u;
   activeTile[idx] = select(0u, 1u, isActive) | select(0u, 2u, isTr);
-  if (isActive || isTr) {` : `  activeTile[idx] = select(0u, 1u, isActive);
+  // two indirect lists: v-only tiles run the opaque passes as they are, tau tiles the colour variants
+  if (isTr) {
+    let k = atomicAdd(&args[4], 1u);
+    listTau[k] = idx;
+  } else if (isActive) {` : `  activeTile[idx] = select(0u, 1u, isActive);
   if (isActive) {`}
     let k = atomicAdd(&args[0], 1u);
     list[k] = idx;
@@ -733,7 +738,7 @@ export const SHADOW_TILES_WGSL = shadowTilesWgsl(false);
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
  * Variant `withE`: radius blended toward the H18 noise radius.
  */
-export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false, tr?: TrVariant): string {
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false, tr?: TrVariant, tauTiles = true): string {
   const packed = !!tr?.packed;
   const vch = packed && pass === 0 ? 'a' : 'r';   // packed: pass 0 reads v from the final output's alpha
   const taps: string[] = [];
@@ -822,7 +827,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
 ${tr ? `  // translucency (M8-5/6): tile mode (v-only tiles skip tau, tau-only tiles pass v through)
   let mode = activeTile[tile];
   let vAct = (mode & 1u) != 0u;
-  let tAct = (mode & 2u) != 0u;
+  let tAct = ${tauTiles ? 'true' : 'false'};   // dispatched over the tau tiles (true) or the v-only tiles (false)
   var tauC = vec3f(1.0);
   if (tAct) { tauC = tauTap(p); }
   if (z <= 0.0) {
@@ -1028,7 +1033,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
  * v-only tiles take S = v tau with tau unfiltered. `compose`: no history, S = v-hat tau-hat only.
  * Writes the final output (rgba16float: S rgb, v) and, wide path, v's own r32float history.
  */
-export function shadowStabilizeTrWgsl(tr: TrVariant): string {
+export function shadowStabilizeTrWgsl(tr: TrVariant, tauTiles = true): string {
   const packed = tr.packed;
   const compose = !!tr.compose;
   const vp = packed ? 'a' : 'r';   // channel of v in the previous final output / history
@@ -1107,7 +1112,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
     else { vq = textureLoad(boxTex, q, 0).r; }
     sC[i] = vq;
     // the colour's box only in tau tiles (v-only tiles take S = v tau below)
-    if ((mode & 2u) != 0u) {
+    if (${tauTiles ? 'true' : 'false'}) {
       var tq: vec3f;
       if ((at & 2u) != 0u) { tq = textureLoad(trCur, q, 0).rgb; }
       else { tq = tauHist(q); }
@@ -1118,7 +1123,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
   let p = t0 + vec2i(lid.xy);
   if (!inside(p)) { return; }
   let vAct = (mode & 1u) != 0u;
-  let tAct = (mode & 2u) != 0u;
+  let tAct = ${tauTiles ? 'true' : 'false'};   // dispatched over the tau tiles or the v-only tiles
   let cur = textureLoad(curTex, p, 0).r;
   var lo = cur;
   var hi = cur;
