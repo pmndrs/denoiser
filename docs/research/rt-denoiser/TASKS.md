@@ -642,7 +642,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
       variance is high (MegaLights); à-trous access reordering (Dolp et al. I3D 2024, full text not
       yet obtained). — orchestrator, owner: unassigned
-- [ ] **Shadows v2.2 look** (Dennis, 2026-10-25, live `realtime-shadows.html`): no more boiling, but
+- [x] (shadows, 1a2861a, results/SHADOWS-LOOK.md: not the stabilization: `uniformSnap: 'change'` (default since 255a06a, never measured with v2.2) leaves a grey veil next to fine shadow detail on moving cameras, Bistro edge sharpness 0.680 → 0.595, −0.68 dB; `stabilize: 0` changes sharpness ±0.002; fix `snapHardPx: 2` + `backfacePass`, flip proposed below) **Shadows v2.2 look** (Dennis, 2026-10-25, live `realtime-shadows.html`): no more boiling, but
       the look is worse than before (likely softer / smeared penumbrae from the output
       stabilization or the radius blend). Refine later: compare v2.1 / v2.2 / FFX side by side on
       the knot and floor penumbrae, judge by eye plus FLIP and boil. Not blocking the phases.
@@ -807,7 +807,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       test bed's std540 captures on the same snapshot. Rankings agree on every signal (diffuse `svgf-auto` > `svgf` >
       `recurrent`, specular `svgf-auto` > `svgf` > `recurrent` > FFX, shadows ours > FFX +3.3…4.6 dB, AO SVGF > recurrent,
       −4…5 dB here). results/scenes-bistro-sponza.md, examples/three-temporal/CAPTURES.md "Bistro and Sponza" — orchestrator brief
-- [ ] Shadows under a small moving local light (`bistro-move`: sphere r 0.12 m moving 7 cm/frame, mostly hard shadows):
+- [~] (shadows, 1a2861a, results/SHADOWS-LOOK.md §B: the spatial filter, not lag: temporal-only scores 28.35; causes the H18 noise-sized half of the radius at clean steps (+2.0 dB capped), the 1-px `minRadius` (+2.5 more, but −0.16 dB at 1080p on the test bed), the terminator radius on back faces (`backfacePass`); `noiseCap: 2, noiseCapSettled: true` + `backfacePass` → 24.73, above the raw input; frame 0 still loses 23.4 vs 25.0, follow-up below) Shadows under a small moving local light (`bistro-move`: sphere r 0.12 m moving 7 cm/frame, mostly hard shadows):
       raw 1-ray input 24.42 dB pooled / FLIP 0.017 beats `shadows` 22.69 / 0.050 and `ffx-shadows` 19.65 / 0.109; ours
       already loses at frame 0 (spatial blur of near-hard edges) and trails the moving edges (bias +0.058). Penumbra
       and dynamic region are fine (13.7 vs 8.1, 13.3 vs 9.8). Repro: `mode=replay&capture=bistro-move&denoiser=shadows`
@@ -816,7 +816,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       AO 1.9× / 2.7×, where the corner and the test bed stay below the floor; recurrent is calm but −0.6…1.1 dB diffuse,
       −4…5 dB AO. Candidate for an option (rule 9), scored with `score-captures.mjs` boil on `sponza-*` / `bistro-*`
       (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner svgf
-- [ ] Shadows: static-penumbra boil 8–23 % above FFX's under the wide sun penumbrae of Sponza / Bistro (ours still
+- [ ] (shadows, measured in results/SHADOWS-LOOK.md: v22 +8…23 % over FFX at +3.7…5.2 dB static-penumbra PSNR, v2.1 was +18…32 %; `bfsh2` adds 1–3 %, `noiseCap` 5–18 %; not fixed, `rotationStep: 0` untested on the sun captures) Shadows: static-penumbra boil 8–23 % above FFX's under the wide sun penumbrae of Sponza / Bistro (ours still
       +3…5 dB penumbra PSNR); the corner and test bed show ours level or lower. Look at it with any boil work on
       shadows (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner shadows
 - [ ] Native NRD replay of the Bistro / Sponza captures (Windows harness): `sponza-orbit|pan|move`,
@@ -827,23 +827,48 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (`static: false`); specular is SSR, not demodulated (`demodulation.specular: "none"`); AO reference is the extra
       `ao_ref` (ĥ = h/(h + 1 + 0.05·(−viewz))). Score with `compare.mjs` + `score-captures.mjs` like ours — found by
       bistro-sponza, owner harness builder
-- [ ] **Doc/code mismatch, shadows radius formula** (found while writing SPEC v0.5 §7.5): SPEC v0.2 §7.5 and results/M4.md
+- [x] (shadows: correction note under M4 §10 item 1) **Doc/code mismatch, shadows radius formula** (found while writing SPEC v0.5 §7.5): SPEC v0.2 §7.5 and results/M4.md
       §10 write `R = ½·0.75·W·shrink + ½·32 px·E` (noise term unscaled); `shadowSpatialWgsl` blends first,
       `R = lerp(lightSize·g, 32 px·E, noiseBlend)`, then multiplies by `radiusScale` 0.75 × `lerp(1, historyShrink, A/maxHistory)`
       × 0.5 in pass 1. The H18 fallback is likewise 0.75·shrink·32 px·E (SPEC v0.1 / v0.2 said 24 / 32 px·E). The sweeps
       ran on the code, so only the written formula was off; SPEC v0.5 describes the code. M4 §10's formula line could
       get a correction note — found by spec-author, owner results (M4.md) / shadows
-- [ ] **Doc/code mismatch, shadows comments**: the tile buffers are **20 B per 8×8 tile** (stats `vec2u` 8 + nearest
+- [x] (shadows, 1a2861a: `src/shadow.ts` header 20 B per tile, `stabilize` doc "indirect, over the penumbra tiles"; M4 / M8 docs left as they are, ≈ 0.3 B/px either way) **Doc/code mismatch, shadows comments**: the tile buffers are **20 B per 8×8 tile** (stats `vec2u` 8 + nearest
       occluder 4 + list 4 + active flag 4; +4 for the τ list with `translucency`), but the `src/shadow.ts` header says
       "four tile-sized buffers (16 B per 8x8 tile)", results/M4.md §12.3 "+4 B per tile", results/M8.md §6 "+16 B per
       tile" (≈ 0.3 B/px, so no table moves); and the `stabilize` option's doc in `src/shadow.ts` says "one full-screen pass
       when on", but the pass is indirect over the penumbra tiles since 033a869. SPEC v0.5 §7.8 and the README use 20 B.
       Comment-only fix — found by spec-author, owner shadows (`packages/denoiser-realtime/src/shadow.ts`)
-- [ ] **Shipped shadows defaults never measured together at 1080p**: every v2.2 number (results/M4.md §12, E-1, M8)
+- [x] (shadows, results/SHADOWS-LOOK.md "Rule-9 A/B": shipped 38.38 / penumbra 29.37 / FLIP 0.0132 / flicker 0.0024 / tPSNR 41.09 vs `uniformSnap: true` 38.22 / 29.16 / 0.0131 / 0.0024 / 41.09, 7 paths × 96 f; knot rect boil 0.0014 both; real scenes `true` +0.14 dB, Bistro orbit +0.68) **Shipped shadows defaults never measured together at 1080p**: every v2.2 number (results/M4.md §12, E-1, M8)
       ran `uniformSnap: true`; the default is `'change'` since 255a06a, measured only on v2 (REMEASURE §4: +0.12 dB
       pooled, FLIP +2 %) and inside T1's cut / pan windows. Run `denoiser=shadows,shadows@sh.uniformSnap=true` on the 7
       paths at 1080p and the knot captures (boil), so SPEC §0.2 / §7 can quote the shipped configuration — found by
       spec-author, owner results / shadows
+- [ ] **Proposed default flip (Dennis approves, changes the look): shadows `backfacePass: true` + `snapHardPx: 2`.**
+      Passes rule 9 (results/SHADOWS-LOOK.md "Rule-9 A/B"): 1080p 7 paths 38.49 vs 38.38 dB pooled, penumbra 29.39 vs
+      29.37, FLIP 0.0124 vs 0.0132 (−6 %), flicker / tPSNR equal, no path below −0.02 dB; std540 35.66 vs 35.49, FLIP −9 %,
+      boil ±0; 11 real captures 28.86 vs 28.33, FLIP −14 %, boil +1 %; cost equal (`thin` −0.02 ms), memory equal. Look:
+      edges stay crisp on a moving camera (the grey veil of `'change'` goes, Bistro edge sharpness 0.595 → 0.679), surfaces
+      facing away from the light stay black. Caveats: dynamic-region boil +15 % on the moving-camera real captures (hard-edge
+      resampling, as v2.1 / `uniformSnap: true`; +0…4 % where the region is real motion), `bistro-move` static-penumbra
+      boil +8 %. Images: `results/img/shadows-look-bistro-orbit-facade.png`, `-knot-edges.png`, `-bistro-move-sign.png`
+      — found by shadows, owner Dennis → shadows (flip in `resolveShadowOptions`, README, SPEC §7.4 / §7.5)
+- [ ] **Question for Dennis: shadows `noiseCap: 2, noiseCapSettled: true`** (on top of the flip above, = `rec`): sharper
+      hard shadows (+1.20 dB on the 11 real captures vs shipped, `bistro-move` +2.0 dB to 24.73, above the raw input;
+      1080p +0.22 dB, FLIP −7 %) but rule 9's boil clause fails: std540 boil +6 % (max +12 %), static-penumbra boil
+      +3…17 %, real-scene static-penumbra boil +9 %, 1080p tPSNR −0.15. Sharper hard edges vs calmer wide penumbrae
+      (results/SHADOWS-LOOK.md "Verdict"; image `results/img/shadows-look-bistro-move-bollard.png`) — found by shadows,
+      owner Dennis
+- [ ] Shadows under hard local lights, frame 0 / fresh pixels: `bistro-move` frame 0 is 23.4 dB vs the raw 25.0 with every
+      kept variant (fresh pixels keep the noise radius; capping them cost the reset windows 1.5–4.8 dB at frame 0, the
+      occluder radius there is one sample and the 3×3-tile minimum). `minRadius: 0.5` + `mergeMin: false` win the 960×540
+      replays (+2.3 dB `bistro-move`) but lose 0.16 dB at 1080p (`thin` −0.57). Candidate: a hard-edge test from the raw
+      5×5 (a step with agreeing sides, not noise) instead of E or the tile minimum — found by shadows, owner shadows
+- [ ] compare.mjs: an edge-sharpness column (mean |∇out| / |∇ref| where |∇ref| > 0.1; results/SHADOWS-LOOK.md) —
+      boil and PSNR barely see the `'change'` veil, sharpness does (0.680 vs 0.595) — found by shadows, owner results
+- [ ] `packages/denoiser-realtime/README.md` shadows options: `snapHardPx`, `backfacePass`, `noiseCap`,
+      `noiseCapSettled` (1a2861a; after Dennis's call on the flip) — found by shadows, owner README
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -950,3 +975,7 @@ one-line pointer to the evidence. The list as it stood in SPEC v0.2:
 The entries that used to be here (joint default for `filter: 'recurrent'` — recurrent-spec; SPEC v0.1
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
+
+- **Shadows look (2026-10-26, shadows):** approve the default flip `backfacePass: true` + `snapHardPx: 2` (passes rule 9,
+  changes the look), and decide on `noiseCap` (sharper hard shadows, fails the boil clause). Both items under "Found
+  along the way"; evidence results/SHADOWS-LOOK.md.

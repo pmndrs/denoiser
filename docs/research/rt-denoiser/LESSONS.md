@@ -251,6 +251,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   scratch root of symlinks (`--outputs`) so it doesn't overwrite the shared outputs/<capture>/compare.json.
   — bistro-sponza, 2026-10-26
 
+- zsh doesn't word-split in `set -- $r` either (a loop over "name rect" strings passed one argument and crops.mjs died
+  with a NaN size); write a small function with explicit arguments instead. A waiter that greps a batch log for its
+  "last batch" line must compute that number from the job count (12 queries per page batch: 98 jobs end at batch 8,
+  not 9). — shadows, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -657,6 +662,25 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   When folding results into SPEC, read the option defaults (`resolve*Options`) and the shader expression, not only
   the results text. Same for "which defaults did this table run with": every v2.2 shadows number predates the
   `uniformSnap: 'change'` default. — spec-author (SPEC v0.5), 2026-10-26
+
+- **A "look" complaint can come from a default that flipped at the same time.** Dennis's "v2.2 looks less good" was
+  `uniformSnap: 'change'` (255a06a, the same evening), not the v2.2 pass: every v2.2 number had run `uniformSnap: true`.
+  List the default changes between the build that was measured and the build that was looked at, and ablate those too.
+  — shadows, 2026-10-26
+- **Still-camera captures can't show resampling softness.** `'change'` and v2.1 / v2.2 were identical on knot-still;
+  the grey veil only appears on moving cameras (a kept fractional history is resampled every frame). Neither PSNR
+  (−0.1 dB on average) nor boil (it *drops* when edges blur) shows it clearly, but an edge-sharpness ratio does: mean
+  |∇out| / |∇ref| where |∇ref| > 0.1, 0.680 → 0.595 on Bistro. — shadows, 2026-10-26
+- **H18's noise estimate E is large at every clean hard step, not just in noise.** A radius sized from E (the shadows'
+  `noiseBlend`) puts a several-pixel kernel on near-hard shadows, and on `bistro-move` it lost to the raw 1-ray input.
+  The 1-px `minRadius` floor blurs sub-pixel penumbrae the same way. Both are fine on the test bed's big soft light,
+  which is why its tuning never saw this. Cap E by what the occluder says (`noiseCap`), but only on settled pixels: on
+  fresh ones the occluder estimate is one sample plus a tile minimum, and capping there cost 1.5–4.8 dB at frame 0.
+  — shadows, 2026-10-26
+- Hard-edge options split the 16-frame std540 replays and the 96-frame 1080p live paths again (see the young-history
+  lesson): `minRadius: 0.5` + `mergeMin: false` scored level on std540 and +2.3 dB on `bistro-move`, but −0.16 dB at
+  1080p live (`thin` −0.57). The pixel footprint halves at 1080p, so a px-based floor means something else there.
+  Screen hard-edge changes at 1080p too. — shadows, 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
