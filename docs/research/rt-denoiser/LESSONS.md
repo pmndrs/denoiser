@@ -242,6 +242,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   the runner and its Chrome (`pkill -P <node pid>`) keeps a batch moving. `xargs -I{}` with a long replacement string
   fails with "command line cannot be assembled": wrap the job in a script and pass short arguments. — t1, 2026-10-26
 
+- compare.mjs's shadow "dynamic region" on moving-camera captures of static scenes is mostly resampling at hard edges
+  (5–17 k px/frame, the reference's own boil there 0.07–0.27, above every output's): read dynamic PSNR / boil only on
+  captures where an occluder or the light moves (`*-move`, `three-knot-*`, test bed `light` / `object`). `score-captures.mjs`
+  boil is counted only where the reference's own second difference is < 0.02 for that reason. — bistro-sponza, 2026-10-26
+- Comparing scenes at one commit: replay the old captures on the same pinned snapshot with
+  `replay-captures.mjs --prefix=<p>` (outputs/<capture>/<p><id>, other runs' folders untouched) and point compare.mjs at a
+  scratch root of symlinks (`--outputs`) so it doesn't overwrite the shared outputs/<capture>/compare.json.
+  — bistro-sponza, 2026-10-26
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
