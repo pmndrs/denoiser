@@ -59,6 +59,10 @@
 //   exact value when all 25 samples agree, history cap ~ (penumbra width in px)^2 against
 //   reprojection blur, analytic terminator radius (light partly below the horizon), affine
 //   reprojection taps (plane distance linear in the tap pixel).
+// - v2.2 output stabilization (results/M4.md "Moving shadows"): a short history of the final output,
+//   clamped to the 3x3 range of this frame's output, gated to narrow ranges, anti-lag on the clamp
+//   distance; source RTG II ch. 49 Sec. 49.5.7 prose (stabilization pass with its own history,
+//   outside the feedback loop, TAA-like clamping); the gate and the anti-lag gain are ours.
 // - Disk taps and rotation: SPEC R-3 / D3b (golden-angle spiral, Vogel 1979; animated 4x4
 //   Bayer rotation, Zhdan, Ray Tracing Gems II ch. 49 Sec. 49.5.5 prose; golden-ratio
 //   animation, Wolfe, RTG II ch. 24 Sec. 24.7.2).
@@ -77,8 +81,27 @@ export const SF_CATMULL = 64;     // Catmull-Rom history for visibility when the
 export const SF_SNAP = 128;       // uniform 5x5 neighbourhood: history := its value
 export const SF_SNAP_CHANGE = 256; // ... only where the history sits outside the clamp window (a change)
 
-/** Size of ShadowParams in bytes. */
-export const SP_SIZE = 92 * 4;
+/** ShadowParams.trFlags (translucency variants only) */
+export const TR_HAS_T = 1;        // a translucency texture is bound (else T = 1)
+export const TR_HAS_HIT = 2;      // a translucency hit-distance texture is bound
+export const TR_OWN_GATE = 4;     // stabilize: S also gets its own box-width gate
+export const TR_OWN_ANTILAG = 8;  // stabilize: S also gets its own clamp-distance anti-lag
+
+/** Size of ShadowParams in bytes (the translucency variants read 4 more floats). */
+export const SP_SIZE = 104 * 4;
+
+/**
+ * Translucency pipeline variant (SPEC v0.3 §7.10, M8): `packed` = the 4-storage-texture path (v's and
+ * tau's histories packed as 8 f16 in one rgba32uint, the final output doubles as v's unfiltered copy
+ * and stabilization history); otherwise the wide path (a separate tau history, 6 storage textures in
+ * the temporal pass). `compose`: no stabilization history (option stabilize = 0), the last pass only
+ * multiplies.
+ */
+export interface TrVariant { packed: boolean; compose?: boolean }
+
+const PARAMS_TR_FIELDS = /* wgsl */ `  trEps: f32, trMaxN: f32, trFlags: u32, trClampSigma: f32,
+  trClampFloor: f32, q5: f32, q6: f32, q7: f32,
+`;
 
 const PARAMS_WGSL = /* wgsl */ `
 struct ShadowParams {
@@ -101,7 +124,8 @@ struct ShadowParams {
   PB0: vec3f, youngTaper: f32,
   PBx: vec3f, pass1Phase: f32,
   PBy: vec3f, youngBase: f32,   // history A channel = A + youngBase x (young frames left), see temporal
-  clampMinTaps: f32, clampEdgePx: f32, r2: f32, r3: f32,
+  clampMinTaps: f32, clampEdgePx: f32, rotationStep: f32, stabilize: f32,
+  stabilizeBox: f32, stabilizeAntiLag: f32, stabilizeYoung: f32, q3: f32,
 }
 // history length A from the history's A channel (strips the young-frames counter)
 fn histA(z: f32) -> f32 { return z - SP.youngBase * floor(z / SP.youngBase); }
@@ -118,6 +142,19 @@ const SF_SNAP_CHANGE = ${SF_SNAP_CHANGE}u;
 const G_INF = 0x7f800000u;   // +inf bits: "no occluder estimate"
 `;
 
+/** ShadowParams WGSL; the translucency variants add four fields (trEps, trMaxN, trFlags). */
+function paramsWgsl(tr: boolean): string {
+  if (!tr) return PARAMS_WGSL;
+  return PARAMS_WGSL.replace('q3: f32,\n}', `q3: f32,\n${PARAMS_TR_FIELDS}}`) + /* wgsl */ `fn trFlag(f: u32) -> bool { return (SP.trFlags & f) != 0u; }
+const TR_HAS_T = ${TR_HAS_T}u;
+const TR_HAS_HIT = ${TR_HAS_HIT}u;
+const TR_OWN_GATE = ${TR_OWN_GATE}u;
+const TR_OWN_ANTILAG = ${TR_OWN_ANTILAG}u;
+fn min3(v: vec3f) -> f32 { return min(v.x, min(v.y, v.z)); }
+fn max3(v: vec3f) -> f32 { return max(v.x, max(v.y, v.z)); }
+`;
+}
+
 const TILE = 8;
 
 // ---------------------------------------------------------------------------- temporal
@@ -127,26 +164,35 @@ const TILE = 8;
  * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
  * tile's halo grows to max(2, youngRadius)).
  */
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false): string {
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
   const SW = TILE + 2 * HB;                            // shared tile width
   const YR = young ? youngRadius : 2;
   const depthDecl = depthIsDepthFormat ? 'texture_depth_2d' : 'texture_2d<f32>';
   const depthLoad = depthIsDepthFormat ? 'textureLoad(depthTex, p, 0)' : 'textureLoad(depthTex, p, 0).r';
+  const packed = !!tr?.packed;
   // 5x5 neighbourhood of raw visibility from the shared tile (unrolled)
   const nb: string[] = [];
   const nbG: string[] = [];
+  const tb: string[] = [];    // translucency: per-channel stats of raw T over lit taps
+  const tbG: string[] = [];
   for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
     const idx = `(l.y + ${y + HB - 2}u) * ${SW}u + l.x + ${x + HB - 2}u`;
     nb.push(`  { let s = sV[${idx}]; m1 += s; m2 += s * s; }`);
+    tb.push(`          { let w = sV[${idx}]; let t = sT[${idx}]; t0 += w; t1 += w * t; t2 += w * t * t; }`);
     if (!clampGeo) continue;
     // taps whose normal is within normalAngle of the receiver's vote (sky: normal 0, never)
     // (unpack + dot beat dot4I8Packed on the M5 Pro: no native 4x8 dot there)
     nbG.push(`        { let s = sV[${idx}]; let w = select(0.0, 1.0, dot(cN, unpack4x8snorm(sN[${idx}])) >= cCos); m0 += w; m1 += w * s; m2 += w * s * s; }`);
+    tbG.push(`          { let w = sV[${idx}] * select(0.0, 1.0, dot(tN, unpack4x8snorm(sN[${idx}])) >= tCos); let t = sT[${idx}]; t0 += w; t1 += w * t; t2 += w * t * t; }`);
   }
+  // translucency: history taps (wide: own tau history; packed: z / w of the packed history)
+  const histDecl = packed ? 'texture_2d<u32>' : 'texture_2d<f32>';
+  const histOutFmt = packed ? 'rgba32uint' : 'rgba16float';
+  const eArr = tr ? 'sE' : 'sV';
   return /* wgsl */ `
 ${FRAME_WGSL}
-${PARAMS_WGSL}
+${paramsWgsl(!!tr)}
 @group(0) @binding(0) var<uniform> F: Frame;
 @group(0) @binding(1) var<uniform> SP: ShadowParams;
 @group(0) @binding(2) var depthTex: ${depthDecl};
@@ -157,14 +203,20 @@ ${PARAMS_WGSL}
 @group(0) @binding(7) var visTex: texture_2d<f32>;
 @group(0) @binding(8) var hitTex: texture_2d<f32>;
 @group(0) @binding(9) var geoPrev: texture_2d<u32>;
-@group(0) @binding(10) var histPrev: texture_2d<f32>;
+@group(0) @binding(10) var histPrev: ${histDecl};
 @group(0) @binding(11) var outGeo: texture_storage_2d<rg32uint, write>;
-@group(0) @binding(12) var outHist: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(12) var outHist: texture_storage_2d<${histOutFmt}, write>;
 @group(0) @binding(13) var outT: texture_storage_2d<r32float, write>;
-@group(0) @binding(14) var outV: texture_storage_2d<r32float, write>;
+${packed ? `@group(0) @binding(14) var outF: texture_storage_2d<rgba16float, write>;   // final output (v tau, v); doubles as v's unfiltered copy`
+    : `@group(0) @binding(14) var outV: texture_storage_2d<r32float, write>;`}
 @group(0) @binding(15) var<storage, read_write> tileStats: array<vec2u>;
 @group(0) @binding(16) var smp: sampler;
-
+${tr ? `@group(0) @binding(17) var trTex: texture_2d<f32>;      // translucency T (rgb), ignored where v = 0
+@group(0) @binding(18) var trHitTex: texture_2d<f32>;   // distance to the nearest translucent layer (0 = none)
+${packed ? '' : `@group(0) @binding(19) var trPrev: texture_2d<f32>;     // tau history (tau rgb, n_tau)
+@group(0) @binding(20) var outTr: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(21) var outF: texture_storage_2d<rgba16float, write>;   // final output (v tau, v) outside the filtered tiles
+`}` : ''}
 ${REPROJECT_WGSL}
 
 // Linear depth (> 0) at p, 0 for sky / no surface (same rules as the shared prepass).
@@ -242,14 +294,34 @@ fn noiseE(l: vec2u) -> f32 {
     let st = array<i32, 4>(1, ${SW}, ${SW + 1}, ${SW - 1})[d];   // -, |, \\, / through the centre
     for (var k = -1; k <= 1; k++) {
       let c = c0 + k * st;
-      e += abs(sV[c - st] - 2.0 * sV[c] + sV[c + st]);
+      e += abs(${eArr}[c - st] - 2.0 * ${eArr}[c] + ${eArr}[c + st]);
     }
   }
   return e / 24.0;
 }
 
 fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
-
+${packed ? `
+// packed history (rgba32uint, 8 f16): v from .x; Catmull-Rom from 16 loads (not filterable)
+fn histV(q: vec2i) -> f32 { return unpack2x16float(textureLoad(histPrev, clampPix(q), 0).x).x; }
+fn catmullRom16V(uv: vec2f) -> f32 {
+  let pos = uv * F.dims;
+  let t1 = floor(pos - 0.5) + 0.5;
+  let f = pos - t1;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let b = vec2i(floor(pos - 0.5)) - 1;
+  var c = 0.0;
+  for (var j = 0; j < 4; j++) {
+    let wy = array<f32, 4>(w0.y, w1.y, w2.y, w3.y)[j];
+    let row = w0.x * histV(b + vec2i(0, j)) + w1.x * histV(b + vec2i(1, j)) + w2.x * histV(b + vec2i(2, j)) + w3.x * histV(b + vec2i(3, j));
+    c += wy * row;
+  }
+  return c;
+}
+` : ''}
 var<workgroup> sV: array<f32, ${SW * SW}>;     // raw visibility, ${SW}x${SW} = tile + ${HB}-px halo
 ${clampGeo ? `var<workgroup> sN: array<u32, ${SW * SW}>;     // unit world normal, pack4x8snorm (0 = sky / none), same tile` : ''}
 var<workgroup> wgMinG: atomic<u32>;     // min penumbra scale over the tile (f32 bits, >= 0)
@@ -257,7 +329,10 @@ var<workgroup> wgFlags: atomic<u32>;    // 1 fractional history, 2 raw < 1, 4 ra
 ${clampGeo ? `var<workgroup> wgHi: atomic<u32>;       // max raw visibility over the shared tile (f32 bits; zero-initialized)
 var<workgroup> wgLoInv: atomic<u32>;    // max of 1 - raw visibility
 var<workgroup> wgMixed: u32;            // the shared tile's raw samples disagree (normal tile loaded)` : ''}
-
+${tr ? `var<workgroup> sT: array<vec3f, ${SW * SW}>;   // raw translucency T, same tile
+var<workgroup> sE: array<f32, ${SW * SW}>;     // v x mean(T): the noise estimate's input (= v where T = 1)
+var<workgroup> wgTr: atomic<u32>;       // some lit sample of the shared tile is attenuated (T < 1)
+` : ''}
 @compute @workgroup_size(${TILE}, ${TILE})
 fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u,
         @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
@@ -271,14 +346,25 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
     tLo = min(tLo, v);
   }
   if (li == 0u) { atomicStore(&wgMinG, G_INF); atomicStore(&wgFlags, 0u); }
-${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
+${tr ? `  // translucency (M8): raw T of the shared tile (each thread its own texels of sV, no barrier needed)
+  var trAny = false;
+  for (var i = li; i < ${SW * SW}u; i += 64u) {
+    var t = vec3f(1.0);
+    if (trFlag(TR_HAS_T)) { t = clamp(textureLoad(trTex, clampPix(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u))), 0).rgb, vec3f(0.0), vec3f(1.0)); }
+    sT[i] = t;
+    sE[i] = sV[i] * ((t.x + t.y + t.z) / 3.0);
+    trAny = trAny || (sV[i] > 0.0 && min3(t) < 1.0);
+  }
+  if (trAny) { atomicOr(&wgTr, 1u); }
+` : ''}${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
   atomicMax(&wgLoInv, bitcast<u32>(1.0 - tLo));
   workgroupBarrier();
   if (li == 0u) { wgMixed = select(0u, 1u, bitcast<f32>(atomicLoad(&wgHi)) > 1.0 - bitcast<f32>(atomicLoad(&wgLoInv))); }
   // normal tile only where the raw samples disagree somewhere in it (elsewhere every
   // 5x5 subset agrees and the geometry test can't change anything)
   let mixedTile = workgroupUniformLoad(&wgMixed) != 0u;
-  if (mixedTile) {
+${tr ? `  let trTile = atomicLoad(&wgTr) != 0u;   // (translucency: the tau clamp's normal test needs the normal tile too)
+` : ''}  if (mixedTile${tr ? ' || trTile' : ''}) {
     for (var i = li; i < ${SW * SW}u; i += 64u) {
       let q = clampPix(base + vec2i(i32(i % ${SW}u), i32(i / ${SW}u)));
       let nq = textureLoad(normalTex, q, 0).xyz;
@@ -286,14 +372,18 @@ ${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
     }
   }` : ''}
   workgroupBarrier();
-
+${tr && !clampGeo ? `  let trTile = atomicLoad(&wgTr) != 0u;
+` : ''}
   let p = vec2i(gid.xy);
   let l = vec2u(lid.xy);
   var vAcc = 0.0;
   var yW = 0.0;        // young-history weight of the 5x5 mean (0 = not young / off)
   var gOwn = -1.0;     // own penumbra-scale estimate (-1 = none)
   var pixW = 1.0;      // world size of one pixel at this depth
-  if (inside(p)) {
+${tr ? `  var tau = vec3f(1.0); // translucency: conditional transmittance E[T | v = 1] (M8-2)
+  var nT = 0.0;        // its sample count n_tau
+  var trFl = 0u;       // tau tile bits (8 lit sample attenuated, 16 lit sample clear, 32 tau differs from raw T)
+` : ''}  if (inside(p)) {
     var g: Geo;
     g.z = linZ(p);
     g.n = vec3f(0.0, 0.0, 1.0);
@@ -310,7 +400,8 @@ ${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
       let r = reprojFast(p, g);
       var A = -1.0;
       var yPrev = 0.0;
-      var vH = 0.0;
+${packed ? `      var trH = vec4f(1.0, 1.0, 1.0, 0.0);   // reprojected tau history (tau rgb, n_tau)
+` : ''}      var vH = 0.0;
       var gH = 0.0;
       var nW = 0.0;
       if (!hasFlag(FRAME_RESET) && r.sumW > 0.0) {
@@ -321,8 +412,14 @@ ${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
         var lo = 1.0;
         var hi = 0.0;
         var yAcc = 0.0;
-        for (var k = 0; k < 4; k++) {
-          var hk = textureLoad(histPrev, clampPix(r.base + TAP_OFFS[k]), 0);
+${packed ? `        var trAcc = vec4f(0.0);
+` : ''}        for (var k = 0; k < 4; k++) {
+${packed ? `          let hu = textureLoad(histPrev, clampPix(r.base + TAP_OFFS[k]), 0);
+          var hk = vec4f(unpack2x16float(hu.x), unpack2x16float(hu.y));
+          let tk = vec4f(unpack2x16float(hu.z), unpack2x16float(hu.w));
+          if (k == 0) { trH = tk; }
+          trAcc += (tk - trH) * w[k];`
+    : `          var hk = textureLoad(histPrev, clampPix(r.base + TAP_OFFS[k]), 0);`}
           let yk = floor(hk.z / SP.youngBase);   // young frames left (0 once settled)
           hk.z -= yk * SP.youngBase;
           yAcc += yk * w[k];
@@ -337,12 +434,13 @@ ${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
         vH = acc.x;
         if (spFlag(SF_CATMULL) && r.allValid) {
           // sharper resampling: repeated bilinear reprojection blurs narrow penumbrae
-          vH = clamp(sampleCatmullRom(histPrev, smp, r.prevUV).x, lo, hi);
+          vH = clamp(${packed ? 'catmullRom16V(r.prevUV)' : 'sampleCatmullRom(histPrev, smp, r.prevUV).x'}, lo, hi);
         }
         A = acc.z;
         nW = acc.w;
         gH = select(0.0, gs.x / gs.y, gs.y > 0.0);
-      }
+${packed ? `        trH += trAcc * ws;
+` : ''}      }
       // ---- penumbra scale sample: W = lightSize * gS (M12 Eq. 13 rewritten for h)
       var gS = -1.0;
       if (spFlag(SF_NOISE)) {
@@ -357,7 +455,19 @@ ${clampGeo ? `  atomicMax(&wgHi, bitcast<u32>(tHi));
             gS = h;
           }
         }
-      }
+      }${tr ? ` else if (trFlag(TR_HAS_HIT) && 1.0 - min3(sT[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u]) > SP.trEps) {
+        // translucency (M8-3): a lit sample through a translucent layer sizes the footprint by the
+        // distance to the nearest such layer, like an occluded one by h (nearest blocker of either kind)
+        let h = textureLoad(trHitTex, p, 0).r;
+        if (h > 0.0) {
+          if (spFlag(SF_SPHERE)) {
+            let D = length(SP.light - r.world);
+            gS = h / max(D - h, 1e-3 * D);
+          } else {
+            gS = h;
+          }
+        }
+      }` : ''}
       var nWn = select(0.0, nW, A >= 0.0);
       var gAcc = select(0.0, gH, A >= 0.0);
       if (gS >= 0.0) {
@@ -426,7 +536,66 @@ ${nb.join('\n')}
       // by the history cap or by anti-lag, so it marks "recently new", not "short history"
       let yN = select(max(round(yPrev) - 1.0, 0.0), SP.youngFrames, An == 0.0);
       hist = vec4f(vAcc, gAcc, An + SP.youngBase * yN, nWn);
-${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
+${tr ? `      // ---- translucency (M8-4, our design): tau = E[T | v = 1], accumulated only over samples that
+      // reached the light (weight v), clamped per channel to the 5x5 mean +- window of raw T over the
+      // lit taps (the normal-tested taps of v's window, >= clampMinTaps of them, else no clamp), with
+      // v's window form and restart gain, capped at trMaxN samples
+      {
+        ${packed ? `var tH = trH.xyz;
+        var nH = trH.w;` : `var tH = vec3f(1.0);
+        var nH = 0.0;
+        if (!hasFlag(FRAME_RESET) && r.sumW > 0.0) {
+          let w = max(r.bil, vec4f(1e-3)) * r.valid;
+          // relative to the first tap: a uniform history (e.g. tau = 1) comes back exactly, no f16 drift
+          let h0 = textureLoad(trPrev, clampPix(r.base), 0);
+          var acc = vec4f(0.0);
+          for (var k = 1; k < 4; k++) { acc += (textureLoad(trPrev, clampPix(r.base + TAP_OFFS[k]), 0) - h0) * w[k]; }
+          acc = h0 + acc / (w.x + w.y + w.z + w.w);
+          tH = acc.xyz;
+          nH = acc.w;
+        }`}
+        let tRaw = sT[(l.y + ${HB}u) * ${SW}u + l.x + ${HB}u];
+        var muT = vec3f(1.0);    // no attenuated lit sample in the shared tile: every lit tap has T = 1
+        var sgT = vec3f(0.0);
+        var tn = m1;             // lit taps of v's window (binary v)
+        if (trTile) {
+          var t0 = 0.0;
+          var t1 = vec3f(0.0);
+          var t2 = vec3f(0.0);
+${clampGeo ? `          let tN = unpack4x8snorm(pack4x8snorm(vec4f(g.n, 0.0)));
+          let tCos = (SP.normalCos - 0.02) * dot(tN, tN);
+${tbG.join('\n')}
+          if (t0 < SP.clampMinTaps) {
+            t0 = 0.0;
+            t1 = vec3f(0.0);
+            t2 = vec3f(0.0);
+  ${tb.join('\n  ')}
+          }` : tb.join('\n')}
+          tn = t0;
+          muT = t1 / max(t0, 1e-6);
+          sgT = sqrt(max(t2 / max(t0, 1e-6) - muT * muT, vec3f(0.0)));
+        }
+        var tC = tH;
+        if (tn >= SP.clampMinTaps) {
+          let winT = SP.trClampSigma * sgT * sqrt(25.0 / tn) + SP.trClampFloor;
+          tC = clamp(tH, muT - winT, muT + winT);
+          // every lit tap sees the same T (clear, or one uniform layer): take it exactly (v's uniform
+          // snap, SH-4); otherwise the f16 history's rounding drifts tau below 1 where nothing is in the way
+          if (all(sgT == vec3f(0.0))) { tC = muT; }
+        }
+        nH = mix(nH, 0.0, saturate(SP.antiLag * max3(abs(tC - tH))));
+        if (vRaw > 0.0) {
+          // (as a step from tC: exact when the sample agrees with the history, whatever the division's accuracy)
+          tau = tC + (vRaw / (nH + vRaw)) * (tRaw - tC);
+          nT = min(nH + vRaw, SP.trMaxN);
+          trFl = select(16u, 8u, 1.0 - min3(tRaw) > SP.trEps);
+          if (max3(abs(tau - tRaw)) > SP.trEps) { trFl |= 32u; }
+        } else {
+          tau = tC;
+          nT = nH;
+        }
+      }
+` : ''}${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
       // over at most maxWHistory + 1 frames and stored in the geometry's 8-bit roughness slot
       let eCur = noiseE(l);
       g.rough = select(eCur, mix(ePrev, eCur, 1.0 / (min(An, SP.maxWHistory) + 1.0)), An > 0.0);` : ''}
@@ -449,10 +618,12 @@ ${young ? `      // young history (our design): on a fresh pixel the 1-spp sampl
       if (vAcc > 1e-3 && vAcc < 0.999) { fl |= 1u; }
       if (vRaw < 0.999) { fl |= 2u; }
       if (vRaw > 1e-3) { fl |= 4u; }
-      if (fl != 0u) { atomicOr(&wgFlags, fl); }
+${tr ? `      fl |= trFl;
+` : ''}      if (fl != 0u) { atomicOr(&wgFlags, fl); }
     }
     textureStore(outGeo, p, vec4u(packGeoTap(g), 0u, 0u));
-    textureStore(outHist, p, hist);
+    textureStore(outHist, p, ${packed ? 'vec4u(pack2x16float(hist.xy), pack2x16float(hist.zw), pack2x16float(tau.xy), pack2x16float(vec2f(tau.z, nT)))' : 'hist'});${tr && !packed ? `
+    textureStore(outTr, p, vec4f(tau, nT));` : ''}
   }
   workgroupBarrier();
   if (inside(p)) {
@@ -501,7 +672,8 @@ ${young ? `    if (yW > 0.0) {
       }
     }` : ''}
     textureStore(outT, p, vec4f(vOut, 0.0, 0.0, 0.0));
-    textureStore(outV, p, vec4f(vOut, 0.0, 0.0, 0.0));
+${packed ? '' : `    textureStore(outV, p, vec4f(vOut, 0.0, 0.0, 0.0));`}${tr ? `
+    textureStore(outF, p, vec4f(vOut * tau, vOut));` : ''}
   }
   if (li == 0u) {
     tileStats[wid.y * SP.tilesX + wid.x] = vec2u(atomicLoad(&wgMinG), atomicLoad(&wgFlags));
@@ -512,13 +684,16 @@ ${young ? `    if (yW > 0.0) {
 
 // ---------------------------------------------------------------------------- tiles
 
-export const SHADOW_TILES_WGSL = /* wgsl */ `
-${PARAMS_WGSL}
+/** Tiles pass; `tr`: tau tiles too (activeTile bit 2, M8-5). */
+export function shadowTilesWgsl(tr = false): string {
+  return /* wgsl */ `
+${paramsWgsl(tr)}
 @group(0) @binding(0) var<uniform> SP: ShadowParams;
 @group(0) @binding(1) var<storage, read> tileStats: array<vec2u>;
 @group(0) @binding(2) var<storage, read_write> tileMinG: array<u32>;
 @group(0) @binding(3) var<storage, read_write> args: array<atomic<u32>>;   // [count, 1, 1]
 @group(0) @binding(4) var<storage, read_write> list: array<u32>;
+@group(0) @binding(5) var<storage, read_write> activeTile: array<u32>;   // 1 = in the list (stabilize's box source)
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -538,12 +713,19 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   tileMinG[idx] = minG;
   // penumbra in the 3x3 tiles: a fractional history, or raw samples that disagree
   let isActive = (fl & 1u) != 0u || (fl & 6u) == 6u || spFlag(SF_NO_SKIP);
-  if (isActive) {
+${tr ? `  // tau tiles (M8-5): lit samples both attenuated and clear in the 3x3 tiles, or tau differs from raw T
+  let isTr = (fl & 24u) == 24u || (fl & 32u) != 0u;
+  activeTile[idx] = select(0u, 1u, isActive) | select(0u, 2u, isTr);
+  if (isActive || isTr) {` : `  activeTile[idx] = select(0u, 1u, isActive);
+  if (isActive) {`}
     let k = atomicAdd(&args[0], 1u);
     list[k] = idx;
   }
 }
 `;
+}
+
+export const SHADOW_TILES_WGSL = shadowTilesWgsl(false);
 
 // ---------------------------------------------------------------------------- spatial
 
@@ -551,7 +733,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
  * Variant `withE`: radius blended toward the H18 noise radius.
  */
-export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false): string {
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false, tr?: TrVariant): string {
+  const packed = !!tr?.packed;
+  const vch = packed && pass === 0 ? 'a' : 'r';   // packed: pass 0 reads v from the final output's alpha
   const taps: string[] = [];
   const tap = (i: number, r: string) => taps.push(/* wgsl */ `
   {
@@ -560,7 +744,7 @@ export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = fals
     let q = vec2i(floor(qf));
     let qc = clampPix(q);
     let gt = textureLoad(geoCur, qc, 0).xy;
-    let vt = textureLoad(srcTex, qc, 0).r;
+    let vt = textureLoad(srcTex, qc, 0).${vch};
     let zt = bitcast<f32>(gt.x);
 ${normalWeight ? `    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0);` : ''}
     let qp = vec2f(qc) + 0.5;
@@ -570,20 +754,38 @@ ${normalWeight ? `    let nt = octDecode(vec2f(f32(gt.y & 4095u), f32((gt.y >> 1
     let w = select(0.0, wg * wn, inside(q) && zt > 0.0);
     sum += w * vt;
     wsum += w;
-  }`);
+${tr ? `    // (fused multiply-adds, no separate w x v product: sharing one with v's sum changes how v's sum
+    // compiles and v would no longer be bit-identical to the opaque denoiser)
+    if (tAct) { tsum = fma(vec3f(w), vt * (tauTap(qc) - tauC), tsum); twsum = fma(w, vt, twsum); }
+` : ''}  }`);
   for (let i = 0; i < 8; i++) tap(i, 'rot');
   return /* wgsl */ `
 ${FRAME_WGSL}
-${PARAMS_WGSL}
+${paramsWgsl(!!tr)}
 @group(0) @binding(0) var<uniform> F: Frame;
 @group(0) @binding(1) var<uniform> SP: ShadowParams;
 @group(0) @binding(2) var geoCur: texture_2d<u32>;
-@group(0) @binding(3) var histCur: texture_2d<f32>;
+@group(0) @binding(3) var histCur: ${packed ? 'texture_2d<u32>' : 'texture_2d<f32>'};
 @group(0) @binding(4) var srcTex: texture_2d<f32>;
 @group(0) @binding(5) var<storage, read> tileMinG: array<u32>;
 @group(0) @binding(6) var<storage, read> list: array<u32>;
 @group(0) @binding(7) var outTex: texture_storage_2d<r32float, write>;
+${tr ? `@group(0) @binding(8) var<storage, read> activeTile: array<u32>;   // 1 v filtered, 2 tau filtered
+@group(0) @binding(9) var trSrc: texture_2d<f32>;    // pass 1: pass 0's tau (tau-filtered tiles)
+${packed ? '' : `@group(0) @binding(10) var trHist: texture_2d<f32>;   // tau history (unfiltered tau)
+`}@group(0) @binding(${packed ? 10 : 11}) var outTr: texture_storage_2d<rgba16float, write>;
 
+// unfiltered tau (the history), and the tau a tap of this pass sees
+fn tauHist(q: vec2i) -> vec3f {
+${packed ? `  let hu = textureLoad(histCur, q, 0);
+  return vec3f(unpack2x16float(hu.z), unpack2x16float(hu.w).x);` : `  return textureLoad(trHist, q, 0).rgb;`}
+}
+fn tauTap(q: vec2i) -> vec3f {
+${pass === 0 ? '  return tauHist(q);' : `  // pass 0 filtered tau only in tau tiles; elsewhere the history is this pass's input
+  let ft = (activeTile[u32(q.y / ${TILE}) * SP.tilesX + u32(q.x / ${TILE})] & 2u) != 0u;
+  return select(tauHist(q), textureLoad(trSrc, q, 0).rgb, ft);`}
+}
+` : ''}
 const PASS = ${pass};
 // R-3: 8 taps in 4 antipodal pairs (golden-angle spiral, radii sqrt((i + 0.5)/4)).
 const DISK = array<vec2f, 8>(
@@ -616,9 +818,21 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: ve
   if (!inside(p)) { return; }
   let gc = textureLoad(geoCur, p, 0).xy;
   let z = bitcast<f32>(gc.x);
-  let vin = textureLoad(srcTex, p, 0).r;
-  if (z <= 0.0) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
-  var h = textureLoad(histCur, p, 0);
+  let vin = textureLoad(srcTex, p, 0).${vch};
+${tr ? `  // translucency (M8-5/6): tile mode (v-only tiles skip tau, tau-only tiles pass v through)
+  let mode = activeTile[tile];
+  let vAct = (mode & 1u) != 0u;
+  let tAct = (mode & 2u) != 0u;
+  var tauC = vec3f(1.0);
+  if (tAct) { tauC = tauTap(p); }
+  if (z <= 0.0) {
+    textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0));
+    if (tAct) { textureStore(outTr, p, vec4f(tauC, 1.0)); }
+    return;
+  }
+` : `  if (z <= 0.0) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
+`}${packed ? `  let hu0 = textureLoad(histCur, p, 0);
+  var h = vec4f(unpack2x16float(hu0.x), unpack2x16float(hu0.y));` : `  var h = textureLoad(histCur, p, 0);`}
   h.z = histA(h.z);
 
   // receiver frame in view space
@@ -664,7 +878,11 @@ ${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's 
   let An = saturate(h.z / SP.maxHistory);
   Rw *= SP.radiusScale * mix(1.0, SP.historyShrink, An) * select(1.0, 0.5, PASS == 1) * (1.0 + SP.freshBoost / (1.0 + h.z));
   Rw = max(Rw, SP.minRadiusPx * pix);
-  if (Rw < 0.5 * pix) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
+  if (Rw < 0.5 * pix) {${tr ? `
+    textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0));
+    if (tAct) { textureStore(outTr, p, vec4f(tauC, 1.0)); }
+    return;
+  }` : ` textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }`}
 
   // kernel axes on the tangent plane: T along the light direction projected on the plane
   var T: vec3f;
@@ -691,7 +909,7 @@ ${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's 
 
   // per-pixel rotation: animated 4x4 Bayer (SPEC D3b), a different angle per pass
   // pass offset pass1Phase (default 2 - phi = 0.382 turn, the golden angle): our choice, see the option
-  let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + f32(F.frameIndex) * 0.6180339887
+  let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + f32(F.frameIndex) * SP.rotationStep
     + f32(PASS) * SP.pass1Phase);
   let cs = cos(phi);
   let sn = sin(phi);
@@ -706,8 +924,244 @@ ${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's 
 
   var sum = vin;
   var wsum = 1.0;
-${taps.join('')}
-  textureStore(outTex, p, vec4f(sum / wsum, 0.0, 0.0, 0.0));
+${tr ? `  // tau weighted by visibility (M8-6): the ratio of the filtered v tau to the filtered v under the same
+  // weights, so v-hat tau-hat is the filtered product; blocked taps carry no colour
+  var tsum = vec3f(0.0);   // sum of w v (tau - tau_centre): exact where tau is uniform
+  var twsum = vin;
+` : ''}${taps.join('')}
+${tr ? `  textureStore(outTex, p, vec4f(select(vin, sum / wsum, vAct), 0.0, 0.0, 0.0));
+  if (tAct) { textureStore(outTr, p, vec4f(select(tauC, tauC + tsum / twsum, twsum >= 1e-4), 1.0)); }`
+    : `  textureStore(outTex, p, vec4f(sum / wsum, 0.0, 0.0, 0.0));`}
+}
+`;
+}
+
+// ---------------------------------------------------------------------------- stabilize
+
+/**
+ * Optional output stabilization (option `stabilize` > 0; our design, results/M4.md "Moving shadows"):
+ * a short history of the FINAL output, reprojected with the motion vectors, clamped to the 3x3
+ * min / max of this frame's spatial output and blended with it by `stabilize`; indirect over the
+ * penumbra tiles. It averages the
+ * frame-to-frame noise the spatial passes leave in wide penumbrae (each frame's raw sample enters the
+ * temporal history with weight 1/(A+1), and the kernel sees it); the box keeps it from lagging a
+ * moving shadow by more than the local spread; it fades out where that range exceeds stabilizeBox
+ * (full blend below it, none above twice it), so sharp edges keep this frame's value. The temporal history stays raw visibility (no
+ * spatial output feeds back into it). Source: the temporal stabilization pass of Zhdan, RTG II
+ * ch. 49 Sec. 49.5.7 (prose): an output history of its own that never enters the temporal feedback
+ * loop, "logically very close to temporal supersampling with variance color clamping", with anti-lag.
+ * Ours (our design, measured): 3x3 min / max box of the current output instead of a variance box, the
+ * box-width gate (stabilizeBox) and the clamp-distance anti-lag (stabilizeAntiLag).
+ */
+export const SHADOW_STABILIZE_WGSL = /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_WGSL}
+@group(0) @binding(0) var<uniform> F: Frame;
+@group(0) @binding(1) var<uniform> SP: ShadowParams;
+@group(0) @binding(2) var curTex: texture_2d<f32>;     // this frame's spatial output (penumbra tiles)
+@group(0) @binding(3) var boxTex: texture_2d<f32>;     // T: the unfiltered copy in tiles the spatial passes skipped
+@group(0) @binding(4) var prevTex: texture_2d<f32>;    // last frame's final output
+@group(0) @binding(5) var motionTex: texture_2d<f32>;
+@group(0) @binding(6) var histCur: texture_2d<f32>;    // this frame's temporal history (A: 0 = no valid history)
+@group(0) @binding(7) var<storage, read> list: array<u32>;
+@group(0) @binding(8) var<storage, read> activeTile: array<u32>;
+@group(0) @binding(9) var outTex: texture_storage_2d<r32float, write>;   // final output (other tiles: the unfiltered copy)
+
+var<workgroup> sC: array<f32, 100>;   // 10x10: 8x8 tile + 1-px halo of the spatial output
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
+  // indirect over the penumbra tiles (as the spatial passes); elsewhere the final output already holds
+  // the temporal pass's unfiltered copy, which the box clamp would pass through unchanged
+  let tile = list[wid.x];
+  let t0 = vec2i(i32((tile % SP.tilesX) * 8u), i32((tile / SP.tilesX) * 8u));
+  let base = t0 - 1;
+  for (var i = li; i < 100u; i += 64u) {
+    let q = clampPix(base + vec2i(i32(i % 10u), i32(i / 10u)));
+    // halo pixels in tiles the spatial passes skipped: T holds their (exact) unfiltered value there
+    if (activeTile[u32(q.y / 8) * SP.tilesX + u32(q.x / 8)] != 0u) { sC[i] = textureLoad(curTex, q, 0).r; }
+    else { sC[i] = textureLoad(boxTex, q, 0).r; }
+  }
+  workgroupBarrier();
+  let p = t0 + vec2i(lid.xy);
+  if (!inside(p)) { return; }
+  let cur = textureLoad(curTex, p, 0).r;
+  var lo = cur;
+  var hi = cur;
+  for (var dy = 0u; dy < 3u; dy++) {
+    for (var dx = 0u; dx < 3u; dx++) {
+      let v = sC[(lid.y + dy) * 10u + lid.x + dx];
+      lo = min(lo, v);
+      hi = max(hi, v);
+    }
+  }
+  var v = cur;
+  let A = histA(textureLoad(histCur, p, 0).z);
+  if (!hasFlag(FRAME_RESET) && A > 0.5) {
+    let mv = textureLoad(motionTex, p, 0).xy;
+    let pp = (uvOf(p) - vec2f(mv.x, -mv.y) * 0.5) * F.dims - 0.5;
+    let b = vec2i(floor(pp));
+    let f = pp - floor(pp);
+    let h = mix(mix(textureLoad(prevTex, clampPix(b), 0).r, textureLoad(prevTex, clampPix(b + vec2i(1, 0)), 0).r, f.x),
+                mix(textureLoad(prevTex, clampPix(b + vec2i(0, 1)), 0).r, textureLoad(prevTex, clampPix(b + vec2i(1, 1)), 0).r, f.x), f.y);
+    // only where the 3x3 range is narrow (wide, smooth penumbrae, where the boil is): at sharp edges
+    // the range spans the step, the clamp holds nothing back and resampling would blur the edge
+    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)));
+    let hc = clamp(h, lo, hi);
+    // anti-lag: a history the box had to move (stabilizeAntiLag), or a short temporal history (anti-lag
+    // restarts of the temporal pass mark changing penumbrae; stabilizeYoung), takes more of this frame
+    a = max(a, saturate(abs(hc - h) * SP.stabilizeAntiLag));
+    if (SP.stabilizeYoung > 0.0) { a = max(a, saturate(1.0 - A / SP.stabilizeYoung)); }
+    v = mix(hc, cur, a);
+  }
+  textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));
+}
+`;
+
+/**
+ * The last pass of the translucency variants (SPEC v0.3 §7.10, M8-7; indirect over the filtered tiles):
+ * v exactly as SHADOW_STABILIZE_WGSL (same expressions, so with T = 1 the visibility is bit-identical),
+ * plus the colour S = v-hat tau-hat: a stabilization history of S (the final output's rgb), clamped per
+ * channel to the 3x3 min / max of this frame's S, blended with v's weight (`TR_OWN_GATE`: raised by S's
+ * own box-width gate and clamp-distance anti-lag, so a sharp coloured edge over uniform v isn't
+ * TAA-blurred). Tau-only tiles pass v through (its stabilization history keeps the unfiltered copy);
+ * v-only tiles take S = v tau with tau unfiltered. `compose`: no history, S = v-hat tau-hat only.
+ * Writes the final output (rgba16float: S rgb, v) and, wide path, v's own r32float history.
+ */
+export function shadowStabilizeTrWgsl(tr: TrVariant): string {
+  const packed = tr.packed;
+  const compose = !!tr.compose;
+  const vp = packed ? 'a' : 'r';   // channel of v in the previous final output / history
+  const bind: string[] = [
+    '@group(0) @binding(0) var<uniform> F: Frame;',
+    '@group(0) @binding(1) var<uniform> SP: ShadowParams;',
+    '@group(0) @binding(2) var curTex: texture_2d<f32>;     // this frame\'s spatial output (v filtered tiles)',
+    '@group(0) @binding(3) var boxTex: texture_2d<f32>;     // T: the unfiltered copy elsewhere',
+    `@group(0) @binding(4) var prevTex: texture_2d<f32>;    // last frame's ${packed ? 'final output (S rgb, v)' : 'v (stabilized)'}`,
+    '@group(0) @binding(5) var motionTex: texture_2d<f32>;',
+    `@group(0) @binding(6) var histCur: ${packed ? 'texture_2d<u32>' : 'texture_2d<f32>'};`,
+    '@group(0) @binding(7) var<storage, read> list: array<u32>;',
+    '@group(0) @binding(8) var<storage, read> activeTile: array<u32>;',
+  ];
+  if (packed) {
+    bind.push('@group(0) @binding(9) var outF: texture_storage_2d<rgba16float, write>;   // final output (S rgb, v)');
+    bind.push('@group(0) @binding(10) var trCur: texture_2d<f32>;   // filtered tau (tau tiles)');
+  } else {
+    if (!compose) bind.push('@group(0) @binding(9) var outTex: texture_storage_2d<r32float, write>;   // v (stabilized; its history)');
+    bind.push('@group(0) @binding(10) var trHist: texture_2d<f32>;   // tau history (unfiltered tau)');
+    bind.push('@group(0) @binding(11) var trCur: texture_2d<f32>;    // filtered tau (tau tiles)');
+    if (!compose) bind.push('@group(0) @binding(12) var prevF: texture_2d<f32>;    // last frame\'s final output (S rgb, v)');
+    bind.push('@group(0) @binding(13) var outF: texture_storage_2d<rgba16float, write>;   // final output (S rgb, v)');
+  }
+  const prevS = packed ? 'prevTex' : 'prevF';
+  const tauHist = packed
+    ? `fn tauHist(q: vec2i) -> vec3f {
+  let hu = textureLoad(histCur, q, 0);
+  return vec3f(unpack2x16float(hu.z), unpack2x16float(hu.w).x);
+}
+fn histAt(q: vec2i) -> f32 { return histA(unpack2x16float(textureLoad(histCur, q, 0).y).x); }`
+    : `fn tauHist(q: vec2i) -> vec3f { return textureLoad(trHist, q, 0).rgb; }
+fn histAt(q: vec2i) -> f32 { return histA(textureLoad(histCur, q, 0).z); }`;
+  const tileOf = (q: string) => `activeTile[u32(${q}.y / 8) * SP.tilesX + u32(${q}.x / 8)]`;
+  if (compose) {
+    return /* wgsl */ `
+${FRAME_WGSL}
+${paramsWgsl(true)}
+${bind.join('\n')}
+${tauHist}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: vec3u) {
+  let tile = list[wid.x];
+  let p = vec2i(i32((tile % SP.tilesX) * 8u + lid.x), i32((tile / SP.tilesX) * 8u + lid.y));
+  if (!inside(p)) { return; }
+  let mode = activeTile[tile];
+  let v = textureLoad(curTex, p, 0).r;
+  var t = tauHist(p);
+  if ((mode & 2u) != 0u) { t = textureLoad(trCur, p, 0).rgb; }
+  textureStore(outF, p, vec4f(v * t, v));
+}
+`;
+  }
+  return /* wgsl */ `
+${FRAME_WGSL}
+${paramsWgsl(true)}
+${bind.join('\n')}
+${tauHist}
+
+var<workgroup> sC: array<f32, 100>;     // 10x10: 8x8 tile + 1-px halo of the spatial output (v)
+var<workgroup> sS: array<vec3f, 100>;   // the same for S = v-hat tau-hat
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
+  let tile = list[wid.x];
+  let t0 = vec2i(i32((tile % SP.tilesX) * 8u), i32((tile / SP.tilesX) * 8u));
+  let base = t0 - 1;
+  for (var i = li; i < 100u; i += 64u) {
+    let q = clampPix(base + vec2i(i32(i % 10u), i32(i / 10u)));
+    let at = ${tileOf('q')};
+    // halo pixels in tiles the spatial passes didn't filter: T / the tau history hold their unfiltered value
+    var vq: f32;
+    if ((at & 1u) != 0u) { vq = textureLoad(curTex, q, 0).r; }
+    else { vq = textureLoad(boxTex, q, 0).r; }
+    sC[i] = vq;
+    var tq: vec3f;
+    if ((at & 2u) != 0u) { tq = textureLoad(trCur, q, 0).rgb; }
+    else { tq = tauHist(q); }
+    sS[i] = vq * tq;
+  }
+  workgroupBarrier();
+  let p = t0 + vec2i(lid.xy);
+  if (!inside(p)) { return; }
+  let mode = activeTile[tile];
+  let vAct = (mode & 1u) != 0u;
+  let tAct = (mode & 2u) != 0u;
+  let cur = textureLoad(curTex, p, 0).r;
+  var lo = cur;
+  var hi = cur;
+  let sCur = sS[(lid.y + 1u) * 10u + lid.x + 1u];
+  var sLo = sCur;
+  var sHi = sCur;
+  for (var dy = 0u; dy < 3u; dy++) {
+    for (var dx = 0u; dx < 3u; dx++) {
+      let v = sC[(lid.y + dy) * 10u + lid.x + dx];
+      lo = min(lo, v);
+      hi = max(hi, v);
+      let s = sS[(lid.y + dy) * 10u + lid.x + dx];
+      sLo = min(sLo, s);
+      sHi = max(sHi, s);
+    }
+  }
+  var v = cur;
+  var S = sCur;
+  let A = histAt(p);
+  if (!hasFlag(FRAME_RESET) && A > 0.5) {
+    let mv = textureLoad(motionTex, p, 0).xy;
+    let pp = (uvOf(p) - vec2f(mv.x, -mv.y) * 0.5) * F.dims - 0.5;
+    let b = vec2i(floor(pp));
+    let f = pp - floor(pp);
+    let h = mix(mix(textureLoad(prevTex, clampPix(b), 0).${vp}, textureLoad(prevTex, clampPix(b + vec2i(1, 0)), 0).${vp}, f.x),
+                mix(textureLoad(prevTex, clampPix(b + vec2i(0, 1)), 0).${vp}, textureLoad(prevTex, clampPix(b + vec2i(1, 1)), 0).${vp}, f.x), f.y);
+    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)));
+    let hc = clamp(h, lo, hi);
+    a = max(a, saturate(abs(hc - h) * SP.stabilizeAntiLag));
+    if (SP.stabilizeYoung > 0.0) { a = max(a, saturate(1.0 - A / SP.stabilizeYoung)); }
+    v = mix(hc, cur, a);
+    if (tAct) {
+      let sh = mix(mix(textureLoad(${prevS}, clampPix(b), 0).rgb, textureLoad(${prevS}, clampPix(b + vec2i(1, 0)), 0).rgb, f.x),
+                   mix(textureLoad(${prevS}, clampPix(b + vec2i(0, 1)), 0).rgb, textureLoad(${prevS}, clampPix(b + vec2i(1, 1)), 0).rgb, f.x), f.y);
+      let shc = clamp(sh, sLo, sHi);
+      var aS = a;
+      if (trFlag(TR_OWN_GATE)) { aS = max(aS, mix(SP.stabilize, 1.0, saturate((max3(sHi - sLo) - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)))); }
+      if (trFlag(TR_OWN_ANTILAG)) { aS = max(aS, saturate(max3(abs(shc - sh)) * SP.stabilizeAntiLag)); }
+      S = shc + aS * (sCur - shc);
+    }
+  }
+  // tau-only tiles: v passes through (as in the opaque denoiser, which doesn't filter there)
+  let vOut = select(cur, v, vAct);
+  if (!tAct) { S = vOut * tauHist(p); }
+${packed ? '' : `  if (vAct) { textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0)); }
+`}  textureStore(outF, p, vec4f(S, vOut));
 }
 `;
 }

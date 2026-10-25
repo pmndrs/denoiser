@@ -53,6 +53,7 @@
   <section class="explain">
     <h2>What this is</h2>
     <p>Every frame the tracer writes the buffers of <code>docs/research/rt-denoiser/CAPTURE-FORMAT.md</code>: depth, viewZ, normal, roughness, motion (+ 2.5D <code>motion_z</code>), albedo, f0, and three demodulated 1-sample signals with hit distances: <b>diffuse</b> (cosine-sampled one-bounce GI), <b>specular</b> (GGX VNDF, divided by Karis 2014's analytic env-BRDF) and <b>shadows</b> (one ray toward a sphere light, plus occluder distance). The reference panel is the same estimator with many samples per pixel.</p>
+    <p>CAPTURE-FORMAT v1 adds three signals for the directional and translucent variants: <b>sh-diffuse</b> / <b>sh-specular</b> (the same samples plus each ray's direction, scored after resolving at the shading normal; the <i>bumpy surfaces</i> and <i>coloured bounce</i> paths have normal-mapped floors and walls) and <b>shadow-rgb</b> (opaque visibility times the rgb transmittance of coloured glass panels; the <i>glass</i> paths).</p>
     <p>URL options are documented at the top of <code>src/main.ts</code>; <code>mode=eval</code> writes JSON metrics to <code>window.__rt</code> and <code>run-headless.mjs</code> collects them.</p>
   </section>
   <pre id="status" class="dn-status"></pre>

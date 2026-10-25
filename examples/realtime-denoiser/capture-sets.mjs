@@ -3,7 +3,8 @@
 // <RT_CAPTURE_DIR or tools/rt-capture>/captures/<name>/.
 //
 // Size per frame (f32, every buffer of all three signals + references = 32 floats/pixel):
-//   960x540 -> 66.4 MB, 1920x1080 -> 265.4 MB.
+//   960x540 -> 66.4 MB, 1920x1080 -> 265.4 MB. v1 (960x540): sh-diffuse + sh-specular 50 floats = 103.7 MB,
+//   sh-diffuse 34 = 70.5 MB, shadow-rgb 28 = 58.1 MB.
 
 const std540 = (path, start, frames) => ({ name: `std540-${path}`, path, start, frames, w: 960, h: 540 });
 
@@ -19,6 +20,15 @@ export const CAPTURE_SETS = {
     std540('cut', 40, 24),    // camera cut at path frame 48 = local 8 (reset)
     std540('object', 0, 16),  // moving sphere: object motion, motion_z, moving shadow
     { name: 'std1080-orbit', path: 'orbit', start: 0, frames: 8, w: 1920, h: 1080 }, // full-res quality + timings
+  ],
+  // CAPTURE-FORMAT v1 (testbed-v1, SPEC v0.3 M7-13 / M8-10; CAPTURES.md "v1 captures"): only the buffers of the
+  // v1 signals each one needs, 960x540, 256-spp references (8.6 GB). Version 1 manifests.
+  v1: [
+    { name: 'v1-bumpy', path: 'bumpy', start: 0, frames: 32, w: 960, h: 540, signals: 'sh-diffuse,sh-specular' },   // M7: bump detail, glossy bumpy floor
+    { name: 'v1-bounce', path: 'bounce', start: 0, frames: 16, w: 960, h: 540, signals: 'sh-diffuse' },              // M7: coloured bounce (YCoCg vs RGB)
+    { name: 'v1-glass', path: 'glass', start: 0, frames: 16, w: 960, h: 540, signals: 'shadow-rgb' },                // M8: static coloured shadow, orbit
+    { name: 'v1-glass-moving', path: 'glass-moving', start: 0, frames: 40, w: 960, h: 540, signals: 'shadow-rgb' },  // M8: moving panel, static camera
+    { name: 'v1-glass-still', path: 'glass-still', start: 0, frames: 16, w: 960, h: 540, signals: 'shadow-rgb' },    // M8: frozen control (boil)
   ],
   // T0.7 round trip (small): orbit + cut across its reset
   roundtrip: [

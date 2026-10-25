@@ -12,7 +12,7 @@ export type { FfxGuideOptions, FfxShadowsOptions, FfxReflectionsOptions } from '
 export { realtimeShadows, realtimeDiffuse, realtimeSpecular, realtimeDiffuseSpecular, realtimeOcclusion } from './temporal/realtime';
 export type {
   RealtimeGuideOptions, RealtimeShadowsOptions, RealtimeDiffuseOptions, RealtimeSpecularOptions, RealtimeDiffuseSpecularOptions,
-  RealtimeOcclusionOptions, RealtimeSignal, ShadowLightSource, TwoOutputNodeObject,
+  RealtimeOcclusionOptions, RealtimeSignal, ShadowLightSource, TwoOutputNodeObject, OcclusionNodeObject,
 } from './temporal/realtime';
 export { worldNormalTexture, toSignalTexture } from './temporal/tsl';
 export type { NormalSpace, NormalEncoding } from './temporal/tsl';

@@ -68,7 +68,7 @@ fn finite3(c: vec3f) -> vec3f {
 `;
 
 /** Per-signal edge-stopping functions, suffixed with the signal index. */
-function weightsWgsl(kind: SignalKind, i: number): string {
+export function weightsWgsl(kind: SignalKind, i: number): string {
   const P = `P${i}`;
   const normal = kind === 'diffuse'
     ? /* wgsl */ `
@@ -112,7 +112,7 @@ fn wGeo${i}(g: Geo, gq: Geo, off: vec2f) -> f32 {
 `;
 }
 
-const header = (b: Bindings) => /* wgsl */ `
+export const header = (b: Bindings) => /* wgsl */ `
 ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
@@ -123,7 +123,7 @@ fn geoCenter(p: vec2i) -> Geo {
 }
 `;
 
-function baseBindings(kinds: SignalKind[]) {
+export function baseBindings(kinds: SignalKind[]) {
   const b = new Bindings();
   b.uniform('F', 'Frame');
   kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
@@ -134,7 +134,7 @@ function baseBindings(kinds: SignalKind[]) {
 
 // ---- temporal accumulation ------------------------------------------------------
 
-function capWgsl(kind: SignalKind, i: number): string {
+export function capWgsl(kind: SignalKind, i: number): string {
   const P = `P${i}`;
   if (kind === 'diffuse') return `fn historyCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 { return ${P}.maxHistory; }`;
   return /* wgsl */ `
@@ -156,7 +156,7 @@ fn historyCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
 }`;
 }
 
-function antilagWgsl(i: number): string {
+export function antilagWgsl(i: number): string {
   // lambda per stratum, already max-filtered (gradient.ts gradientLambdaPass)
   return `fn antilagLambda${i}(p: vec2i) -> f32 {
   return textureLoad(grad${i}, min(p / P${i}.gradDown, P${i}.gradDims - 1), 0).r;
@@ -378,8 +378,8 @@ export interface AtrousVariant {
   box: boolean;
 }
 
-const B3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
-const f32s = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
+export const B3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
+export const f32s = (x: number) => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
 export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
   const b = baseBindings(kinds);

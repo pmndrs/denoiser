@@ -36,6 +36,27 @@ shaders. **No NRD code, README, fork or port was opened.** One web fetch (Unreal
 blog, for Karis 2014) was refused by the server; the constants used are the ones already
 recorded in CAPTURE-FORMAT.
 
+Status of the release auditor (2026-10-25, RULES rule 3b, register row "release auditor"):
+read RULES, NRD's GitHub release bodies `v2.5.0`…`v4.18.0` (78 releases) and the prose of
+`UPDATE.md` (blob `679097c`), both with fenced code blocks stripped by script before reading
+(none were present). **No NRD code, README, source, shader, header, Integration folder,
+NRD-Sample, fork or port was opened.** Output: [sources/nrd-releases.md](sources/nrd-releases.md)
+(what changed, never how). The auditor writes and reviews none of our passes.
+
+Status of the change auditor (2026-10-25, RULES rule 3c): line/file counts, paths, hashes and
+dates from a `--no-checkout` clone (deleted afterwards). **No file contents, diffs or commit
+messages were read.** Output: [sources/nrd-change-magnitude.md](sources/nrd-change-magnitude.md).
+Writes none of our passes.
+
+**Exposure, public researcher (2026-10-25, rule 7):** while writing
+`sources/nrd-public-2022-2026.md`, a web-search result summary quoted about three sentences of
+NRD's README "History confidence" section (README prose is off limits, RULES §2). The researcher
+did not open the page, and nothing from it is in the report. Not code. Consequence: that
+researcher writes none of our passes, and any pass on history confidence or anti-lag inputs is
+written from public sources by another agent. Mitigation added to LESSONS: avoid search queries
+on NRD anti-lag / confidence that pull README text into summaries. The orchestrator relayed only
+the fact of the exposure, not its content.
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").
@@ -247,6 +268,10 @@ of the v2 young-mean row is replaced by `youngFrames` / `youngTaper`._
 | v2.1: clamp window over the 5×5 taps whose normal is within `normalAngle` of the receiver's (binary), window × √(25/n), the plain window below 3 such taps; the normal tile (pack4x8snorm in workgroup memory) is loaded only in tiles whose raw samples disagree | SH-4 | **our design**, on RTG1-25 §25.2.1's 5×5 clamp window (row SH-4); geometry-aware neighbourhood statistics as such are the edge-stopping idea of SVGF (Schied et al. 2017, HPG) | fixes "frame 2 worse than frame 1": from the second frame on, the plain window pulled thin occluders / creases toward the surface next to them (real scene: legs in shadow on a lit floor +0.075 bias). A plane-distance test on top: 0 dB on the test bed, +0.06…0.28 dB on the real scene, for a depth tile and ~+0.05 ms, left out; a plane test alone (2 % of view distance, also with a depth-relative tolerance) lost up to 2.4 dB (`thin`: a slat's side face takes the front face next to it) (results/M4.md §11) | — | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`clampGeometry`, `clampMinTaps`) |
 | v2.1: clamp window widened by saturate(1 − W_px / 2) where the pixel's own penumbra width W_px is below 2 px | — | **our design** (a 5×5 mean is off by up to ~0.4 next to a step; such pixels keep a short history anyway under the W_px² cap) | `clampEdgePx` 2 (1 / 3 / 4: −0.03 / −0.02 / −0.1 dB at 960×540) | — | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`clampEdgePx`) |
 | v2.1: young mean kept for 8 frames after a reset / disocclusion, weight 0.75 · (frames left / 8) / (1 + A / 4); counter in the history's A channel above 32 (not shortened by the history cap or anti-lag); its taps also pass the normal test | — | extends the v2 row (idea: RTG2 ch. 49 §49.5.4 prose); the weight shape is **our design** (about the inverse-variance share of a biased 25-sample mean against an (A + 1)-sample temporal mean); the v2 lesson "short history ≠ new" kept by counting frames since the pixel was new | `youngFrames` 8, `youngTaper` 0.25 (replaces v2's `youngSpan`); v2 switched the mean off on the second frame (penumbra −1.0…−2.2 dB at frame 2 on the real scene) | — | `packages/denoiser-realtime/src/shaders/shadow.ts` `temporal` (`youngFrames`, `youngTaper`, `histA`) |
+| v2.2: output stabilization pass: a short history of the final output (never fed back into the raw temporal history), reprojected with the motion vectors, clamped to the 3×3 min / max of this frame's spatial output, blended with weight `stabilize` 0.25; indirect over the penumbra tiles (box from the final spatial output, from T in skipped tiles, per-tile flag from `tiles`) | SH-5 (new pass) | RTG2 §49.5.7 prose (a temporal stabilization pass with its own history outside the feedback loop, "logically very close to temporal supersampling with variance color clamping", with anti-lag) | min / max box instead of a variance box, blend 0.25 (0.125 / 0.25 / 0.5 measured) and the tile restriction: **our design**, measured (results/M4.md §12.3). Implemented 2026-10-25 by the moving-shadows agent (implementer, RULES §8: no NRD code, README or port opened) | — | `packages/denoiser-realtime/src/shaders/shadow.ts` `SHADOW_STABILIZE_WGSL`, `shadow.ts` (`stabilize`) |
+| v2.2: stabilization only where the 3×3 range is below `stabilizeBox` (0.05 at 1080p, × 1080 / height), fading out up to twice it | — | **our design** (without it the pass blurred hard edges, −5.5 dB on the test bed: TAA-style blur of a resampled history where the box spans the step); resolution scaling because a penumbra's per-pixel slope halves when the resolution doubles | 0.1 at 1080p: `light` −0.45 dB, 0.05: −0.19 (M4 §12.3) | — | `SHADOW_STABILIZE_WGSL` (`stabilizeBox`) |
+| v2.2: stabilization anti-lag: blend weight raised to saturate(64 · \|clamped − history\|) | — | anti-lag in the stabilization pass: RTG2 §49.5.7 / §49.11 prose; the clamp distance as the confidence signal: a later-found public parallel is ML25 p.35 (history confidence from the normalised distance to the clamp box), listed in `sources/nrd-public-2022-2026.md` §3.4 | gain 64 and the form saturate(gain · distance): **our design**, measured (8 / 32 / 64 / 128 on std540-object: dynamic PSNR 21.76 / 22.14 / 22.24 / 22.29; the alternative on the temporal history length, `stabilizeYoung`, lost) | — | `SHADOW_STABILIZE_WGSL` (`stabilizeAntiLag`, `stabilizeYoung`) |
+| v2.2: `rotationStep` option: per-frame step of the spatial disk's rotation (0 = fixed rotation) | SH-5 | default unchanged (0.618, RTG2-24 §24.7.2 golden-ratio animation, SPEC D3b) | the option itself is a measurement aid: a fixed rotation removes ~40 % of the boil without stabilization, ±0.01 dB pooled; left at the default (M4 §12.2) | — | `shadowSpatialWgsl` (`rotationStep`) |
 
 ### Occlusion (M5)
 
@@ -265,6 +290,65 @@ port opened). Host: `packages/denoiser-realtime/src/occlusion.ts`; results:
 | SVGF on ĥ written as a gray image | §8 (new) | S1 (unchanged SVGF) | normalization pass ours (F-3); occlusion defaults σ_l = 1.5, 3 à-trous iterations, SO α_min 0.3: **tuned on the test bed** | | `src/occlusion.ts`, `src/shaders/occlusion.ts` |
 | test-bed AO/SO references: mean of per-sample normalized hit distances | — | **our design** (the curve is nonlinear, so the reference normalizes each sample) | | | `examples/realtime-denoiser/src/scene.ts` `ref_ao`, `ref_so`, `OCC_WGSL` |
 | SO from AO (optional) | O-4 | FB §4.10.2 Listing 26 | not built | yes | |
+
+### M7 SH/SG directional variants — **built (SVGF family), provisional** (SPEC v0.3 §8.5; results/M7.md)
+
+_Added 2026-10-25 by the spec author (RULES §8: no NRD code, README, release notes or port opened;
+read `sources/nrd-provenance.md` §3, `sources/nrd-releases.md`, `sources/nrd-change-magnitude.md`,
+`sources/nrd-public-2022-2026.md`, the SD24 / ACS25 / ID25 primary slides, and Pettineo's SG series
+parts 3–4 on his public blog, which the provenance audit lists as cited by NRD; the blog is a public
+source, rule 2). New keys: **SD24** Kuenlin, Raytracing in Snowdrop, GDC 2024 · **ACS25** Leblanc &
+Conte, AC Shadows, SIGGRAPH 2025 Advances · **ID25** Sousa, idTech8 GI, SIGGRAPH 2025 Advances ·
+**RH01** Ramamoorthi & Hanrahan, "An Efficient Representation for Irradiance Environment Maps",
+SIGGRAPH 2001 (cited by ID25 s.20; band factors are textbook) · **MS03** Malvar & Sullivan, YCoCg,
+2003 · **MJP-SG3/4** Pettineo, SG series parts 3–4 (2016) · **WANG09** Wang et al., "All-Frequency
+Rendering of Dynamic, Spatially-Varying Reflectance", SIGGRAPH Asia 2009 (via MJP-SG4, not read).
+Every row: spec only, not built._
+
+_Built 2026-10-25 by the m7-sh implementer (RULES §8 implementer: no NRD code, README, release notes or
+port opened; read SPEC §8.5, this table and `sources/nrd-public-2022-2026.md`; none of SD24's printed
+code was used). Code: `src/shaders/sh.ts` (payload, encoding, resolves), `src/shaders/svgf-sh.ts` (SVGF
+passes in SH mode), `src/shaders/sh-gradient.ts` (anti-lag gradient samples), `src/svgf.ts` (`payload`,
+`resolve`, options), `src/sh.ts` (`ShResolver`), `packages/denoiser-three/src/temporal/realtime.ts`
+(`realtimeDiffuse` SH mode). Deviations from the spec are in the rows and in TASKS (spec-author items)._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| L1 payload, Y with 4 coefficients, Co / Cg as L0, through the existing filters | M7-1 | SD24 p.30, ACS25 s.57–59 (description only; SD24's printed code has no license and is not used); ID25 s.20 ("each pixel an irradiance probe") | world-space storage, evaluation-ready `a + b·ω` form; `'sh-rgb'` option (12 ch): **our design**. Built | | `src/shaders/sh.ts` `SH_CORE_WGSL` (struct `SH`, YCoCg, `shLum`); `'sh-rgb'` not built |
+| SH vs SG as the payload (SG only at resolve time) | M7-1 | linearity argument: **our design**; SG tail vs L1 negativity: MJP-SG3 "Error analysis" | — | | SH payload; SG only in `shResolveSpecular` |
+| per-sample encoding `a = L/(1+2c)`, `b = 2Lω/(1+2c)`, exact at the sampling normal | M7-2 | clamped-cosine L1 band factors ¼ and ½ (RH01) | the renormalization and the resulting estimator: **our design, tune on captures** (vs the textbook projection with a cos floor). Built; the textbook variant (`shEncoding: 'textbook'`) lost 7.7 dB on the dev page | | `src/shaders/sh.ts` `shEncodeWgsl` |
+| 8 × f16 in one rgba32uint; no 8-bit histories; 64-bit packing only for input / à-trous (tune) | M7-3 | 64-bit 6 × 8-bit + f16 magnitude packing: SD24 p.30, ACS25 s.57; quantized-vs-reference check: ML25 p.34 | **our design**. Built (f16 everywhere; 64-bit packing not built) | | `src/shaders/sh.ts` `shPack`/`shUnpack`, `src/svgf.ts` `configure` |
+| input forms (encoded / raw + direction), `detailNormal` guide, CAPTURE-FORMAT v1 buffers | M7-4 | evaluate with the full-resolution normal: ACS25 s.59 | **our design**. Built (raw form encodes in the temporal and gradient passes; `detailNormal` falls back to `guides.normal`) | | `src/shaders/svgf-sh.ts` `shLoaderWgsl`; core `FrameGuides.detailNormal`, `DiffuseInputs`/`SpecularInputs` `.direction`/`.sh` |
+| guide luminance = Rec. 709 luminance of the payload at the filter's normal | M7-5 | S1 (luminance-driven weights and moments) | **our design** (keeps every tuned SVGF constant valid). Built; specular evaluates at the guide normal's dominant direction (M7-10) | | `src/shaders/sh.ts` `shLum`, `src/shaders/svgf-sh.ts` `shDirWgsl` |
+| all coefficients filtered with the same weights; variance on l only | M7-6/7 | S1, S3 (unchanged passes) | **our design**. Built | | `src/shaders/svgf-sh.ts` `temporalPassSh`, `variancePassSh`, `atrousPassSh`; `src/shaders/sh-gradient.ts` |
+| value-preserving ringing guard on b (k = 1); chroma stored as a ratio to Y at the guide normal | M7-8 | chroma rescaled by the evaluated luma: SD24 p.37 (description) | the guard and the reference value Y_g: **our design, tune k on captures**. Built (k = 1 inert on the dev page; 0.5: −0.4 dB) | | `src/shaders/sh.ts` `shOutputPayload` |
+| diffuse resolve; optional sharpening via ambient + one extracted light, renormalized at the guide normal | M7-9 | light direction / intensity from the L1 luma: SD24 p.37 (description); clamped-cosine L1: RH01 | the decomposition and the renormalization: **our design, tune s**. Built | | `src/shaders/sh.ts` `shResolveDiffuse`, `src/sh.ts` `ShResolver`, fused in `atrousPassSh` |
+| specular ratio resolve: NDF as an SG (sharpness 2/α²) warped to the reflection direction (÷ 4\|n·v\|), SG inner product with the extracted SG light; ratio clamp; roughness fade | M7-10 | MJP-SG4 (after WANG09); rough-specular-only SH use: SD24 p.55, ACS25 s.65; "specular-compatible SG resolve": nrd-releases v4.1.0 (behaviour only) | the ratio form (payload sets only the detail/guide ratio), λ_l = 8, ρ_max = 4, fade below r = 0.2: **our design, tune on captures**. Built, plus an `'l1'` ratio (the payload at the two dominant directions, our design). Both lose to no ratio on the dev page (results/M7.md) | | `src/shaders/sh.ts` `shResolveSpecular`, `shSpecResponse`, `shSgInner` |
+| resolve helpers, API (`payload`, `resolve`, `sh` / `direction` inputs) | M7-11/12 | — | **our design**; no NVIDIA names (rule 6). Built | | `src/svgf.ts`, `src/denoisers.ts`, `src/sh.ts`, `SH_RESOLVE_WGSL`, three.js `realtimeDiffuse` |
+| recurrent SH needs (buffers, luminance-ratio clamps) | §8.5.6 | L1 YCoCg through a recurrent-blur denoiser ships in SD24 / ACS25 | **our design** (not specified in detail) | | — |
+| evaluation: `bumpy` / coloured-bounce scenes, two references, detail band, ringing fraction; native after colour extraction | M7-13 | native colour-extraction comparison: nrd-provenance §3.4; PLAN §6 | **our design**. Spec only | | — |
+
+### M8 translucent shadows — **built, provisional** (SPEC v0.3 §7.10; results/M8.md)
+
+_Added 2026-10-25 by the spec author; marked built 2026-10-25 by the M8 implementer (rule 8: no NRD code,
+README, release notes or port read; not the public researcher). Sources: TR19 slides 47–53 (primary,
+`shadows-specular/tombraider2019.txt`), RTG1-25 §25.2.1 pp. 444–445 (primary, `rtg1.txt`), both re-read
+directly by the implementer. Code: `packages/denoiser-realtime/src/shadow.ts` (option `translucency`,
+wide / packed paths), `src/shaders/shadow.ts` (`tr` variants of `shadowTemporalWgsl`,
+`shadowSpatialWgsl`, `shadowTilesWgsl`; `shadowStabilizeTrWgsl`)._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| renderer contract: keep tracing through translucent layers, accumulate per-layer transmittance, stop on opaque / miss / full absorption | M8-1 | RTG1-25 §25.2.1 pp. 444–445 (thin film, albedo absorption, TIR-corrected Schlick); TR19 slides 47–51 (any-hit, order non-deterministic, layer cap 3) | **multiplicative** RGB transmittance (commutes like TR19's subtraction, exact for any colours), colour-aware early out `max T < 0.01` → opaque, nearest-translucent distance by `min`: **our design**. Contract only (the test bed implements it) | | `ShadowInputs.translucency`, `translucencyHitDistance` (denoiser-core) |
+| denoise opaque v as today and τ = E[T \| v = 1]; output v̂·τ̂ | M8-2 | identity E[vT] = P(v=1)·E[T\|v=1]; conditional accumulation like g over occluded samples (SPEC §7.2 v0.1) | **our design** (no public source says how coloured shadows are filtered: shadows-specular.md G5). Built: v bit-identical to v2.2 with T ≡ 1 (results/M8.md §1) | | temporal `tr` block |
+| one footprint; translucent samples feed g from the nearest translucent hit; nearest blocker wins | M8-3 | M12 ("sharpest occluder wins", via SPEC §7.3 `mergeMin`); RTG1-25 (translucent shadows through the opaque filter) | ε_τ = 0.01 (measured flat 0.002–0.05); built as specified, plus the H18 noise estimate E taken on v·mean(T) so coloured edges without h_τ get the noise-sized radius: **our design** | | temporal (gS from `trHitTex`, `sE`) |
+| τ temporal: reprojection, per-channel 5×5 clamp over lit taps (window 0.4σ + 0.05), restart gain 64, cap N_τ = 7 | M8-4 | SPEC SH-4 / v2.1 clamp (ours, measured for v) | built as specified, plus **uniform snap** for τ (all lit taps agree → τ_c = their value; v's SH-4 snap) and update forms exact for a uniform history (f16 stores truncate on the M5 Pro and drifted τ below 1): **our design**. N_τ 3 / 7 / 15 and window 0.2–0.8σ / 0.02–0.1 measured (results/M8.md §3) | | temporal `tr` block |
+| τ tile bits; τ-only tiles in the indirect list | M8-5 | TR19 slide 72, H18 §4.1 (tile skip) | bits: lit sample attenuated / clear / τ differs from raw T; per-tile mode (activeTile bit 2): **our design** | | `shadowTilesWgsl(true)` |
+| visibility-weighted spatial τ (ratio of filtered v·τ to filtered v) | M8-6 | ratio-estimator reasoning: H18 (SPEC §7.9) | built as specified (fused multiply-adds so v's sum compiles as before: bit identity): **our design** | | `shadowSpatialWgsl(..., tr)` |
+| stabilization of (S rgb, v) with v's blend weight, per-channel 3×3 clamp | M8-7 | RTG2 §49.5.7 prose (via the v2.2 rows above) | **deviation**: S's weight = max(v's, S's own box-width gate, S's own clamp-distance anti-lag) (`translucencyOwnGate`, measured +0.18 dB on glass-moving); tau-only tiles pass v through; v-only tiles S = v̂·τ: **our design** | | `shadowStabilizeTrWgsl` |
+| API: `ShadowInputs.translucency?`, `translucencyHitDistance?`, `translucency: true`, rgba16float output | M8-8 | interface shape of native's translucency variant (separate translucency input, one combined output): nrd-provenance §3.3–3.4 (names only) | **our design**; no NVIDIA names. `realtimeShadows({ translucency })` in denoiser/three (`.visibility` = alpha) | | shadow.ts, denoiser-three realtime.ts |
+| fifth storage texture or packed rgba32uint history | M8-9 | WebGPU limits (`maxStorageTexturesPerShaderStage`) | **deviation**: the wide path needs 6 (v's f32 copies stay as in v2.2 for bit identity, plus the f16 output written for unfiltered tiles); packed path at 4 (v and τ histories as 8 f16 in rgba32uint, 16-load Catmull-Rom, the output doubles as v's copy and stabilization history): **our design** | | `translucencyPath` |
+| evaluation: `glass` / `glass-moving` / `glass-still`, `shadow_rgb_ref`, tint-region chroma error, opaque regression | M8-10 | dynamic region / boil: SPEC §13, results/M4.md §12 | **our design**. Native `SIGMA_SHADOW_TRANSLUCENCY` not run yet (probe P7) | | results/M8.md |
 
 ## Open provenance items
 

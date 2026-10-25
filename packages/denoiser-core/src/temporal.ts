@@ -62,6 +62,13 @@ export interface FrameGuides {
    * geometry).
    */
   motionZ?: GPUTexture;
+  /**
+   * Optional detail (normal-mapped shading) normal, world space, same encoding as
+   * `normal`. For directional payloads (`payload: 'sh'`): pass the smooth normal as
+   * `normal` (the filter's weights) and the normal the rays were sampled around here;
+   * the payload is resolved at it.
+   */
+  detailNormal?: GPUTexture;
 }
 
 export interface TemporalConfig {
@@ -126,6 +133,18 @@ export interface ShadowInputs {
    * Filters that size penumbrae from `hitDistance` need it; others ignore it.
    */
   light?: ShadowLight;
+  /**
+   * Optional RGB transmittance of the translucent layers the shadow ray crossed (rgba16float /
+   * rgba8unorm, rgb in [0, 1]; product of the layers' transmittances, 1 where it crossed none),
+   * for coloured shadows. Ignored where visibility is 0. Only denoisers that support it read it
+   * (e.g. denoiser/realtime's ShadowDenoiser with `translucency: true`).
+   */
+  translucency?: GPUTexture;
+  /**
+   * Optional distance to the nearest translucent layer that attenuated the ray (r16float / r32float,
+   * world units; 0 = none): sizes coloured penumbrae like `hitDistance` sizes opaque ones.
+   */
+  translucencyHitDistance?: GPUTexture;
 }
 
 /** Reflections / specular indirect: 1 sample per pixel. */
@@ -134,6 +153,10 @@ export interface SpecularInputs {
   radiance: GPUTexture;
   /** Ray hit distance (r16float, 0 = miss). Drives reprojection of reflections. */
   hitDistance: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
 }
 
 /** Diffuse indirect (GI) / ambient occlusion: 1 sample per pixel. */
@@ -141,6 +164,10 @@ export interface DiffuseInputs {
   /** Noisy irradiance (linear HDR, rgba16float) or AO in r. */
   radiance: GPUTexture;
   hitDistance?: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
 }
 
 /**

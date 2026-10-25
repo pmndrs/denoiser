@@ -35,7 +35,7 @@ import { PARAMS_STRUCT } from './svgf';
  * w = (z, |dz|). Standard deviations, not variances, so HDR luminance can't overflow
  * f16 (as SPEC S-2a). Halves the bandwidth of the two rgba32float textures of v1.
  */
-const PACK_WGSL = /* wgsl */ `
+export const PACK_WGSL = /* wgsl */ `
 fn packG(g0: vec4f, g1: vec4f) -> vec4u {
   return vec4u(pack2x16float(g0.xy), pack2x16float(vec2f(sqrt(max(g0.z, 0.0)), g0.w)),
                pack2x16float(vec2f(g1.x, sqrt(max(g1.y, 0.0)))), pack2x16float(g1.zw));

@@ -293,7 +293,8 @@ const { diffuse, specular } = both.dispatchBoth(
   normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
   `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
   1080p). `antiLag: 'auto'` works as for radiance.
-- `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image).
+- `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image). It
+  starts at the denoiser's default curve (a 1, b 0.05); `setCurve(a, b, far)` changes it.
 - "Free" AO / SO: `filter: 'recurrent'` radiance outputs keep the denoised ĥ in alpha. It costs
   nothing extra but is clearly worse than either dedicated filter (below).
 
@@ -323,7 +324,9 @@ denoiser for 1-ray (or few-ray) shadow visibility, built against SPEC v0.1 §7 (
 yet: **provisional**). Fractional visibility is kept end to end (never thresholded), the
 history accumulates raw visibility only (no spatial output fed back), and the spatial kernel
 is sized per pixel from the penumbra width (Mehta et al. 2012, from the occluder distance and
-the light size) blended with a noise estimate (Heitz et al. 2018). Sources per pass:
+the light size) blended with a noise estimate (Heitz et al. 2018). A short stabilization history of
+the final output (v2.2, RTG II ch. 49 §49.5.7) removes the frame-to-frame "boil" of wide, soft
+penumbrae. Sources per pass:
 `src/shaders/shadow.ts` header and `docs/research/rt-denoiser/PROVENANCE.md` "Shadows (M4)".
 
 ```ts
@@ -343,7 +346,7 @@ const out = shadows.dispatch(
   { depth, normal, motion, viewZ /* optional */, motionZ /* optional */ },
   { view, projection, prevView, prevProjection, near, far },
 );
-// out: r32float denoised visibility (valid until the next dispatch)
+// out: r32float denoised visibility (valid until the next dispatch; two textures alternate)
 ```
 
 - Without `hitDistance` or `light` it falls back to the noise-driven radius alone (H18).
@@ -354,6 +357,7 @@ const out = shadows.dispatch(
   on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
   [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLag` [64], `antiLagHistory` [0],
+  `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0.618],
   `uniformSnap` [true], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
@@ -370,9 +374,11 @@ const out = shadows.dispatch(
 | `tiles` | 1 per 8×8 tile | 3×3-tile nearest-occluder scale; indirect list of penumbra tiles |
 | `spatial0` | indirect, penumbra tiles | out copy → T: 8-tap rotated disk on the receiver's tangent plane |
 | `spatial1` | indirect, penumbra tiles | T → out: same, half radius, another rotation |
+| `stabilize` | indirect, penumbra tiles | out + last frame's final output → final output: reprojected, clamped to the 3×3 range of this frame's output, blended 0.25; only where that range is narrow (wide penumbrae); anti-lag on the clamp distance (v2.2) |
 
-Memory: **40 B/px** + 12 B per 8×8 tile (83 MB at 1080p). Core WebGPU only (≤ 4 storage
-textures per pass).
+With `stabilize` on (default) the temporal pass writes its unfiltered copy into the final output pair
+and the spatial passes run final → T → out. Memory: **48 B/px** (40 without `stabilize`) + 16 B per 8×8
+tile (100 MB at 1080p). Core WebGPU only (≤ 4 storage textures per pass).
 
 ### Results (provisional; tables in `docs/research/rt-denoiser/results/M4.md`)
 
@@ -385,9 +391,15 @@ visibility, **pooled** (PSNR of the mean squared error over all frames and pixel
 | FFX shadows (`denoiser/ffx`) | 31.20 | 23.50 | 32.91 | 0.038 | 0.0053 | 0.50–0.61 |
 | `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
 | `ShadowDenoiser` v2 | 37.11 | 28.57 | 34.68 | 0.018 | 0.0033 | 0.48–0.59 |
-| **`ShadowDenoiser` (defaults, v2.1)** | **38.12** | **29.05** | **+0.65 vs v2** | **0.013** | **−18 % vs v2** | **0.58–0.69** |
+| `ShadowDenoiser` v2.1 | 38.12 | 29.05 | 35.33 | 0.0129 | 0.0027 | 0.58–0.69 |
+| **`ShadowDenoiser` (defaults, v2.2)** | **38.22** | **29.16** | **35.51** | 0.0131 | **0.0024** | 0.55–0.72 |
 
-Ahead of FFX on every path. v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
+Ahead of FFX on every path. **v2.2** (M4.md §12, "Moving shadows") fixes visible boiling in wide,
+soft penumbrae (the rotating torus knot's shadow on the three.js page): in that shadow the output's
+frame-to-frame noise drops from 4.9× FFX's to FFX's level (0.0013 vs 0.0062 per frame, FFX 0.0011) while
+staying 8 dB more accurate; on the test bed flicker −11 % and temporal PSNR +0.5 dB at 1080p, worst path
+`light` −0.19 dB (a little lag after light changes). The stabilization pass costs 0.03–0.05 ms (`stabilize: 0`
+turns it off: v2.1's cost, 40 B/px; v2.1 read 0.52–0.66 ms on the same bench). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
 from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
 normal-tested clamp), so 5 of 7 paths are over the 0.6 ms target (`clampGeometry: false` returns
 to v2's cost and gives up ~1 dB pooled; SPEC §12). GPU
@@ -396,6 +408,63 @@ Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spat
 `youngMean: 0` saves ~0.025 ms (−0.07 dB). Directional lights: the code path is exercised on
 images only through a stand-in (the test bed's sphere light handed over as a directional light,
 M4.md §10.7). Provisional: tuned and scored on the same scene.
+
+## Directional payload: `payload: 'sh'` (provisional, SPEC v0.3 §8.5 / M7)
+
+A plain denoised value is right for the normal the filter used and nothing else. With
+**normal-mapped** surfaces that's a bad trade: filter with the detail normal and the
+weights reject neighbours across every bump (noise stays); filter with the smooth normal
+and the bump shading is averaged away. `payload: 'sh'` filters a small function of
+direction per pixel instead (L1 spherical harmonics of the luma, chroma without direction,
+YCoCg: six channels in one `rgba32uint` per buffer) with the **smooth** normal, and
+evaluates it afterwards at the **detail** normal.
+
+```ts
+import { DiffuseDenoiser, ShResolver } from 'denoiser/realtime';
+
+const gi = new DiffuseDenoiser(device, { payload: 'sh', resolve: 'fused' });  // SVGF only
+gi.configure({ width, height });
+const rgb = gi.dispatch(
+  { radiance: diffuseDemod, direction: rayDirection },      // world direction of each 1-spp ray
+  { depth, normal: smoothNormal, detailNormal: shadingNormal, motion },
+  camera,
+); // rgba16float, demodulated, resolved at detailNormal
+```
+
+- **Inputs.** Per frame either `direction` (rgb, world-space direction of the sampled ray; the
+  denoiser encodes on load around `guides.detailNormal`) with `radiance`, or an encoded `sh`
+  texture (rgba32uint, 8 × f16 `a, b.xyz, Co, Cg, –, –`, SPEC M7-2). `guides.normal` is the
+  filter's (smooth) normal, `guides.detailNormal` the normal the rays were sampled around and
+  the payload is resolved at (falls back to `guides.normal`). Without either input it throws.
+- **Output.** `resolve: 'fused'` (the specular default): rgb resolved in the last à-trous pass
+  (remodulated with `remodulate: true`). `resolve: 'none'` (the diffuse default): the
+  resolve-ready payload (rgba32uint: `a', b'.xyz, ρCo, ρCg, Y_g`); resolve it with
+  `ShResolver` (compute pass, diffuse), or in your own shader with `SH_RESOLVE_WGSL`
+  (`shUnpack`, `shResolveDiffuse(p, nDetail, sharpen, nGuide)`,
+  `shResolveSpecular(p, nDetail, nGuide, view, roughness, lightSharp, rhoMax, fadeR)`), e.g.
+  to light any BSDF with the payload.
+- **Options.** `shSharpen` (0, diffuse fused resolve: blend toward ambient + one extracted light),
+  `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
+  `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (8), `shMaxRatio` (4), `shFadeRoughness` (0.2).
+  `payload` is structural; `filter: 'recurrent'` with `payload: 'sh'` throws (not built);
+  `historyFilter: 'catmull-rom'` is ignored in SH mode (the history is unfilterable; bilinear).
+- **three.js:** `realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })`
+  returns the resolved rgb (fused by default; with `resolve: 'none'` the node resolves with
+  `ShResolver` at `shResolve.normal`).
+- **Equal to the plain filter where the normals agree:** resolved at the guide normal the SH
+  filter scores like plain SVGF (test bed, 7 paths: within 0.05 dB at equal f16 rounding; results/M7.md). A fixed difference: SH packs f16 by rounding to
+  nearest, the plain buffers' `rgba16float` stores truncate on Metal, so SH reads ~0.1 dB better.
+
+### Results (provisional; full tables in `docs/research/rt-denoiser/results/M7.md`)
+
+Dev page, normal-mapped floor and wall (25° bumps), diffuse, scored against the exact irradiance at the
+detail normal (960×540, 30 frames): plain SVGF with the smooth normal 34.41 dB (bumps averaged away),
+with the detail normal 33.74 (neighbours rejected, noisy), **SH 36.80**, SH with `shSharpen: 0.5` 37.17.
+Specular SH does **not** pay on glossy bumps under a sharp light (plain with the detail normal is best;
+L1 can't hold glints), so treat specular SH as experimental. Cost (1080p, contended dev-page bench):
+diffuse 2.25 → 3.04 ms (1.35×), diffuse + specular 4.01 → 6.11 ms (1.52×). Memory: diffuse 116 B/px
+(108 with the fused resolve; plain 76), diffuse + specular 204 (plain 132), +8 with `antiLag: 'auto'`.
+
 
 ## Dev page
 
@@ -407,5 +476,7 @@ M4.md §10.7). Provisional: tuned and scored on the same scene.
 `antiLag=off|auto|gradient`, `kernel`, `iters`, `feedback=0|1`, `history`,
 `alpha`, `view=out|noisy|ref|err|histlen`, `gain`, `stopAt=N`, `filter=recurrent`,
 `r.<option>=…` / `t.<tune>=…` (recurrent options), `skeleton=1`, `specularFilter=svgf|recurrent`,
-`still=1` (lights don't move), `hit=0`, `--shot=file.png`,
+`still=1` (lights don't move), `hit=0`, SH (M7): `payload=sh`, `resolve=none|fused`, `sharpen`, `guard`,
+`enc`, `specRatio=sg|l1`, `lightSharp`, `maxRatio`, `fadeR`, `bumps=deg` (detail-normal bumps; reference =
+irradiance at the detail normal), `dirs=1` (directional samples), `guideNormal=detail`, `--shot=file.png`,
 `--json=file.json`. See the shader headers for sources.

@@ -163,6 +163,47 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   different `RT_REALTIME_SRC` snapshots (scratch config, `hmr: false`) give before/after on the same page; files in a
   snapshot outside the Vite root are still served fresh after an edit (no restart). — shadows-reset, 2026-10-25
 
+- Claude Code's safety check refuses some zsh expansions in a long command (`${(s:,:)V}` inside a pipeline
+  was flagged as "can't be checked for rm"); pass comma lists to scripts as one argument and split them
+  in the script instead. Probe pages that switch the realtime-shadows view to `ours`/`ffx` mid-session
+  hung once; the split view (`view: 'split'`) captures both sides in one page. — moving-shadows, 2026-10-25
+
+- User-facing docs are the MDX pages in `docs/site/` (frontmatter `title` / `description` / `nav`; the sidebar sorts
+  by `nav` numerically, so 27.5 slots a page between 27 and 28 without renumbering). They are built only in CI by the
+  pmndrs docs Docker image (`.github/workflows/pages.yml`); `tools/build-site.mjs` builds the demo site, not the docs.
+  Without Docker, compile-check a page with `@mdx-js/mdx` 3 + `remark-gfm` + `remark-frontmatter` installed in the
+  scratchpad. A bare `{` or `<` in prose breaks MDX: keep them in code spans. Snippets: a scratch `.ts` in
+  `examples/three-temporal/src/` plus a tsconfig extending that example's (`include` the scratch file) type-checks
+  against `denoiser/realtime` and `denoiser/three` through the built dist, so check that dist is newer than the last
+  src commit first. — m6-docs, 2026-10-25
+- "Output unchanged" checks while other agents edit the package: copy `packages/denoiser-realtime/src` to the
+  scratchpad (A), copy A again with only your edited file swapped in (B), serve the replay page with
+  `RT_REALTIME_SRC=<A or B> RT_NO_HMR=1` on a spare port (`BASE=http://127.0.0.1:<port>/` for `run-headless.mjs`),
+  run the same query with `&output=<name>` on each and `diff -rq -x run.json -x timings.csv`. Their WIP is in both
+  snapshots, so only your change can differ. Small GPU checks need no page: put a `.ts` module in the snapshot dir
+  (Vite's `fs.allow` includes it) and `cdp.evalJs("import('/@fs<dir>/check.ts').then(m => m.check())", true)` from
+  `lib/headless.mjs`'s `openPage`. Snippet type checks also work from the scratchpad: symlink the repo's
+  `node_modules` next to the scratch `.ts` (tsconfig `paths` does not apply package `exports` subpaths like
+  `denoiser/three`). — api-fixes, 2026-10-25
+- TS overloads keyed on an option literal (`realtimeOcclusion`'s `denoiser.signal`): add a last overload with the
+  plain option type and a union return, or a caller holding a non-literal `signal` stops compiling. — api-fixes, 2026-10-25
+
+- Another agent's Vite server may serve the test bed's `src/` from the worktree (E-1 did, with only the registry
+  pinned): editing scene / main / metrics there changes their next page load, and a half-done multi-file edit
+  hangs it. Develop in a scratch mirror instead: `git archive HEAD examples/realtime-denoiser examples/_shared
+  tools/rt-capture packages/denoiser-{core,ffx,realtime} package.json | tar -x -C <mirror>`, symlink the repo's
+  `node_modules` into it, serve it on your own port with `RT_CAPTURE_DIR=<repo>/tools/rt-capture` (captures land in
+  the shared place), and copy the finished files back to commit. Mirror captures record generator commit `?`
+  (no git there): write the captures you keep from a worktree server. — testbed-v1, 2026-10-25
+- Python `str.replace` scripts that insert TS: a `'\n'` inside a non-raw Python string becomes a real newline,
+  so `${B ? '  ng: vec3f,\n' : ''}` turns into an unterminated TS string (tsc: "Unterminated string literal").
+  Use backtick templates for multi-line inserts, and run `tsc -p examples/realtime-denoiser` before any page.
+  — testbed-v1, 2026-10-25
+- Node 22 imports `.ts` directly, but not extensionless relative imports: to dump a module's generated WGSL,
+  copy it to scratch with `from './x'` rewritten to `from './x.ts'` and `import()` both old and new versions
+  (diff of the standard build vs the original module = the bit-identity proof before any GPU run).
+  — testbed-v1, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -259,6 +300,27 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   uniform, so `if (c) { … } workgroupBarrier();` is legal. `dot4I8Packed` (`packed_4x8_integer_dot_product`, available
   in Chrome) was not faster than `dot(unpack4x8snorm(a), unpack4x8snorm(b))` on the M5 Pro. — shadows-reset, 2026-10-25
 
+- **rgba16float storage writes truncate on this GPU** (Chrome → Metal, M5 Pro): `textureStore` of 1 + 0.9 ulp
+  stores 1.0, while `pack2x16float` rounds to nearest (measured with a 64-texel probe). Every f16 storage
+  write loses ~½ ulp on average, an EMA history compounds it (~1/α writes), and plain SVGF comes out
+  ~0.1–0.16 dB darker/worse than the same filter packing f16 by hand. Compare filters at equal rounding (the
+  SH regression needed a truncating pack to match plain within 0.02 dB). — m7-sh, 2026-10-25
+- Quick WebGPU probes don't need a server: a one-file `index.html` under the scratchpad and
+  `BASE=file://<path>/index.html node packages/denoiser-realtime/dev/run-headless.mjs x=1` (the page sets
+  `window.__rt`). Size readback buffers for `bytesPerRow` × rows, or `mapAsync` hangs the run silently.
+  — m7-sh, 2026-10-25
+
+- Scene variants without touching the original paths: generate the tracer WGSL from a TS template per build
+  (`sceneWgsl('standard' | 'bumpy' | 'glass')`) and insert the new code with ``${B ? `...` : ''}``, so the standard
+  build's existing entries are textually the original code and new entry points / bindings are only appended
+  (unused bindings don't enter `layout: 'auto'`). Result: the 7 old paths' captures were byte-identical. Runtime
+  `if (u.scene == …)` branches would have risked codegen (contraction) changes. Per-invocation state a shared
+  helper needs (the geometric normal for the below-surface test) goes in a `var<private>` set by `primary()`.
+  — testbed-v1, 2026-10-25
+- A per-pixel 6-float payload doesn't fit one texture or `readTextures` (1–4 channels): keep two rgba32float halves
+  on the GPU, read both and interleave on the CPU (`CaptureWriter` `{ parts: [...] }`), and upload as two textures
+  in replay (`name`, `name#4`). The refs' second half needs its own accumulation buffer (`acc2`). — testbed-v1, 2026-10-25
+
 ## Conventions
 
 - Motion is an NDC delta, current − previous, +y up (three's `velocity`); row 0 of capture
@@ -297,6 +359,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - `run-headless.mjs` is deterministic in quality: two runs of the same query on a frozen
   package give identical PSNR to 4 decimals, so a FLIP run can be compared cell by cell with
   a `flip=0` run, and parallel runs don't disturb quality numbers. — metrics, 2026-10-25
+
+- An encoded reference made from the SAME samples as the plain one is a free correctness test: the test bed's
+  `*_sh_ref` averages the M7-2 payloads of `*_ref`'s samples, so `a + b·n_s` must equal YCoCg-Y of `*_ref`
+  (validate.mjs `*ExactAtSamplingNormal`). It agrees to ~0.3 %, the precision of the rgba16float `normal` it is
+  evaluated with. Consequence for M7-13: resolving `diffuse_sh_ref` at the detail normal (reference (1)) gives
+  almost exactly `diffuse_ref` (reference (2)); they differ only by the guard, the chroma ratio and sharpening.
+  — testbed-v1, 2026-10-25
+- RGB region metrics: square the per-channel error, not the channel-mean signed error. compare.mjs's dynamic /
+  static split (written for scalar visibility) reused `s = mean_c e` for shadow-rgb and scored a grey output
+  against a coloured reference 8 dB too high (opposite-sign channel errors cancel); per channel it matches the
+  live test bed within 0.03 dB (the rest is the two history-validity tests' masks). — testbed-v1, 2026-10-25
+- v1 capture sizes at 960×540 (f32, 256-spp refs): sh-diffuse + sh-specular 50 floats/px = 103.7 MB/frame,
+  sh-diffuse alone 34 = 70.5 MB, shadow-rgb 28 = 58.1 MB; capture only the v1 signals a capture is for
+  (`signal=sh-diffuse,sh-specular`), not `all,v1` (60 floats, 124 MB). — testbed-v1, 2026-10-25
 
 ## Denoiser design
 
@@ -448,6 +524,40 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   on SSR input). A specular ranking from one signal type (traced, demodulated, true hit distance) doesn't transfer to
   SSR input; say which specular signal a ranking was measured on. — real-scene-motion, 2026-10-25
 
+- Public evidence on recurrent vs variance-guided (sources/nrd-public-2022-2026.md): Epic's MegaLights (2025) runs its
+  spatial pass after accumulation with no feedback "to make the output sharper and quickly converge … after
+  disocclusion"; Ubisoft ships a recurrent blur as the cheap option and ranks it blurrier than ReBLUR/ReLAX. Same
+  pattern as our test bed. Shipped anti-lags shorten the frame cap in proportion to how far the history sits outside
+  the clamp box and never drop it to 0; our shadows' restart-to-0 is the outlier and the likely moving-shadow boiling
+  cause. — public research 2022–2026, 2026-10-25
+
+- **Flicker and temporal PSNR on the error can't see boiling in soft shadows.** e_t − e_t−1 includes the
+  reference's own frame-to-frame noise (2048-ray references: ~0.004 per frame in a wide penumbra), as
+  large as a good output's change, so v2.1's 4.7× FFX output noise on the knot's shadow scored *better*
+  flicker than FFX in the dynamic region. Look at the output's own temporal change (compare.mjs `boil`:
+  RMS second temporal difference / √6, with the reference's boil as the floor) and at frame-difference
+  strips. — moving-shadows, 2026-10-25
+- **Run a frozen control before blaming motion.** The "moving shadow boils" report turned out to be wide,
+  soft penumbrae boiling whether the knot moved or not (rect boil 0.0069 frozen vs 0.0062 rotating); the
+  knot's shadow is just the widest. A dynamic region defined by reference change (0.05 over 4 frames)
+  flagged 761 px/frame of a 40k px shadow. — moving-shadows, 2026-10-25
+- An output stabilization history (box-clamped to the 3×3 range of the current output) is TAA, and blurs
+  hard edges the same way: the box spans the step and holds nothing back (−5.5 dB on the test bed).
+  Gate it to narrow ranges, and scale that threshold with resolution (a penumbra's per-pixel slope
+  halves at 2× resolution: the 540p threshold cost 0.45 dB on `light` at 1080p). — moving-shadows, 2026-10-25
+- **Coloured shadows split exactly: E[v·T] = E[v]·E[T | v = 1].** Denoise opaque visibility as before and
+  accumulate the transmittance only over samples that reached the light (like g over occluded samples), then
+  multiply. The product of two plain spatial means is biased wherever opaque and translucent blockers overlap, and
+  this split keeps every tuned scalar rule on v (opaque output bit-identical when T ≡ 1). Multiplying layer
+  transmittances is as order-independent as Tomb Raider's "subtract 1/3 per layer" (both commute) and exact for
+  any colours. — spec-author (SPEC v0.3 §7.10), 2026-10-25
+- **A directional payload should be exact at the filter's normal.** Encoding each diffuse sample as the L1 band
+  of its clamped-cosine lobe, rescaled so it evaluates to L at the normal the ray was sampled around
+  (`a = L/(1+2c)`, `b = 2Lω/(1+2c)`), keeps weights bounded (the textbook cosine-sampled projection has a 1/c weight
+  with infinite variance) and makes SH mode regress against the plain filter: resolved at the guide normal it must
+  match within noise. Reuse the plain luminance (payload evaluated at the guide normal) for every weight so the
+  tuned constants carry over. — spec-author (SPEC v0.3 §8.5), 2026-10-25
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._
@@ -524,3 +634,33 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - `batch` loops in a zsh script: `jobs -r` is empty in a non-interactive script, so a
   "max 4 jobs" throttle built on it starts everything at once (7 × 1080p pages + other
   agents' jobs: 40+ min instead of 5). Use `printf '%s\n' $paths | xargs -P 4 …`. — svgf-antilag, 2026-10-25
+
+- A Vite middleware that calls `next()` for a missing file under its own prefix gets Vite's SPA fallback: `index.html`
+  with **200**. A `fetch(HEAD)` "does this weight file exist?" probe then says yes and the loader dies on "Invalid or
+  corrupted weights blob". Answer 404 yourself. — e2, 2026-10-25
+- OIDN 2 on our 1-spp signals (E2-oidn-baseline): demodulated diffuse / specular want **albedo = 1 + normal** (clean-aux
+  `*_calb_cnrm` weights; OIDN takes a normal only with an albedo). Color only is −1.4…−1.8 dB, and the real albedo −2.7 dB
+  diffuse (it describes texture edges the demodulated signal doesn't have). Scalars (visibility, ĥ) go through the
+  **HDR** weights as grey color. The LDR weights brightened dark regions (shadows 19 vs 30 dB). — e2, 2026-10-25
+- Async / offline denoisers in the replay: implement `ReplayDenoiser.dispatchAsync` and register them from
+  `tools/rt-capture/src/main.ts` (the replay page), not `denoisers.ts`. Then the test bed, which imports the registry
+  and runs it synchronously, never loads them. — e2, 2026-10-25
+- `pkill -f <waiter script>` also kills the copy of that waiter a running batch script is blocked on. The batch then runs
+  its next page at once, unquieted. Kill your own extra instance by PID. — e2, 2026-10-25
+- Reading a proprietary project's release notes cleanly (RULES 3b): fetch with `gh api`, strip fenced code blocks
+  with a script *before* the text reaches you, and read the stripped copy only. NRD's release bodies and `UPDATE.md`
+  had no fences, but `UPDATE.md` still carries inline usage snippets and default values in prose ("old value X matches
+  new Y"), so the fence strip is not enough: skip inline expressions and numbers by eye. Most lines in NRD's notes
+  are "how" (weights, tests, pass moves, tap counts: ~417 dropped vs ~200 kept), so keep a per-release tally in a
+  scratch file as you go rather than counting at the end. — release auditor, 2026-10-25
+- Change audits from `git diff --numstat` (rule 3c): always add `-w`. NRD converted line endings in several
+  releases, so raw counts show whole files "rewritten" (`NRDDescs.h` at v2.5.0: 331 of 335 lines raw, 0 with `-w`;
+  SH host files at v4.15.0: 30 % raw vs 5 %). Don't trust a direct diff across years either: git loses renames across
+  directory reshuffles and counts every old file as deleted. Chain consecutive-release diffs instead, and split removed
+  lines into edited vs deleted files (`--name-status` status per path) so file merges (packaging) don't read as
+  rewrites. — change auditor, 2026-10-25
+
+- Search-engine summaries can quote NRD's README even when you never open it (a query about RTXDI gradients and
+  denoiser confidence did). Keep queries about anti-lag / history confidence on papers and talks (A-SVGF, studio
+  talks), block github.com and deepwiki.com, and if a summary quotes NRD text, say so and use none of it.
+  — public research 2022–2026, 2026-10-25

@@ -64,6 +64,50 @@ node tools/rt-capture/compare.mjs std540-glossy          # every denoiser folder
 `--replay` runs every capture of the set through every listed registry denoiser
 (outputs in `outputs/<capture>/<id>/`) and then `compare.mjs` per capture.
 
+## v1 captures (M7 SH / M8 translucent shadows)
+
+[CAPTURE-FORMAT v1](../../docs/research/rt-denoiser/CAPTURE-FORMAT.md#v1-directional-payloads-and-translucent-shadows)
+captures for the directional (SH) and translucent-shadow variants, one command (from the repo root):
+
+```sh
+node examples/realtime-denoiser/run-headless.mjs --serve --set=v1      # 5 captures, validated, 8.63 GB (8.03 GiB), ~2 min
+```
+
+| capture | path frames | signals | size | why |
+|---|---|---|---|---|
+| `v1-bumpy` | bumpy 0–31 | sh-diffuse, sh-specular | 32 × 103.7 MB | normal-mapped floor (domes 10–40°) and rippled wall, cyan area light; glossy bumpy floor (M7-13) |
+| `v1-bounce` | bounce 0–15 | sh-diffuse | 16 × 70.5 MB | bumpy corridor between a red and a green wall: coloured directionality, YCoCg vs RGB (SPEC item 10) |
+| `v1-glass` | glass 0–15 | shadow-rgb | 16 × 58.1 MB | framed amber glass (striped alpha) over a blue-green panel: coloured, nested penumbrae, product colour in the overlap; camera orbit (M8-10) |
+| `v1-glass-moving` | glass-moving 0–39 | shadow-rgb | 40 × 58.1 MB | the framed panel slides and turns over a static receiver, static camera (no motion vector follows its shadow) |
+| `v1-glass-still` | glass-still 0–15 | shadow-rgb | 16 × 58.1 MB | glass-moving frozen at its frame-24 pose: the boil control (its reference boil is 0) |
+
+All 960×540, 256-spp references, version-1 manifests. Each holds only its signals' buffers: every guide plus
+`normal_geom`; sh-* add `diffuse` / `specular`, `*_hitt`, `*_dir`, `*_ref` and `*_sh_ref`; shadow-rgb adds
+`visibility`, `occluder_dist`, `transmittance`, `translucent_dist`, `visibility_ref`, `shadow_rgb_ref`. The same
+windows render live with `mode=eval&path=<path>&start=0&frames=<n>&signal=<signals>` (capture-sets.mjs `evalQuery`);
+live and replay metrics agree to 4 decimals (pooled, bump, band, floor, vs SH ref, tint, chroma; the shadow-rgb
+dynamic split within 0.03 dB, `shadows-lumt` within 0.0002 dB because the replay derives v·lum(T) on the CPU).
+
+Baselines on the set (replay + `compare.mjs`, pooled PSNR; band energy 1 = detail kept):
+
+| capture | signal | noisy | accumulate-32 | svgf-plain (detail normal) | svgf-plain-smooth (`normal_geom`) | band energy plain / smooth |
+|---|---|---|---|---|---|---|
+| v1-bumpy | sh-diffuse | 16.18 | 25.85 | 35.37 | 34.69 | 1.22 / 0.17 |
+| v1-bumpy | sh-specular | 17.94 | 25.86 | 30.93 | 28.12 | 0.53 / 0.14 |
+| v1-bounce | sh-diffuse | 14.65 | 22.25 | 35.52 | 33.77 | 1.40 / 0.09 |
+
+| capture | shadow-rgb: noisy | accumulate-32 | shadows-lumt (grey) | chroma err noisy / acc-32 / lumt | visibility: shadows (v2.2) |
+|---|---|---|---|---|---|
+| v1-glass | 21.08 | 28.46 | 27.98 | 0.068 / 0.009 / 0.065 | 35.46 |
+| v1-glass-moving | 20.47 | 20.39 | 26.00 | 0.064 / 0.033 / 0.066 | 33.04 |
+| v1-glass-still | 20.82 | 29.57 | 26.34 | 0.062 / 0.013 / 0.068 | 37.99 |
+
+```sh
+node examples/realtime-denoiser/run-headless.mjs "mode=replay&capture=v1-bumpy&denoiser=svgf-plain"
+node tools/rt-capture/compare.mjs v1-bumpy [--sh-k 1 --sh-s 0]      # v1 tables at the end of compare.md
+node tools/rt-capture/preview.mjs v1-glass --strip shadow-rgb --frame 15
+```
+
 ## Capture and replay, one at a time
 
 ```sh

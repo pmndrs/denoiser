@@ -59,13 +59,59 @@
 //             distance and average those (same direction distributions as the 1-spp rays:
 //             cosine hemisphere / GGX VNDF with the below-horizon mirror), not the average
 //             hit distance.
+//
+// CAPTURE-FORMAT v1 signals (SPEC v0.3 M7 / M8; testbed-v1). Three scene builds, compiled from one
+// template (sceneWgsl(kind)): 'standard' (the seven original paths: its existing entries are the
+// original code, so their signals and references stay bit-identical), 'bumpy' (paths bumpy, bounce)
+// and 'glass' (paths glass, glass-moving, glass-still). Every build also has the v1 entries:
+//   dirs          diffuse_dir / specular_dir: world unit direction of this frame's 1-spp diffuse /
+//                 specular ray (recomputed from the same random numbers as entry signals), and
+//                 normal_geom (the smooth geometric normal; = normal outside the bumpy build)
+//   translucency  transmittance T (rgb) and translucent_dist of the 1-ray shadow sample, plus two
+//                 derived conveniences: the noisy v*T (shadow-rgb input baseline) and v*lum709(T)
+//   ref_sh_diffuse / ref_sh_specular   the converged M7-2 payload (a, b.xyz | Co, Cg) of the SAME
+//                 samples as ref_diffuse / ref_specular (same seeds): Y(n_s) = a + b.n_s reproduces
+//                 YCoCg-Y of diffuse_ref / specular_ref up to f32 rounding
+//   ref_shadow_rgb mean of v*T over the shadow reference's samples (same seeds as ref_shadows)
+// M7-2 payload of one sample (radiance L, ray direction w, sampling normal n_s; YCoCg after Malvar &
+// Sullivan 2003): c = n_s.w, beta = 2 / (1 + 2 max(c, 0)), a = Y (1 - beta c), b = beta Y w, Co, Cg.
+// For c >= 0 that is SPEC's a = Y / (1 + 2c), b = 2 Y w / (1 + 2c); for c < 0 (only possible for
+// specular, whose n_s is the dominant direction D_s) beta stays 2, which keeps a + b.n_s = Y exact and
+// the weights bounded. Specular n_s = D_s = normalize(mix(n, reflect(-v, n), F)), F = (1 - a)(sqrt(1 - a)
+// + a), a = r^2 (SPEC R-2, Frostbite's fit), with n the shading (detail) normal.
+//
+// bumpy build: a normal-mapped floor (domes in a 0.5 m grid, max tilt 10..40 deg varying along x) and a
+// rippled wall (behind the big sphere, +-25 deg), a cyan area light (emissive box, reached by secondary
+// rays only as emission), and a red and a green wall flanking a corridor of bumpy floor (coloured bounce).
+// The detail normal is analytic (bumpNormal), bent toward the viewer where it would face away (n.v >=
+// 0.05), and is what `normal` holds and what the rays are sampled around; normal_geom is the flat
+// normal. Rays below the GEOMETRIC surface return L = 0 and hit distance 0 (SPEC M7-4). Shadow rays use
+// the geometric normal; secondary hits shade with their geometric normal.
+// glass build: thin translucent panels seen by SHADOW rays only (primary and secondary rays pass
+// through them untinted): panel 1, kappa (0.9, 0.35, 0.2), alpha 0.8 / 0.4 in 15 cm stripes, with an
+// opaque frame (visible, casts an opaque shadow), its pose (position + rotation about y) per frame from
+// the path (glass-moving slides and turns it; the frame's motion vectors follow it); panel 2,
+// blue-green kappa (0.15, 0.7, 0.75), alpha 0.7, static, lower, overlapping panel 1's shadow (the
+// overlap shows the product colour). Per layer t = (1 - alpha) + alpha kappa; layers multiply (order
+// independent). SPEC M8-1: visibility = opaque visibility; once max_c T < 0.01 the ray counts as opaque
+// (v = 0, occluder_dist = that layer's distance). Where v = 0, transmittance = 1 and translucent_dist =
+// 0. translucent_dist = distance to the nearest layer with min_c t < 1. Secondary-hit lighting is
+// multiplied by T as well (coloured light in the GI).
 import { bnWgsl } from './bluenoise';
+
+/** Scene builds (sceneWgsl): which geometry and which signal variants are compiled in. */
+export type SceneKind = 'standard' | 'bumpy' | 'glass';
 
 /** SPEC F-3 curve constants used for the test bed's ao / so signals (the denoisers' defaults). */
 export const OCC_A = 1.0;
 export const OCC_B = 0.05;
 
-export const SCENE_WGSL = /* wgsl */ `
+/** The scene module for one build. 'standard' compiles the original entries unchanged. */
+export function sceneWgsl(kind: SceneKind = 'standard'): string {
+  const B = kind === 'bumpy', G = kind === 'glass';
+  /** the normal shadow rays use: the geometric one in the bumpy build */
+  const NS = B ? 'pr.ng' : 'pr.n';
+  return /* wgsl */ `
 struct U {
   invViewProj: mat4x4f,
   viewProj: mat4x4f,
@@ -77,8 +123,10 @@ struct U {
   lightPos: vec3f, lightRadius: f32,
   lightRadiance: vec3f, far: f32,
   objPos: vec3f, objRadius: f32,
-  objPrevPos: vec3f, _pad1: f32,
-};
+  objPrevPos: vec3f, refSalt: u32, // refSalt: reference seed salt (0 = the standard references; E-1)
+${G ? `  glassPos: vec3f, glassAngle: f32,
+  glassPrevPos: vec3f, glassPrevAngle: f32,
+` : ''}};
 // reference accumulation chunk: samples [start, start + count) of a g x g grid
 struct R { start: u32, count: u32, grid: u32, last: u32 };
 
@@ -102,6 +150,16 @@ struct R { start: u32, count: u32, grid: u32, last: u32 };
 @group(0) @binding(17) var<uniform> rp: R;
 @group(0) @binding(18) var<storage, read_write> acc: array<vec4f>;
 ${bnWgsl(19)}
+// v1 outputs (testbed-v1)
+@group(0) @binding(20) var o_diffDir: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(21) var o_specDir: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(22) var o_normalGeom: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(23) var o_trans: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(24) var o_transDist: texture_storage_2d<r32float, write>;
+@group(0) @binding(25) var o_shadowRgb: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(26) var o_visLumT: texture_storage_2d<r32float, write>;
+@group(0) @binding(27) var o_refRgb2: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(28) var<storage, read_write> acc2: array<vec4f>;
 
 const PI: f32 = 3.14159265359;
 const MOVING_ID: u32 = 100u;
@@ -143,7 +201,31 @@ const FENCE_MIN: vec3f = vec3f(1.38, 0.0, 3.86);
 const FENCE_MAX: vec3f = vec3f(4.32, 1.6, 3.94);
 const SLATS: u32 = 10u;
 const FENCE_ALBEDO: vec3f = vec3f(0.85, 0.82, 0.78);
-
+${B ? `
+// bumpy build: rippled wall, red / green corridor walls, cyan emitter (ids 40 + i)
+const NUM_BW: u32 = 4u;
+const BW_MIN = array<vec3f, 4>(vec3f(-3.5, 0.0, -3.25), vec3f(-2.2, 0.0, 5.6), vec3f(1.0, 0.0, 5.6), vec3f(-3.0, 1.5, -3.05));
+const BW_MAX = array<vec3f, 4>(vec3f(3.5, 2.4, -3.05), vec3f(-2.0, 2.0, 9.5), vec3f(1.2, 2.0, 9.5), vec3f(-1.8, 2.3, -3.0));
+const BW_ALBEDO = array<vec3f, 4>(vec3f(0.75, 0.72, 0.68), vec3f(0.8, 0.12, 0.1), vec3f(0.12, 0.7, 0.18), vec3f(0.05));
+const BW_ROUGH = array<f32, 4>(0.5, 0.6, 0.6, 0.9);
+const RIPPLE_ID: u32 = 40u;
+const EMIT_ID: u32 = 43u;
+const EMIT_RADIANCE: vec3f = vec3f(0.4, 1.8, 4.0);
+// the geometric normal of the current primary hit (set by primary(); the below-surface test)
+var<private> g_ng: vec3f;
+` : ''}${G ? `
+// glass build: panel 1 (moving, framed) in its local frame: |x| <= 0.8, |z| <= 0.6 at y = 0
+const P1_HALF: vec2f = vec2f(0.8, 0.6);
+const P1_KAPPA: vec3f = vec3f(0.9, 0.35, 0.2);
+const P2_POS: vec3f = vec3f(-1.2, 0.7, 6.3);
+const P2_HALF: vec2f = vec2f(0.5, 0.4);
+const P2_KAPPA: vec3f = vec3f(0.15, 0.7, 0.75);
+const FRAME_ID: u32 = 50u;
+const FRAME_MIN = array<vec3f, 4>(vec3f(-0.86, -0.02, 0.6), vec3f(-0.86, -0.02, -0.66), vec3f(0.8, -0.02, -0.6), vec3f(-0.86, -0.02, -0.6));
+const FRAME_MAX = array<vec3f, 4>(vec3f(0.86, 0.02, 0.66), vec3f(0.86, 0.02, -0.6), vec3f(0.86, 0.02, 0.6), vec3f(-0.8, 0.02, 0.6));
+// rotation about +y: local -> world and back
+fn rotY(v: vec3f, a: f32) -> vec3f { let c = cos(a); let s = sin(a); return vec3f(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+` : ''}
 fn sphereT(ro: vec3f, rd: vec3f, s: vec4f) -> f32 {
   let oc = ro - s.xyz;
   let b = dot(oc, rd);
@@ -244,7 +326,28 @@ fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
       }
     }
   }
-  if (!found) { h.t = -1.0; }
+${B ? `  for (var i = 0u; i < NUM_BW; i++) {
+    var n = vec3f(0.0);
+    let t = boxT(ro, rd, BW_MIN[i], BW_MAX[i], &n);
+    if (t > 0.0 && t < h.t) {
+      h = Hit(t, n, BW_ALBEDO[i], vec3f(0.04), BW_ROUGH[i], 40u + i);
+      found = true;
+    }
+  }
+` : ''}${G ? `  {
+    // panel 1's opaque frame, in the panel's local frame (rigid: distances are kept)
+    let lo = rotY(ro - u.glassPos, -u.glassAngle);
+    let ld = rotY(rd, -u.glassAngle);
+    for (var i = 0u; i < 4u; i++) {
+      var n = vec3f(0.0);
+      let t = boxT(lo, ld, FRAME_MIN[i], FRAME_MAX[i], &n);
+      if (t > 0.0 && t < h.t) {
+        h = Hit(t, rotY(n, u.glassAngle), vec3f(0.2), vec3f(0.04), 0.5, FRAME_ID);
+        found = true;
+      }
+    }
+  }
+` : ''}  if (!found) { h.t = -1.0; }
   return h;
 }
 
@@ -265,7 +368,8 @@ fn noisySeed(pix: vec2u, salt: u32) -> u32 {
   return pcg(pix.x + pcg(pix.y + pcg(u.frame * 9781u + u.seedOffset + salt * 0x68bc21ebu)));
 }
 fn refSeed(pix: vec2u, salt: u32) -> u32 {
-  return pcg(pix.x * 7919u + pcg(pix.y + 0x9e3779b9u + salt * 0x2c1b3c6du));
+  // u.refSalt = 0 gives the standard references bit for bit; any other value an independent set
+  return pcg(pix.x * 7919u + pcg(pix.y + 0x9e3779b9u + salt * 0x2c1b3c6du + u.refSalt * 0x85ebca6bu));
 }
 
 fn basis(n: vec3f) -> mat3x3f {
@@ -291,7 +395,58 @@ fn sky(d: vec3f) -> vec3f {
 }
 
 // ---- sphere light: uniform cone sampling of its solid angle -> (visibility, occluder distance)
+${G ? `struct SR { v: f32, h: f32, T: vec3f, hTau: f32 };
+// one translucent panel crossed by the segment (o, o + d * tmax): (t_i rgb, distance), distance < 0 = none
+fn glassLayer(o: vec3f, d: vec3f, tmax: f32, k: u32) -> vec4f {
+  var c = P2_POS; var a = 0.0; var half = P2_HALF;
+  if (k == 0u) { c = u.glassPos; a = u.glassAngle; half = P1_HALF; }
+  let lo = rotY(o - c, -a);
+  let ld = rotY(d, -a);
+  if (abs(ld.y) < 1e-7) { return vec4f(1.0, 1.0, 1.0, -1.0); }
+  let t = -lo.y / ld.y;
+  if (!(t > 1e-4 && t < tmax)) { return vec4f(1.0, 1.0, 1.0, -1.0); }
+  let q = lo.xz + ld.xz * t;
+  if (any(abs(q) > half)) { return vec4f(1.0, 1.0, 1.0, -1.0); }
+  var alpha = 0.7;
+  var kappa = P2_KAPPA;
+  if (k == 0u) { alpha = select(0.4, 0.8, fract(q.x / 0.3) < 0.5); kappa = P1_KAPPA; }
+  return vec4f((1.0 - alpha) + alpha * kappa, t);
+}
+// shadow ray toward the sphere light through the translucent layers (SPEC M8-1)
+fn shadowRay(p: vec3f, n: vec3f, xi: vec2f) -> SR {
+  let toL = u.lightPos - p;
+  let dist = length(toL);
+  let w = toL / dist;
+  let sinMax = min(u.lightRadius / dist, 1.0);
+  let cosMax = sqrt(max(1.0 - sinMax * sinMax, 0.0));
+  let cosT = 1.0 - xi.x * (1.0 - cosMax);
+  let sinT = sqrt(max(1.0 - cosT * cosT, 0.0));
+  let phi = 2.0 * PI * xi.y;
+  let dir = basis(w) * vec3f(cos(phi) * sinT, sin(phi) * sinT, cosT);
+  if (dot(dir, n) <= 0.0) { return SR(0.0, 0.0, vec3f(1.0), 0.0); }
+  let tLight = dist - u.lightRadius;
+  let o = p + n * 1e-3;
+  let h = trace(o, dir, tLight);
+  if (h.t > 0.0) { return SR(0.0, h.t, vec3f(1.0), 0.0); }
+  // the layers, nearest first
+  var l0 = glassLayer(o, dir, tLight, 0u);
+  var l1 = glassLayer(o, dir, tLight, 1u);
+  if (l1.w >= 0.0 && (l0.w < 0.0 || l1.w < l0.w)) { let tmp = l0; l0 = l1; l1 = tmp; }
+  var T = vec3f(1.0);
+  var hTau = 0.0;
+  for (var k = 0u; k < 2u; k++) {
+    let l = select(l1, l0, k == 0u);
+    if (l.w < 0.0) { continue; }
+    T *= l.rgb;
+    if (hTau == 0.0 && min(min(l.r, l.g), l.b) < 1.0) { hTau = l.w; }
+    if (max(max(T.r, T.g), T.b) < 0.01) { return SR(0.0, l.w, vec3f(1.0), 0.0); }
+  }
+  return SR(1.0, 0.0, T, hTau);
+}
 fn lightSample(p: vec3f, n: vec3f, xi: vec2f) -> vec2f {
+  let s = shadowRay(p, n, xi);
+  return vec2f(s.v, s.h);
+}` : `fn lightSample(p: vec3f, n: vec3f, xi: vec2f) -> vec2f {
   let toL = u.lightPos - p;
   let dist = length(toL);
   let w = toL / dist;
@@ -306,17 +461,19 @@ fn lightSample(p: vec3f, n: vec3f, xi: vec2f) -> vec2f {
   let h = trace(p + n * 1e-3, dir, tLight);
   if (h.t > 0.0) { return vec2f(0.0, h.t); }
   return vec2f(1.0, 0.0);
-}
+}`}
 
 // outgoing radiance of a secondary hit (Lambertian; metals use f0 as their colour):
 // sphere light with one shadow ray + a crude sky ambient (stands in for more bounces)
 fn hitRadiance(p: vec3f, h: Hit, xi: vec2f) -> vec3f {
-  let s = lightSample(p, h.n, xi);
+${B ? `  if (h.id == EMIT_ID) { return EMIT_RADIANCE; }
+` : ''}${G ? `  let sr = shadowRay(p, h.n, xi);
+  let s = vec2f(sr.v, sr.h);` : `  let s = lightSample(p, h.n, xi);`}
   let toL = u.lightPos - p;
   let d2 = dot(toL, toL);
   let ndl = max(dot(h.n, normalize(toL)), 0.0);
   let solid = PI * u.lightRadius * u.lightRadius / d2;
-  let direct = u.lightRadiance * ndl * solid * s.x / PI;
+  let direct = u.lightRadiance * ndl * solid * s.x / PI${G ? ' * sr.T' : ''};
   let amb = sky(h.n) * 0.25;
   let refl = h.albedo + select(vec3f(0.0), h.f0, h.albedo.x + h.albedo.y + h.albedo.z == 0.0);
   return refl * (direct + amb);
@@ -335,7 +492,8 @@ fn diffuseSample(p: vec3f, n: vec3f, xi: vec2f, xi2: vec2f) -> vec4f {
   let r = sqrt(xi.x);
   let phi = 2.0 * PI * xi.y;
   let dir = basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
-  return incoming(p, n, dir, xi2);
+${B ? `  if (dot(dir, g_ng) <= 0.0) { return vec4f(0.0); }
+` : ''}  return incoming(p, n, dir, xi2);
 }
 
 // ---- specular: GGX VNDF (Heitz 2018)
@@ -376,7 +534,8 @@ fn specularSample(p: vec3f, n: vec3f, v: vec3f, rough: f32, f0: vec3f, xi: vec2f
   var L = reflect(-v, H);
   var ndl = dot(n, L);
   if (ndl <= 0.0) { L = L - 2.0 * ndl * n; ndl = -ndl; }
-  ndl = max(ndl, 1e-4);
+${B ? `  if (dot(L, g_ng) <= 0.0) { return vec4f(0.0); }
+` : ''}  ndl = max(ndl, 1e-4);
   let vdh = clamp(dot(v, H), 0.0, 1.0);
   let F = f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
   let w = F * smithG1(ndl, alpha * alpha) / envBRDF(f0, rough, dot(n, v));
@@ -384,11 +543,37 @@ fn specularSample(p: vec3f, n: vec3f, v: vec3f, rough: f32, f0: vec3f, xi: vec2f
   return vec4f(li.rgb * w, li.w);
 }
 
-// ---- primary visibility + guides
+${B ? `// ---- bumpy build: analytic detail normals (geometry stays flat)
+fn bumpNormal(p: vec3f, h: Hit) -> vec3f {
+  if (h.id == 1u) {
+    // floor: domes of radius R in a 0.5 m grid, height H (1 - r^2/R^2)^2, max tilt 10..40 deg along x
+    let q = (fract(p.xz / 0.5) - 0.5) * 0.5;
+    let R = 0.17;
+    let r2 = dot(q, q) / (R * R);
+    if (r2 >= 1.0) { return h.n; }
+    let tanMax = tan(radians(mix(10.0, 40.0, 0.5 + 0.5 * sin(p.x * 0.45 + 0.2 * p.z))));
+    let H = tanMax * R / 1.5396;          // max slope of the profile = 1.5396 H / R
+    let g = -4.0 * H * (1.0 - r2) * q / (R * R);
+    return normalize(vec3f(-g.x, 1.0, -g.y));
+  }
+  if (h.id == RIPPLE_ID && h.n.z > 0.5) {
+    // rippled wall front: height A sin(k y) (0.6 + 0.4 sin(1.3 x)) along +z, max tilt ~25 deg
+    let k = 2.0 * PI / 0.35;
+    let A = tan(radians(25.0)) / k;
+    let m = 0.6 + 0.4 * sin(1.3 * p.x);
+    let gx = A * sin(k * p.y) * 0.52 * cos(1.3 * p.x);
+    let gy = A * k * cos(k * p.y) * m;
+    return normalize(vec3f(-gx, -gy, 1.0));
+  }
+  return h.n;
+}
+
+` : ''}// ---- primary visibility + guides
 struct Primary {
   hit: bool, p: vec3f, n: vec3f, rough: f32, albedo: vec3f, f0: vec3f,
   depth: f32, viewz: f32, motion: vec2f, motionz: f32, rd: vec3f,
-};
+${B ? `  ng: vec3f,
+` : ''}};
 
 fn primary(pix: vec2u) -> Primary {
   let uv = (vec2f(pix) + 0.5) / vec2f(u.dims);
@@ -415,12 +600,22 @@ fn primary(pix: vec2u) -> Primary {
   o.hit = true;
   o.p = u.camPos + rd * h.t;
   o.n = h.n;
+${B ? `  // detail (shading) normal, bent toward the viewer where it would face away; ng = geometric normal
+  o.ng = h.n;
+  g_ng = h.n;
+  var nd = bumpNormal(o.p, h);
+  let cv = dot(nd, -rd);
+  if (cv < 0.05) { nd = normalize(nd - (0.05 - cv) * rd); }
+  o.n = nd;
+` : ''}
   o.rough = h.rough;
   o.albedo = h.albedo;
   o.f0 = h.f0;
   // the movable sphere translates: its previous position is p - (objPos - objPrevPos)
   var pPrev = o.p;
   if (h.id == MOVING_ID) { pPrev = o.p - (u.objPos - u.objPrevPos); }
+${G ? `  if (h.id == FRAME_ID) { pPrev = u.glassPrevPos + rotY(rotY(o.p - u.glassPos, -u.glassAngle), u.glassPrevAngle); }
+` : ''}
   let c = ndcOf(u.viewProj, o.p);
   o.depth = c.z;
   o.motion = c.xy - ndcOf(u.prevViewProj, pPrev).xy;
@@ -465,14 +660,14 @@ fn signals(@builtin(global_invocation_id) id: vec3u) {
     let fr = u.frame + u.seedOffset;
     d = diffuseSample(pr.p, pr.n, bn2(id.xy, fr, 0u), bn2(id.xy, fr, 2u));
     s = specularSample(pr.p, pr.n, -pr.rd, pr.rough, pr.f0, bn2(id.xy, fr, 4u), bn2(id.xy, fr, 6u));
-    v = lightSample(pr.p, pr.n, bn2(id.xy, fr, 8u));
+    v = lightSample(pr.p, ${NS}, bn2(id.xy, fr, 8u));
   } else if (pr.hit) {
     var sd = noisySeed(id.xy, 1u);
     d = diffuseSample(pr.p, pr.n, rand2(&sd), rand2(&sd));
     var ss = noisySeed(id.xy, 2u);
     s = specularSample(pr.p, pr.n, -pr.rd, pr.rough, pr.f0, rand2(&ss), rand2(&ss));
     var sv = noisySeed(id.xy, 3u);
-    v = lightSample(pr.p, pr.n, rand2(&sv));
+    v = lightSample(pr.p, ${NS}, rand2(&sv));
   }
   textureStore(o_diff, id.xy, vec4f(d.rgb, 1.0));
   textureStore(o_diffHit, id.xy, vec4f(d.w));
@@ -544,7 +739,8 @@ fn diffuseHitT(p: vec3f, n: vec3f, xi: vec2f) -> f32 {
   let r = sqrt(xi.x);
   let phi = 2.0 * PI * xi.y;
   let dir = basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
-  return trace(p + n * 1e-3, dir, 1e4).t;
+${B ? `  if (dot(dir, g_ng) <= 0.0) { return -1.0; }
+` : ''}  return trace(p + n * 1e-3, dir, 1e4).t;
 }
 // hit distance of a specular ray (same direction as specularSample), -1 = miss
 fn specularHitT(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f) -> f32 {
@@ -554,7 +750,8 @@ fn specularHitT(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f) -> f32 {
   var L = reflect(-v, H);
   let ndl = dot(n, L);
   if (ndl <= 0.0) { L = L - 2.0 * ndl * n; }
-  return trace(p + n * 1e-3, L, 1e4).t;
+${B ? `  if (dot(L, g_ng) <= 0.0) { return -1.0; }
+` : ''}  return trace(p + n * 1e-3, L, 1e4).t;
 }
 
 @compute @workgroup_size(8, 8)
@@ -602,7 +799,7 @@ fn ref_shadows(@builtin(global_invocation_id) id: vec3u) {
     var seed = refSeed(id.xy, 3u);
     let rot = rand2(&seed);
     for (var i = rp.start; i < rp.start + rp.count; i++) {
-      sum.x += lightSample(pr.p, pr.n, gridXi(i, rot)).x;
+      sum.x += lightSample(pr.p, ${NS}, gridXi(i, rot)).x;
     }
   } else {
     sum.x = f32(rp.count); // sky: lit
@@ -610,7 +807,161 @@ fn ref_shadows(@builtin(global_invocation_id) id: vec3u) {
   let m = accumulate(id.xy, sum);
   if (rp.last != 0u) { textureStore(o_refScalar, id.xy, vec4f(m.x)); }
 }
+
+// ==== v1 entries (testbed-v1; CAPTURE-FORMAT v1) ====
+// sample directions, recomputed from the same random numbers as entry signals
+fn diffuseDirOf(n: vec3f, xi: vec2f) -> vec3f {
+  let r = sqrt(xi.x);
+  let phi = 2.0 * PI * xi.y;
+  return basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
+}
+fn specularDirOf(n: vec3f, v: vec3f, rough: f32, xi: vec2f) -> vec3f {
+  let alpha = max(rough * rough, 1e-3);
+  let tbn = basis(n);
+  let H = tbn * sampleGGXVNDF(transpose(tbn) * v, alpha, xi);
+  var L = reflect(-v, H);
+  let ndl = dot(n, L);
+  if (ndl <= 0.0) { L = L - 2.0 * ndl * n; }
+  return L;
+}
+// SPEC R-2 dominant direction (Frostbite's simple fit with GGX alpha)
+fn dominantDir(n: vec3f, v: vec3f, rough: f32) -> vec3f {
+  let a = rough * rough;
+  let f = (1.0 - a) * (sqrt(1.0 - a) + a);
+  return normalize(mix(n, reflect(-v, n), f));
+}
+// M7-2 payload of one sample (see the header): a = (a, b.xyz), c = (Co, Cg, 0, 0)
+struct SH { a: vec4f, c: vec4f };
+fn shEncode(L: vec3f, w: vec3f, ns: vec3f) -> SH {
+  let y = 0.25 * L.r + 0.5 * L.g + 0.25 * L.b;
+  let co = 0.5 * L.r - 0.5 * L.b;
+  let cg = -0.25 * L.r + 0.5 * L.g - 0.25 * L.b;
+  let c = dot(ns, w);
+  let beta = 2.0 / (1.0 + 2.0 * max(c, 0.0));
+  return SH(vec4f(y * (1.0 - beta * c), y * beta * w), vec4f(co, cg, 0.0, 0.0));
+}
+fn accumulate2(id: vec2u, v: vec4f) -> vec4f {
+  let k = id.y * u.dims.x + id.x;
+  var a = v;
+  if (rp.start != 0u) { a += acc2[k]; }
+  acc2[k] = a;
+  return a / f32(rp.grid * rp.grid);
+}
+
+@compute @workgroup_size(8, 8)
+fn dirs(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var dd = vec3f(0.0);
+  var sd = vec3f(0.0);
+  if (pr.hit && u.sampling == 1u) {
+    let fr = u.frame + u.seedOffset;
+    dd = diffuseDirOf(pr.n, bn2(id.xy, fr, 0u));
+    sd = specularDirOf(pr.n, -pr.rd, pr.rough, bn2(id.xy, fr, 4u));
+  } else if (pr.hit) {
+    var s1 = noisySeed(id.xy, 1u);
+    dd = diffuseDirOf(pr.n, rand2(&s1));
+    var s2 = noisySeed(id.xy, 2u);
+    sd = specularDirOf(pr.n, -pr.rd, pr.rough, rand2(&s2));
+  }
+  let beyond = pr.hit && pr.depth >= 1.0;
+  textureStore(o_diffDir, id.xy, vec4f(dd, 0.0));
+  textureStore(o_specDir, id.xy, vec4f(sd, 0.0));
+  textureStore(o_normalGeom, id.xy, vec4f(select(${NS}, vec3f(0.0), beyond), 0.0));
+}
+
+@compute @workgroup_size(8, 8)
+fn translucency(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var T = vec3f(1.0);
+  var ht = 0.0;
+  var v = 1.0;
+  if (pr.hit) {
+    var xi: vec2f;
+    if (u.sampling == 1u) { xi = bn2(id.xy, u.frame + u.seedOffset, 8u); }
+    else { var sv = noisySeed(id.xy, 3u); xi = rand2(&sv); }
+${G ? `    let sr = shadowRay(pr.p, ${NS}, xi);
+    v = sr.v;
+    if (sr.v > 0.0) { T = sr.T; ht = sr.hTau; }` : `    v = lightSample(pr.p, ${NS}, xi).x;`}
+  }
+  textureStore(o_trans, id.xy, vec4f(T, 1.0));
+  textureStore(o_transDist, id.xy, vec4f(ht));
+  textureStore(o_shadowRgb, id.xy, vec4f(v * T, 1.0));
+  textureStore(o_visLumT, id.xy, vec4f(v * dot(T, vec3f(0.2126, 0.7152, 0.0722))));
+}
+
+@compute @workgroup_size(8, 8)
+fn ref_sh_diffuse(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var sa = vec4f(0.0);
+  var sc = vec4f(0.0);
+  if (pr.hit) {
+    var seed = refSeed(id.xy, 1u);
+    let rot = rand2(&seed);
+    seed = pcg(seed + rp.start * 0x9e3779b9u);
+    for (var i = rp.start; i < rp.start + rp.count; i++) {
+      let xi = gridXi(i, rot);
+      let L = diffuseSample(pr.p, pr.n, xi, rand2(&seed)).rgb;
+      let e = shEncode(L, diffuseDirOf(pr.n, xi), pr.n);
+      sa += e.a;
+      sc += e.c;
+    }
+  }
+  let ma = accumulate(id.xy, sa);
+  let mc = accumulate2(id.xy, sc);
+  if (rp.last != 0u) { textureStore(o_refRgb, id.xy, ma); textureStore(o_refRgb2, id.xy, mc); }
+}
+
+@compute @workgroup_size(8, 8)
+fn ref_sh_specular(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var sa = vec4f(0.0);
+  var sc = vec4f(0.0);
+  if (pr.hit) {
+    var seed = refSeed(id.xy, 2u);
+    let rot = rand2(&seed);
+    seed = pcg(seed + rp.start * 0x9e3779b9u);
+    let v = -pr.rd;
+    let ds = dominantDir(pr.n, v, pr.rough);
+    for (var i = rp.start; i < rp.start + rp.count; i++) {
+      let xi = gridXi(i, rot);
+      let L = specularSample(pr.p, pr.n, v, pr.rough, pr.f0, xi, rand2(&seed)).rgb;
+      let e = shEncode(L, specularDirOf(pr.n, v, pr.rough, xi), ds);
+      sa += e.a;
+      sc += e.c;
+    }
+  }
+  let ma = accumulate(id.xy, sa);
+  let mc = accumulate2(id.xy, sc);
+  if (rp.last != 0u) { textureStore(o_refRgb, id.xy, ma); textureStore(o_refRgb2, id.xy, mc); }
+}
+
+@compute @workgroup_size(8, 8)
+fn ref_shadow_rgb(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= u.dims)) { return; }
+  let pr = primary(id.xy);
+  var sum = vec4f(0.0);
+  if (pr.hit) {
+    var seed = refSeed(id.xy, 3u);
+    let rot = rand2(&seed);
+    for (var i = rp.start; i < rp.start + rp.count; i++) {
+${G ? `      let sr = shadowRay(pr.p, ${NS}, gridXi(i, rot));
+      sum += vec4f(sr.v * sr.T, 0.0);` : `      sum += vec4f(vec3f(lightSample(pr.p, ${NS}, gridXi(i, rot)).x), 0.0);`}
+    }
+  } else {
+    sum = vec4f(vec3f(f32(rp.count)), 0.0); // sky: lit
+  }
+  let m = accumulate(id.xy, sum);
+  if (rp.last != 0u) { textureStore(o_refRgb, id.xy, vec4f(m.rgb, 1.0)); }
+}
 `;
+}
+
+/** The standard build (the seven original paths). */
+export const SCENE_WGSL = sceneWgsl('standard');
 
 // Noise injection (quick checks with EXACT ground truth): replace a noisy signal by
 // noise drawn around the converged reference, so the reference is the exact

@@ -29,9 +29,21 @@
 //   shadows            denoiser/realtime ShadowDenoiser (visibility; provisional, SPEC v0 §7): the
 //                      light comes from the frame's `lights` (test bed / per-frame extras) or the
 //                      manifest's; settings `sh.<option>=v` (see shadowOptions())
+//   shadows-translucent  ShadowDenoiser({ translucency: true }) (SPEC v0.3 §7.10, M8; provisional): on shadow-rgb
+//                      the coloured shadow v̂·τ̂ (rgba16float, v̂ in alpha), and on visibility the opaque v̂ of the
+//                      same instance (exactly the `shadows` output when there is no transmittance); `tr.hit=none`
+//                      drops translucent_dist; sh.<option> settings as `shadows`
 //   ffx-shadows        @pmndrs/denoiser-ffx FfxShadowDenoiser (visibility)
 //   ffx-reflections    @pmndrs/denoiser-ffx FfxReflectionDenoiser (specular)
 //   occlusion-*        AO / SO (derived signals `ao` / `so`): src/occlusion-entries.ts
+//   svgf-sh            denoiser/realtime SVGF with the directional payload (M7, payload 'sh') on the v1
+//                      signals sh-diffuse / sh-specular: filters with shGuides() (normal_geom), fused resolve
+//                      at the shading normal; settings: svgf ones + m7.sharpen, m7.guard, m7.enc,
+//                      m7.ratio (sg|l1), m7.lightSharp, m7.maxRatio, m7.fadeR, m7.truncate=1 (test: f16
+//                      packing rounds toward zero like the plain filter's rgba16float stores on Metal)
+//   svgf-sh-auto       the same with antiLag 'auto'
+//   v1 signals         sh-diffuse / sh-specular / shadow-rgb baselines (svgf-plain, svgf-plain-smooth,
+//                      shadows-lumt, ffx-shadows-lumt; passthrough / accumulate* extended): src/v1-entries.ts
 //
 // Settings come from the replay page's URL (?denoiser=accumulate&maxFrames=64 ...).
 import type { TemporalDenoiser } from '../../../packages/denoiser-core/src/temporal';
@@ -43,9 +55,10 @@ import { DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser } from '../.
 import type { DiffuseSpecularDenoiserOptions, RecurrentOptions, SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
 import { ShadowDenoiser } from '../../../packages/denoiser-realtime/src/index';
 import type { ShadowDenoiserOptions, ShadowLight } from '../../../packages/denoiser-realtime/src/index';
-import type { DenoiserEntry, ReplayDenoiser, ReplayFrame } from './replay';
+import { shGuides, type DenoiserEntry, type ReplayDenoiser, type ReplayFrame } from './replay';
 import type { CaptureLight, SignalName } from './format';
 import { registerOcclusionDenoisers } from './occlusion-entries';
+import { registerV1Denoisers } from './v1-entries';
 
 export const DENOISERS = new Map<string, DenoiserEntry>();
 
@@ -325,5 +338,93 @@ registerDenoiser({
   },
 });
 
+registerDenoiser({
+  id: 'shadows-translucent', description: 'denoiser/realtime ShadowDenoiser with translucency (M8, coloured shadows, provisional)', signals: ['shadow-rgb', 'visibility'],
+  create: (device, ctx) => {
+    const den = new ShadowDenoiser(device, { ...shadowOptions(ctx.settings), translucency: true });
+    den.configure({ width: ctx.width, height: ctx.height });
+    const noTrHit = ctx.settings['tr.hit'] === 'none';
+    const rgb = ctx.signals.includes('shadow-rgb');
+    return {
+      signals: ctx.signals,
+      dispatch(frame: ReplayFrame) {
+        const inp = rgb ? frame.inputs['shadow-rgb'] : frame.inputs.visibility;
+        if (!inp) throw new Error(`shadows-translucent: capture has no ${rgb ? 'shadow-rgb' : 'visibility'} input`);
+        const light = shadowLightOf(frame.meta?.lights as CaptureLight[] | undefined) ?? shadowLightOf(frame.manifest.lights);
+        const tr = rgb ? frame.inputs['shadow-rgb']! : undefined;
+        const out = den.dispatch({
+          visibility: inp.visibility, ...(inp.hitDistance ? { hitDistance: inp.hitDistance } : {}), ...(light ? { light } : {}),
+          ...(tr ? { translucency: tr.translucency } : {}), ...(tr?.translucencyHitDistance && !noTrHit ? { translucencyHitDistance: tr.translucencyHitDistance } : {}),
+        }, frame.guides, frame.camera);
+        // visibility: the opaque v̂ in r32float (wide path), else the output (alpha = v̂; scalar readers take .r = v̂ τ̂_r)
+        const vis = den.debugTexture('visibility') ?? out;
+        return { ...(rgb ? { 'shadow-rgb': out } : {}), ...(ctx.signals.includes('visibility') ? { visibility: vis } : {}) };
+      },
+      resetHistory() { den.resetHistory(); },
+      gpuTimings() { return new Map(den.gpuTimings ?? []); },
+      dispose() { den.dispose(); },
+    };
+  },
+});
+
 // ---- occlusion (signals ao / so, T5): src/occlusion-entries.ts --------------------------
 registerOcclusionDenoisers({ register: registerDenoiser, perSignal, recurrentOptions, svgfOptions });
+
+// ---- CAPTURE-FORMAT v1 signals (sh-diffuse, sh-specular, shadow-rgb): src/v1-entries.ts -------------
+registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, shadowOptions, shadowLightOf });
+
+// ---- M7: SVGF with the SH payload (owner m7-sh) ----------------------------------------------
+function shOptions(st: Record<string, string>, defaults: SpecularSvgfOptions): SpecularSvgfOptions {
+  const o: SpecularSvgfOptions = { ...svgfOptions(st, defaults), payload: 'sh', resolve: 'fused' };
+  if (st['m7.sharpen'] !== undefined) o.shSharpen = Number(st['m7.sharpen']);
+  if (st['m7.guard'] !== undefined) o.shGuard = Number(st['m7.guard']);
+  if (st['m7.enc'] !== undefined) o.shEncoding = st['m7.enc'] as SpecularSvgfOptions['shEncoding'];
+  if (st['m7.ratio'] !== undefined) o.shSpecularRatio = st['m7.ratio'] as SpecularSvgfOptions['shSpecularRatio'];
+  if (st['m7.lightSharp'] !== undefined) o.shLightSharpness = Number(st['m7.lightSharp']);
+  if (st['m7.maxRatio'] !== undefined) o.shMaxRatio = Number(st['m7.maxRatio']);
+  if (st['m7.fadeR'] !== undefined) o.shFadeRoughness = Number(st['m7.fadeR']);
+  if (st['m7.truncate'] !== undefined) (o as { shPackTruncate?: boolean }).shPackTruncate = st['m7.truncate'] === '1';
+  return o;
+}
+function svgfSh(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
+  return (device, ctx) => {
+    const opts = shOptions(ctx.settings, defaults);
+    const both = ctx.signals.includes('sh-diffuse') && ctx.signals.includes('sh-specular');
+    const joint = both ? new DiffuseSpecularDenoiser(device, opts) : undefined;
+    const dens = new Map(ctx.signals.map((s) => [s, joint ?? (s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts))] as const));
+    for (const d of new Set(dens.values())) d.configure({ width: ctx.width, height: ctx.height });
+    const input = (frame: ReplayFrame, s: 'sh-diffuse' | 'sh-specular') => {
+      const i = frame.inputs[s];
+      if (!i) throw new Error(`svgf-sh: no ${s} input (capture / scene without v1 buffers?)`);
+      return { radiance: i.radiance, direction: i.direction, ...(i.hitDistance ? { hitDistance: i.hitDistance } : {}) };
+    };
+    return {
+      signals: ctx.signals,
+      dispatch(frame: ReplayFrame) {
+        const g = shGuides(frame);
+        if (joint) {
+          const r = joint.dispatchBoth({ diffuse: input(frame, 'sh-diffuse'), specular: input(frame, 'sh-specular') as never }, g, frame.camera);
+          return { 'sh-diffuse': r.diffuse, 'sh-specular': r.specular };
+        }
+        const out: Partial<Record<SignalName, GPUTexture>> = {};
+        for (const [s, d] of dens) out[s] = (d as DiffuseDenoiser).dispatch(input(frame, s as 'sh-diffuse' | 'sh-specular') as never, g, frame.camera);
+        return out;
+      },
+      resetHistory() { for (const d of new Set(dens.values())) d.resetHistory(); },
+      gpuTimings() {
+        const m = new Map<string, number>();
+        for (const [s, d] of dens) for (const [k, v] of d.gpuTimings ?? []) m.set(dens.size > 1 && !joint ? `${s}/${k}` : k, v);
+        return m;
+      },
+      dispose() { for (const d of new Set(dens.values())) d.dispose(); },
+    };
+  };
+}
+registerDenoiser({
+  id: 'svgf-sh', description: 'denoiser/realtime SVGF, SH payload (M7): filter normal = normal_geom, fused resolve at the shading normal', signals: ['sh-diffuse', 'sh-specular'],
+  create: svgfSh({}),
+});
+registerDenoiser({
+  id: 'svgf-sh-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), SH payload (M7)", signals: ['sh-diffuse', 'sh-specular'],
+  create: svgfSh({ antiLag: 'auto' }),
+});

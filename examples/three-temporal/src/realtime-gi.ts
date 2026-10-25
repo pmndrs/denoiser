@@ -27,6 +27,8 @@
 //                       its 1-ray signals and guides, accumulates its references, and writes a
 //                       CAPTURE-FORMAT v0 capture through tools/rt-capture's writer
 //                       (`node run-realtime.mjs capture`, examples/three-temporal/CAPTURES.md).
+//   ?path=knot-static / knot-orbit (&ref=1): the same with the torus knot rotating (moving-occluder
+//                       captures; the knot's pixels get object motion from its previous pose).
 import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, uniform, uint, screenCoordinate, pass, mrt, diffuseColor, normalView,
@@ -43,7 +45,7 @@ import {
   type N, LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, pose, equivalentSphereRadius, blueNoise,
   AccumulateNode, readTexture, nonFiniteCount, psnr, envRadianceWgsl,
 } from './realtime/scene';
-import { PATH_DESCRIPTION, PATH_FRAMES, PAN_START, pathPose } from './realtime/path';
+import { PATH_DESCRIPTIONS, PATH_FRAMES, PAN_START, KNOT_RATE, pathName, scenePose } from './realtime/path';
 import { CaptureWriter } from '../../../tools/rt-capture/src/writer';
 
 mountShell({ id: 'three-temporal-realtime-gi' });
@@ -51,8 +53,9 @@ mountShell({ id: 'three-temporal-realtime-gi' });
 const q = new URLSearchParams(location.search);
 const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
 const manual = q.has('manual');
-const pathMode = q.get('path') === 'orbit';
-const capMode = pathMode && q.get('ref') === '1';
+// scripted path (src/realtime/path.ts): orbit (knot frozen), knot-static / knot-orbit (knot rotating)
+const pathMode = pathName(q.get('path'));
+const capMode = !!pathMode && q.get('ref') === '1';
 const DIF_RAYS = capMode ? 16 : 4; // diffuse reference rays per pixel per frame
 const ENV_I = 0.28; // shadows.ts's scene.environmentIntensity
 const AO_A = 1, AO_B = 0.05; // OcclusionDenoiser's default hit-distance curve: h / (h + a + b * depth)
@@ -88,6 +91,9 @@ async function main() {
   device.lost.then((i) => log(`DEVICE LOST: ${i.reason} ${i.message}`));
 
   const { scene, camera, env, room, knot, floorMat, topMat } = buildScene(W, H);
+  // capture mode: the knot's pixels carry velocity.z = 1 (a per-material MRT override), so the capture
+  // guides can give them object motion from the knot's previous pose
+  if (capMode) ((knot as THREE.Mesh).material as N).mrtNode = mrt({ velocity: vec4(velocity as N, 1, 1) });
   scene.environment = null; // indirect light comes from the traced diffuse signal and SSR only
   scene.updateMatrixWorld(true);
   const bvh = new BVHComputeData(room);
@@ -216,6 +222,8 @@ async function main() {
   // capture mode: the previous PATH pose (not the previous rendered frame) for motion / motion_z
   const uPrevView = uniform(new THREE.Matrix4());
   const uPrevViewProj = uniform(new THREE.Matrix4());
+  // capture mode: world -> world transform of a knot point from this pose to the previous one
+  const uKnotPrev = uniform(new THREE.Matrix4());
   const sigOpts = capMode ? { type: THREE.FloatType } : {};
 
   // ---- graph ------------------------------------------------------------------------
@@ -329,9 +337,12 @@ async function main() {
     const Pv = getViewPosition(uv(), d, projInv);
     const P = camWorld.mul(vec4(Pv, 1)).xyz;
     const ndc = vec2(uv().x.mul(2).sub(1), float(1).sub(uv().y.mul(2)));
-    const prevClip = uPrevViewProj.mul(vec4(P, 1));
+    // the knot (velocity.z = 1, see mrtNode above) moved: its previous position is uKnotPrev * P
+    const onKnot = velTex.sample(uv()).z.greaterThan(0.5);
+    const Pprev = select(onKnot, uKnotPrev.mul(vec4(P, 1)).xyz, P);
+    const prevClip = uPrevViewProj.mul(vec4(Pprev, 1));
     const motion = ndc.sub(prevClip.xy.div(prevClip.w));
-    const motionZ = select(sky, float(0), uPrevView.mul(vec4(P, 1)).z.sub(Pv.z));
+    const motionZ = select(sky, float(0), uPrevView.mul(vec4(Pprev, 1)).z.sub(Pv.z));
     const viewz = select(sky, float(-camera.far), Pv.z);
     const depth = select(sky, float(1), d);
     const a = dTex.sample(uv());
@@ -394,13 +405,12 @@ async function main() {
     uSeed.value = frame;
     if (capturing) return; // capturePath() sets the pose, uFrame and the reference counters itself
     if (pathMode) {
-      // scripted path: one path frame per rendered frame; the scene is frozen (knot at t = 0)
+      // scripted path: one path frame per rendered frame (orbit: knot frozen at t = 0)
       if (moving && modes.view !== 'ref') {
         pathFrame = (pathFrame + 1) % PATH_FRAMES;
         if (pathFrame === 0) resetAll(); // the loop wraps: a camera cut
       }
-      pathPose(camera, pathFrame);
-      knot.rotation.set(0.4, 0, 0);
+      scenePose(pathMode, camera, knot, pathFrame);
     } else {
       if (moving && modes.view !== 'ref') t += 1 / 60;
       pose(camera, shot, t);
@@ -482,7 +492,8 @@ async function main() {
    * by the converged diffuse + visibility references, after one frame for the noisy SSR sample).
    */
   const capturePath = async (o: { name: string; start?: number; frames?: number; refShadow?: number; refDiffuse?: number; refSpec?: number; write?: boolean }) => {
-    if (!capMode || !capGuides) throw new Error('capturePath needs ?path=orbit&ref=1');
+    if (!capMode || !capGuides || !pathMode) throw new Error('capturePath needs ?path=<orbit|knot-static|knot-orbit>&ref=1');
+    const knotMoves = pathMode !== 'orbit' && pathMode !== 'knot-still';
     const start = o.start ?? 0;
     const n = Math.min(o.frames ?? PATH_FRAMES - start, PATH_FRAMES - start);
     const visFrames = Math.max(1, Math.round((o.refShadow ?? 1024) / 16));
@@ -493,8 +504,7 @@ async function main() {
     capturing = true;
     setMoving(false);
     modes.view = 'split'; buildOutput();
-    knot.rotation.set(0.4, 0, 0); knot.updateMatrixWorld(); (bvh as N).updateTransforms();
-    pathPose(camera, start);
+    scenePose(pathMode, camera, knot, start); (bvh as N).updateTransforms();
     visRef.count.value = visFrames; difRef.count.value = difFrames; specRef.count.value = specFrames;
     await frames(3); await idle(); // compile; the renderer sets the camera's WebGPU projection here
     const N_ = W * H;
@@ -513,14 +523,15 @@ async function main() {
     await writer?.begin({
       scene: 'three-temporal-corner',
       generator: 'examples/three-temporal realtime-gi.html (capture mode, __t.capturePath)',
-      width: W, height: H, lights, static: true, reversedDepth: false,
+      width: W, height: H, lights, static: !knotMoves, reversedDepth: false,
       referenceSpp: Math.min(visFrames * 16, difFrames * DIF_RAYS),
       // the diffuse signal is the bounce radiance arriving at the surface (never multiplied by albedo);
       // specular is three's stochastic SSR output, which carries its own GGX sample weight (not demodulated)
       demodulation: { diffuse: 'albedo', specular: 'none' },
       extra: {
         threeTemporal: {
-          path: 'orbit', pathDescription: PATH_DESCRIPTION, start, frames: n, panStart: PAN_START,
+          path: pathMode, pathDescription: PATH_DESCRIPTIONS[pathMode], start, frames: n, panStart: PAN_START,
+          ...(knotMoves ? { knotRadPerFrame: KNOT_RATE, knotMotion: 'object motion of the knot pixels from its previous pose (motion, motion_z); receivers of its shadow are static' } : {}),
           sampling: 'blue (1-ray signals: spatiotemporal blue noise, index = path frame)',
           references: {
             visibility: `${visFrames * 16} rays/pixel (4x4 stratified white noise per frame x ${visFrames} frames) to the rectangular panel`,
@@ -539,7 +550,7 @@ async function main() {
           },
           missing: [
             'specular is not demodulated (no exact E): manifest demodulation.specular = "none"',
-            'no motion of objects: the torus knot is frozen on the path',
+            knotMoves ? 'the knot is the only moving object (its pixels carry object motion)' : 'no motion of objects: the torus knot is frozen on the path',
             'no jitter (raster without TAA)',
             'no so_ref (SSR misses are environment hits, not unoccluded rays)',
           ],
@@ -553,9 +564,12 @@ async function main() {
     for (let k = 0; k < n; k++) {
       const tf = performance.now();
       const f = start + k;
-      pathPose(camera, k === 0 ? f : f - 1);
+      scenePose(pathMode, camera, knot, k === 0 ? f : f - 1);
       prevView.copy(camera.matrixWorldInverse); prevProj.copy(camera.projectionMatrix);
-      pathPose(camera, f);
+      const knotPrevWorld = knot.matrixWorld.clone();
+      scenePose(pathMode, camera, knot, f);
+      (bvh as N).updateTransforms();
+      uKnotPrev.value.copy(knotPrevWorld).multiply(knot.matrixWorld.clone().invert());
       uPrevView.value.copy(prevView);
       uPrevViewProj.value.multiplyMatrices(prevProj, prevView);
       uFrame.value = f;

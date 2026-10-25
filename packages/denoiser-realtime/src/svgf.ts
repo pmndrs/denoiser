@@ -14,6 +14,9 @@ import type { PassDef } from './shaders/bindings';
 import {
   GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientAtrousPassV2, gradientCreatePass, gradientCreatePassV2, gradientLambdaPass, gradientLambdaPassV2,
 } from './shaders/gradient';
+import { gradientCreatePassSh } from './shaders/sh-gradient';
+import { SH_PACK_NEAREST, SH_PACK_TRUNCATE, type ShEncoding } from './shaders/sh';
+import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
   PARAMS_SIZE, temporalPass, variancePass, type SignalKind,
@@ -102,10 +105,56 @@ export interface SvgfOptions {
   remodulate?: boolean;
   /** Per-pass GPU timestamps into `gpuTimings` when supported. Default true. */
   timestamps?: boolean;
+  /**
+   * What is filtered (SPEC v0.3 §8.5, M7). 'radiance' (default): one rgb value per pixel.
+   * 'sh': a directional payload, L1 SH of the luma + chroma (YCoCg, 6 channels in one
+   * rgba32uint), filtered with the smooth `guides.normal` and resolved afterwards at
+   * the detail normal (`guides.detailNormal`), so normal-map detail survives the
+   * filter. Needs `inputs.direction` (with `radiance`) or an encoded `inputs.sh` each
+   * frame. Structural (pipelines differ).
+   */
+  payload?: 'radiance' | 'sh';
+  /**
+   * SH payload only: 'none' (diffuse default) returns the resolve-ready payload
+   * (rgba32uint; resolve with `ShResolver`, `SH_RESOLVE_WGSL` or the three.js node);
+   * 'fused' (specular default) resolves in the last a-trous pass at `guides.detailNormal`
+   * and returns rgba16float rgb (remodulated if asked).
+   */
+  resolve?: 'none' | 'fused';
+  /** SH: per-sample encoding (SPEC M7-2). Default 'normal-exact' (exact at the sampling normal); 'textbook' is the cosine-sampled projection with a 0.1 cosine floor. Structural. */
+  shEncoding?: ShEncoding;
+  /** SH: ringing guard k on |b| relative to Y at the guide normal (SPEC M7-8). Default 1. */
+  shGuard?: number;
+  /** SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0. */
+  shSharpen?: number;
+  /**
+   * SH: format of the a-trous ping-pong (SPEC M7-3 tune). 'f16' (8 x f16, 16 B/px per buffer) or 'u8'
+   * (6 x 8-bit of a shared exponent + an 8-bit log sigma, 8 B/px per buffer: -16 B/px per signal).
+   * Default 'f16'. Structural.
+   */
+  shPingPacking?: 'f16' | 'u8';
+  /** @internal Test only: f16 packing rounds toward zero (as rgba16float stores do on Metal), for the plain-vs-SH regression. */
+  shPackTruncate?: boolean;
+}
+
+/** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
+export interface SpecularShOptions {
+  /**
+   * Detail / guide ratio of the fused specular resolve: 'sg' (SPEC M7-10: ambient + one SG
+   * light from the payload, responses of SG-approximated GGX lobes) or 'l1' (the payload
+   * itself at the two lobes' dominant directions). Default 'sg'.
+   */
+  shSpecularRatio?: 'sg' | 'l1';
+  /** Sharpness of the SG light extracted from the payload ('sg'). Default 8. */
+  shLightSharpness?: number;
+  /** Clamp of the detail / guide lobe-response ratio. Default 4. */
+  shMaxRatio?: number;
+  /** Roughness below which the ratio fades to 1 (fully faded at half of it). Default 0.2. */
+  shFadeRoughness?: number;
 }
 
 /** Specular-only settings. */
-export interface SpecularSvgfOptions extends SvgfOptions {
+export interface SpecularSvgfOptions extends SvgfOptions, SpecularShOptions {
   /**
    * Surface-motion history cap for specular (SPEC R-8, our design):
    * A_spec = scale * theta_L(alpha) * NoV^curve / parallax. Defaults 1 and 0.5.
@@ -123,7 +172,10 @@ export interface SpecularSvgfOptions extends SvgfOptions {
   radiusScale?: number;
 }
 
-export type ResolvedOptions = Required<Omit<SpecularSvgfOptions, 'filter'>>;
+export type ResolvedOptions = Omit<Required<Omit<SpecularSvgfOptions, 'filter'>>, 'resolve'> & {
+  /** 'auto' = the signal's default (shResolveOf). */
+  resolve: 'none' | 'fused' | 'auto';
+};
 
 export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
   if (o.filter && o.filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${o.filter}'`);
@@ -154,12 +206,28 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     gradientIterations: o.gradientIterations ?? (antiLagVersion === 1 ? 5 : 4),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
+    payload: o.payload ?? 'radiance',
+    resolve: o.resolve ?? 'auto',
+    shSpecularRatio: o.shSpecularRatio ?? 'sg',
+    shLightSharpness: o.shLightSharpness ?? 8,
+    shMaxRatio: o.shMaxRatio ?? 4,
+    shFadeRoughness: o.shFadeRoughness ?? 0.2,
+    shEncoding: o.shEncoding ?? 'normal-exact',
+    shGuard: o.shGuard ?? 1,
+    shSharpen: o.shSharpen ?? 0,
+    shPackTruncate: o.shPackTruncate ?? false,
+    shPingPacking: o.shPingPacking ?? 'f16',
     specularHistoryScale: o.specularHistoryScale ?? 1,
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
     lobeFraction: o.lobeFraction ?? 0.75,
     radiusScale: o.radiusScale ?? 1,
     specularNormalWeight: o.specularNormalWeight ?? 'lobe',
   };
+}
+
+/** Effective SH resolve of a signal: the option, else 'none' for diffuse and 'fused' for specular (SPEC M7-11). */
+export function shResolveOf(kind: SignalKind, o: ResolvedOptions): ShResolve {
+  return o.resolve === 'auto' ? (kind === 'specular' ? 'fused' : 'none') : o.resolve;
 }
 
 /** Per-frame inputs of one signal. */
@@ -169,6 +237,17 @@ export interface SignalFrame {
   demodulation?: GPUTexture;
   /** Renderer gradient samples for antiLag 'gradient' (rgba32float/rgba16float at ceil(W/3) x ceil(H/3)). */
   gradient?: GPUTexture;
+  /** SH payload: world direction of each sample's ray (with `radiance`), or ... */
+  direction?: GPUTexture;
+  /** ... an encoded payload (rgba32uint, 8 x f16: a, b.xyz, Co, Cg, -, -; SPEC M7-2). */
+  sh?: GPUTexture;
+}
+
+/** Guide textures the SH passes read besides the packed geometry. */
+export interface ShGuides {
+  /** The caller's filter normal (`guides.normal`): stands in for the detail normal when there is none. */
+  normal: GPUTexture;
+  detailNormal?: GPUTexture;
 }
 
 /** Per-signal GPU state. */
@@ -196,7 +275,9 @@ class SignalState {
 
 /** Options that change the pass structure: signals in one pipeline must agree on these. */
 export function structuralKey(o: ResolvedOptions) {
-  return [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion].join('|');
+  const k: (string | number | boolean)[] = [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion];
+  if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate, o.shPingPacking);
+  return k.join('|');
 }
 
 /**
@@ -218,6 +299,9 @@ export class SvgfPipeline {
   private gw = 0;
   private gh = 0;
   private opts: ResolvedOptions;
+  private make: (name: string, def: PassDef) => void;
+  private kinds: SignalKind[];
+  private sh: boolean;
 
   constructor(private device: GPUDevice, signals: { kind: SignalKind; opts: ResolvedOptions }[], private label: string) {
     const d = device;
@@ -230,26 +314,62 @@ export class SvgfPipeline {
       d.queue.writeBuffer(b, 0, new Int32Array([1 << i, i, 0, 0]));
       this.iterParams.push(b);
     }
-    const make = (name: string, def: PassDef) => {
+    const make = (name: string, def0: PassDef) => {
+      const def = o.shPackTruncate ? { ...def0, code: def0.code.replace(SH_PACK_NEAREST, SH_PACK_TRUNCATE) } : def0;
       this.defs[name] = def;
       this.layouts[name] = makeLayout(d, `${label} ${name}`, def.entries.map((e) => e.kind));
       this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);
     };
-    make('temporal', temporalPass(kinds));
-    make('variance', variancePass(kinds));
+    this.make = make;
+    this.kinds = kinds;
+    this.sh = o.payload === 'sh';
     const box = o.kernel === '3x3';
-    for (const writeHist of [false, true]) {
-      for (const last of [false, true]) {
-        if (writeHist && !o.feedback) continue;
-        make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, { writeHist, last, box }));
+    if (this.sh) {
+      if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
+      for (const s of signals) {
+        if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
+      }
+      // temporal and gradient_create are built per input form on first use (encode)
+      const p64 = o.shPingPacking === 'u8';
+      make('variance', variancePassSh(kinds, p64));
+      const res = signals.map((s) => shResolveOf(s.kind, s.opts));
+      for (const writeHist of [false, true]) {
+        for (const last of [false, true]) {
+          if (writeHist && !o.feedback) continue;
+          make(`atrous_${+writeHist}${+last}`, atrousPassSh(kinds, { writeHist, last, box }, res, p64));
+        }
+      }
+    } else {
+      make('temporal', temporalPass(kinds));
+      make('variance', variancePass(kinds));
+      for (const writeHist of [false, true]) {
+        for (const last of [false, true]) {
+          if (writeHist && !o.feedback) continue;
+          make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, { writeHist, last, box }));
+        }
       }
     }
-    if (o.antiLag !== 'off') {
+    if (o.antiLag !== 'off' && !this.sh) {
       const v1 = o.antiLagVersion === 1;
       make('gcreate', (v1 ? gradientCreatePass : gradientCreatePassV2)(kinds.length, o.antiLag === 'gradient'));
       make('gatrous', (v1 ? gradientAtrousPass : gradientAtrousPassV2)(kinds.length));
       make('glambda', (v1 ? gradientLambdaPass : gradientLambdaPassV2)(kinds.length));
     }
+    if (o.antiLag !== 'off' && this.sh) {
+      make('gatrous', gradientAtrousPassV2(kinds.length));
+      make('glambda', gradientLambdaPassV2(kinds.length));
+    }
+  }
+
+  /** SH: pipelines that depend on the per-frame input form, built on first use. */
+  private shPipe(base: 'temporal' | 'gcreate', forms: ShInputForm[]): string {
+    const key = `${base}_${forms.join('_')}`;
+    if (!this.pipes[key]) {
+      const o = this.opts;
+      this.make(key, base === 'temporal' ? temporalPassSh(this.kinds, forms, o.shEncoding)
+        : gradientCreatePassSh(this.kinds, o.antiLag === 'gradient', forms, o.shEncoding));
+    }
+    return key;
   }
 
   configure(width: number, height: number) {
@@ -263,11 +383,14 @@ export class SvgfPipeline {
       const tex = (name: string, format: GPUTextureFormat, w = width, h = height, extra = 0) => d.createTexture({
         label: `${s.label} ${name}`, size: [w, h], format, usage: storageTex() | extra,
       });
-      s.accum = [tex('accum0', 'rgba16float'), tex('accum1', 'rgba16float')];
+      // SH: 8 x f16 in one rgba32uint (SPEC M7-3); the output is the payload unless fused
+      const cf: GPUTextureFormat = this.sh ? 'rgba32uint' : 'rgba16float';
+      s.accum = [tex('accum0', cf), tex('accum1', cf)];
       s.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];
-      if (this.opts.feedback) s.hist = tex('history', 'rgba16float');
-      s.ping = [tex('ping', 'rgba16float'), tex('pong', 'rgba16float')];
-      s.out = tex('output', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
+      if (this.opts.feedback) s.hist = tex('history', cf);
+      const pf: GPUTextureFormat = this.sh && this.opts.shPingPacking === 'u8' ? 'rg32uint' : cf;
+      s.ping = [tex('ping', pf), tex('pong', pf)];
+      s.out = tex('output', this.sh && shResolveOf(s.kind, s.opts) !== 'fused' ? 'rgba32uint' : 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
       if (this.opts.antiLag !== 'off') {
         // v1: (g0, g1) rgba32float ping-pong; v2: one packed rgba32uint ping-pong
         s.grad = this.opts.antiLagVersion === 1
@@ -298,6 +421,10 @@ export class SvgfPipeline {
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
     i32[20] = o.spatialVarianceRadius >= 0 ? o.spatialVarianceRadius
       : this.opts.antiLag !== 'off' && this.opts.antiLagVersion !== 1 && s.kind === 'specular' ? 1 : 3;
+    if (this.sh) {
+      f[P_SH_OFFSET] = o.shGuard; f[P_SH_OFFSET + 1] = o.shSharpen;
+      f[P_SH_OFFSET + 3] = o.shSpecularRatio === 'l1' ? 0 : Math.max(o.shLightSharpness, 1e-3); f[P_SH_OFFSET + 4] = o.shMaxRatio; f[P_SH_OFFSET + 5] = o.shFadeRoughness;
+    }
     this.device.queue.writeBuffer(s.params, 0, f);
   }
 
@@ -321,13 +448,17 @@ export class SvgfPipeline {
 
   /** Records the passes for all signals (frames in signal order). */
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frames: SignalFrame[],
-    motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string) {
+    motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string, shGuides?: ShGuides) {
     const o = this.opts;
     this.sigs.forEach((s, i) => {
       if (s.opts.remodulate && !frames[i].demodulation) {
         throw new Error(`${s.label}: remodulate needs inputs.demodulation${s.kind === 'diffuse' ? ' (or guides.albedo)' : ''}`);
       }
     });
+    if (this.sh) {
+      this.encodeSh(enc, timer, gp, frames, motion, motionZ, prefix, shGuides);
+      return;
+    }
     const W = this.width, H = this.height;
     const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
     const name = (n: string) => prefix + n;
@@ -383,6 +514,80 @@ export class SvgfPipeline {
 
     runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({
       input: f.radiance, colorHist: o.feedback ? s.hist! : s.accum[c ^ 1],
+      momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
+    }))), gx, gy);
+    runPass(enc, timer, name('variance'), this.pipes.variance, this.group('variance', per((s) => ({
+      accumCur: s.accum[c], momentsCur: s.moments[c], outPing: s.ping[0],
+    }))), gx, gy);
+
+    const K = o.atrousIterations;
+    let src = 0;
+    for (let it = 0; it < K; it++) {
+      const last = it === K - 1;
+      const writeHist = it === 0 && o.feedback;
+      const key = `atrous_${+writeHist}${+last}`;
+      const res = per((s, f) => ({
+        src: s.ping[src], accumCur: s.accum[c], demod: f.demodulation ?? gp.dummy,
+        dst: last ? s.out! : s.ping[src ^ 1], ...(writeHist ? { hist: s.hist! } : {}),
+      }));
+      res.I = this.iterParams[it];
+      runPass(enc, timer, name(`atrous_${it}`), this.pipes[key], this.group(key, res), gx, gy);
+      src ^= 1;
+    }
+  }
+
+  /** SH payload pass sequence (same structure as the plain one; SPEC M7-7). */
+  private encodeSh(enc: GPUCommandEncoder, timer: PassTimer | undefined, gp: GuidePass, frames: SignalFrame[],
+    motion: GPUTexture, motionZ: GPUTexture | undefined, prefix: string, shGuides?: ShGuides) {
+    const o = this.opts;
+    if (!shGuides) throw new Error(`${this.label}: payload 'sh' needs the guides`);
+    const forms: ShInputForm[] = frames.map((f, i) => {
+      if (f.sh) return 'enc';
+      if (f.direction) return 'raw';
+      throw new Error(`${this.sigs[i].label}: payload 'sh' needs inputs.direction (with radiance) or inputs.sh`);
+    });
+    const detail = shGuides.detailNormal ?? shGuides.normal;
+    const W = this.width, H = this.height;
+    const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
+    const name = (n: string) => prefix + n;
+    const c = this.cur;
+    const shared: Record<string, Res> = {
+      F: gp.frame, geoCur: gp.geoCur, geoPrev: gp.geoPrev, geoGrad: gp.geoGrad,
+      motionTex: motion, motionZTex: motionZ ?? gp.dummy, smp: gp.sampler, detailN: detail,
+    };
+    const per = (fn: (s: SignalState, f: SignalFrame, i: number) => Record<string, Res>) => {
+      const r: Record<string, Res> = { ...shared };
+      this.sigs.forEach((s, i) => {
+        r[`P${i}`] = s.params;
+        for (const [k, v] of Object.entries(fn(s, frames[i], i))) r[`${k}${i}`] = v;
+      });
+      return r;
+    };
+    const load = (f: SignalFrame): Record<string, Res> => (f.sh ? { shIn: f.sh } : { input: f.radiance, dir: f.direction! });
+
+    const gradResult: GPUTexture[] = this.sigs.map(() => gp.dummy32);
+    if (o.antiLag !== 'off') {
+      const key = this.shPipe('gcreate', forms);
+      runPass(enc, timer, name('gradient_create'), this.pipes[key], this.group(key, per((s, f) => ({
+        ...load(f), accumPrev: s.accum[c ^ 1], gradInput: f.gradient ?? gp.dummy32, outG: s.grad[0],
+      }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+      let a = 0;
+      for (let it = 0; it < o.gradientIterations; it++) {
+        const res = per((s) => ({ inG: s.grad[a], outG: s.grad[a ^ 1] }));
+        res.It = this.iterParams[it];
+        runPass(enc, timer, name(`gradient_atrous_${it}`), this.pipes.gatrous, this.group('gatrous', res),
+          Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+        a ^= 1;
+      }
+      runPass(enc, timer, name('gradient_lambda'), this.pipes.glambda, this.group('glambda', per((s) => ({
+        inG: s.grad[a], outL: s.grad[2],
+      }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
+      this.sigs.forEach((s, i) => { gradResult[i] = s.grad[2]; });
+    }
+
+    const tkey = this.shPipe('temporal', forms);
+    runPass(enc, timer, name('temporal'), this.pipes[tkey], this.group(tkey, per((s, f, i) => ({
+      ...load(f), colorHist: o.feedback ? s.hist! : s.accum[c ^ 1],
       momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
     }))), gx, gy);
     runPass(enc, timer, name('variance'), this.pipes.variance, this.group('variance', per((s) => ({

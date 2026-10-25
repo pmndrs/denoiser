@@ -71,6 +71,37 @@ along it.
 `validate.mjs` passes on both captures (motion reprojection < 0.001 px, history consistency 98.8–99.0 %);
 its only warnings are the two above.
 
+## The moving-occluder set (torus knot rotating)
+
+Shadows on static receivers that no motion vector follows: the torus knot rotates at the free-running
+pages' rate (0.35/60 rad per frame about its tilted axis, `KNOT_RATE` in `src/realtime/path.ts`) and its
+wide, soft shadow sweeps the back wall and the floor. Written for results/M4.md §12 ("Moving shadows").
+
+```sh
+node node_modules/vite/bin/vite.js examples/three-temporal --port 5370 --strictPort --host 127.0.0.1
+cd examples/three-temporal
+node run-realtime.mjs capture --port=5370 --set=knot-static --refShadow=2048 --refDiffuse=2048 --refSpec=256 --stepTimeout=3600000
+node run-realtime.mjs capture --port=5370 --set=knot-orbit  --refShadow=2048 --refDiffuse=2048 --refSpec=256 --stepTimeout=3600000
+node run-realtime.mjs capture --port=5370 --set=knot-still  --refShadow=2048 --refDiffuse=64 --refSpec=8      # control
+```
+
+| capture | path (`?path=`) | frames | why |
+|---|---|---|---|
+| `three-knot-static` | `knot-static` 0–47 | 48 | static close-up camera (`KNOT_VIEW`) on the knot, its pedestal and its shadow on the wall / floor |
+| `three-knot-orbit` | `knot-orbit` 0–39 | 40 | the orbit's camera (slow orbit, ~5–7 px/frame) with the knot rotating; the shadow drifts to the right edge |
+| `three-knot-still` | `knot-still` 0–31 | 32 | **control**: knot-static's camera with the knot frozen (static wide penumbrae only). Its diffuse / specular references are low-sample (64 rays / 8 SSR frames): use it for visibility only |
+
+960×540, 2048-ray visibility references (4×4 stratified per frame, per pose), 68.4 MB per frame
+(3.3 / 2.7 / 2.2 GB). Frame 0 is a reset. `static: false` on the two rotating captures: the knot's pixels
+carry object motion in `motion` / `motion_z` (from its previous pose; the knot material sets a flag in
+the scene pass's velocity MRT, `mrtNode`), everything else follows from depth and the camera. `validate.mjs`
+passes (history consistency 99.9 % with motion_z; its matrices-only motion check reports the knot's
+pixels, as expected for object motion). Reference noise floor of visibility: the reference's own
+"boil" (compare.mjs) is 0.005 per frame in static penumbrae; in the knot's wall shadow 0.004.
+
+`?path=knot-static` (or `knot-orbit`, `knot-still`) on `realtime-shadows.html` / `realtime-gi.html`
+plays the same paths live.
+
 ## Replaying and scoring
 
 ```sh

@@ -217,7 +217,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `GPUTextureUsage` at module load (`const STORAGE_TEX = …`). Make it lazy (a function or
       numeric flags); `@pmndrs/denoiser-realtime` itself imports fine. — found by svgf, owner `packages/denoiser-ffx`
 
-- [ ] CAPTURE-FORMAT v1: per-frame lights. Test-bed captures move/resize the light (path
+- [x] (8911a08, testbed-v1: `frames[i].lights` is part of v1) CAPTURE-FORMAT v1: per-frame lights. Test-bed captures move/resize the light (path
       `light`) and move the sphere (`object`); v0 has one capture-level `lights`, so the test
       bed writes per-frame `frames[i].lights` and `frames[i].object` as extras (ReplayFrame
       exposes them as `frame.meta`). A shadow denoiser that needs the light size per frame
@@ -544,8 +544,31 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Native NRD replay of `three-orbit` / `three-pan` (Windows harness; specular is not demodulated, AO reference is
       the extra `ao_ref` buffer, light is the equal-area sphere of a rectangular panel: examples/three-temporal/CAPTURES.md)
       — found by real-scene-motion, owner harness builder
-- [ ] M6 docs page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
-      `pmndrs.github.io/denoiser/docs/guides/`): not written in the groundwork — found by m6, owner unassigned
+- [x] (m6-docs, `docs/site/guides/realtime-denoisers.mdx`, nav 27.5 after the FFX page; listed in `docs/README.md`) M6 docs
+      page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
+      `pmndrs.github.io/denoiser/docs/guides/`). Marked experimental, documents today's class defaults; every snippet
+      type-checked against the built packages; MDX compiles (mdx-js 3 + GFM; the pmndrs docs image was not run, Docker
+      was down). Examples referenced as local only (`deployed: false` unchanged) — found by m6, done by m6-docs
+- [ ] Docs page upkeep (`docs/site/guides/realtime-denoisers.mdx`): when Dennis decides SPEC §12 items 1 / 2 / 5 (default
+      filter per signal, `antiLag` default, `uniformSnap`), update the "today's default" rows, the occlusion default note
+      and the cost table; when the native replay of the test-bed / three.js captures lands, fill "Against NVIDIA NRD"
+      (comparison context only, RULES §6); when the realtime pages deploy, switch their links to live URLs and add them
+      to `docs/site/examples/index.mdx` — found by m6-docs, owner docs
+- [x] (api-fixes, a5ed52e: constructor writes a 1, b 0.05, far ∞; `encode()` documented `@internal` (the build has no
+      `stripInternal`, so it stays in the .d.ts); OcclusionDenoiser output byte-identical on an occlusion-svgf replay;
+      docs page + README updated) API (awkward to document): `HitDistanceNormalizer` has no default curve. Its params buffer starts zeroed, so every
+      hit normalizes to ĥ = 1 until `setCurve()` is called; default it to the denoiser's (a 1, b 0.05, far ∞) in the
+      constructor. Its public `encode()` also takes the internal `PassTimer` and a `'geo'` depth mode that only the
+      package can produce: mark it `@internal` — found by m6-docs, owner `packages/denoiser-realtime`
+- [ ] API (awkward to document): `antiLag` means three things: SVGF `'off' | 'auto' | 'gradient'`, recurrent a boolean,
+      `ShadowDenoiser` a number (a gain, default 64). Rename the boolean / numeric ones before the API leaves experimental
+      (e.g. `historyAntiLag`, `antiLagGain`) — found by m6-docs, owner spec-author (SPEC §12 "API items") / Dennis
+- [x] (api-fixes, a5ed52e: overloads by `denoiser.signal`: 'both' → `TwoOutputNodeObject`, one signal →
+      `OcclusionNodeObject<'diffuse' | 'specular'>` (new export), non-literal signal → union; three-temporal and the docs
+      snippets type-check) API: `realtimeOcclusion()` returns `TwoOutputNodeObject` for a single signal too, so `.specular` type-checks on an
+      AO-only node but is no output (only the active signal's getter is defined; what three's node proxy returns for it is
+      untested). Narrow the return type by
+      `signal` (overloads) — found by m6-docs, owner `packages/denoiser-three`
 - [ ] three-temporal realtime pages: per-pass ms on the light realtime-shadows page read 2–3× the test bed (slow GPU clock);
       the same ShadowDenoiser reads 0.59 ms at 1080p on the busier GI page (test bed 0.55). For cost tables use the
       split view (same clock for both) or a busier page — found by m6, owner any agent (FYI)
@@ -554,10 +577,90 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `deployed: false` (local `yarn examples` only) and in the three-temporal Vite build; flip `deployed` + add a shot when
       `denoiser/realtime` should show on the site — found by m6, owner spec-author (fold into SPEC §12) / Dennis
 
-- [ ] **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
+- [~] (e1) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
-- [ ] **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
+- [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
+- [x] (moving-shadows, d02613d e573a04 033a869 + docs commit; results/M4.md §12) **moving-shadows**: the rotating knot's shadow
+      boiled with ours. Measured: knot captures `three-knot-static` / `-orbit` / `-still` (control), dynamic-region and boil
+      metrics (compare.mjs, test bed). Cause: wide soft penumbrae boil whether the knot moves or not (anti-lag restarts in
+      static penumbrae, per-frame kernel rotation, raw-history update). Fix v2.2: output stabilization pass (RTG II §49.5.7),
+      box-gated, clamp-distance anti-lag: knot-shadow boil 0.0062 → 0.0013 (FFX 0.0011); 1080p 7 paths 38.12 → 38.22 /
+      penumbra +0.11 / flicker −11 %; `light` −0.19; +0.03…0.05 ms (0.55–0.72 ms), 48 B/px
+- [ ] SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
+      0.05 @1080p, `stabilizeAntiLag` 64), 48 B/px, the 1080p / capture numbers; §10.3 memory and cost rows — found by
+      moving-shadows, owner spec-author
+- [ ] Shadows v2.2 leftovers (results/M4.md §12.7): `light` −0.19 dB (stabilizer lag while the light orbits / after the
+      flip; `stabilizeBox` 0.03 or a higher anti-lag gain untested at 1080p); `thin` at 0.72 ms; dynamic-region flicker
+      +2.5 % over FFX on the 16-frame std540-object replay. The anti-lag v3 candidates (MegaLights p.35 etc.) should be
+      measured with the knot captures' boil and the frozen control, not only the dynamic region — found by moving-shadows,
+      owner shadows
+- [ ] Native SIGMA on `three-knot-static` / `three-knot-still` (Windows harness): compare boil (compare.mjs) — the
+      captures carry object motion for the knot (`static: false`) — found by moving-shadows, owner harness builder
+- [ ] OIDN LDR route on 1-spp scalars brightens dark regions (E2-oidn-baseline "Inputs": shadows 19.3 vs 30.3 dB via
+      HDR weights on std540-orbit, AO no better than noisy; an umbra at 0.11 came out 0.77). Check `Denoiser.denoiseTextures({ hdr: false })`
+      on a float binary-dither image against native `oidnDenoise` (LDR, srgb on/off): LDR network behaviour, or the
+      package's LDR texture path (float inputs skip the sRGB transfer upstream applies to linear LDR)? The E-2 adapter
+      routes scalars through the HDR weights meanwhile — found by e2, owner: OIDN package (`packages/denoiser-core`)
+- [ ] OIDN 3 real-time model (PLAN §1): when it lands in `denoiser/realtime`, register it in `tools/rt-capture` beside
+      `oidn` and score it on the E-2 captures/table (bar: A-SVGF with history, flicker ≤ ~0.004–0.006) — found by e2, owner unassigned
+- [x] release audit → sources/nrd-releases.md (release auditor, rule 3b)
+- [x] public research 2022–2026 → sources/nrd-public-2022-2026.md
+- [x] change-magnitude audit → sources/nrd-change-magnitude.md (change auditor, rule 3c)
+- [ ] Shadows anti-lag v3 candidates from public sources (`sources/nrd-public-2022-2026.md`): shorten
+      history in proportion to how far it sits outside the clamp box, never to zero (MegaLights
+      SIGGRAPH 2025 p.35); Philippi et al. EGSR 2023 noise-vs-bias blend weight (CC BY); AMD GI-1.0
+      asymmetric darken-fast / brighten-slow. Measure against v2.2 on knot captures + `light`/`object`
+      with the dynamic-region and boil metrics. Implementer must not be the public researcher
+      (PROVENANCE rule-7 note). — orchestrator, owner: unassigned
+- [ ] SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
+      variance is high (MegaLights); à-trous access reordering (Dolp et al. I3D 2024, full text not
+      yet obtained). — orchestrator, owner: unassigned
+- [ ] **Shadows v2.2 look** (Dennis, 2026-10-25, live `realtime-shadows.html`): no more boiling, but
+      the look is worse than before (likely softer / smeared penumbrae from the output
+      stabilization or the radius blend). Refine later: compare v2.1 / v2.2 / FFX side by side on
+      the knot and floor penumbrae, judge by eye plus FLIP and boil. Not blocking the phases.
+      — orchestrator, owner: unassigned
+- [x] spec-m7-m8 (spec author, 280cf3a) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
+      (§7.10), §0.1 / §11 / §12 touch-ups, PROVENANCE "spec only, not built" rows.
+- [x] testbed-v1 (c0e3876, 6821c69, 8911a08, f426142, 208b40a) **CAPTURE-FORMAT v1 buffers for M7 / M8** (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
+      sampled ray), `normal_geom` (smooth normal for the filter; `normal` stays the shading normal), `diffuse_sh_ref`,
+      `specular_sh_ref` (6 ch, mean of the M7-2 payloads); `transmittance` (rgb T of the shadow ray), `translucent_dist`,
+      `shadow_rgb_ref` (mean of v·T). Test-bed scenes `bumpy`, coloured bounce, `glass`, `glass-moving`, `glass-still`
+      (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner. _Format, replay/validate/compare, test-bed
+      signals, scenes and metrics done (bit-identical on the 7 old paths and on v0 replays); v1 capture set
+      `--set=v1` (v1-bumpy, v1-bounce, v1-glass, v1-glass-moving, v1-glass-still; 8.63 GB, validated; baselines in
+      CAPTURES.md "v1 captures"). Usage notes below._
+- [x] (testbed-v1) **How to feed and score M7 / M8 (usage notes)**. Signals `sh-diffuse`, `sh-specular`, `shadow-rgb`
+      (test bed `signal=`, also `v1` = all three, `all,v1` = six). Paths `bumpy`, `bounce` (scene build 'bumpy') and `glass`,
+      `glass-moving`, `glass-still` ('glass'); on the 7 old paths the v1 signals run too (`normal_geom` = `normal`: the SPEC
+      M7-13 regression). Registry entry contract (`tools/rt-capture/src/replay.ts`): `frame.inputs['sh-diffuse' | 'sh-specular']`
+      = `{ radiance, direction, hitDistance }` (raw form); filter with `shGuides(frame)` (`normal` = `normal_geom`,
+      `detailNormal` = shading normal); return demodulated rgb resolved at the shading normal. `frame.inputs['shadow-rgb']` =
+      `{ visibility, hitDistance, translucency, translucencyHitDistance, radiance (= v·T), visibilityLumT }`, light from
+      `frame.meta.lights` / manifest (as `shadows`); return rgb v̂·τ̂ (rgba16float with v̂ in alpha is fine). Register with
+      `signals: ['sh-diffuse', ...]`; examples: `tools/rt-capture/src/v1-entries.ts` (baselines `svgf-plain`, `svgf-plain-smooth`,
+      `shadows-lumt`, `ffx-shadows-lumt`; `passthrough` / `accumulate*` accept v1 signals). Live results add `regions.bump`,
+      `floorFrac`, `detailBand` {psnrDen, energyRatioDen, …}, sh-diffuse `vsShRef` (diffuse_sh_ref resolved with M7-8/9,
+      `&refK=1&refS=0`: set to your resolve), shadow-rgb `regions.tint`, `chromaErr`, any-channel penumbra; compare.mjs the
+      same (`--sh-k`, `--sh-s`). The test bed's specular payload uses β = 2 / (1 + 2 max(c, 0)) so c < 0 stays exact and
+      bounded (CAPTURE-FORMAT v1). Example: `mode=eval&path=bumpy&signal=sh-diffuse&denoiser=svgf-plain,svgf-plain-smooth`
+      (8 frames: plain detail-normal band energy 1.76, smooth-normal 0.15). — testbed-v1
+- [ ] SH ringing, guard half (SPEC M7-13 "fraction of pixels where the guard trimmed b"): the scorers report only the
+      floor half (output exactly 0) and, for the resolved reference, `refGuardFrac`; the output's guard fraction needs the
+      payload. Proposal: an optional `ReplayDenoiser.payloads?()` returning the M7-8 payload texture (rgba32uint, 8 × f16)
+      that the test bed / replay then reads. — found by testbed-v1, owner `examples/realtime-denoiser` + `tools/rt-capture`
+      (on request of m7-sh)
+- [ ] Specular SH payload for c = D_s·ω < 0: the test bed's `specular_sh_ref` keeps β = 2 there (exact and bounded,
+      CAPTURE-FORMAT v1); SPEC M7-2 only defines c ≥ 0. If the denoiser's encode-on-load does something else for c < 0,
+      align one of the two (only matters for comparing against `specular_sh_ref`). — found by testbed-v1, owner m7-sh / spec-author
+- [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
+      (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
+      T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
+- [~] m7-sh (implementer, 2026-10-25) **M7 steps 2–5**: SVGF `payload: 'sh'` (24f2e4a: encode-on-load, ShResolver,
+      `SH_RESOLVE_WGSL`, fused resolve, anti-lag via an SH gradient pass; plain WGSL byte-identical), the three.js resolve
+      node, tuning, specular SG ratio resolve; gate = 7-path regression within 0.05 dB; `bumpy` vs both references
+      → results/M7.md — owner m7-sh
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -586,6 +689,30 @@ harness builder runs them and returns images/metrics only.)_
       parameters, 32 frames; return the converged output value per (h, viewZ), and the same for
       `REBLUR_SPECULAR_OCCLUSION` at roughness 0.3 and 0.8. Numbers only. With that table the test bed can render
       references on native's curve (scene.ts `occNorm`) and compare `occlusion-*` against native fairly. — occlusion
+- [ ] **P4: SIGMA across versions on a moving occluder** (change audit rank 1; `sources/nrd-change-magnitude.md`).
+      Build NRD v4.9.4, v4.11.0 and v4.18.0 (outside the repo, as for e06852b). Run `SIGMA_SHADOW` on
+      `three-knot-static`, `three-knot-orbit` and test-bed `std540-object` / `std540-light`. Score with
+      `compare.mjs`, including the dynamic / static region fields and `boil`. Return the per-version
+      table and a frame strip of the knot shadow. Also run our `shadows` (v2.2) and `ffx-shadows`
+      on the same GPU. — orchestrator
+- [ ] **P5: ReBLUR history-fix timing** (change audit rank 2). `REBLUR_DIFFUSE_SPECULAR` v3.3.1 vs v3.4.0
+      vs v4.18.0 on `std540-cut` and `std540-pan`, frames 0–12 after each reset/disocclusion, per-frame
+      pooled PSNR for diffuse and specular in the disoccluded region. Return the per-frame curves.
+      — orchestrator
+- **v1 captures have landed (2026-10-25, testbed-v1, c0e3876…208b40a):** P6 and P7 can run. Write them with
+  `node examples/realtime-denoiser/run-headless.mjs --serve --set=v1` (`v1-bumpy`, `v1-bounce`, `v1-glass`,
+  `v1-glass-moving`, `v1-glass-still`; 960×540, 8.63 GB, ~2 min); format in CAPTURE-FORMAT.md §v1. — orchestrator
+- [ ] **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
+      and two standard paths with `diffuse_dir` / `normal_geom`. Run `REBLUR_DIFFUSE_SH` and `RELAX_DIFFUSE_SH` (input packed
+      by native's front end from `diffuse` + `diffuse_dir`). Return (a) the colour-extraction output scored against
+      `diffuse_ref` with `compare.mjs`, (b) native's diffuse resolve with the shading normal (`normal`) scored against
+      `diffuse_ref` on `bumpy`, (c) native's reported memory for the SH vs plain denoiser and the timings. Words/metrics
+      only. — spec-author
+- [ ] **P7: native translucent shadows** (SPEC v0.3 §7.10.4, M8-10). Captures `glass`, `glass-moving`, `glass-still`
+      (CAPTURE-FORMAT v1 `transmittance`, `translucent_dist`). Run `SIGMA_SHADOW_TRANSLUCENCY` (penumbra and translucency
+      packed by native's front end) and `SIGMA_SHADOW` on `visibility` alone. Score the rgb output against
+      `shadow_rgb_ref` (clamp tonemap per channel) and the opaque part against `visibility_ref`, with the dynamic region
+      and boil; timings for both. — spec-author
 
 ## Questions for Dennis
 

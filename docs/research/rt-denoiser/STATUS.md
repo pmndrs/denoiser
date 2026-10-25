@@ -11,7 +11,7 @@ nodes and two example pages. The recurrent filter (our RTG II–style design, M2
 **loses to SVGF / A-SVGF** on our test bed for diffuse, specular and occlusion. It costs the
 same as SVGF and needs less memory. That's the go/no-go question in SPEC §12 item 1: our
 recommendation is SVGF with anti-lag `'auto'` as the default, recurrent opt-in, and a second
-look once native NRD has replayed the test-bed captures. **Shadows are a clear win:** ours beats
+look once native NRD has replayed the test-bed captures. **Shadows win on static receivers** (correction, 2026-10-25: on the live demo the knot's wall shadow boiled with ours and was stable with FFX. Cause: temporal noise in wide soft penumbrae, moving or not, which our metrics didn't measure. Fixed in v2.2 with an output stabilization pass: boil 0.0062 → 0.0013 vs FFX 0.0011 at ~8 dB better accuracy; new `boil` and dynamic-region metrics; M4 §12): ours beats
 FFX on every path, on the analytic test bed and on the first real three.js scene. Nothing has
 been compared with native NRD on real captures yet; that's the main gap.
 

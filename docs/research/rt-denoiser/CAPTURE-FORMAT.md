@@ -1,4 +1,9 @@
-# Capture format v0 (final)
+# Capture format v0 (final) and v1
+
+_v1 (2026-10-25, testbed-v1) adds the buffers SPEC v0.3 asks for (M7 SH/SG directional variants, M8
+translucent shadows) as a strict superset: every v0 capture stays a valid v0 capture, a capture with
+only v0 buffers is still written as version 0, and v0 readers can read a v1 capture by ignoring the
+buffers they don't know. See [v1](#v1-directional-payloads-and-translucent-shadows) at the end._
 
 The contract between our renderer (which writes captures) and anything that replays them:
 our WGSL denoisers, and the native NRD harness on Windows. Captures stay in **our**
@@ -11,6 +16,11 @@ JSON manifest. Tools that read, write, check and score captures live in
 PNG/PFM preview).
 
 _Changelog:_
+- _v1, 2026-10-25 (testbed-v1): buffers `normal_geom`, `diffuse_dir`, `specular_dir`, `diffuse_sh_ref`,
+  `specular_sh_ref` (SPEC M7-4), `transmittance`, `translucent_dist`, `shadow_rgb_ref` (SPEC §7.10.4);
+  `"version": 1` when any of them is present; per-frame `lights` made official; v1 signals
+  `sh-diffuse`, `sh-specular`, `shadow-rgb` for replay outputs, and their metrics. Additive: v0
+  captures validate, replay and score bit-identically._
 - _v0 final, 2026-10-24 (capture-io): added `motion_z` (2.5D motion), the exact specular
   demodulation term (Karis 2014 analytic env-BRDF), the jitter and sky conventions, one
   shadow light per capture with a forward-compatible `lights` array, `static`, and the
@@ -229,3 +239,97 @@ definitions (they match `examples/ffx-denoiser/src/eval.ts`), so numbers are com
   over frames. Negative = darker than the reference.
 - **Non-finite**: count of NaN/Inf output values (never scored silently).
 - The noisy input is scored the same way as a baseline.
+
+## v1: directional payloads and translucent shadows
+
+Added for SPEC v0.3 M7 (SH/SG directional variants, §8.5) and M8 (translucent shadows, §7.10). Written
+by the test bed (`examples/realtime-denoiser`, CAPTURES.md "v1 captures"); read by `tools/rt-capture`
+(replay, validate, compare, preview).
+
+**Version.** `"version": 1` when the capture has any buffer of the table below, else 0. Nothing in v0
+changes meaning; a v1 reader accepts both.
+
+### v1 buffers
+
+| name | ch | meaning | conventions |
+|---|---|---|---|
+| `normal_geom` | 3 | smooth normal the **filter** should use | world-space unit, faces the camera, sky 0. Geometric or interpolated-vertex normal. `normal` stays the **shading** normal: the normal-mapped (detail) normal the rays were sampled around and specular was demodulated with. Equal to `normal` on surfaces without a normal map |
+| `diffuse_dir` | 3 | direction ω of the 1-spp diffuse ray | world-space unit vector of the ray whose radiance `diffuse` holds (cosine lobe around `normal`); sky 0 |
+| `specular_dir` | 3 | direction ω of the 1-spp specular ray | as above, after the renderer's below-horizon handling (the test bed mirrors about `normal`'s tangent plane); sky 0 |
+| `diffuse_sh_ref` | 6 | converged M7-2 payload `(a, b.x, b.y, b.z, Co, Cg)` | mean over the reference's samples of each sample's payload (below), sampling normal n_s = `normal`; world space. The payload is linear, so this is exact for the estimator |
+| `specular_sh_ref` | 6 | the same for specular | n_s = the sampling lobe's dominant direction D_s (below) |
+| `transmittance` | 3 | RGB transmittance T of the 1-ray shadow sample | `Π t_i` over the translucent layers the ray crossed toward the shadow light; (1, 1, 1) when it crossed none, **and wherever `visibility` = 0** (T is meaningless there) |
+| `translucent_dist` | 1 | distance to the nearest translucent layer with `min_c t_i < 1` | world units from the surface; 0 = none (and wherever `visibility` = 0) |
+| `shadow_rgb_ref` | 3 | converged `v·T` | [0, 1] per channel; ≤ `visibility_ref` per channel |
+
+**Visibility with translucent layers (SPEC M8-1).** `visibility` stays the **opaque** visibility:
+1 = the ray reached the light past every opaque surface. Translucent layers only multiply T (order
+independent). Once `max_c T < 0.01` along the ray, the ray counts as opaque: `visibility` = 0 and
+`occluder_dist` = that layer's distance. A renderer may cap the number of layers (past the cap: opaque);
+the test bed has no cap. `visibility_ref` is the mean of that opaque `visibility`.
+
+**The M7-2 payload of one sample** (radiance L, demodulated as the plain signal; ray direction ω;
+sampling normal n_s). YCoCg after Malvar & Sullivan 2003:
+
+```
+Y = ¼R + ½G + ¼B,   Co = ½R − ½B,   Cg = −¼R + ½G − ¼B      (R = Y + Co − Cg, G = Y + Cg, B = Y − Co − Cg)
+c = n_s·ω,   β = 2 / (1 + 2·max(c, 0))
+a = Y·(1 − β·c),   b = β·Y·ω,   Co, Cg                     → a + b·n_s = Y for every sample
+```
+
+For c ≥ 0 this is SPEC M7-2's `a = Y/(1 + 2c)`, `b = 2Yω/(1 + 2c)`. c < 0 happens only for specular
+(n_s = D_s, a direction the rough lobe can sample behind); there β stays 2, which keeps the payload exact
+at n_s and its weights bounded (our choice; SPEC M7-2 only covers c ≥ 0). Rays the renderer returns as
+L = 0 (e.g. below the geometric surface of a normal-mapped one, SPEC M7-4) contribute a zero payload
+and still count in the mean.
+
+**Specular dominant direction** (SPEC R-2, Frostbite's simple fit with GGX α = r²):
+`D_s = normalize(lerp(n, reflect(−v, n), (1 − α)(√(1 − α) + α)))`, n = `normal`, v = unit vector from the
+surface point to the camera.
+
+**Consistency** (validate.mjs checks it): when `*_sh_ref` and `*_ref` average the same samples (the test
+bed does), `a + b·n_s` equals YCoCg-Y of `*_ref`, and Co / Cg equal its chroma, up to rounding (the f16
+`normal` limits it to ~0.3 %).
+
+**Per-frame lights.** `frames[i].lights` (same schema as the capture-level `lights`) is now part of
+the format: when present it overrides `lights` for that frame (the test bed's `light` path moves and
+resizes the light). Other per-frame extras stay informational: `object` (the moving sphere),
+`translucent` (glass build: panel pose), `pathFrame`.
+
+### v1 signals: inputs, outputs and scoring
+
+Three signals with no noisy buffer of their own (format.ts / lib `V1_SIGNALS`):
+
+| signal | needs | replay input (`ReplayFrame.inputs[signal]`, replay.ts) | output `<signal>.f32` (3 ch) | scored against |
+|---|---|---|---|---|
+| `sh-diffuse` | `diffuse`, `diffuse_dir` | `{ radiance: diffuse, direction: diffuse_dir, hitDistance }` (SPEC M7-4 raw form) | demodulated rgb **resolved at `normal`** | `diffuse_ref` (+ resolved `diffuse_sh_ref`) |
+| `sh-specular` | `specular`, `specular_dir` | `{ radiance: specular, direction: specular_dir, hitDistance }` | demodulated rgb resolved at `normal` | `specular_ref` |
+| `shadow-rgb` | `visibility`, `transmittance` | `{ visibility, hitDistance, translucency, translucencyHitDistance, radiance: v·T, visibilityLumT: v·lum709(T) }` (SPEC M8-8 names; the last two are derived on load for baselines) | rgb `v̂·τ̂` (what multiplies the light) | `shadow_rgb_ref` |
+
+`ReplayFrame.guides.geometricNormal` = `normal_geom`; `shGuides(frame)` returns the guides an SH
+denoiser filters with (`normal` = `normal_geom`, `detailNormal` = `normal`). A 6-channel buffer is
+uploaded as two rgba32float textures, `textures[name]` (channels 0–3) and `textures[name + '#4']`.
+
+**Metrics** (compare.mjs and the live test bed, same definitions):
+
+- `sh-diffuse`, `sh-specular`: everything an rgb signal gets (Reinhard), against `*_ref` (the total
+  error, SPEC M7-13 reference (2)); noisy baseline = the plain sample. Plus:
+  - **bump region**: scored pixels with angle(`normal`, `normal_geom`) > 5°; pooled PSNR there;
+  - **detail band** in the bump region: band = x − G(x), G = Gaussian σ = 2 px (radius 6) over scored
+    pixels only (masked, normalized; separable with the mask folded into the inner sums), on the Reinhard
+    values; pooled PSNR of band(out) vs band(ref) and the energy ratio Σ band(out)² / Σ band(ref)² (1 =
+    detail kept, < 1 bumps smoothed away, > 1 noise);
+  - **floor fraction**: scored pixels whose output rgb is exactly 0 (ringing into the resolve's
+    max(0, ·), SPEC M7-13);
+  - `sh-diffuse` only, **vs SH ref** (SPEC M7-13 reference (1), the denoising error alone):
+    `diffuse_sh_ref` resolved like SPEC M7-8 (guard k) + M7-9 (sharpening s) at `normal` with
+    `normal_geom` as the guide normal; compare.mjs `--sh-k 1 --sh-s 0`, test bed `&refK=&refS=`; set them
+    to the denoiser's resolve. Because the reference payload is exact at its sampling normal, this
+    reference differs from `diffuse_ref` only by the guard, the chroma ratio and the sharpening.
+- `shadow-rgb`: each channel clamped to [0, 1] (T is a transmittance, so the Reinhard rule does not
+  apply); penumbra = any reference channel in (0.02, 0.98) (bias over those pixels, as for visibility);
+  **tint region** = reference `max_c − min_c > 0.02` with its pooled PSNR and the **chroma error** mean
+  over pixels of mean_c |S_c/ΣS − R_c/ΣR| (sums floored at 1e-4); the dynamic / static split, flicker,
+  tPSNR and boil of visibility, computed on the per-pixel mean of the clamped channels; noisy baseline =
+  `visibility · transmittance`.
+

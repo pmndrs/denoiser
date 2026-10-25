@@ -1,9 +1,20 @@
-# SPEC v0.2: our real-time denoisers (`denoiser/realtime`)
+# SPEC v0.3: our real-time denoisers (`denoiser/realtime`)
 
-_v0.2, 2026-10-25 (night), spec author (RULES.md rule 8: may not see NRD code; writes our
+_v0.3, 2026-10-25 (late night), spec author (RULES.md rule 8: may not see NRD code; writes our
 design). Status: **provisional until Dennis reviews** (TASKS T0.1)._
 
 **Changelog**
+- **v0.2 → v0.3 (2026-10-25, late night):** two milestones specified, nothing built.
+  **M7 SH/SG directional variants** (§8.5 rewritten, decisions M7-1…M7-14): an L1 payload (Y with
+  4 coefficients, Co / Cg as L0, after the public Snowdrop / AC Shadows recipe) in a per-sample
+  encoding of ours that is exact at the filter's normal, filtered by SVGF with unchanged weights,
+  plus a resolve step (L1 with a value-preserving ringing guard, optional sharpening, and a ratio
+  SG resolve for specular). **M8 translucent shadows** (new §7.10, decisions M8-1…M8-10): an RGB
+  transmittance channel riding on `ShadowDenoiser` v2.2, accumulated only over samples that reach
+  the light past opaque geometry, so that `v̂ · τ̂` is the mean of `v · T`; multiplicative
+  (order-independent) layers per the Tomb Raider talk. §0.1 / §0.3, §7.9, §9, §10.3, §11 and §12
+  (items 10–14 appended) updated. §7 still describes shadows v2; v2.1 / v2.2 are in
+  results/M4.md §11–12 (TASKS has the fold-in item) and §7.10 builds on v2.2's pass list.
 - **v0.1 → v0.2 (2026-10-25, night):** folds in everything measured since v0.1, each change in
   its section as a **v0.2** note (old → new → evidence): recurrent specular as built (§5.6
   rewritten: curvature-corrected virtual motion, no virtual candidate in stabilization, clamp
@@ -43,7 +54,9 @@ pass and constant is traced in [PROVENANCE.md](PROVENANCE.md). Rules that shaped
 
 How to read: `D1`…`D16` are the decisions for the 16 open items in
 [sources/reblur.md §7](sources/reblur.md) (same numbering). `C-`, `F-`, `S-`, `R-`, `SH-`,
-`O-` number our other decisions (core, front end, SVGF, recurrent, shadows, occlusion).
+`O-` number our other decisions (core, front end, SVGF, recurrent, shadows, occlusion);
+`M7-` and `M8-` the v0.3 decisions for directional payloads and translucent shadows (note: the
+shadows' `SH-` prefix predates M7 and means "shadow", not spherical harmonics).
 **"Tune: [a, b]"** marks a guess with the range to sweep on captures; the first value is
 the default. Everything in "our design" is ours to change.
 
@@ -82,8 +95,8 @@ recurrent vs SVGF swapped, M1 §11).
 | shadows | §7 | yes (M4, v2) | provisional; v2 as built |
 | occlusion | §8 | yes (M5) | provisional; v0.2 describes it as built; its default filter is part of **item 1** |
 | TSL nodes, real-scene pages | — | in progress (M6) | outside this spec; its first real-scene numbers feed item 7 |
-| SH/SG directional | §8.5 | no (M7) | not specified |
-| translucent shadows | §7.9 | no (M8) | not specified |
+| SH/SG directional | §8.5 | no (M7) | **specified, not built** (v0.3): L1 YCoCg payload through SVGF + resolve helpers; items 10–12 |
+| translucent shadows | §7.10 | no (M8) | **specified, not built** (v0.3): RGB transmittance channel on `ShadowDenoiser` v2.2; items 13–14 |
 
 ### 0.2 Where we stand
 
@@ -164,7 +177,15 @@ One list, ordered by how much each item blocks (TASKS "Questions for Dennis" poi
    provisional until scored there and natively.
 8. **API items.** Recommendation: keep `remodulate` + caller factor, `dispatchBoth` and the
    occlusion API; ship `'gradient'` as experimental; shadows standalone for now.
-9. **Listing policy.** Recommendation: keep.
+9. **Listing policy.** **Decided 2026-10-25 (Dennis): keep, by caution** (RULES §2, RTG II note).
+10. **M7 colour payload** (v0.3). Recommendation: YCoCg with chroma as L0 (6 channels), RGB L1
+    (12) as an option; decide on the coloured-bounce scene.
+11. **M7 resolve location.** Recommendation: diffuse returns the SH (caller resolves), specular
+    resolves in the denoiser's last pass; both available either way.
+12. **M7 scope.** Recommendation: SVGF only; a recurrent SH mode only if item 1 keeps recurrent.
+13. **M8 output.** Recommendation: one rgba16float `(v̂·τ̂ rgb, v̂)`.
+14. **M8 storage limit.** Recommendation: use the adapter's 8 storage textures when offered, a
+    packed rgba32uint history otherwise.
 
 ---
 
@@ -1454,8 +1475,205 @@ loses on this load-latency-bound GPU; `shader-f16` not tried (passes aren't ALU 
 ### 7.9 Later (not specified)
 
 Heitz 2018 ratio estimator for glossy receivers; a real directional-light (sun) capture (the
-code path is exercised only through the stand-in of §7.5 v0.2: TASKS); **translucent shadows
-(M8)**: not specified yet (TR19's order-independent layers are the starting source).
+code path is exercised only through the stand-in of §7.5 v0.2: TASKS). **v0.3:** translucent
+shadows (M8) are specified in §7.10.
+
+### 7.10 Translucent shadows (M8) — specified, not built (v0.3)
+
+_Spec only. Builds on shadows **v2.2** as committed (results/M4.md §12; `src/shadow.ts` header):
+`temporal` (raw visibility → history `(v, g, A, n_g)` rgba16float, geometry ping-pong, tile
+statistics, unfiltered copies) → `tiles` → `spatial` × 2 (indirect, penumbra tiles) → `stabilize`
+(indirect), 48 B/px, 0.55–0.72 ms at 1080p. §7.1–7.8 still read as v2; the v2.1 / v2.2 additions
+(normal-tested clamp window, young mean over 8 frames, output stabilization) are assumed below._
+
+**Sources.** TR19 slides 47–53 (up to 3 translucent layers; any-hit order is non-deterministic,
+so each layer subtracts 1/3 of the visibility, which is order independent; an opaque hit ends the
+ray at 0; slide 53 shows the result next to opaque shadows). RTG1-25 §25.2.1 pp. 444–445 (PICA
+PICA: keep tracing toward the light through transparent hits, accumulate absorption from each
+surface's albedo, thin-film approximation, no distance-based absorption; stop on an opaque hit, a
+miss or full absorption; Fresnel with a total-internal-reflection-corrected Schlick; filtered with
+the same SVGF-derived filter as opaque shadows). Neither says how a **coloured** shadow is
+filtered (shadows-specular.md gap G5). Native: `SIGMA_SHADOW_TRANSLUCENCY` takes `IN_PENUMBRA` and
+`IN_TRANSLUCENCY` and writes `OUT_SHADOW_TRANSLUCENCY` (nrd-provenance §3.3–3.4); it costs 0.45 ms
+vs 0.40 for the opaque denoiser (RTX 4080, 1440p, §3.1), and NVIDIA's notes claim "translucent
+shadows match opaque ones" since v4.7.0 (nrd-releases.md). Behaviour targets only; nothing about
+how.
+
+#### 7.10.1 Signal and renderer contract
+
+**M8-1 What the renderer writes per pixel (one shadow ray, per light).**
+
+| input | meaning | format |
+|---|---|---|
+| `visibility` v | **opaque** visibility, as today: 1 = the ray reached the light past every opaque surface | unchanged |
+| `hitDistance` h | unchanged: distance to the opaque blocker where v = 0 | unchanged |
+| `translucency` T (new) | RGB transmittance of the translucent layers the ray crossed, `T = Π_i t_i`; (1, 1, 1) when it crossed none; **ignored where v = 0** | rgba16float / rgba8unorm (rgb) |
+| `translucencyHitDistance` h_τ (new, optional) | distance to the **nearest** translucent layer with `min_c t_i,c < 1`; 0 = none | r16float / r32float |
+
+- **Layers multiply, so order doesn't matter.** `Π t_i` commutes like TR19's subtraction, so an
+  any-hit shader can accumulate layers in whatever order the traversal reports them; `min` (for
+  h_τ) commutes too. Subtraction is exact only for identical layers; multiplication is exact for
+  any colours (our choice; TR19's `1/3` rule stays available to a renderer as the scalar special
+  case `T = max(0, 1 − k/N)`).
+- **Per layer:** `t_i = (1 − α_i) + α_i·κ_i`, with α_i the layer's coverage (alpha) and κ_i its
+  transmission colour (thin film, RTG1-25), optionally times `(1 − F)` (RTG1-25's TIR-corrected
+  Schlick). Renderer side; the denoiser only sees T.
+- **Early out and layer cap.** When `max_c T_c < 0.01` the ray counts as **opaque**: v = 0, h = the
+  distance of the layer that crossed the threshold (TR19's "full shadow after N hits", with a
+  colour-aware threshold). A renderer may cap layers at N for cost (TR19: 3); past the cap it
+  treats the ray as opaque. Test bed: no cap.
+- Contract only (documented, not enforced), like SH-7.
+
+**M8-2 The denoised quantity: opaque visibility and a conditional transmittance.** The shading
+needs the mean of `v·T` over the light's samples. We split it exactly:
+
+```
+E[v·T] = P(v = 1) · E[T | v = 1] = E[v] · τ,      τ := E[T | v = 1]
+```
+
+The v2.2 pipeline keeps denoising **v** unchanged; a new 3-channel **τ** is accumulated **only over
+samples that reached the light** (weight v), the way g is accumulated over occluded samples only
+with its own count n_g (§7.2 v0.1). Output `S = v̂·τ̂`. Rationale: (1) the product of the two
+estimates is unbiased for the product's mean (a product of two plain spatial means would not be,
+wherever opaque and translucent blockers overlap, e.g. a window frame's penumbra over its own
+glass shadow); (2) every opaque decision (penumbra sizing, clamp window, snap, restarts, tiles,
+stabilization box) stays on the scalar it was tuned on, and with T ≡ 1 the v output is
+**bit-identical** to `ShadowDenoiser` v2.2 (regression test, M8-10); (3) inside a uniform glass
+shadow every sample has v = 1 and the same T, so τ is exact after one frame and needs no
+filtering. Rejected: denoising `S_rgb = v·T` as one RGB signal (the scalar clamp / snap / box
+logic would need an RGB redesign and the opaque path would change); denoising v and T
+unconditionally (biased product).
+
+**M8-3 Penumbra footprint: one footprint, nearest blocker of either kind.** The penumbra width of
+a coloured shadow's edge is set by the distance to the translucent layer, so translucent samples
+feed g like occluded ones: a sample contributes `g` (§7.2, from h_τ) when v = 1 and
+`1 − min_c T_c > ε_τ`, `ε_τ = 0.01` (tune [0.002, 0.05]); occluded samples keep using h (opaque
+results unchanged). The tile minimum and `mergeMin` (§7.3) then make the sharpest blocker win
+(M12's principle), whatever its kind. Without `translucencyHitDistance`, translucent samples
+contribute nothing to g and their edges take the noise-sized radius (§7.5 v0.2's E term), which is
+already half the v2 radius blend. τ uses exactly the same spatial taps and weights as v (one
+footprint; RTG1-25 filters translucent shadows with the opaque filter).
+
+#### 7.10.2 Passes (deltas to v2.2)
+
+**M8-4 `temporal`: τ history with conditional accumulation and its own clamp.** New history
+`(τ_r, τ_g, τ_b, n_τ)`, reprojected with v's 2×2 footprint and validity (custom-weighted
+**bilinear**: τ is smooth, Catmull-Rom is not worth 4 more loads; tune). Per pixel:
+
+```
+τ_H, n_τ   = reprojected τ history (invalid footprint → n_τ = 0, τ_H = 1)
+μ_τ, σ_τ   = per-channel mean / spread of raw T over the 5×5 taps with raw v = 1
+             that pass v2.1's normal test (the clamp window's taps); ≥ 3 taps, else no clamp
+τ_c        = clamp(τ_H, μ_τ − win_τ, μ_τ + win_τ),  win_τ = 0.4·σ_τ + 0.05   (v's window form, SH-4)
+n_τ        ← lerp(n_τ, 0, saturate(64·max_c |τ_c − τ_H|))                    (v's restart gain)
+if v_raw > 0:  τ = (n_τ·τ_c + v_raw·T_raw) / (n_τ + v_raw);  n_τ ← min(n_τ + v_raw, N_τ)
+else:          τ = τ_c                                                         (nothing to learn: the sample was blocked)
+N_τ = 7 (tune [3, 15]; the same rationale as maxScaleHistory, §7.4 v0.2)
+```
+
+The clamp is what follows a **moving glass panel** (no motion vector moves its shadow over a static
+receiver): the same mechanism as v's, on the same taps. Fractional v (several rays) weights the
+sample. The unfiltered copies the spatial passes read widen from r32float to rgba16float `(v, τ)`.
+
+**M8-5 `tiles`: a translucency flag.** The temporal pass also `atomicOr`s two more tile bits, the
+analogues of v's: "raw T samples with v = 1 disagree" (some attenuated by more than ε_τ, some not,
+or different colours) and "τ history differs from this frame's raw T by more than ε_τ". A tile is
+**τ-active** if its 3×3 tile neighbourhood has either bit. The indirect list becomes v-active ∪
+τ-active tiles, with a per-tile mode flag: a τ-only tile runs the τ part of the spatial and
+stabilize passes and passes v through; a v-only tile skips τ. Elsewhere `τ̂ = τ` from the
+temporal pass (exact inside a uniform glass shadow, white where there is no glass). Cost then
+scales with the coloured shadow's edge area, as v's does with the penumbra (TR19 slide 72's tile
+skip).
+
+**M8-6 `spatial` × 2: visibility-weighted τ.** Same taps and weights w_i as v (disk, radius from
+g_eff and E, plane and normal tests):
+
+```
+τ̂ = Σ w_i·v_i·τ_i / Σ w_i·v_i      (v_i = this pass's input visibility; Σ w·v < 1e-4 → τ̂ = τ_centre)
+```
+
+This is the ratio of the filtered `v·τ` to the filtered v under identical weights, so `v̂·τ̂`
+equals the spatially filtered product wherever v̂ comes from the same taps (our design; the ratio
+form follows the same reasoning as H18's ratio estimator, §7.9). Blocked taps carry no colour
+information and get no say.
+
+**M8-7 `stabilize`: one blend weight for both.** The stabilization history becomes rgba16float
+`(S_r, S_g, S_b, v)` (was r32float v). v2.2's blend weight (box-width gate from v's 3×3 range,
+clamp-distance anti-lag) is computed from v as today and applied to all four channels; S's
+channels are clamped to their own 3×3 min/max. No separate box for colour (tune: a per-channel
+gate if stained-glass textures boil).
+
+#### 7.10.3 API, resources, cost
+
+**M8-8 API** (additive; no NVIDIA names):
+
+```ts
+interface ShadowInputs {
+  visibility: GPUTexture; hitDistance?: GPUTexture; light?: ShadowLight;   // unchanged
+  translucency?: GPUTexture;             // rgb transmittance T of the sample (ignored where v = 0)
+  translucencyHitDistance?: GPUTexture;  // nearest translucent layer, 0 = none
+}
+new ShadowDenoiser(device, { translucency: true });   // structural: compiles the τ channel
+```
+
+- With `translucency: true` the output is **rgba16float `(v̂·τ̂ rgb, v̂)`**: rgb is what the shader
+  multiplies the light by, alpha the opaque visibility (for consumers that want the grey shadow,
+  and for the opaque regression). Without it: r32float v̂ as today. Valid until the next dispatch.
+- `translucency: true` with no `translucency` texture in a frame = T ≡ 1 (output rgb = v̂).
+- TSL: `realtimeShadows(..., { translucency: node })` returns the rgb output; the node's `.visibility`
+  gives alpha. `denoiser/three` owner decides the exact shape.
+
+**Resources (estimate, not built).** v2.2 48 B/px + τ history ping-pong 2 × 8 (rgba16float) +
+the two unfiltered copies widened r32float → rgba16float (+4 + 4) + stabilization ping-pong widened
+(+8) = **≈ 80 B/px** (≈ 166 MB at 1080p). Opaque-only instances stay at 48.
+
+**Storage textures.** v2.2's temporal pass already writes 4 (geometry, history, two copies); the τ
+history makes 5, over WebGPU's default limit of 4. **M8-9:** with `maxStorageTexturesPerShaderStage
+≥ 5` (the test bed and examples request min(8, adapter), common on desktop and Apple GPUs), use the
+fifth texture. Otherwise pack `(v, g, A, n_g, τ_r, τ_g, τ_b, n_τ)` as 8 f16 in **one rgba32uint
+history** (`pack2x16float`); it is unfilterable, so v's Catmull-Rom history takes 16 `textureLoad`s
+(as the occlusion kinds do, §8.2) or falls back to bilinear (−0.65 dB on `orbit` in M4 §3 — measure
+the 16-load cost first). Review item 14.
+
+**Cost (estimate).** Temporal: + one 8 B history load/store, raw T in the 12×12 tile (3 more
+channels), per-channel statistics: +0.08–0.15 ms on every frame (the temporal pass runs full
+screen). Spatial and stabilize: +40–60 % per τ-active tile (one more 8 B load per tap). On a path
+with large glass shadows **≈ 0.70–0.95 ms** vs v2.2's 0.55–0.72; without translucent tiles
+≈ +0.1 ms. Native's translucency variant is +12.5 % over its opaque one; ours will be +20–35 %.
+Target: ≤ 2× native `SIGMA_SHADOW_TRANSLUCENCY` on the same GPU (PLAN §8); M5 Pro guide ≤ 0.9 ms
+on the glass paths.
+
+#### 7.10.4 Test bed, metrics, native comparison
+
+**M8-10 Evaluation.**
+
+- **Scenarios** (test bed, analytic): `glass` — a thin coloured panel (κ = (0.9, 0.35, 0.2),
+  α = 0.8, with an opaque frame) between the sphere light and the floor, static, camera orbit; a
+  second, **nested** panel (blue-green) overlapping the first, to check order independence (the
+  overlap must show the product colour) and nested penumbrae; a stripe texture on α for spatial
+  colour detail. `glass-moving` — the panel slides and rotates over a static receiver with a
+  static camera (no motion vector follows the shadow; the M4 §12 case), plus a frozen control
+  (`glass-still`) for boil. Later: a real-scene capture (a window or stained glass in
+  `examples/three-temporal`).
+- **References:** `shadow_rgb_ref` = 256-spp mean of `v·T` per pixel (same estimator), and
+  `visibility_ref` = the mean of v as today.
+- **Metrics** (pooled, SPEC §13): RGB PSNR of S with the scalar tonemap per channel (clamp to
+  [0, 1]; S is a transmittance, so CAPTURE-FORMAT's Reinhard rule for RGB radiance doesn't apply);
+  penumbra region (any channel of the reference in (0.02, 0.98)); **tint region** (reference
+  chroma `max_c − min_c > 0.02`) with a chroma error (mean |S/Σ S − ref/Σ ref| there); FLIP; the
+  dynamic region, flicker, tPSNR and **boil** on `glass-moving` / `glass-still` (§13). Plus the
+  **opaque regression**: with T ≡ 1 the v channel must be bit-identical to v2.2, and on `glass` the
+  v channel scores against `visibility_ref` like v2.2 does on its paths.
+- **Baselines:** v2.2 run on `v·lum(T)` as a scalar (what a caller without M8 would do: correct
+  luminance, no colour); FFX shadows likewise; `accumulate-32`.
+- **Native:** `SIGMA_SHADOW_TRANSLUCENCY` on the same captures, packed by the harness from
+  `visibility`, `occluder_dist`, `transmittance` (CAPTURE-FORMAT v1, §11) with native's own front
+  end (harness builder, rule 4), scored against `shadow_rgb_ref` with the same tonemap. Probe P7
+  (TASKS).
+
+**CAPTURE-FORMAT v1 additions (proposed; the capture owner writes them):** `transmittance` (3 ch,
+T of the 1-ray sample; (1, 1, 1) where none), `translucent_dist` (1 ch, h_τ), `shadow_rgb_ref`
+(3 ch). v0 readers ignore them.
 
 ## 8. Occlusion (M5) — as built (v0.2)
 
@@ -1537,10 +1755,320 @@ with v2 is unmeasured (TASKS).
   denoiser normalizes hit distance with its own curve and parameters, so PSNR against our
   references is not a fair comparison until probe P3 (TASKS) returns native's curve as data.
 
-## 8.5 SH/SG directional variants (M7) — **not specified**
+## 8.5 SH/SG directional variants (M7) — specified, not built (v0.3)
 
-PLAN §7 M7: directional payload through the same filters plus a resolve step for the caller.
-No design yet; it waits until the recurrent diffuse/specular defaults settle (review item 1).
+_v0.2 said "not specified, waits for review item 1". v0.3 specifies M7 against the likely default
+filter, **SVGF / A-SVGF** (item 1's recommendation), and lists what the recurrent filter would need
+(§8.5.6). Nothing here is built or measured; every constant is a guess with a tune range._
+
+**What it is for.** A plain denoised radiance is one value per pixel: it is correct for the normal
+the filter used and nothing else. Two things go wrong on detailed surfaces. If the caller gives the
+filter its **normal-mapped** normal, the normal weights reject neighbours across bumps and noise
+stays; if it gives the smooth normal, the bump shading is averaged away. A **directional payload**
+stores, per pixel, a low-order function of direction ("each pixel an irradiance probe", ID25 s.20),
+filtered with the smooth normal and evaluated afterwards with the detailed one. ACS25 s.62 shows the
+gain on a shipped game ("much more details and better directionality"); SD24 and ACS25 also reuse
+the payload as a light source for other materials and for rough specular (SD24 p.37, p.55; ACS25
+s.65).
+
+**Sources.** SD24 p.30 (GI encoded as SH in 64 bits: L1 luma in YCoCg-Y, chroma as L0), p.37
+(light colour, intensity and direction extracted from the SH; chroma rescaled by the evaluated luma),
+p.55 (SH evaluated at the roughness-bent reflection direction for rough specular); ACS25 s.57–62
+(L1 for Y, L0 for CoCg, 6 × 8 bit + a 16-bit max magnitude, denoised by a recurrent-blur denoiser,
+evaluated per pixel with the full-resolution normal); ID25 s.20–22 (2-band SH, 3 × RGBA16F, one
+irradiance probe per pixel, bilateral spatial filter with normal / depth / hit-distance weights, a
+counter-based temporal filter; cites Ramamoorthi & Hanrahan 2001); Ramamoorthi & Hanrahan 2001
+(irradiance from the first SH bands: the clamped cosine's band factors π and 2π/3); Malvar & Sullivan
+2003 (YCoCg); Pettineo's SG series parts 3–4 (SG irradiance and the L1 ringing comparison; the NDF as
+an SG and its warp to the reflection direction, after Wang et al. 2009). The SD24 slides print
+Ubisoft's encoding code with no license: we read the description and write our own (our encoding is
+different anyway, M7-2). Native: the `*_SH` denoisers take an SH input packed by native's front end
+and need an application-side resolve; "for an apples-to-apples image comparison, use
+`NRD_SG_ExtractColor`" (nrd-provenance §3.4). The release notes (nrd-releases.md, v4.1.0) describe
+the switch from an SH to an SG resolve ("higher quality & specular-compatible") as a **resolve**
+change, plus re-jittering for upscalers; we know nothing about native's payload beyond that.
+Published cost: SH variants 1.33× (REBLUR, 3.40 vs 2.55 ms) and 1.48× (RELAX, 4.80 vs 3.25 ms) their
+plain versions (RTX 4080, 1440p; nrd-provenance §3.1, nrd-releases v4.17.3).
+
+### 8.5.1 Payload
+
+**M7-1 L1 SH with Y directional and CoCg as L0 (6 channels), world space.** Per pixel:
+
+```
+Y(ω)  = a + b·ω                    a: scalar, b: 3-vector (the L1 band, constants folded in)
+Co, Cg                             chroma, no direction
+YCoCg (Malvar & Sullivan 2003):  Y = ¼R + ½G + ¼B,  Co = ½R − ½B,  Cg = −¼R + ½G − ¼B
+                                 R = Y + Co − Cg,    G = Y + Cg,     B = Y − Co − Cg
+```
+
+- **Why SH and not SG as the payload.** Every pass of both filter families is a weighted mean (EMA,
+  à-trous, bilinear history taps, mip averages). SH coefficients are linear in the radiance, so a
+  weighted mean of payloads is exactly the payload of the weighted mean: the filters run unchanged
+  on more channels. An SG's axis and sharpness are not linear: averaging two lobes' parameters is
+  not the lobe of the average, so every pass would need a re-fit, and a mixture needs several
+  lobes. SGs earn their place at **resolve** time, where a lobe is fitted once from the filtered L1
+  data (M7-10; Pettineo part 3's error analysis favours SG over L1 for the cosine lobe's tail).
+- **Why L1 and not L2.** 4 coefficients per channel vs 9; L1 is what all three shipped recipes use
+  (SD24, ACS25, ID25) and what fits our memory budget (below). L2 is not specified.
+- **Why chroma as L0 (6 channels) and not RGB L1 (12).** The directional detail a normal map reveals
+  is mostly a luminance change; chroma as L0 halves the cost (SD24, ACS25 ship it). It loses
+  **coloured directionality** (a bump facing a red wall does not get redder). `payload: 'sh-rgb'`
+  (12 channels: a, b per RGB channel; two rgba32uint per copy) is the option; review item 10 decides
+  the default on the coloured-bounce scene (M7-13).
+- **World space**, not tangent or view space: incident directions don't change under camera motion,
+  so reprojection needs no SH rotation.
+
+**M7-2 Per-sample encoding: L1 of the sample's clamped-cosine lobe, renormalized to be exact at the
+sampling normal (our design).** The renderer samples a cosine lobe around a normal `n_s` (the normal
+it shades with, usually the normal-mapped one) and returns demodulated radiance L along ω (the
+plain diffuse input, CAPTURE-FORMAT). That sample's unbiased contribution to the demodulated
+diffuse value at any other normal n' is `L·max(0, n'·ω) / (n_s·ω)`; its L1 projection replaces
+`max(0, n'·ω)` by `¼ + ½·(n'·ω)` (Ramamoorthi & Hanrahan's band factors: π·Y₀₀² = ¼, (2π/3)·Y₁² = ½).
+Scaling the projection so that it is exact at `n' = n_s` gives, with `c = n_s·ω`:
+
+```
+a_i = L_Y / (1 + 2c),      b_i = 2·L_Y·ω / (1 + 2c),      Co_i = L_Co,  Cg_i = L_Cg
+check:  a_i + b_i·n_s = L_Y    (every sample, so the payload evaluated at n_s has the plain filter's mean)
+```
+
+- **Exact at the sampling normal.** The payload resolved at the normal the rays were sampled around
+  reproduces the plain diffuse signal in expectation, so SH mode can be regression-tested against
+  the plain filter (M7-13) and never changes the mean on smooth surfaces.
+- **Bounded weights.** `1 + 2c ∈ [1, 3]`, `|b_i| ≤ 2·L_Y`. The textbook projection of radiance
+  (`π·L·Y_lm(ω)/c` for cosine sampling) has a 1/c weight with infinite variance at grazing rays.
+- **What it gets right.** Uniform sky over the upper hemisphere: expected payload
+  `Y(n') = L·(0.451 + 0.549·n'·n_s)` vs the true `L·(0.5 + 0.5·n'·n_s)` (a normal tilted 90° gets
+  0.45 L vs 0.5 L; the plain filter says L). A light at the sampling normal: exact at n_s, L1's
+  usual smoothing elsewhere. The derivation is ours; the alternative estimators (the textbook
+  projection with `max(c, 0.1)`, SD24's constant weights) are the tune set.
+- Tune on captures: encoding ∈ {normal-exact (default), textbook with c floor 0.1}.
+
+**M7-3 Storage: 8 × f16 in one `rgba32uint` per pixel per buffer** (`pack2x16float`, core WGSL;
+`rgba32uint` is a core storage format). Layout `(a, b.x, b.y, b.z, Co, Cg, s0, s1)`: two spare halves
+for what the plain buffer kept in alpha (SVGF: A in `accum`, σ in the à-trous ping-pong; recurrent:
+ĥ). One storage binding and one 16-byte load per tap instead of two textures, which keeps every
+SVGF pass within the 4-storage-texture default. Unfilterable, which costs nothing in SVGF (bilinear
+history from 4 `textureLoad`s, C-8; `historyFilter: 'catmull-rom'` would take 16 loads in SH mode).
+Not 8-bit: an EMA history quantized to 1/254 of a shared magnitude stalls on small increments
+(α ≥ 1/64). Tune: SD24 / ACS25's 64-bit packing (6 × 8-bit snorm + f16 magnitude in `rg32uint`) for
+the **renderer input** and the non-accumulating à-trous ping-pong only, checked against an f16 run
+(ML25 p.34's quantized-vs-reference check).
+
+### 8.5.2 Input contract
+
+**M7-4 Two accepted input forms, plus guides.**
+
+| form | what the caller passes | who encodes |
+|---|---|---|
+| encoded (recommended for renderers) | `sh` texture: the M7-2 payload, `rgba32uint` 8 × f16 (6 used), or `rg32uint` 64-bit packed (M7-3 tune) | the renderer, per sample (it knows n_s) |
+| raw (replay, simple renderers) | `radiance` (rgb, demodulated, as today) + `direction` (rgb, world-space unit ω of the sampled ray) | the denoiser, on load in the temporal pass, with `n_s = guides.detailNormal ?? guides.normal` |
+
+- `guides.normal` = the normal the **filter** uses for its weights. In SH mode the caller should
+  pass the **smooth** (geometric or interpolated vertex) normal here: that is the whole point.
+  `guides.detailNormal?` (new, additive in `FrameGuides`) = the normal-mapped shading normal the
+  rays were sampled around; used by raw-form encoding and by the fused resolve (M7-9).
+- Demodulation as today (CAPTURE-FORMAT): diffuse divided by albedo; specular by E evaluated with
+  the **detail** normal (the normal the renderer shaded with). The caller remodulates after the
+  resolve.
+- Rays below the geometric surface (possible when sampling around a bumped normal): the renderer
+  returns L = 0 for them (energy loss, a renderer issue); the payload of L = 0 is zero.
+- `hitDistance` unchanged (SVGF ignores it).
+- **CAPTURE-FORMAT v1 additions (proposed; the capture owner writes them):** `diffuse_dir` and
+  `specular_dir` (3 ch: world ω of each sampled ray), `normal_geom` (3 ch: smooth normal for the
+  filter; `normal` stays the shading normal the rays used), `diffuse_sh_ref` / `specular_sh_ref`
+  (6 ch: the 256-spp mean of the M7-2 payloads, which is exact because the payload is linear). The
+  replay encodes from `diffuse` + `diffuse_dir`; the native harness packs native's SH input from the
+  same two buffers with native's front end (harness builder, rule 4). v0 readers ignore them.
+
+### 8.5.3 Filtering (SVGF / A-SVGF)
+
+**M7-5 The guide luminance is the payload evaluated at the filter's normal, in Rec. 709.** Every
+scalar SVGF uses (moments, variance, `w_l`, A-SVGF gradients, the anti-lag λ) reads
+
+```
+l = lum709( RGB( Y(n_g), Co, Cg ) ),   Y(n_g) = a + b·n_g,   n_g = guides.normal;   l ← max(l, 0)
+```
+
+On smooth surfaces `n_s = n_g` and l has the plain filter's mean and noise, so σ_l = 4, the
+variance thresholds and anti-lag v2's floors carry over without retuning (they were tuned on 709
+luminance). On bumpy surfaces the smooth normal keeps bump shading out of the weights. Rejected:
+L0 (`a`) alone (scale-biased, and blind to the noise in b); YCoCg's Y (a different luminance than
+the one every constant was tuned on). Moments stay `rg32float` (l, l²).
+
+**M7-6 All six channels are filtered with the same weights.** One weight per tap (`w_z·w_n·w_l`, plus
+specular's lobe and roughness terms), applied to `a, b, Co, Cg` alike: exact, because the payload is
+linear (M7-1). Variance propagation (`σ²' = Σh²w²σ²/(Σhw)²`) stays on l only. No per-coefficient
+weights: b is noisier than a, but giving it its own weights would make the filtered function
+inconsistent across coefficients (a direction from one footprint, a magnitude from another).
+
+**M7-7 Per-pass changes.**
+
+| pass | change in SH mode |
+|---|---|
+| prepass | unchanged (`G` from `guides.normal`) |
+| temporal (S-1) | encode on load (raw form); reproject and accumulate all six with α_c; `accum` = rgba32uint (A in s0); moments from l |
+| variance (S-2) | spatial variance from each tap's l; writes σ into s0 of the ping-pong |
+| à-trous (S-3) × 5 | weights from l and σ as today; six channels averaged |
+| last à-trous | writes the **output payload** (M7-8), or the fused resolve (M7-9) |
+| A-SVGF gradient passes | unchanged, fed l (strata means of l_cur and l_hist) |
+| remodulation | not in the denoiser in SH mode (the caller remodulates after the resolve); `remodulate: true` + `resolve: 'fused'` multiplies the resolved rgb |
+
+**M7-8 Output payload: resolve-ready.** The last pass (it has n_g) writes
+`(a', b'.x, b'.y, b'.z, ρ_Co, ρ_Cg, Y_g, –)` with:
+
+```
+Y_g    = a + b·n_g                                         value at the filter's normal (= the plain result's Y)
+b'     = b · min(1, k·max(Y_g, 0) / max(|b|, 1e-6))         value-preserving ringing guard, k = 1 (tune [0.5, 2])
+a'     = Y_g − b'·n_g                                      so a' + b'·n_g = Y_g exactly
+ρ_Co, ρ_Cg = clamp( Co / max(Y_g, ε), −2, 2 ), clamp( Cg / max(Y_g, ε), −2, 2 )    ε = 1e-4
+```
+
+The guard keeps Y ≥ 0 for every normal within 60° of n_g (|n' − n_g| ≤ 1) without changing the
+value at n_g; k = 1 leaves a uniform sky untouched (|b|/Y_g ≈ 0.55) and trims b on young, noisy
+pixels. Chroma is stored as a ratio to Y_g, so a resolve needs only the detail normal and colour
+follows the evaluated luma (SD24 p.37 rescales chroma by the evaluated luma the same way; our
+reference value is Y_g instead of L0). |Co/Y|, |Cg/Y| ≤ 2 bound the non-negative RGB gamut.
+
+### 8.5.4 Resolve
+
+**M7-9 Diffuse resolve (the caller's step, or fused into the last pass).**
+
+```
+Y(n_d)   = max(0, a' + b'·n_d)                              n_d = detail normal
+rgb      = max(0, RGB( Y(n_d), Y(n_d)·ρ_Co, Y(n_d)·ρ_Cg ))
+optional sharpening, s ∈ [0, 1] (default 0; tune [0, 1]), needs Y_g and n_g:
+  ambient + one light from the L1 data (the clamped cosine's L1 is ¼ + ½·cos, so a light I·max(0, n·d)
+  contributes (¼I, ½I·d)):   I = 2|b'|,  d = b'/|b'|,  A = max(a' − ½|b'|, 0)
+  Y_sh(n)  = A + I·max(0, n·d)                               full clamped cosine instead of its L1 band
+  Y(n_d)   ← lerp( Y(n_d),  Y_sh(n_d) · Y_g / max(Y_sh(n_g), ε),  s )     renormalized: exact at n_g
+```
+
+The light extraction is the idea of SD24 p.37 (a light direction and intensity from the L1 luma);
+the decomposition and the renormalization are ours. Sharpening restores the contrast L1 loses when
+a bump turns toward a light (a normal turned fully toward a light at angle θ from n_s gets
+`3cos θ / (1 + 2cos θ)` of the true value under M7-2) at the risk of overshoot on mixed lighting. `resolve: 'fused'` runs this in the last
+à-trous pass with `guides.detailNormal` and writes rgba16float rgb (8 B instead of 16).
+
+**M7-10 Specular resolve: a ratio resolve with SG lobes (fused by default).** L1 is far too wide for
+glossy lobes (its features are ~90° wide), which is why the shipped recipes use SH only for rough
+specular (SD24 p.55: r ≥ 0.9, faded from 0.7; ACS25 s.65) and why NVIDIA's notes call the SG resolve
+"specular-compatible". Ours uses the payload only for the **ratio** between the detail and the guide
+lobe, so model error moves bump detail, never the mean:
+
+```
+specular payload: M7-2 with n_s replaced by the sampling lobe's dominant direction D_s (R-2, from the
+  detail normal, roughness and view), c = D_s·ω; exact at D_s. M7-5's l and M7-8's Y_g / guard use
+  D_g (R-2 from the guide normal) in place of n_g, so where the two normals agree it is the plain value
+lighting model from (a', b'): ambient A and an SG light (axis d, sharpness λ_l, amplitude matching I)
+  λ_l = 8 (tune [2, 32]): a delta would make bumps sparkle; the SG gives the extracted light a size
+lobe response R(n) = ∫ (warped NDF SG of n, α, v) × (A + SG light): NDF as an SG of sharpness 2/α²,
+  warped to the reflection direction with sharpness / (4|n·v|) (Pettineo part 4, after Wang et al. 2009),
+  SG inner product for the light, A·(lobe integral) for the ambient
+S(n_d)   = S_g · clamp( R(n_d) / max(R(n_g), ε), 0, ρ_max )         S_g = the payload at D_g (plain value), ρ_max = 4 (tune [2, 8])
+roughness fade: below r = 0.2 (tune [0.1, 0.4]) the ratio fades to 1 (L1 has no information at mirror scales)
+```
+
+Fused by default for specular (`resolve: 'fused'`): the denoiser's last pass has n_g, roughness and
+v, and the caller then only needs `guides.detailNormal`. The fade and the λ_l / ρ_max ranges are
+guesses for the bumpy-floor scenario (M7-13).
+
+**M7-11 Helpers for callers who resolve themselves** (`resolve: 'none'`, the diffuse default; review
+item 11):
+
+- WGSL source export `SH_RESOLVE_WGSL` with `shResolveDiffuse(p: SHPayload, nDetail, sharpen, nGuide)`
+  and `shResolveSpecular(p, nDetail, nGuide, view, roughness, opts)`, and `shUnpack(texel)`, so
+  renderers can resolve inside their own material shaders (SD24's "use the SH as a light source for
+  any BSDF" case).
+- `ShResolver` (compute helper: payload texture + detail normal [+ roughness] → rgba16float).
+- TSL: `realtimeShResolve(node, { normal, mode: 'diffuse' | 'specular', sharpen })` in
+  `denoiser/three` (owner of that package decides the shape).
+- Re-jittering for upscalers (native's v4.1 / v4.17 notes) is out of scope: our outputs are at the
+  pixels' sample positions, like the plain filters' (CAPTURE-FORMAT jitter convention).
+
+### 8.5.5 API, resources, cost
+
+**M7-12 API** (additive; no NVIDIA names):
+
+```ts
+new DiffuseDenoiser(device, { filter: 'svgf', payload: 'sh' });        // 'radiance' (default) | 'sh' | 'sh-rgb'
+new SpecularDenoiser(device, { payload: 'sh', resolve: 'fused' });     // resolve: 'none' | 'fused'
+new DiffuseSpecularDenoiser(device, { payload: 'sh' });                // both signals, per-signal resolve option
+// inputs: DiffuseInputs | SpecularInputs gain   sh?: GPUTexture   or   direction?: GPUTexture (with radiance)
+// guides: FrameGuides gains   detailNormal?: GPUTexture
+```
+
+- `payload` is structural (pipelines differ). `payload: 'sh'` without `sh` or `direction` in a frame
+  is an explicit error. Output: the M7-8 payload as rgba32uint (`resolve: 'none'`) or resolved
+  rgba16float (`'fused'`, requires `guides.detailNormal`; without it the resolve uses
+  `guides.normal` and equals the plain filter). Valid until the next dispatch, as today.
+- `filter: 'recurrent'` with `payload: 'sh'`: not supported until §8.5.6 is built (error).
+- `OcclusionDenoiser`: no directional variant (native's directional occlusion is a separate
+  denoiser we don't plan; PLAN §1).
+
+**Memory (estimate, SVGF, per signal; plain values in brackets):** `accum` ping-pong 2 × 16 (2 × 8),
+moments 2 × 8 (same), à-trous ping-pong 2 × 16 (2 × 8), output 16 SH / 8 fused (8) = **96 / 88 B/px**
+(56). With the shared `G` pair + depth slope (20): diffuse alone **116 / 108** (76); diffuse +
+specular **212 / 196** (132), +8 with anti-lag v2 (**220 / 204**; plain 140). The 64-bit à-trous
+packing (M7-3 tune) would save 16 per signal (joint 188 / 172 with anti-lag). `'sh-rgb'`: about +48
+per signal. PLAN §8's 100 B/px is a target for the plain filters; native's SH memory isn't in our
+sources (its README table is off limits), so probe P6 asks the harness for native's reported
+allocation (the integration reports memory usage, nrd-releases v3.4.0).
+
+**Cost (estimate):** every SVGF pass is load-bound; SH doubles the bytes per tap and adds a few ALU
+for l. Diffuse alone ≈ 2.9–3.4 ms (plain 2.11–2.18 on the dev page), joint ≈ 5.4–6.4 ms (plain
+4.00 bench, 4.23 with `'auto'`): **1.35–1.6×**, in line with native's published 1.33× / 1.48×.
+Target: ≤ 1.5× our plain filter on the same bench, and ≤ 2× native `*_SH` on the same GPU (PLAN §8).
+The fused resolve adds ~0.02 ms to the last pass and saves the caller a full-screen pass.
+
+### 8.5.6 What the recurrent filter would need (not specified in detail; review item 12)
+
+- **Buffers:** every rotation buffer becomes 16 B (rgba32uint, ĥ in s0): diffuse 4 × 16 = 64 B/px
+  (32 plain); mip atlases with six channels (the atlas reuses a free rotation buffer, so no extra
+  memory); diffuse SH **≈ 105.5 B/px** (73.5), joint **≈ 169.5** (105.5). `F` (luminance + ĥ) and
+  `data` unchanged.
+- **Catmull-Rom history** (R2, R7) on an unfilterable rgba32uint costs 16 loads; or keep two
+  filterable rgba16float textures per buffer, which pushes R2 to 6 storage textures (needs the
+  adapter's limit of 8, or split dispatches per signal).
+- **Clamps on a function, not a colour:** C-10's luminance clamp already scales every channel by
+  `L_c/L_s`, which keeps the direction; use it for all six. R7's per-channel clamp to the 3×3 of H
+  must become the same luminance-ratio clamp (clamping b's components independently would rotate
+  the direction). The anti-firefly scales all six by the same factor.
+- Virtual motion, radii, ĥ: unchanged (geometry only). The luminance for detectors: M7-5's l.
+- SD24 and ACS25 ship exactly this combination (L1 YCoCg through a recurrent-blur denoiser), so
+  it is known to work; it is not specified further until item 1 keeps recurrent.
+
+### 8.5.7 Test bed, metrics, native comparison
+
+**M7-13 Evaluation.**
+
+- **Scenarios** (test bed): `bumpy` — a normal-mapped floor and wall (procedural bumps with an
+  analytic detail normal; amplitudes of 10–40°) lit by the sphere light, a coloured area light and
+  the sky, slow orbit; **coloured bounce** — a red and a green wall next to the bumpy floor (YCoCg
+  vs RGB, item 10); the seven existing paths in SH mode with `normal_geom = normal` (the
+  **regression**: resolved at the guide normal, SH must score within 0.05 dB of the plain filter
+  pooled, since M7-2 and M7-5 make them equal in expectation; any larger gap is a bug or f16 loss).
+- **References:** (1) `diffuse_sh_ref` resolved **the same way** as the output (same normal, same
+  guard and sharpening): measures the denoising error alone; (2) `diffuse_ref` rendered with rays
+  around the detail normal (the plain converged signal at n_d): measures the total error, L1
+  truncation included. Reference (2) is the one where SH must beat plain radiance on `bumpy`.
+- **Contenders on `bumpy`:** plain SVGF with `guides.normal` = detail normal; plain SVGF with the
+  smooth normal; SH SVGF (smooth normal + resolve at n_d) with s = 0 and s = 0.5; `accumulate-32`;
+  OIDN 2 (E-2 route).
+- **Metrics:** pooled PSNR of the resolved rgb vs (1) and (2); FLIP; flicker and boil; **detail
+  band** in the bump mask (pixels with angle(n_d, n_g) > 5°): the band `x − G_2px(x)` (Gaussian
+  σ = 2 px) of output and reference, its pooled PSNR and the energy ratio
+  `Σ band_out² / Σ band_ref²` (1 = detail kept, < 1 = bumps smoothed away, > 1 = noise); **ringing**:
+  the fraction of pixels where the guard trimmed b and where Y(n_d) hit the max(0, ·) floor.
+- **Expected outcome** (to falsify): on `bumpy`, SH beats both plain variants on reference (2) and
+  on the detail band (plain with the smooth normal: energy ratio well below 1; plain with the
+  detail normal: above 1 and lower PSNR from rejected neighbours).
+- **Native:** `REBLUR_DIFFUSE_SH` / `RELAX_DIFFUSE_SH` (and `_SPECULAR_SH` once M7-10 is built) on
+  the same captures. (a) After native's colour extraction (`NRD_SG_ExtractColor`, nrd-provenance
+  §3.4) vs our payload resolved at the **guide** normal, both against `diffuse_ref` (the PLAN §6
+  comparison: a plain-equivalent image); (b) native's own diffuse resolve with the detail normal vs
+  ours at n_d, against reference (2), on `bumpy` only. Probe P6 (TASKS).
+
+**M7-14 Order of work** is in §11.
 
 ---
 
@@ -1562,6 +2090,12 @@ No design yet; it waits until the recurrent diffuse/specular defaults settle (re
   The recurrent radiance outputs keep the denoised ĥ in alpha, diffuse and specular (a preview,
   §8.1). `ShadowDenoiser` returns r32float visibility, valid until the next dispatch. API
   questions are review item 8.
+- **v0.3 (specified, not built):** `payload: 'sh' | 'sh-rgb'` and `resolve: 'none' | 'fused'` on the
+  diffuse / specular classes, `sh?` / `direction?` inputs, `FrameGuides.detailNormal?`, resolve
+  helpers (`SH_RESOLVE_WGSL`, `ShResolver`, a TSL node) (§8.5.5, M7-11/12);
+  `ShadowDenoiser({ translucency: true })` with `ShadowInputs.translucency?` /
+  `translucencyHitDistance?` and an rgba16float `(v̂·τ̂ rgb, v̂)` output (§7.10.3, M8-8). Review items
+  10–14.
 
 ---
 
@@ -1634,6 +2168,9 @@ PLAN §8: diffuse + specular ≤ 4 ms and ≤ 100 B/px on the M5 Pro at 1080p; s
 | occlusion AO: recurrent / SVGF / A-SVGF `auto` (v1) | 7 / 7 / 13 | 1.32 / 1.37 / 2.16 (fastest clock) | 57.5 / 84 / 92 | no PLAN target |
 | occlusion AO + SO joint: recurrent / SVGF / A-SVGF `auto` (v2) | 7 / 8 / 14 | 2.62 / 2.89 / 3.10 test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 8-frame replay min: 2.39 / 2.99 / 5.27) | 73.5 / 148 / 156 | no PLAN target |
 | shadows (v2) | 4 | **0.48–0.59** fastest of 4 runs (`thin` 0.59); FFX 0.50–0.61 | 40 (+12 B per tile) | at target |
+| shadows v2.2 (results/M4.md §12.6; §7 not yet rewritten for it) | 5 | 0.55–0.72 fastest run (`thin` 0.72) | 48 (+16 B per tile) | `thin` over 0.6 |
+| _estimate, not built:_ SVGF diffuse SH (M7, §8.5.5) alone / + specular SH | 8 / 8 | ≈ 2.9–3.4 / ≈ 5.4–6.4 | 116 / 212 (fused output: 108 / 196; +8 with anti-lag v2) | SH target: ≤ 1.5× plain, ≤ 2× native `*_SH` |
+| _estimate, not built:_ translucent shadows (M8, §7.10.3) | 5 | ≈ 0.70–0.95 on glass paths, ≈ +0.1 elsewhere | ≈ 80 | ≤ 2× native translucency |
 
 The M5 Pro runs solo benches in two clock states (every pass ×1.3–1.8 in the slow one): M4 and M5
 report the fastest run, M1 §12 the median of an uncontended round, M2-M3 the minimum of 400
@@ -1660,7 +2197,7 @@ Levers, measured (TASKS, M2-M3 §4, M1 §12, M4 §10.4, M5 §5):
 
 ---
 
-## 11. What's next for implementers (v0.2)
+## 11. What's next for implementers (v0.2; M7 / M8 added in v0.3)
 
 1. **Native replays** of the blue-noise test-bed captures (Windows), for the PLAN §8 quality
    target and review item 1; then NATIVE-HARNESS phase 5 (our WGSL on the RTX machine) for
@@ -1673,6 +2210,38 @@ Levers, measured (TASKS, M2-M3 §4, M1 §12, M4 §10.4, M5 §5):
    1080p; the hybrid default with anti-lag v2.
 5. If recurrent stays in play: half-res fast history (memory, item 4), and the untried
    variance-guided luminance weight / short-history wide mode for r ≥ 0.35 (TASKS).
+
+**v0.3: M7 and M8, in order** (after items 1–2 above are decided, or against the recommendations;
+each step ends with numbers):
+
+_M7 (SH/SG, §8.5)_
+1. **Captures and test bed** (capture owner + test-bed owner): CAPTURE-FORMAT v1 buffers
+   `diffuse_dir`, `specular_dir`, `normal_geom`, `diffuse_sh_ref`, `specular_sh_ref` (M7-4); the
+   `bumpy` and coloured-bounce scenes, the detail-band and ringing metrics (M7-13).
+2. **SVGF diffuse SH, raw-form input** (encode on load, M7-2/M7-3/M7-5–M7-8), registry ids
+   `svgf-sh` / `svgf-sh-auto`. Gate: the 7-path regression (SH resolved at the guide normal within
+   0.05 dB of plain SVGF, pooled).
+3. **Resolve**: `SH_RESOLVE_WGSL`, `ShResolver`, `resolve: 'fused'` (M7-9, M7-11). Then the `bumpy`
+   table against both references, and the cost / memory rows vs the §10.3 estimates.
+4. **Tune on captures:** encoding (M7-2), guard k, sharpening s, `'sh-rgb'` on the coloured-bounce
+   scene (item 10), 64-bit à-trous packing (M7-3).
+5. **Specular SH** with the fused ratio-SG resolve and roughness fade (M7-10); the glossy bumpy
+   floor.
+6. **Native replays** of the SH captures (probe P6).
+7. Recurrent SH (§8.5.6) only if item 12 / item 1 keep recurrent.
+
+_M8 (translucent shadows, §7.10)_
+1. **Captures and test bed**: CAPTURE-FORMAT v1 `transmittance`, `translucent_dist`,
+   `shadow_rgb_ref`; the test bed's shadow ray made multiplicative through translucent layers with
+   the early out (M8-1); scenes `glass`, `glass-moving`, `glass-still` (M8-10).
+2. **`ShadowDenoiser({ translucency: true })`**: τ history and conditional accumulation (M8-2,
+   M8-4), g from h_τ (M8-3), tile bits (M8-5), visibility-weighted spatial (M8-6), widened
+   stabilization (M8-7), the storage-limit path (M8-9). Gate: with T ≡ 1, v output bit-identical
+   to v2.2.
+3. **Measure** (M8-10 metrics, dynamic region and boil on `glass-moving` / `glass-still`) and the
+   cost / memory rows; tune N_τ, ε_τ, the τ window.
+4. **Native replay** (probe P7).
+5. Real-scene glass capture (`examples/three-temporal`) once the analytic numbers hold.
 
 ---
 
@@ -1805,7 +2374,54 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 9. **Listing policy** (v0 item 1, unchanged). We don't use formulas from RTG II ch. 49's numbered
    listings even though `sources/reblur.md` transcribed them; we do use GTC 2020 **slide**
    formulas (radius 1/(1+A), history-fix start level). Every recurrent pass now exists without
-   the listings. Recommendation: keep.
+   the listings. **Decided 2026-10-25 (Dennis): keep, by caution, even if our filter underperforms
+   the chapter.** The book and its listings are CC BY-NC-ND 4.0; the MIT GitHub repo has no ch. 49
+   code; RULES §2 records the details.
+
+**v0.3 items (appended; M7 / M8 are specified, not built, so these are design calls, not yet
+measured):**
+
+10. **M7 colour payload: YCoCg with chroma as L0 (6 channels) or RGB L1 (12).**
+    - *Evidence.* The shipped recipes use 6 channels (SD24 p.30, ACS25 s.57); 6 fit one rgba32uint
+      per buffer (M7-3), 12 need two, ≈ +48 B/px per signal and more load-bound time. 6 channels
+      lose coloured directionality (a bump facing a coloured wall keeps the pixel's average hue).
+    - *Options.* (a) 6 by default, `'sh-rgb'` opt-in. (b) 12 by default. (c) 6 only.
+    - *Recommendation:* (a); flip only if the coloured-bounce scene shows a visible hue error in
+      the detail band that `'sh-rgb'` removes.
+
+11. **M7 resolve location.**
+    - *Evidence.* A caller resolve keeps the payload for other uses (SH as a light source for any
+      BSDF, SD24 p.37; rough-specular reuse, SD24 p.55, ACS25 s.65) but costs a full-screen pass and
+      16 B of output; a fused resolve saves both and needs only the detail normal. Specular's ratio
+      resolve needs roughness, view and the guide normal, which the denoiser has.
+    - *Options.* (a) Diffuse `resolve: 'none'` by default, specular `'fused'`. (b) `'fused'` for
+      both. (c) `'none'` for both.
+    - *Recommendation:* (a), both modes available on both signals.
+
+12. **M7 scope: which filter.**
+    - *Evidence.* Item 1 recommends SVGF for diffuse and specular; recurrent SH needs larger buffers,
+      a luminance-ratio stabilization clamp and either 16-load Catmull-Rom or a higher storage
+      limit (§8.5.6). The shipped SH recipes run on recurrent-blur denoisers, so it is known to work.
+    - *Options.* (a) SVGF only, recurrent SH later if item 1 keeps recurrent. (b) Both now.
+    - *Recommendation:* (a).
+
+13. **M8 output.**
+    - *Evidence.* The shader needs `v̂·τ̂` (rgb); opaque-only consumers and the regression need v̂.
+      One rgba16float carries both (8 B); separate τ̂ and v̂ would let a caller recombine but invite
+      the biased product of plain means (M8-2).
+    - *Options.* (a) rgba16float `(v̂·τ̂ rgb, v̂)`. (b) two outputs, v̂ (r32float) and τ̂ (rgba16float).
+    - *Recommendation:* (a).
+
+14. **M8 storage limit** (M8-9).
+    - *Evidence.* The temporal pass needs a fifth storage texture for the τ history. Our examples
+      already request min(8, adapter); the WebGPU default is 4. Packing v's and τ's histories into
+      one rgba32uint works at 4 but loses hardware filtering for v's Catmull-Rom history (16 loads,
+      or bilinear at −0.65 dB on `orbit`, M4 §3).
+    - *Options.* (a) Use the fifth texture when the device has it, the packed history otherwise
+      (two pipeline variants). (b) Require ≥ 5 for `translucency: true` (explicit error otherwise).
+      (c) Packed history always.
+    - *Recommendation:* (a), after measuring the packed path's cost; (b) if that cost is high and
+      no target device lacks the limit.
 
 Lower priority, kept from v0.1: **pre-blur strength** (recurrent diffuse 25 px, +0.10 dB over
 15; the bias is permanent near contacts, limited by D1b). It matters only if item 1 keeps
@@ -1854,7 +2470,17 @@ the per-frame mean and the 60 dB-capped mean kept for continuity. FLIP (perceptu
 temporal PSNR (stability), bias and energy (darkening and brightening), and region breakdowns
 (penumbra, disoccluded, after-cut, roughness bins, contact) are reported next to it. A filter that
 wins pooled PSNR but loses FLIP or flicker is a judgement call, not a win.
+For shadows two more (results/M4.md §12): a **dynamic region** (pixels whose reference range over
+frames t−4..t exceeds 0.05, carried along the reprojected history) with its own pooled PSNR, flicker and
+temporal PSNR next to the static rest and the static penumbra; and **boil**, the RMS of the output's own
+second temporal difference / √6, reported with the reference's own boil as its floor. Flicker and
+temporal PSNR measure the change of the error, which includes the reference's frame-to-frame noise; on
+slowly moving soft shadows that noise is as large as a good output's change and hid visible boiling.
+Boil doesn't see the reference, but it also rewards a frozen output: read it with PSNR.
 
 **Scenes.** The analytic test bed is where defaults were tuned, so it can't be the only judge. The
 real three.js scene's moving-camera captures (`three-orbit`, `three-pan`) are the second scoring
-scene (§12 item 7). A default stands only if both scenes, and later the native replay, agree.
+scene (§12 item 7). Moving occluders over static receivers (no motion vector follows the shadow) have their own
+captures: the rotating torus knot (`three-knot-static`, `three-knot-orbit`, and the frozen-knot control
+`three-knot-still`; examples/three-temporal/CAPTURES.md), scored with the dynamic region and boil; the
+test bed's `object` and `light` paths cover the same case analytically. A default stands only if both scenes, and later the native replay, agree.

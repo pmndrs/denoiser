@@ -63,6 +63,9 @@ type Kind = 'diffuse' | 'specular';
 
 function resolve(o: Partial<SpecularSvgfOptions> | Partial<RecurrentOptions>): Resolved {
   const { filter, ...rest } = o as { filter?: string };
+  if (filter === 'recurrent' && (rest as { payload?: string }).payload && (rest as { payload?: string }).payload !== 'radiance') {
+    throw new Error(`denoiser-realtime: payload '${(rest as { payload?: string }).payload}' needs filter 'svgf' (recurrent SH is not built, SPEC §8.5.6)`);
+  }
   if (filter === 'recurrent') return { filter, o: resolveRecurrent(rest as Partial<RecurrentOptions>) };
   if (filter && filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${filter}'`);
   return { filter: 'svgf', o: resolveOptions(rest as SpecularSvgfOptions) };
@@ -80,6 +83,8 @@ interface InputFrame {
   hitDistance?: GPUTexture;
   demodulation?: GPUTexture;
   gradient?: GPUTexture;
+  direction?: GPUTexture;
+  sh?: GPUTexture;
 }
 
 /** One pipeline (one filter, one or two signals) behind a common surface. */
@@ -114,7 +119,8 @@ function makePipe(device: GPUDevice, signals: { kind: Kind; r: Resolved }[], lab
     passes: 2 + o.atrousIterations + (o.antiLag !== 'off' ? 2 + o.gradientIterations : 0),
     get outputs() { return p.outputs; },
     configure: (w, h) => p.configure(w, h),
-    encode: (enc, timer, gp, frames, guides, _camera, prefix) => p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, prefix),
+    encode: (enc, timer, gp, frames, guides, _camera, prefix) => p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, prefix,
+      { normal: guides.normal, detailNormal: guides.detailNormal }),
     endFrame: () => p.endFrame(),
     debugTexture: (n) => p.debugTexture(n as 'accum' | 'gradient'),
     dispose: () => p.dispose(),
@@ -166,9 +172,10 @@ export class DiffuseDenoiser implements TemporalDenoiser<RealtimeDiffuseInputs> 
   dispatch(inputs: RealtimeDiffuseInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     const frame: InputFrame = {
       radiance: inputs.radiance, hitDistance: inputs.hitDistance, demodulation: inputs.demodulation ?? guides.albedo, gradient: inputs.gradient,
+      direction: inputs.direction, sh: inputs.sh,
     };
     this.s.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance],
-      ['albedo', guides.albedo], ['demodulation', inputs.demodulation]], (enc, timer, gp) => {
+      ['albedo', guides.albedo], ['demodulation', inputs.demodulation], ['direction', inputs.direction], ['sh', inputs.sh]], (enc, timer, gp) => {
       this.s.pipe.encode(enc, timer, gp, [frame], guides, camera, '');
     });
     this.s.pipe.endFrame();
@@ -218,8 +225,12 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
 
   dispatch(inputs: RealtimeSpecularInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     if (!guides.roughness) throw new Error(`${this.name}: guides.roughness is required`);
-    const frame: InputFrame = { radiance: inputs.radiance, hitDistance: inputs.hitDistance, demodulation: inputs.demodulation, gradient: inputs.gradient };
-    this.s.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance], ['demodulation', inputs.demodulation]], (enc, timer, gp) => {
+    const frame: InputFrame = {
+      radiance: inputs.radiance, hitDistance: inputs.hitDistance, demodulation: inputs.demodulation, gradient: inputs.gradient,
+      direction: inputs.direction, sh: inputs.sh,
+    };
+    this.s.base.run(this.name, guides, camera, [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance], ['demodulation', inputs.demodulation],
+      ['direction', inputs.direction], ['sh', inputs.sh]], (enc, timer, gp) => {
       this.s.pipe.encode(enc, timer, gp, [frame], guides, camera, '');
     });
     this.s.pipe.endFrame();
@@ -297,12 +308,17 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
   dispatchBoth(inputs: RealtimeDiffuseSpecularInputs, guides: FrameGuides, camera: FrameCamera): DiffuseSpecularOutputs {
     if (!guides.roughness) throw new Error(`${this.name}: guides.roughness is required`);
     const { diffuse: di, specular: si } = inputs;
-    const fd: InputFrame = { radiance: di.radiance, hitDistance: di.hitDistance, demodulation: di.demodulation ?? guides.albedo, gradient: di.gradient };
-    const fs: InputFrame = { radiance: si.radiance, hitDistance: si.hitDistance, demodulation: si.demodulation, gradient: si.gradient };
+    const fd: InputFrame = {
+      radiance: di.radiance, hitDistance: di.hitDistance, demodulation: di.demodulation ?? guides.albedo, gradient: di.gradient, direction: di.direction, sh: di.sh,
+    };
+    const fs: InputFrame = {
+      radiance: si.radiance, hitDistance: si.hitDistance, demodulation: si.demodulation, gradient: si.gradient, direction: si.direction, sh: si.sh,
+    };
     this.base.run(this.name, guides, camera, [
       ['diffuse.radiance', di.radiance], ['diffuse.hitDistance', di.hitDistance], ['specular.radiance', si.radiance],
       ['specular.hitDistance', si.hitDistance], ['albedo', guides.albedo], ['diffuse.demodulation', di.demodulation],
-      ['specular.demodulation', si.demodulation],
+      ['specular.demodulation', si.demodulation], ['diffuse.direction', di.direction], ['specular.direction', si.direction],
+      ['diffuse.sh', di.sh], ['specular.sh', si.sh],
     ], (enc, timer, gp) => {
       if (this.pipes.length === 1) {
         this.pipes[0].encode(enc, timer, gp, [fd, fs], guides, camera, '');
@@ -368,7 +384,7 @@ class Base {
     if (!this.configured) throw new Error(`${who}: call configure() before dispatch()`);
     checkSize(who, this.width, this.height, [
       ['depth', guides.depth], ['normal', guides.normal], ['motion', guides.motion],
-      ['viewZ', guides.viewZ], ['motionZ', guides.motionZ], ['roughness', guides.roughness], ...extra,
+      ['viewZ', guides.viewZ], ['motionZ', guides.motionZ], ['roughness', guides.roughness], ['detailNormal', guides.detailNormal], ...extra,
     ]);
     const enc = this.device.createCommandEncoder({ label: who });
     this.timer?.begin();

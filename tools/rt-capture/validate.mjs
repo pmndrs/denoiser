@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Validate a capture against CAPTURE-FORMAT v0: manifest vs files and sizes, finiteness,
+// Validate a capture against CAPTURE-FORMAT v0 / v1: manifest vs files and sizes, finiteness,
 // ranges and conventions, and reprojection consistency (the guard against sign / flip /
 // unit mistakes on both sides):
 //   - depth <-> viewz through the projection
@@ -8,13 +8,18 @@
 //   - prevView/prevProjection == previous frame's view/projection
 //   - history consistency: following `motion` back into the previous frame's viewz lands
 //     on the expected previous view z (works for dynamic scenes too, given motion_z)
+//   v1 (when the buffers are present): normal_geom unit and facing the camera; diffuse_dir /
+//     specular_dir unit, diffuse_dir in the hemisphere of `normal`; transmittance in [0, 1] and 1 where
+//     visibility = 0; shadow_rgb_ref <= visibility_ref per channel; *_sh_ref exact at the sampling
+//     normal (CAPTURE-FORMAT v1: a + b.n_s = YCoCg-Y of *_ref, Co / Cg equal, for test-bed references
+//     made from the same samples; n_s = normal for diffuse, the R-2 dominant direction for specular)
 //
 //   node tools/rt-capture/validate.mjs <capture name | dir> [--json out.json] [--stride N] [--quiet]
 // Exit code 1 if any check fails.
 import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  BUFFER_CHANNELS, frameDir, invert, isScored, mul, ndcToPixels, project, readBuffer, readManifest, resolveCapture, sampleNdc, xform,
+  BUFFER_CHANNELS, V1_BUFFERS, frameDir, invert, isScored, mul, ndcToPixels, project, readBuffer, readManifest, resolveCapture, sampleNdc, xform,
 } from './lib/capture.mjs';
 
 const args = process.argv.slice(2);
@@ -34,7 +39,7 @@ const check = (name, ok, detail, level = 'error') => {
 const m = readManifest(dir);
 const W = m.width, H = m.height, N = W * H;
 const STRIDE = Number(opt('stride', Math.max(1, Math.floor(Math.sqrt(N / 65536)))));
-if (m.version !== 0) err(`version is ${m.version}, expected 0`);
+if (m.version !== 0 && m.version !== 1) err(`version is ${m.version}, expected 0 or 1`);
 if (!Number.isInteger(W) || !Number.isInteger(H) || W <= 0 || H <= 0) err(`bad size ${W}x${H}`);
 if (!Array.isArray(m.buffers) || !m.buffers.length) err('no buffers listed');
 if (!Array.isArray(m.frames) || !m.frames.length) err('no frames');
@@ -44,6 +49,13 @@ for (const [name, ch] of bufs) {
   else if (BUFFER_CHANNELS[name] !== ch) err(`buffer ${name}: ${ch} channels, v0 says ${BUFFER_CHANNELS[name]}`);
 }
 for (const req of ['depth', 'viewz', 'normal', 'motion']) if (!bufs.has(req)) err(`required guide "${req}" missing`);
+const v1Bufs = [...bufs.keys()].filter((b) => V1_BUFFERS.includes(b));
+if (v1Bufs.length && m.version !== 1) warn(`v1 buffers [${v1Bufs}] in a version ${m.version} manifest (v1 captures say version 1)`);
+if (!v1Bufs.length && m.version === 1) warn('version 1 but no v1 buffers');
+for (const [b, needs] of [['diffuse_dir', 'diffuse'], ['specular_dir', 'specular'], ['transmittance', 'visibility'], ['translucent_dist', 'transmittance'],
+  ['diffuse_sh_ref', 'diffuse_ref'], ['specular_sh_ref', 'specular_ref'], ['shadow_rgb_ref', 'transmittance']]) {
+  if (bufs.has(b) && !bufs.has(needs)) warn(`${b} without ${needs}`);
+}
 for (const s of ['diffuse', 'specular', 'visibility']) if (bufs.has(s) && !bufs.has(`${s}_ref`)) warn(`${s} has no ${s}_ref: cannot be scored`);
 if (bufs.has('visibility')) {
   const sh = (m.lights ?? []).filter((l) => l.shadow);
@@ -94,7 +106,14 @@ const RANGE = {
   depth: [0, 1], roughness: [0, 1], albedo: [0, 1], f0: [0, 1], visibility: [0, 1], visibility_ref: [0, 1],
   diffuse: [0, Infinity], specular: [0, Infinity], diffuse_ref: [0, Infinity], specular_ref: [0, Infinity],
   diffuse_hitt: [0, Infinity], specular_hitt: [0, Infinity], occluder_dist: [0, Infinity],
+  transmittance: [0, 1], translucent_dist: [0, Infinity], shadow_rgb_ref: [0, 1],
 };
+// v1 accumulators
+const v1 = {
+  geomNotUnit: 0, geomBackfacing: 0, geomTested: 0, geomEqualsNormal: 0, dirNotUnit: {}, diffDirBelow: 0, dirTested: 0,
+  transNotOneWhereBlocked: 0, blocked: 0, rgbAboveVis: 0, rgbTested: 0, sh: {},
+};
+const ycocg = (r, g, b) => [0.25 * r + 0.5 * g + 0.25 * b, 0.5 * r - 0.5 * b, -0.25 * r + 0.5 * g - 0.25 * b];
 const hasMZ = bufs.has('motion_z');
 let prev = null;
 
@@ -144,6 +163,29 @@ for (let f = 0; f < m.frames.length; f++) {
     if (vz < -cam.far * 1.0001) acc.viewzBeyondFar++;
     const n = [B.normal[3 * i], B.normal[3 * i + 1], B.normal[3 * i + 2]];
     if (Math.abs(Math.hypot(...n) - 1) > 1e-2) acc.normalNotUnit++;
+    // v1 per-pixel checks (every scored pixel)
+    if (B.normal_geom) {
+      const ng = [B.normal_geom[3 * i], B.normal_geom[3 * i + 1], B.normal_geom[3 * i + 2]];
+      v1.geomTested++;
+      if (Math.abs(Math.hypot(...ng) - 1) > 1e-2) v1.geomNotUnit++;
+      if (ng[0] === n[0] && ng[1] === n[1] && ng[2] === n[2]) v1.geomEqualsNormal++;
+    }
+    for (const b of ['diffuse_dir', 'specular_dir']) {
+      if (!B[b]) continue;
+      if (Math.abs(Math.hypot(B[b][3 * i], B[b][3 * i + 1], B[b][3 * i + 2]) - 1) > 1e-2) v1.dirNotUnit[b] = (v1.dirNotUnit[b] ?? 0) + 1;
+    }
+    if (B.diffuse_dir) {
+      v1.dirTested++;
+      if (B.diffuse_dir[3 * i] * n[0] + B.diffuse_dir[3 * i + 1] * n[1] + B.diffuse_dir[3 * i + 2] * n[2] < -1e-3) v1.diffDirBelow++;
+    }
+    if (B.transmittance && B.visibility && B.visibility[i] === 0) {
+      v1.blocked++;
+      if (B.transmittance[3 * i] !== 1 || B.transmittance[3 * i + 1] !== 1 || B.transmittance[3 * i + 2] !== 1) v1.transNotOneWhereBlocked++;
+    }
+    if (B.shadow_rgb_ref && B.visibility_ref) {
+      v1.rgbTested++;
+      for (let c = 0; c < 3; c++) if (B.shadow_rgb_ref[3 * i + c] > B.visibility_ref[i] + 1e-4) { v1.rgbAboveVis++; break; }
+    }
     if ((px % STRIDE) || (py % STRIDE)) continue;
     const [nx, ny] = sampleNdc(px, py, W, H, jit);
     const P = project(ivp, nx, ny, d);
@@ -153,6 +195,32 @@ for (let f = 0; f < m.frames.length; f++) {
     if (rel > acc.depthViewzRelErrMax) acc.depthViewzRelErrMax = rel;
     // normal faces the camera
     if (n[0] * (eye[0] - P[0]) + n[1] * (eye[1] - P[1]) + n[2] * (eye[2] - P[2]) <= 0) acc.normalBackfacing++;
+    if (B.normal_geom && B.normal_geom[3 * i] * (eye[0] - P[0]) + B.normal_geom[3 * i + 1] * (eye[1] - P[1]) + B.normal_geom[3 * i + 2] * (eye[2] - P[2]) <= 0) v1.geomBackfacing++;
+    // v1: SH references exact at the sampling normal (same samples as *_ref)
+    for (const [shName, refName] of [['diffuse_sh_ref', 'diffuse_ref'], ['specular_sh_ref', 'specular_ref']]) {
+      if (!B[shName] || !B[refName]) continue;
+      let ns = n;
+      if (shName === 'specular_sh_ref') {
+        // R-2 dominant direction from the shading normal, GGX alpha = r^2
+        const vl = Math.hypot(eye[0] - P[0], eye[1] - P[1], eye[2] - P[2]);
+        const v = [(eye[0] - P[0]) / vl, (eye[1] - P[1]) / vl, (eye[2] - P[2]) / vl];
+        const a = (B.roughness?.[i] ?? 1) ** 2, F = (1 - a) * (Math.sqrt(1 - a) + a);
+        const nv = n[0] * v[0] + n[1] * v[1] + n[2] * v[2];
+        const r = [2 * nv * n[0] - v[0], 2 * nv * n[1] - v[1], 2 * nv * n[2] - v[2]];
+        const d = [0, 1, 2].map((k) => n[k] + (r[k] - n[k]) * F);
+        const dl = Math.hypot(...d);
+        ns = d.map((x) => x / dl);
+      }
+      const p6 = B[shName].subarray(6 * i, 6 * i + 6);
+      const y = p6[0] + p6[1] * ns[0] + p6[2] * ns[1] + p6[3] * ns[2];
+      const ref = ycocg(B[refName][3 * i], B[refName][3 * i + 1], B[refName][3 * i + 2]);
+      const tol = (x) => 2e-3 * Math.max(Math.abs(x), 0.01);
+      const st = (v1.sh[shName] ??= { tested: 0, bad: 0, maxRelErr: 0 });
+      st.tested++;
+      const e = Math.max(Math.abs(y - ref[0]) / tol(ref[0]), Math.abs(p6[4] - ref[1]) / tol(ref[0]), Math.abs(p6[5] - ref[2]) / tol(ref[0]));
+      if (e > 1) st.bad++;
+      st.maxRelErr = Math.max(st.maxRelErr, Math.abs(y - ref[0]) / Math.max(Math.abs(ref[0]), 1e-6));
+    }
     // motion vs reprojection (static scene)
     const q = project(pvp, P[0], P[1], P[2]);
     const [ex, ey] = ndcToPixels(B.motion[2 * i] - (nx - q[0]), B.motion[2 * i + 1] - (ny - q[1]), W, H);
@@ -217,6 +285,19 @@ if (acc.hist.tested) {
   if (hf < 0.5) check('historyConsistency', false, det);
   else check('historyConsistency', hf >= 0.9, det, 'warn');
 }
+// ---- v1 verdicts
+if (bufs.has('normal_geom')) {
+  check('normalGeomUnit', v1.geomNotUnit <= 0.001 * v1.geomTested, { notUnit: v1.geomNotUnit, equalsNormal: r4(v1.geomEqualsNormal / Math.max(v1.geomTested, 1)) });
+  check('normalGeomFacesCamera', v1.geomBackfacing <= 0.01 * acc.motionErrPx.length, { backfacing: v1.geomBackfacing, tested: acc.motionErrPx.length });
+}
+if (bufs.has('diffuse_dir') || bufs.has('specular_dir')) {
+  const bad = Object.values(v1.dirNotUnit).reduce((a, b) => a + b, 0);
+  check('directionsUnit', bad <= 0.001 * acc.scored, { notUnit: v1.dirNotUnit });
+  if (bufs.has('diffuse_dir')) check('diffuseDirAboveNormal', v1.diffDirBelow <= 0.001 * v1.dirTested, { below: v1.diffDirBelow, tested: v1.dirTested });
+}
+if (bufs.has('transmittance') && bufs.has('visibility')) check('transmittanceOneWhereBlocked', !v1.transNotOneWhereBlocked, { violations: v1.transNotOneWhereBlocked, blocked: v1.blocked }, 'warn');
+if (bufs.has('shadow_rgb_ref') && bufs.has('visibility_ref')) check('shadowRgbRefBelowVisibilityRef', v1.rgbAboveVis <= 0.001 * v1.rgbTested, { violations: v1.rgbAboveVis, tested: v1.rgbTested }, 'warn');
+for (const [k, st] of Object.entries(v1.sh)) check(`${k.replace('_ref', '')}ExactAtSamplingNormal`, st.bad <= 0.01 * st.tested, { ...st, maxRelErr: r4(st.maxRelErr) }, 'warn');
 report.stats = { width: W, height: H, frames: m.frames.length, stride: STRIDE, scoredPixels: acc.scored, skyPixels: acc.sky };
 finish();
 
