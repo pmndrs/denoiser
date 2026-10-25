@@ -623,13 +623,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       — orchestrator, owner: unassigned
 - [x] spec-m7-m8 (spec author, 280cf3a) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
       (§7.10), §0.1 / §11 / §12 touch-ups, PROVENANCE "spec only, not built" rows.
-- [~] testbed-v1 (c0e3876, 6821c69, 8911a08) **CAPTURE-FORMAT v1 buffers for M7 / M8** (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
+- [x] testbed-v1 (c0e3876, 6821c69, 8911a08, f426142, 208b40a) **CAPTURE-FORMAT v1 buffers for M7 / M8** (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
       sampled ray), `normal_geom` (smooth normal for the filter; `normal` stays the shading normal), `diffuse_sh_ref`,
       `specular_sh_ref` (6 ch, mean of the M7-2 payloads); `transmittance` (rgb T of the shadow ray), `translucent_dist`,
       `shadow_rgb_ref` (mean of v·T). Test-bed scenes `bumpy`, coloured bounce, `glass`, `glass-moving`, `glass-still`
       (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner. _Format, replay/validate/compare, test-bed
-      signals, scenes and metrics done (bit-identical on the 7 old paths and on v0 replays); open: the standard v1 capture
-      subset (CAPTURES.md). Usage notes below._
+      signals, scenes and metrics done (bit-identical on the 7 old paths and on v0 replays); v1 capture set
+      `--set=v1` (v1-bumpy, v1-bounce, v1-glass, v1-glass-moving, v1-glass-still; 8.63 GB, validated; baselines in
+      CAPTURES.md "v1 captures"). Usage notes below._
 - [x] (testbed-v1) **How to feed and score M7 / M8 (usage notes)**. Signals `sh-diffuse`, `sh-specular`, `shadow-rgb`
       (test bed `signal=`, also `v1` = all three, `all,v1` = six). Paths `bumpy`, `bounce` (scene build 'bumpy') and `glass`,
       `glass-moving`, `glass-still` ('glass'); on the 7 old paths the v1 signals run too (`normal_geom` = `normal`: the SPEC
@@ -645,6 +646,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       same (`--sh-k`, `--sh-s`). The test bed's specular payload uses β = 2 / (1 + 2 max(c, 0)) so c < 0 stays exact and
       bounded (CAPTURE-FORMAT v1). Example: `mode=eval&path=bumpy&signal=sh-diffuse&denoiser=svgf-plain,svgf-plain-smooth`
       (8 frames: plain detail-normal band energy 1.76, smooth-normal 0.15). — testbed-v1
+- [ ] SH ringing, guard half (SPEC M7-13 "fraction of pixels where the guard trimmed b"): the scorers report only the
+      floor half (output exactly 0) and, for the resolved reference, `refGuardFrac`; the output's guard fraction needs the
+      payload. Proposal: an optional `ReplayDenoiser.payloads?()` returning the M7-8 payload texture (rgba32uint, 8 × f16)
+      that the test bed / replay then reads. — found by testbed-v1, owner `examples/realtime-denoiser` + `tools/rt-capture`
+      (on request of m7-sh)
+- [ ] Specular SH payload for c = D_s·ω < 0: the test bed's `specular_sh_ref` keeps β = 2 there (exact and bounded,
+      CAPTURE-FORMAT v1); SPEC M7-2 only defines c ≥ 0. If the denoiser's encode-on-load does something else for c < 0,
+      align one of the two (only matters for comparing against `specular_sh_ref`). — found by testbed-v1, owner m7-sh / spec-author
 - [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
       (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
       T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
