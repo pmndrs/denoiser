@@ -353,11 +353,11 @@ const out = shadows.dispatch(
   samples (golden-ratio animation for a scalar, R2 for 2-D samples). The temporal clamp relies
   on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
-  [1], `clampSigma` [0.4], `clampFloor` [0.05], `antiLag` [64], `antiLagHistory` [0],
+  [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLag` [64], `antiLagHistory` [0],
   `uniformSnap` [true], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
-  `youngSpan` [1], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
+  `youngFrames` [8], `youngTaper` [0.25], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
   [16 px @1080p], `geometryTolerance` [0.02], `normalAngle` [30°], `normalWeight` [true],
   `pass1Phase` [0.382], `spatialPasses` [2], `tileSkip` [true], `anisotropy` [false],
   `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` also takes
@@ -384,11 +384,13 @@ visibility, **pooled** (PSNR of the mean squared error over all frames and pixel
 |---|---|---|---|---|---|---|
 | FFX shadows (`denoiser/ffx`) | 31.20 | 23.50 | 32.91 | 0.038 | 0.0053 | 0.50–0.61 |
 | `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
-| **`ShadowDenoiser` (defaults)** | **37.11** | **28.57** | **34.68** | **0.018** | **0.0033** | **0.48–0.59** |
+| `ShadowDenoiser` v2 | 37.11 | 28.57 | 34.68 | 0.018 | 0.0033 | 0.48–0.59 |
+| **`ShadowDenoiser` (defaults, v2.1)** | **38.12** | **29.05** | **+0.65 vs v2** | **0.013** | **−18 % vs v2** | **0.58–0.69** |
 
-Ahead of FFX on every path (+4.9 … +8.9 dB pooled). In disoccluded regions it is ahead on
-average, and level with FFX on `pan` and `cut` (within 0.12 dB). On 16-frame replays that start
-at a camera reset FFX is still 0.2–0.5 dB ahead for the first 3 frames of `std1080-orbit`. GPU
+Ahead of FFX on every path. v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
+from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
+normal-tested clamp), so 5 of 7 paths are over the 0.6 ms target (`clampGeometry: false` returns
+to v2's cost and gives up ~1 dB pooled; SPEC §12). GPU
 ms are the fastest of 4 solo runs (Apple M5 Pro, Chrome; the GPU has two clock states, ×1.3–1.8).
 Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spatial 0.13 + 0.12 ms.
 `youngMean: 0` saves ~0.025 ms (−0.07 dB). Directional lights: the code path is exercised on
