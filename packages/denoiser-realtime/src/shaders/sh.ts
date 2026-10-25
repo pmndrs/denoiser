@@ -87,6 +87,10 @@ fn shEncode(rgb: vec3f, dir: vec3f, ns: vec3f) -> SH {
  * - `shResolveDiffuse(p, nDetail, sharpen, nGuide)`: demodulated rgb at the detail
  *   normal; `sharpen` in [0, 1] replaces the L1 lobe by ambient + one clamped-cosine
  *   light (renormalized to stay exact at n_g); with sharpen = 0, nGuide is unused.
+ * - `shResolveSpecular(p, nDetail, nGuide, view, roughness, lightSharp, rhoMax, fadeR)`:
+ *   specular payloads (encoded around the lobe's dominant direction): the plain value
+ *   times the detail / guide ratio of SG lobe responses (defaults 8, 4, 0.2);
+ *   lightSharp <= 0 takes the ratio of the L1 payload at the two dominant directions instead.
  */
 export const SH_RESOLVE_CORE_WGSL = /* wgsl */ `
 fn shOutputPayload(p: SH, ng: vec3f, guardK: f32) -> SH {
@@ -114,6 +118,48 @@ fn shResolveY(p: SH, nd: vec3f, sharpen: f32, ng: vec3f) -> f32 {
 }
 fn shResolveDiffuse(p: SH, nd: vec3f, sharpen: f32, ng: vec3f) -> vec3f {
   let y = shResolveY(p, nd, sharpen, ng);
+  return max(yCoCgToRgb(y, y * p.c.x, y * p.c.y), vec3f(0.0));
+}
+
+// Specular dominant direction (SPEC R-2: Lagarde & de Rousiers 2014, simple fit, with GGX alpha = r^2).
+fn shDominantDir(n: vec3f, v: vec3f, rough: f32) -> vec3f {
+  let a = rough * rough;
+  let f = (1.0 - a) * (sqrt(1.0 - a) + a);
+  return normalize(mix(n, reflect(-v, n), f));
+}
+// Integral over the sphere of the product of two spherical Gaussians mu exp(lambda (w.p - 1)).
+fn shSgInner(p1: vec3f, l1: f32, m1: f32, p2: vec3f, l2: f32, m2: f32) -> f32 {
+  let lm = length(l1 * p1 + l2 * p2);
+  return 6.2831853 * m1 * m2 * exp(lm - l1 - l2) * (1.0 - exp(-2.0 * lm)) / max(lm, 1e-4);
+}
+// Amplitude of a unit-integral SG of sharpness lambda.
+fn shSgNorm(l: f32) -> f32 { return l / (6.2831853 * (1.0 - exp(-2.0 * l))); }
+// Response of the specular lobe of normal n to the payload's lighting model (ambient + one SG light of
+// sharpness lightSharp carrying the clamped-cosine light's power I = 2|b|): the GGX NDF as an SG of
+// sharpness 2/alpha^2 warped to the reflection direction (sharpness / (4 |n.v|); Pettineo's SG series
+// part 4, after Wang et al. 2009), normalized to unit integral (the ratio only needs the shape).
+fn shSpecResponse(y: vec4f, n: vec3f, v: vec3f, alpha: f32, lightSharp: f32) -> f32 {
+  let bl = length(y.yzw);
+  let d = y.yzw / max(bl, 1e-12);
+  let amb = max(y.x - 0.5 * bl, 0.0);
+  let ml = 2.0 * bl * shSgNorm(lightSharp);
+  let r = reflect(-v, n);
+  let lw = clamp(2.0 / max(alpha * alpha, 1e-6) / (4.0 * max(abs(dot(n, v)), 1e-3)), 1e-3, 1e5);
+  return amb + shSgInner(r, lw, shSgNorm(lw), d, lightSharp, ml);
+}
+// Specular ratio resolve (SPEC M7-10, our design): the plain value at the guide normal (Y_g, from the
+// output payload) times the detail / guide ratio of the lobe responses, clamped to [0, rhoMax] and
+// faded to 1 below roughness fadeR (L1 carries nothing at mirror scales).
+fn shResolveSpecular(p: SH, nd: vec3f, ng: vec3f, v: vec3f, rough: f32, lightSharp: f32, rhoMax: f32, fadeR: f32) -> vec3f {
+  let alpha = max(rough * rough, 1e-3);
+  let rd = shSpecResponse(p.y, nd, v, alpha, lightSharp);
+  let rg = shSpecResponse(p.y, ng, v, alpha, lightSharp);
+  var ratio = clamp(rd / max(rg, 1e-8), 0.0, rhoMax);
+  if (lightSharp <= 0.0) {   // 'l1' variant: the payload itself at the two dominant directions
+    ratio = clamp(max(shEval(p.y, shDominantDir(nd, v, rough)), 0.0) / max(shEval(p.y, shDominantDir(ng, v, rough)), 1e-6), 0.0, rhoMax);
+  }
+  ratio = mix(1.0, ratio, smoothstep(0.5 * fadeR, fadeR, rough));
+  let y = max(p.c.z, 0.0) * ratio;
   return max(yCoCgToRgb(y, y * p.c.x, y * p.c.y), vec3f(0.0));
 }
 `;

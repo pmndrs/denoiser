@@ -138,6 +138,10 @@ async function main() {
     ...(q.has('sharpen') ? { shSharpen: num('sharpen', 0) } : {}),
     ...(q.has('guard') ? { shGuard: num('guard', 1) } : {}),
     ...(q.has('enc') ? { shEncoding: q.get('enc') as 'normal-exact' | 'textbook' } : {}),
+    ...(q.has('lightSharp') ? { shLightSharpness: num('lightSharp', 8) } : {}),
+    ...(q.has('specRatio') ? { shSpecularRatio: q.get('specRatio') as 'sg' | 'l1' } : {}),
+    ...(q.has('maxRatio') ? { shMaxRatio: num('maxRatio', 4) } : {}),
+    ...(q.has('fadeR') ? { shFadeRoughness: num('fadeR', 0.2) } : {}),
   };
   const shMode = q.get('payload') === 'sh';
   const bumps = num('bumps', 0);
@@ -215,7 +219,7 @@ async function main() {
   else single = new SpecularDenoiser(device, dOpts);
   (both ?? single)!.configure({ width: W, height: H });
   // SH with resolve 'none': resolve at the detail normal for metrics / display
-  const resolver = shMode && (q.get('resolve') ?? 'none') === 'none' ? new ShResolver(device, { sharpen: num('sharpen', 0) }) : undefined;
+  const resolver = shMode && signal !== 'specular' && (q.get('resolve') ?? 'none') === 'none' ? new ShResolver(device, { sharpen: num('sharpen', 0) }) : undefined;
   const guides: FrameGuides = {
     depth: tex.Depth, normal: guideDetail ? tex.DetailN : tex.Normal, motion: tex.Motion,
     ...(shMode ? { detailNormal: tex.DetailN } : {}),
@@ -300,17 +304,21 @@ async function main() {
     if (noHistory || f === cutAt) den.resetHistory();
     const grad = antiLag === 'gradient' ? tex.Grad : undefined;
     if (both) {
-      lastOut = both.dispatchBoth({
-        diffuse: { radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}) },
-        specular: { radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad },
-      }, guides, camera);
+      lastOut = { ...both.dispatchBoth({
+        diffuse: { radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}), ...(shMode ? { direction: tex.DiffDir } : {}) },
+        specular: { radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad, ...(shMode ? { direction: tex.SpecDir } : {}) },
+      }, guides, camera) };
+      if (resolver) lastOut.diffuse = resolver.resolve(lastOut.diffuse, tex.DetailN, tex.Normal);
     } else if (single instanceof DiffuseDenoiser) {
       lastOut = { diffuse: single.dispatch({
         radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}), ...(shMode ? { direction: tex.DiffDir } : {}),
       }, guides, camera) } as Record<Sig, GPUTexture>;
       if (resolver) lastOut.diffuse = resolver.resolve(lastOut.diffuse, tex.DetailN, tex.Normal);
     } else {
-      lastOut = { specular: single!.dispatch({ radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad }, guides, camera) } as Record<Sig, GPUTexture>;
+      lastOut = { specular: single!.dispatch({
+        radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad, ...(shMode ? { direction: tex.SpecDir } : {}),
+      }, guides, camera) } as Record<Sig, GPUTexture>;
+      if (resolver) throw new Error('dev page: specular SH needs resolve=fused');
     }
 
     if (mode === 'eval') {

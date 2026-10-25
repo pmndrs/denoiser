@@ -20,9 +20,9 @@ export const SCENE_OUTPUTS: [string, GPUTextureFormat][][] = [
   [['Depth', 'r32float'], ['ViewZ', 'r32float'], ['Normal', 'rgba16float'], ['Motion', 'rgba16float']],
   [['Mat', 'rgba16float'], ['Diff', 'rgba16float'], ['DiffRef', 'rgba32float'], ['Spec', 'rgba16float']],
   [['SpecRef', 'rgba32float'], ['Grad', 'rgba32float'], ['DiffHit', 'r32float'], ['SpecHit', 'r32float']],
-  [['DiffDir', 'rgba16float'], ['DetailN', 'rgba16float']],
+  [['DiffDir', 'rgba16float'], ['DetailN', 'rgba16float'], ['SpecDir', 'rgba16float']],
 ];
-const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad', 'DiffHit', 'SpecHit', 'DiffDir', 'DetailN'];
+const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad', 'DiffHit', 'SpecHit', 'DiffDir', 'DetailN', 'SpecDir'];
 
 // The scene writes 10 outputs; the default limit is 4 storage textures per
 // stage, so it runs as 3 dispatches of the same code with different store stubs.
@@ -317,6 +317,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     stSpecHit(p, vec4f(0.0));
     stDiffDir(p, vec4f(0.0));
     stDetailN(p, vec4f(0.0));
+    stSpecDir(p, vec4f(0.0));
     return;
   }
   let x = o + d * h.t;
@@ -349,10 +350,26 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     stDiffDir(p, vec4f(0.0));
   }
   let r = reflect(d, h.n);
-  let sr = specularEnv(r, m.a);
+  let rd = reflect(d, ndet);   // = r without bumps
+  let sr = specularEnv(rd, m.a);
   stSpecRef(p, vec4f(sr, 1.0));
   let ns = noiseFactor(up, 11u, clamp(m.a * 2.5, 0.0, 1.0));
-  stSpec(p, vec4f(sr * ns, 0.0));
+  if ((S.flags & 4u) != 0u) {
+    // directional 1-sample estimate of specularEnv(rd): the sun lobe (direction SUN) or the sky (direction rd)
+    let a = max(m.a * m.a, 0.02);
+    let lb = 2.0 / (a * a);
+    let lc = 400.0 * lb / (400.0 + lb);
+    let sun = vec3f(40.0, 36.0, 30.0) * (lc / 400.0) * exp(lc * (dot(rd, normalize(SUN)) - 1.0));
+    let sky = sr - sun;
+    let wl = vec3f(0.2126, 0.7152, 0.0722);
+    let ps = clamp(dot(sun, wl) / max(dot(sr, wl), 1e-6), 0.1, 0.9);
+    let pick = rnd(up, 61u) < ps;
+    stSpec(p, vec4f(select(sky / (1.0 - ps), sun / ps, pick) * ns, 0.0));
+    stSpecDir(p, vec4f(select(rd, normalize(SUN), pick), 0.0));
+  } else {
+    stSpec(p, vec4f(sr * ns, 0.0));
+    stSpecDir(p, vec4f(0.0));
+  }
   // 1-spp hit distances (0 = miss): a cosine-distributed ray for diffuse, the
   // mirror direction for specular (the recurrent filter's radius / AO input).
   {

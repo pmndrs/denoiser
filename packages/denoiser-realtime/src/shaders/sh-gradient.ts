@@ -10,11 +10,12 @@ import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, REPROJECT_WGSL } from './common';
 import { PACK_WGSL } from './gradient';
 import { SH_CORE_WGSL, shEncodeWgsl, type ShEncoding } from './sh';
-import { shLoaderBindings, shLoaderWgsl, type ShInputForm } from './svgf-sh';
-import { PARAMS_STRUCT } from './svgf';
+import { shDirWgsl, shLoaderBindings, shLoaderWgsl, VIEW_DIR_WGSL, type ShInputForm } from './svgf-sh';
+import { PARAMS_STRUCT, type SignalKind } from './svgf';
 
-export function gradientCreatePassSh(count: number, fromInput: boolean, forms: ShInputForm[], enc: ShEncoding): PassDef {
-  const I = [...Array(count).keys()];
+export function gradientCreatePassSh(kinds: SignalKind[], fromInput: boolean, forms: ShInputForm[], enc: ShEncoding): PassDef {
+  const I = kinds.map((_, i) => i);
+  const spec = kinds.includes('specular');
   const b = new Bindings();
   b.uniform('F', 'Frame');
   I.forEach((i) => b.uniform(`P${i}`, 'Params'));
@@ -42,7 +43,8 @@ ${REPROJECT_WGSL}
 ${PACK_WGSL}
 ${SH_CORE_WGSL}
 ${shEncodeWgsl(enc)}
-${I.map((i) => shLoaderWgsl(forms[i], i)).join('\n')}
+${VIEW_DIR_WGSL}
+${I.map((i) => shDirWgsl(kinds[i], i) + shLoaderWgsl(forms[i], i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -62,7 +64,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let w = select(0.0, 1.0, ok);
     cnt += w;
     if (ok && (zAny == 0.0 || ${x === 1 && y === 1 ? 'true' : 'false'})) { zAny = z; pAny = qc; }
-    ${I.map((i) => `{ let l = shLum(loadCur${i}(qc), gq.n) * w; sL${i} += l; sL2${i} += l * l; }`).join('\n    ')}
+    let vq = ${spec ? 'viewDirAt(qc, max(z, 1e-6))' : 'vec3f(0.0, 0.0, 1.0)'};
+    ${I.map((i) => `{ let l = shLum(loadCur${i}(qc, vq, gq.rough), shDir${i}(gq.n, vq, gq.rough)) * w; sL${i} += l; sL2${i} += l * l; }`).join('\n    ')}
   }`).join('')}
   if (cnt <= 0.0) {
     ${I.map((i) => `textureStore(outG${i}, s, vec4u(0u));`).join('\n    ')}
@@ -97,8 +100,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       g0 = vec4f(gi.y - gi.x, max(gi.x, gi.y), 0.0, 1.0);
     }` : /* wgsl */ `
     if (hasHist) {
+      let ev = shDir${i}(g.n, ${spec ? 'viewDirAt(pAny, g.z)' : 'vec3f(0.0, 0.0, 1.0)'}, g.rough);
       var mh = 0.0;
-      ${hist4.map((yy) => hist4.map((xx) => `mh += shLum(shUnpack(textureLoad(accumPrev${i}, clampPix(hb + vec2i(${xx - 1}, ${yy - 1})), 0)), g.n) * hw[${xx}].x * hw[${yy}].y;`).join('\n      ')).join('\n      ')}
+      ${hist4.map((yy) => hist4.map((xx) => `mh += shLum(shUnpack(textureLoad(accumPrev${i}, clampPix(hb + vec2i(${xx - 1}, ${yy - 1})), 0)), ev) * hw[${xx}].x * hw[${yy}].y;`).join('\n      ')).join('\n      ')}
       mh /= 9.0;
       g0 = vec4f(m - mh, max(m, mh), v / cnt, 1.0);
     }`}

@@ -26,12 +26,33 @@ export type ShResolve = 'none' | 'fused';
  */
 export const PARAMS_STRUCT_SH = PARAMS_STRUCT.replace(
   'varRadius: i32, pad0: i32, pad1: i32, pad2: i32,',
-  'varRadius: i32, shGuard: f32, shSharpen: f32, shFlags: u32,',
+  'varRadius: i32, shGuard: f32, shSharpen: f32, shFlags: u32,\n  shLightSharp: f32, shRhoMax: f32, shFadeR: f32, shPad: f32,',
 );
-/** Float index of `shGuard` in the Params buffer (then shSharpen, shFlags). */
+/** Float index of `shGuard` in the Params buffer (then shSharpen, shFlags, shLightSharp, shRhoMax, shFadeR). */
 export const P_SH_OFFSET = 21;
 
 const headerSh = (b: Bindings) => header(b).replace(PARAMS_STRUCT, PARAMS_STRUCT_SH) + SH_CORE_WGSL;
+
+/**
+ * Per-signal evaluation direction `shDir{i}(n, v, rough)`: diffuse evaluates the payload at the
+ * normal; specular at the lobe's dominant direction (SPEC M7-10: the payload is encoded around
+ * the sampling lobe's dominant direction and its plain value is read at the guide normal's).
+ */
+export function shDirWgsl(kind: SignalKind, i: number): string {
+  return kind === 'diffuse'
+    ? `fn shDir${i}(n: vec3f, v: vec3f, rough: f32) -> vec3f { return n; }`
+    : /* wgsl */ `fn shDir${i}(n: vec3f, v: vec3f, rough: f32) -> vec3f {
+  let a = rough * rough;
+  return normalize(mix(n, reflect(-v, n), (1.0 - a) * (sqrt(1.0 - a) + a)));
+}`;
+}
+/** Unit vector from the surface at pixel p (linear depth z) toward the camera. */
+export const VIEW_DIR_WGSL = /* wgsl */ `
+fn viewDirAt(p: vec2i, z: f32) -> vec3f {
+  let vp = unprojectZ(F.projInv, ndcOf(uvOf(p)), -z);
+  return normalize(F.camPos - (F.viewInv * vec4f(vp, 1.0)).xyz);
+}`;
+const hasSpec = (kinds: SignalKind[]) => kinds.includes('specular');
 
 /**
  * Sample loader for signal i: `loadCur{i}(p, ng) -> SH`. 'raw' encodes the plain sample
@@ -51,18 +72,18 @@ export function shLoaderBindings(b: Bindings, form: ShInputForm, i: number, need
 export function shLoaderWgsl(form: ShInputForm, i: number): string {
   if (form === 'raw') {
     return /* wgsl */ `
-fn loadCur${i}(p: vec2i) -> SH {
+fn loadCur${i}(p: vec2i, v: vec3f, rough: f32) -> SH {
   let rgb = max(shFinite4(vec4f(textureLoad(input${i}, p, 0).rgb, 0.0)).rgb, vec3f(0.0));
   let dir = shFinite4(vec4f(textureLoad(dir${i}, p, 0).xyz, 0.0)).xyz;
   let nd = textureLoad(detailN, p, 0).xyz;
-  let ns = nd / max(length(nd), 1e-6);
+  let ns = shDir${i}(nd / max(length(nd), 1e-6), v, rough);
   var s = shEncode(rgb, dir, ns);
   s.y = shClampH(s.y); s.c = shClampH(s.c);
   return s;
 }`;
   }
   return /* wgsl */ `
-fn loadCur${i}(p: vec2i) -> SH {
+fn loadCur${i}(p: vec2i, v: vec3f, rough: f32) -> SH {
   var s = shUnpack(textureLoad(shIn${i}, p, 0));
   s.y = shFinite4(s.y); s.c = vec4f(shFinite4(s.c).xy, 0.0, 0.0);
   return s;
@@ -94,8 +115,8 @@ export function temporalPassSh(kinds: SignalKind[], forms: ShInputForm[], enc: S
     const P = `P${i}`;
     return /* wgsl */ `
   {
-    let cur = loadCur${i}(p);
-    let l = shLum(cur, g.n);
+    let cur = loadCur${i}(p, vC, g.rough);
+    let l = shLum(cur, shDir${i}(g.n, vC, g.rough));
     let mCur = vec2f(l, l * l);
     var n = 1.0;
     var y = cur.y;
@@ -161,7 +182,8 @@ ${b.wgsl}
 ${REPROJECT_WGSL}
 ${SH_CORE_WGSL}
 ${shEncodeWgsl(enc)}
-${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i) + shLoaderWgsl(forms[i], i)).join('\n')}
+${VIEW_DIR_WGSL}
+${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i) + shDirWgsl(k, i) + shLoaderWgsl(forms[i], i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -173,6 +195,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     textureStore(outMoments${i}, p, vec4f(0.0));`).join('\n    ')}
     return;
   }
+  let vC = ${hasSpec(kinds) ? 'viewDirAt(p, g.z)' : 'vec3f(0.0, 0.0, 1.0)'};
   let reset = hasFlag(FRAME_RESET);
   var r: Reproj;
   var fbMask = 0u;
@@ -297,14 +320,18 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
   const store = (i: number, y: string, c: string, sd: string) => {
     if (!v.last) return `textureStore(dst${i}, p, shPack(SH(${y}, vec4f(${c}, ${sd}, 0.0))));`;
     if (resolve[i] === 'fused') {
+      const resolveCall = kinds[i] === 'diffuse'
+        ? `shResolveDiffuse(op, nDet, P${i}.shSharpen, g.n)`
+        : `shResolveSpecular(op, nDet, g.n, vC, g.rough, P${i}.shLightSharp, P${i}.shRhoMax, P${i}.shFadeR)`;
       return /* wgsl */ `{
-      let op = shOutputPayload(SH(${y}, vec4f(${c}, 0.0, 0.0)), g.n, P${i}.shGuard);
+      let op = shOutputPayload(SH(${y}, vec4f(${c}, 0.0, 0.0)), ev${i}, P${i}.shGuard);
       let ndr = textureLoad(detailN, p, 0).xyz;
-      let rgb = shResolveDiffuse(op, ndr / max(length(ndr), 1e-6), P${i}.shSharpen, g.n);
+      let nDet = ndr / max(length(ndr), 1e-6);
+      let rgb = ${resolveCall};
       textureStore(dst${i}, p, vec4f(rgb * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & P_REMODULATE) != 0u), 1.0));
     }`;
     }
-    return `textureStore(dst${i}, p, shPack(shOutputPayload(SH(${y}, vec4f(${c}, 0.0, 0.0)), g.n, P${i}.shGuard)));`;
+    return `textureStore(dst${i}, p, shPack(shOutputPayload(SH(${y}, vec4f(${c}, 0.0, 0.0)), ev${i}, P${i}.shGuard)));`;
   };
   const hist = (i: number, y: string, c: string) => v.writeHist
     ? `textureStore(hist${i}, p, shPack(SH(${y}, vec4f(${c}, shUnpack(textureLoad(accumCur${i}, p, 0)).c.z, 0.0))));` : '';
@@ -317,7 +344,7 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
       if (gq.z > 0.0) {
         ${I.map((i) => /* wgsl */ `{
           let s = ${sample(i)};
-          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(shLum(s, gq.n) - lc${i}) / lumDenom${i});
+          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(shLum(s, shDir${i}(gq.n, vC, gq.rough)) - lc${i}) / lumDenom${i});
           sumY${i} += s.y * w;
           sumC${i} += s.c.xy * w;
           sumV${i} += s.c.z * s.c.z * w * w;
@@ -330,7 +357,8 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
 ${headerSh(b)}
 ${v.last ? SH_RESOLVE_CORE_WGSL : ''}
 struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
-${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
+${kinds.map((k, i) => weightsWgsl(k, i) + shDirWgsl(k, i)).join('\n')}
+${hasSpec(kinds) ? VIEW_DIR_WGSL : ''}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -344,11 +372,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       : `textureStore(dst${i}, p, shPack(c${i}));`) + ' ' + hist(i, `c${i}.y`, `c${i}.c.xy`)).join('\n    ')}
     return;
   }
+  let vC = ${hasSpec(kinds) ? 'viewDirAt(p, g.z)' : 'vec3f(0.0, 0.0, 1.0)'};
   ${I.map((i) => /* wgsl */ `
   setCenter${i}(g);
   ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : `shUnpack(textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0))`};`).join('\n  ')}
   let gVar${i} = (${inner.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * s${i}_${k}.c.z * s${i}_${k}.c.z`).join(' + ')}) / 16.0;
-  let lc${i} = shLum(c${i}, g.n);
+  let ev${i} = shDir${i}(g.n, vC, g.rough);
+  let lc${i} = shLum(c${i}, ev${i});
   let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;
   let hc${i} = ${f32s(h(0, 0))};
   var sumY${i} = c${i}.y * hc${i};
