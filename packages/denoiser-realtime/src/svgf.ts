@@ -76,7 +76,8 @@ export interface SvgfOptions {
   /**
    * A-SVGF anti-lag (gradient-driven alpha). 'auto' estimates the temporal
    * gradient from the signal itself; 'gradient' uses renderer-supplied gradient
-   * samples (`inputs.gradient`, see README). Default 'off'.
+   * samples (`inputs.gradient`, see README). Default 'auto' (v2; Dennis, SPEC §12 item 2, 2026-10-25);
+   * 'off' (the previous default) is unchanged when passed explicitly.
    */
   antiLag?: 'off' | 'auto' | 'gradient';
   /**
@@ -182,7 +183,7 @@ export type ResolvedOptions = Omit<Required<Omit<SpecularSvgfOptions, 'filter'>>
 
 export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
   if (o.filter && o.filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${o.filter}'`);
-  const antiLag = o.antiLag ?? 'off';
+  const antiLag = o.antiLag ?? 'auto';
   const antiLagVersion = o.antiLagVersion ?? 2;
   const temporalAlpha = o.temporalAlpha ?? (antiLag === 'off' ? 0.2 : 0.1);
   return {

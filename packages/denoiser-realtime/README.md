@@ -101,7 +101,7 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 `feedback` [false; the paper's true compounds blur, results/M1.md §4], `sigmaDepth/Normal/Luminance` [1, 128, 4],
 `varianceRampFrames` [4], `spatialVarianceBoost` [3], `spatialVarianceRadius` [3; 1 for
 specular with anti-lag v2], `luminanceVariance`
-['sample' | 'mean'], `antiLag` ['off' | 'auto' | 'gradient'], `antiLagVersion` [2 | 1],
+['sample' | 'mean'], `antiLag` ['auto' | 'off' | 'gradient'], `antiLagVersion` [2 | 1],
 `antiLagNoiseFloor` [diffuse 2, specular 1; v1: 2], `antiLagRadius` [1], `gradientIterations` [4; v1: 5],
 `remodulate` [false], `timestamps` [true]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
@@ -146,8 +146,8 @@ Light switching on at frame 60, static camera (diffuse): plain SVGF drops to
 27.1 dB, slower recovery (it only fires on the change frame, as in the paper).
 No NaNs in any run.
 
-Defaults: `antiLag` stays `'off'` (Dennis decides, SPEC §12 item 2); `antiLag: 'auto'` is
-the quality option (test bed, pooled: +0.24 dB diffuse, +1.58 dB specular over 7 paths,
+Defaults: `antiLag` is **`'auto'`** (v2) since 2026-10-25 (Dennis, SPEC §12 item 2); `antiLag: 'off'` (the
+previous default, unchanged when passed explicitly) is the cheaper option. `'auto'` buys (test bed, pooled: +0.24 dB diffuse, +1.58 dB specular over 7 paths,
 ~3-frame light-change recovery vs ~8) and with v2 costs **+0.25 ms** on the joint denoiser
 at 1080p (4.24 vs 3.99 ms, test-bed orbit bench; v1 was 5.61–5.74). The light-switch
 numbers above were measured with `feedback: true` and anti-lag v1.
