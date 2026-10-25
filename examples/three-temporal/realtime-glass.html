@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - realtime coloured shadows (translucency)</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; touch-action: none; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
+      .caption span { color: var(--dn-accent); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; max-width: 960px; margin-top: 1rem; box-sizing: border-box; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; max-width: 960px; box-sizing: border-box; }
+      .tag { display: inline-block; font-size: .75rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--dn-accent); color: var(--dn-accent); vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+      <h1>Coloured shadows through glass <span class="tag">experimental</span></h1>
+      <p class="dn-lede">
+        The corner of the <a href="realtime-shadows.html">realtime shadows page</a> with a stained-glass panel (amber and blue
+        stripes in a dark frame) between the area light and the floor. Each pixel traces <b>one shadow ray</b>: opaque visibility and
+        occluder distance against the scene meshes, and the panel's transmittance <code>T</code> along the same ray. Left of the divider:
+        <code>realtimeShadows()</code> on <code>v x lum(T)</code> (right brightness, no colour). Right: <code>realtimeShadows()</code> with
+        <code>translucency: T</code>, which keeps the opaque visibility and a conditional transmittance apart and returns the coloured shadow.
+      </p>
+      </header>
+
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="caption"><span id="cap-view">...</span><span id="cap-cost"></span></div>
+
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">View</span>
+          <div class="dn-seg" id="seg-view">
+            <button data-v="split" aria-pressed="true">split</button><button data-v="grey" aria-pressed="false">grey</button><button data-v="ours" aria-pressed="false">coloured</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ref" aria-pressed="false">reference</button>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Show</span>
+          <div class="dn-seg" id="seg-show"><button data-v="lit" aria-pressed="true">lit scene</button><button data-v="mask" aria-pressed="false">shadow only</button></div>
+        </div>
+        <div class="dn-group"><label class="dn-label" for="split">Divider</label><input id="split" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+        <div class="dn-group">
+          <span class="dn-label">Light size</span>
+          <div class="dn-row"><input id="light-size" type="range" min="0.03" max="0.6" step="0.01" value="0.12" /><output class="dn-value" id="light-size-v"></output></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Panel</span>
+          <div class="dn-row">
+            <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="false">sliding</button><button data-v="off" aria-pressed="true">still</button></div>
+            <button class="dn-btn" id="cut">reset history</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="box">
+        <h2>How it works</h2>
+        <ul>
+          <li>The renderer multiplies the transmittance of every translucent layer the shadow ray crosses (order doesn't matter) and
+            reports the nearest one's distance; a ray stopped by an opaque surface keeps visibility 0 (its <code>T</code> is ignored).</li>
+          <li>The denoiser keeps filtering the opaque visibility exactly as without glass, and accumulates <code>T</code> only over
+            samples that reached the light; the output is their product, so overlapping opaque and coloured penumbrae stay right.</li>
+          <li>The panel here is an analytic quad (one ray-quad test per pixel); its frame is ordinary geometry in the BVH.</li>
+          <li><code>denoiser/realtime</code> is experimental. Numbers: <code>docs/research/rt-denoiser/results/M8.md</code>.</li>
+        </ul>
+      </div>
+
+      <pre class="code">import { realtimeShadows } from 'denoiser/three';
+
+const shadow = realtimeShadows(visibility, {
+  camera, depth, velocity, normal, normalSpace: 'view', normalEncoding: 'packed',
+  hitDistance: occluderDistance,               // world units, 0 = unoccluded
+  light: () => ({ type: 'sphere', position: [x, y, z], radius }),
+  translucency: transmittance,                 // rgb T of the ray (1 where it crossed no layer)
+  translucencyHitDistance: glassDistance,      // nearest translucent layer, 0 = none
+});
+const lit = sceneColor.add(albedo.mul(irradiance).mul(shadow.rgb));   // shadow.visibility = opaque part</pre>
+
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/realtime-glass.ts"></script>
+  </body>
+</html>
