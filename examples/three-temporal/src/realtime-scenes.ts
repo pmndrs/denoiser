@@ -56,7 +56,11 @@ export async function main(log: (m: string) => void) {
   const pathDef = pathOf(cfg, q.get('path'));
   if (q.get('path') && !pathDef) throw new Error(`unknown ?path=${q.get('path')} for ${sceneId} (${cfg.paths.map((p) => p.name).join(', ')})`);
   const capMode = !!pathDef && q.get('ref') === '1';
-  const DIF_RAYS = capMode ? 16 : 4;
+  // reference rays per pixel per rendered frame. Kept small (4 diffuse, 2x2 visibility) so one frame's GPU work stays
+  // short: 16 + 4x4 per frame (the corner's) made ~0.5 s frames here, and under GPU contention the capture page lost
+  // its device or was reloaded every few poses
+  const DIF_RAYS = 4;
+  const VIS_GRID = 2;
   const BOUNCE_LOCAL_SHADOW = q.get('bounceLocalShadow') === '1';
   const shadowLight = pathDef?.shadow ?? 'sun';
   const ENV_I = cfg.sky.intensity;
@@ -354,7 +358,7 @@ export async function main(log: (m: string) => void) {
   const specRef = new AccumulateNode(vec4(ssrNode.rgb.mul(ssrMask), ssrMask), 1, [ssrNode]);
   difRef.max = specRef.max = Number(q.get('refFrames') ?? 512);
   const visRef = new AccumulateNode(vec4(
-    shadowRef(s0.P, s0.N, s0.sky, eps, pixelSeed().add(uSeed.mul(7919)).add(uint(12345)), uint(4), kindShadow, uSunDir, uTanR, uLPos, uLR),
+    shadowRef(s0.P, s0.N, s0.sky, eps, pixelSeed().add(uSeed.mul(7919)).add(uint(12345)), uint(VIS_GRID), kindShadow, uSunDir, uTanR, uLPos, uLR),
     0, 0, float(1).sub(s0.sky)));
   visRef.max = Number(q.get('refFrames') ?? 512) / 4;
 
@@ -513,19 +517,19 @@ export async function main(log: (m: string) => void) {
   /** Capture mode: writes path frames [start, start + frames) as a CAPTURE-FORMAT v0 capture (see realtime-gi.ts capturePath). */
   /**
    * `continues`: this call writes a later chunk of a longer capture (run-realtime.mjs --chunk): its first frame takes
-   * its motion from path frame start - 1 (not a reset) and the reference seeds start at start * 1000, so chunks written
+   * its motion from path frame start - 1 (not a reset) and the reference seeds start at start * 4000, so chunks written
    * by separate page loads join into one capture (merged by run-realtime.mjs).
    */
   const capturePath = async (o: { name: string; start?: number; frames?: number; refShadow?: number; refDiffuse?: number; refSpec?: number; write?: boolean; continues?: boolean }) => {
     if (!capMode || !capGuides || !pathDef) throw new Error('capturePath needs ?scene=..&path=..&ref=1');
     const start = o.start ?? 0;
     const n = Math.min(o.frames ?? pathDef.frames - start, pathDef.frames - start);
-    const visFrames = Math.max(1, Math.round((o.refShadow ?? 1024) / 16));
+    const visFrames = Math.max(1, Math.round((o.refShadow ?? 1024) / (VIS_GRID * VIS_GRID)));
     const difFrames = Math.max(1, Math.round((o.refDiffuse ?? 1024) / DIF_RAYS));
     const specFrames = Math.max(1, o.refSpec ?? 256);
     const write = o.write ?? true;
     visRef.max = visFrames; difRef.max = difFrames; specRef.max = specFrames;
-    frame = Math.max(frame, start * 1000); // reference seeds (uSeed = frame counter) differ between chunks
+    frame = Math.max(frame, start * 4000); // reference seeds (uSeed = frame counter) differ between chunks
     capturing = true;
     setMoving(false);
     modes.view = 'split'; buildOutput();
@@ -548,7 +552,7 @@ export async function main(log: (m: string) => void) {
       scene: `three-temporal-${sceneId}`,
       generator: `examples/three-temporal realtime-gi.html?scene=${sceneId} (src/realtime-scenes.ts capture mode, __t.capturePath)`,
       width: W, height: H, lights: lightsOf(), static: !mover, reversedDepth: false,
-      referenceSpp: Math.min(visFrames * 16, difFrames * DIF_RAYS),
+      referenceSpp: Math.min(visFrames * VIS_GRID * VIS_GRID, difFrames * DIF_RAYS),
       demodulation: { diffuse: 'albedo', specular: 'none' },
       extra: {
         threeTemporal: {
@@ -558,7 +562,7 @@ export async function main(log: (m: string) => void) {
           ...(pathDef.local ? { movingLight: 'the shadow light moves every frame (per-frame lights); receivers are static' } : {}),
           sampling: 'blue (1-ray signals: spatiotemporal blue noise, index = path frame)',
           references: {
-            visibility: `${visFrames * 16} rays/pixel (4x4 stratified white noise per frame x ${visFrames} frames) to the ${shadowLight === 'sun' ? 'sun disk' : 'sphere light (disk facing the receiver)'}`,
+            visibility: `${visFrames * VIS_GRID * VIS_GRID} rays/pixel (${VIS_GRID}x${VIS_GRID} stratified white noise per frame x ${visFrames} frames) to the ${shadowLight === 'sun' ? 'sun disk' : 'sphere light (disk facing the receiver)'}`,
             diffuse: `${difFrames * DIF_RAYS} white-noise cosine rays/pixel (${DIF_RAYS}/frame x ${difFrames} frames), same estimator as the 1-ray signal (incl. the hit-point shadow rays)`,
             ao: 'ao_ref (extra buffer, 1 ch): mean per-sample normalized hit distance h/(h + 1 + 0.05 * -viewz) of the diffuse reference rays, miss = 1 (OcclusionDenoiser default curve)',
             specular: `three SSR's own expectation: ${specFrames} stochastic SSR frames at the frozen pose, lit by the converged diffuse + visibility references (+ the other light's hard shadow)`,
@@ -632,7 +636,7 @@ export async function main(log: (m: string) => void) {
     }
     const res = writer ? await writer.finish() : null;
     capturing = false;
-    return { name: o.name, path: res?.path ?? null, frames: n, start, refRays: { visibility: visFrames * 16, diffuse: difFrames * DIF_RAYS, specularFrames: specFrames }, seconds: +((performance.now() - t0) / 1000).toFixed(1), perFrameS: perFrameS.map((s) => +s.toFixed(2)), gpuErrors: gpuErrors.length };
+    return { name: o.name, path: res?.path ?? null, frames: n, start, refRays: { visibility: visFrames * VIS_GRID * VIS_GRID, diffuse: difFrames * DIF_RAYS, specularFrames: specFrames }, seconds: +((performance.now() - t0) / 1000).toFixed(1), perFrameS: perFrameS.map((s) => +s.toFixed(2)), gpuErrors: gpuErrors.length };
   };
 
   const api = {

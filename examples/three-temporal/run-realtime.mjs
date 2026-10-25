@@ -329,7 +329,20 @@ async function runChunkedCapture(url) {
           const state = await waitReady(cdp);
           if (!state?.ready) throw new Error(`page not ready: ${JSON.stringify(state)}`);
           const T = makeT(cdp);
-          const r = await T(`window.__t.capturePath(${JSON.stringify({ name, start: s, frames: n, continues: s > w.start, ...refs })})`);
+          // watchdog: a reload or a lost device ends the attempt at once (instead of waiting --stepTimeout)
+          const origin = await cdp.evalJs('performance.timeOrigin', false);
+          let watching = true;
+          const watchdog = (async () => {
+            while (watching) {
+              await sleep(15000);
+              if (!watching) return;
+              const st = await Promise.race([cdp.evalJs("JSON.stringify({ o: performance.timeOrigin, s: document.querySelector('#status')?.textContent ?? '' })", false).then(JSON.parse), sleep(10000).then(() => null)]).catch(() => null);
+              if (st && (st.o !== origin || /DEVICE LOST|ERROR/.test(st.s))) throw new Error(`page reloaded or device lost: ${st.s.slice(0, 160)}`);
+            }
+          })();
+          let r;
+          try { r = await Promise.race([T(`window.__t.capturePath(${JSON.stringify({ name, start: s, frames: n, continues: s > w.start, ...refs })})`), watchdog]); }
+          finally { watching = false; }
           console.log(`  ${name}: ${r.frames} frames in ${r.seconds} s (${(r.seconds / r.frames).toFixed(1)} s/frame), gpu errors ${r.gpuErrors}`);
           ok = !!r.path && r.frames === n;
         } catch (e) { console.log(`  ${name}: attempt ${attempt} failed: ${String(e.message ?? e).slice(0, 300)}`); }
