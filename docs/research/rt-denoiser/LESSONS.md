@@ -157,6 +157,12 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Node 22.22 imports `.ts` files directly (type stripping, an ExperimentalWarning): Node scripts can reuse the
   test bed's `src/flip.ts` without a build (`examples/three-temporal/score-captures.mjs`). — real-scene-motion, 2026-10-25
 
+- The three-temporal realtime pages' `__t.metrics({ frames, checkpoints: [1, 2, …] })` gives per-frame curves after a
+  reset without editing the page; its `errImages` (signed error ×4, 8-bit, plus the reference) can be decoded back in the
+  page (Image → canvas → getImageData) to split the error by reference class. Two `three-temporal` dev servers with
+  different `RT_REALTIME_SRC` snapshots (scratch config, `hmr: false`) give before/after on the same page; files in a
+  snapshot outside the Vite root are still served fresh after an edit (no restart). — shadows-reset, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -246,6 +252,12 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   rgba16float) needs Catmull-Rom from 16 `textureLoad`s and a `'f'` (unfilterable) binding. The
   storage-format choice for one scalar is r32float (r16float / rg16float are not core storage
   formats). — occlusion, 2026-10-25
+
+- WGSL workgroup variables are zero-initialized, so a tile max (or 1 − min) of non-negative floats can go straight into
+  `atomicMax(&wg, bitcast<u32>(v))` with no init barrier. To skip work for a whole workgroup on a computed condition:
+  thread 0 writes a plain `var<workgroup> u32` after a barrier, then `let c = workgroupUniformLoad(&flag) != 0u;` is
+  uniform, so `if (c) { … } workgroupBarrier();` is legal. `dot4I8Packed` (`packed_4x8_integer_dot_product`, available
+  in Chrome) was not faster than `dot(unpack4x8snorm(a), unpack4x8snorm(b))` on the M5 Pro. — shadows-reset, 2026-10-25
 
 ## Conventions
 
@@ -414,6 +426,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A per-pixel scalar the spatial pass needs can ride in a spare byte of the packed geometry
   texture (shadows: the 8-bit roughness slot carries the noise estimate E). Its previous-frame
   value comes for free with the reprojection taps, which already load that texture. — shadows, 2026-10-25
+
+- "Frame 2 worse than frame 1" after a reset (shadows) had two causes, both invisible on frame 1: a fresh-pixel trick
+  keyed on A = 0 that switches off abruptly on the second frame, and the neighbourhood clamp, which has nothing to act
+  on until there is a history. Find them by splitting the error by reference class (umbra / penumbra / lit) and by
+  neighbourhood (umbra px within 3 px of a lit px held 96–99 % of the umbra error, biased +0.05 → +0.075), and by
+  switching the clamp off on a static view. — shadows-reset, 2026-10-25
+- A 5×5 clamp window that ignores geometry pulls thin occluders and creases toward the surface next to them, and
+  hard-edge pixels toward their 5×5 mean (~0.15 off). Counting only taps with a similar normal (binary 30° test, window
+  × √(25/n)) was +1.0 dB pooled / −29 % FLIP at 1080p on the test bed. A plane-distance test (2 % of view distance, the
+  spatial passes' test) does NOT do it: at a slat's silhouette the side face's plane passes within 2 % of the front-face
+  pixels next to it (−2.4 dB on `thin`); on the test bed the normal test alone matched plane + normal. — shadows-reset, 2026-10-25
 
 - Filter costs depend on the bench scene, and not equally: the recurrent pair reads 4.44 ms on the
   package dev page but 3.99 ms on the test-bed solo bench (`orbit`; every pass 7–18 % lower), while SVGF

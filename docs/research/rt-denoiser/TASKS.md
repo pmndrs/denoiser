@@ -510,10 +510,27 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       M2-M3 §4 budget table is on the dev page; re-time recurrent levers on the test-bed bench before citing
       them against SVGF — found by remeasure, owner `packages/denoiser-realtime` README / results
 
-- [ ] ShadowDenoiser frame 2 after a reset is worse than frame 1 on the real scene in every configuration (−0.8 … −1.3 dB
+- [x] (shadows-reset, ff04c8a; results/M4.md §11: frame 2 now above frame 1 overall in all 4 real-scene configs, +0.23 … +0.42 dB, was −0.73 … −1.24; 1080p 7 paths 38.12 / 29.05 / FLIP 0.0129 vs v2 37.11 / 28.57 / 0.0182; reset windows +1.40 std540 mean, +1.22 std1080-orbit; cost +0.07 … 0.14 ms, see the follow-up) ShadowDenoiser frame 2 after a reset is worse than frame 1 on the real scene in every configuration (−0.8 … −1.3 dB
       overall, −1.0 … −2.2 dB penumbra; FFX ahead at frame 2 on the wide shot). Repro: `examples/three-temporal`
       `node run-realtime.mjs shadows --metrics --metrics-only` (rows f1 / f2), results/M6-real-scene.md — found by m6,
       owner `packages/denoiser-realtime` (shadows)
+- [ ] Shadows v2.1 cost: the normal-tested clamp window adds +0.07 … 0.14 ms at 1080p (temporal 0.32–0.37 → 0.42–0.47 ms;
+      totals 0.58–0.69, over the ≤ 0.6 target on 5 of 7 paths; FFX 0.51–0.63) for +1.0 dB pooled / −29 % FLIP. Lever:
+      `clampGeometry: false` (v2's cost, −1 dB). Fold into SPEC §12 (cost item) — found by shadows-reset, owner spec-author
+- [ ] SPEC §7 / §0.2 shadows rows for v2.1 (results/M4.md §11): clamp window over normal-tested 5×5 taps (`clampGeometry`,
+      `clampMinTaps` 3), hard-edge widening (`clampEdgePx` 2), young mean over 8 frames (`youngFrames` 8, `youngTaper`
+      0.25, replaces `youngSpan`; "which pixels count as fresh" row: a frame counter since the pixel was new, not A), new
+      1080p / reset-window numbers — found by shadows-reset, owner spec-author
+- [ ] `packages/denoiser-realtime/README.md` shadows section: `youngSpan` [1] is gone (now `youngFrames` [8], `youngTaper`
+      [0.25]); add `clampGeometry` [true], `clampMinTaps` [3], `clampEdgePx` [2]; the 1080p numbers / costs there are v2's
+      (results/M4.md §11.3, §11.6) — found by shadows-reset, owner `packages/denoiser-realtime` README
+- [ ] Shadows: anti-lag restarts in static penumbrae cost a −0.15 … −0.3 dB step at frame 5 on the real scene (v2 and
+      v2.1; `antiLag: 0` is monotone) and keep static scenes below what the history could give (clamp off: 33.6 vs
+      32.3 dB at frame 8, wide). Candidate: a window that also counts the history's own uncertainty,
+      σ·√(1/(A+1) + 1/25); risk: lag on moving shadows (screen on the 96-frame paths) — found by shadows-reset, owner shadows
+- [ ] Shadows: a plane-distance test on top of the normal test in the clamp window measured 0 dB on the test bed but
+      +0.06 … 0.28 dB on the real scene (frame 16), for ~0.05–0.1 ms; revisit if the real scene becomes a tuning scene
+      (SPEC §12 item 7) — found by shadows-reset, owner shadows
 - [x] (real-scene-motion, commits: three-temporal + results) Real-scene moving-camera numbers: scripted 64-frame camera
       path (`src/realtime/path.ts`, slow orbit + fast pan, `?path=orbit` on both realtime pages); `realtime-gi.html?path=orbit&ref=1`
       writes CAPTURE-FORMAT v0 captures with a converged reference per pose (`node run-realtime.mjs capture --set=moving`:
