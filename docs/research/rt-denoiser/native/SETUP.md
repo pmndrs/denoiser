@@ -148,9 +148,65 @@ node tools/rt-capture/compare.mjs C:\dev\nrd-reference\captures\synthetic-static
 
 Tools ran on Node 24.13.1 (the brief says Node 22; no problems).
 
-## Not done yet
+## Phases 4–5 on Windows (2026-10-25, second session)
 
-- Phase 4 (real captures from the test bed) waits for T0.6. Phase 5 (our WGSL in Chrome on this
-  GPU) waits for our denoisers.
-- `SIGMA` with a directional light, and `REBLUR`/`RELAX` with probabilistic lobe selection (hit
-  distance 0 = not sampled), are untested: the synthetic captures don't contain them.
+### Our scripts on Windows
+
+| script | result |
+|---|---|
+| `examples/realtime-denoiser/run-headless.mjs --serve --set=roundtrip` | worked first time. Chrome 156 found in Program Files; headless WebGPU picked the RTX 3060 (Dawn on D3D12; the page reports `nvidia / ampere`), not an integrated GPU; Vite started and stopped; no Chrome or Vite process, temp profile or port 5220 listener left behind. Both captures VALID, 3.19 GB |
+| `--set=standard` | 8/8 captures VALID, 10.62 GB, blue-noise sampling, per-frame `lights` |
+| `--set=standard --replay=…` (phase 5) | see results |
+| `examples/three-temporal/run-realtime.mjs capture` | **broke**: Chrome path hard-coded to macOS and `--use-angle=metal` always passed (spawn ENOENT). Fixed, see below |
+| three-temporal pages (`realtime-gi.html`) | **broke**: `denoiser/three` resolves through `packages/denoiser/dist`, which a fresh checkout doesn't have (HTTP 500 from Vite). Needs a library build, see below |
+
+Changes I made (runner scripts only, no denoiser code):
+
+- `examples/three-temporal/run-realtime.mjs`: `openPage` now takes Chrome's path and flags from
+  `tools/rt-capture/lib/headless.mjs` (`chromePath()`, `chromeArgs()`: `$CHROME`, platform default,
+  `--use-angle=metal` on macOS only, `$CHROME_FLAGS`). It also reads `DevToolsActivePort` with
+  CRLF tolerated, and the delayed profile removal retries and can't throw (on Windows the folder
+  can stay locked for a moment after the kill).
+- Not changed, not needed here: `examples/three-temporal/run-headless.mjs` has the same macOS-only
+  Chrome path.
+- The fix is not committed in place (this branch only touches `native/`): it is
+  [patches/run-realtime-windows.patch](patches/run-realtime-windows.patch), `git apply` from the repo
+  root.
+- `run-realtime.mjs capture` has two time limits that the documented command doesn't raise:
+  `--timeout` (whole run, default 30 min) and `--stepTimeout` (one capture window). On this laptop
+  a frame took 50 s to 3 min depending on thermals (Mac: 9–10 s), so the set needs
+  `--stepTimeout=10800000 --timeout=36000000`.
+- Thermals: the GPU hit 98–100 °C with hardware thermal slowdown and 210 MHz clocks during long runs
+  (fixed by elevating the laptop and adding fans: 88 °C, 900 MHz, slowdown off). Timings taken while
+  throttled are discarded; see results/PHASE4-5.md "Cost".
+
+Library build on Windows (`yarn build:lib`) fails in `packages/denoiser-realtime`: its `tsc` step
+can't find the WebGPU type names (`GPUDevice`, …; 212 errors). Every other package has a
+`src/global.d.ts` that references `@webgpu/types`; `denoiser-realtime` has none. I didn't touch
+the package. Workaround used: build `denoiser-wgsl`, then `denoiser-realtime` with rollup alone
+(`node ../../node_modules/rollup/dist/bin/rollup --config rollup.config.mjs` in the package; rollup's
+TypeScript plugin reports the same errors as warnings and emits), then `denoiser-webnn`,
+`denoiser-three`, `denoiser` with `yarn workspace <name> run build`. Suggested fix for the owner: add
+the same `global.d.ts` to `packages/denoiser-realtime/src`.
+
+My own slip, for the record: launching from a shell whose working directory was `tools/rt-capture`
+fails with MODULE_NOT_FOUND; run the commands from the repo root as written.
+
+### Harness additions (C:\dev\nrd-reference\harness, commit 8e90f1a)
+
+- `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` (`--denoisers reblur-occlusion`, folder `nrd-reblur-occlusion`)
+  and the separate `REBLUR_DIFFUSE_OCCLUSION` + `REBLUR_SPECULAR_OCCLUSION`
+  (`reblur-occlusion-split`). Input: the `*_hitt` buffers through the `NRD.hlsli` normalization
+  helper with default hit-distance parameters (our 0 → miss → 65504 → 1). Outputs are written as
+  our derived signals `ao` / `so` (1 channel) but stay on **NRD's normalization**, not ours.
+- Shadow light per frame: the frame's `lights` (test-bed extras) when present, else the capture's;
+  the `shadow: true` entry, else the first. Same order as our replay.
+- GPU warm-up before each timed `Denoise`: the same ALU load as our replay (`GpuWarmer`: 16384 ×
+  64 threads, 512 FMAs), submitted until 50 ms have passed (`--warm`, default 50).
+- Probe switches: `--spec-hitt-scale`, `--roughness`, `--hit-params A,B,C`, `--dump-normhitt`
+  (writes the normalized hit distances given to REBLUR as `nrd-pack/<signal>_normhitt`),
+  `--jitter-units px|uv|zero`, `--fake-jitter`, `--frames`.
+- `tools/gen-probe.mjs`: the P3 probe captures (static camera facing a wall at exact viewZ,
+  constant hit distance; our capture format).
+- Regression: outputs on `synthetic-static` are bit-identical to the previous build; D3D12 debug
+  layer + NRI validation clean.

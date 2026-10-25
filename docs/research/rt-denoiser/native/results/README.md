@@ -1,5 +1,7 @@
 # Native NRD results (black box)
 
+**Phases 4–5 (standard set, real scene, P2, P3, jitter): [PHASE4-5.md](PHASE4-5.md).** The rest of this page is the phase 1–3 smoke test.
+
 _NRD v4.18.0 (`e06852b`), default settings, RTX 3060 Laptop, driver 592.00, D3D12 headless,
 2026-10-25. Setup and conventions: [../SETUP.md](../SETUP.md). Scores come from
 `tools/rt-capture/compare.mjs` (CAPTURE-FORMAT metrics) on outputs in
