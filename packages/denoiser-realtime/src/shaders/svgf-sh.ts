@@ -132,16 +132,16 @@ export function temporalPassSh(kinds: SignalKind[], forms: ShInputForm[], enc: S
       var nPrev = 0.0;
       var sumW = 0.0;
       if (r.sumW > 0.01) {
-        for (var k = 0; k < 4; k++) {
-          let w = r.w[k];
-          if (w <= 0.0) { continue; }
-          let q = r.base + TAP_OFFS[k];
+        // unrolled, clamped coordinates, weight 0 for rejected taps (no branch per tap)
+        ${[0, 1, 2, 3].map((k) => `{
+          let q = clampPix(r.base + TAP_OFFS[${k}]);
+          let w = r.w[${k}];
           let h = shUnpack(textureLoad(colorHist${i}, q, 0));
           hy += h.y * w;
           hc += h.c.xy * w;
           nPrev += h.c.z * w;
           mHist += textureLoad(momentsPrev${i}, q, 0).rg * w;
-        }
+        }`).join('\n        ')}
         sumW = r.sumW;
       } else if (fbMask != 0u) {
         for (var k = 0u; k < 9u; k++) {
