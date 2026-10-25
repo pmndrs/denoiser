@@ -919,6 +919,20 @@ harness builder runs them and returns images/metrics only.)_
       normalized hit distance: long-hold contact darkening (target 7). Fixes land as options. — orchestrator,
       owner: unassigned (after the shadows-look agent and the 4096-spp runs)
 
+- [ ] **Upscaler guides as optional denoiser inputs** (Dennis, 2026-10-26). `@pmndrs/upscaler` (../fsr3, MIT; FSR3-class)
+      already publishes a guides bundle (TEMPORAL-GUIDES-SPEC.md, GUIDES-HANDOFF.md): a graded 0..1 `disocclusion` mask
+      (reconstructed previous depth + confidence vote, grazing-plane fix b16274a), dilated motion / depth, previous depth,
+      same-frame after `dispatchGuides({depth, velocity})` (split dispatch, before effects), plus `shadingChange` (late,
+      i.e. frame N−1). Our filters each re-derive disocclusion inside their temporal pass (per-tap plane distance /
+      normal, binary per tap → history age A), with no shared or graded mask. Steps, reproduce first (rule 9): (1) score
+      our implicit detection and the upscaler's mask against the test bed's ground-truth disocclusion (false negatives =
+      ghosting, false positives = needless resets), incl. thin objects, grazing planes and object motion; (2) only if the
+      mask is better somewhere: optional `guides.disocclusion` that can force a reset / raise the young-history repair
+      (default path bit-identical), A/B on T1's disoccluded / boundary metrics; (3) `shadingChange` as an input for
+      `antiLag: 'gradient'` (no renderer produced its input so far; review target 3). Also a cost note: one mask
+      shared by diffuse, specular, shadows and AO vs four internal tests. PROVENANCE: FSR3 is MIT (allowed, RULES §2).
+      — orchestrator, owner: unassigned (queued after target D)
+
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
