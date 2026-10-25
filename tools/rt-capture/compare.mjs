@@ -158,8 +158,10 @@ function dynFrame(f, key = 'visibility') {
 
 // dynamic / static sums of one frame: [sse, count] per region, temporal [sum |de|, sum de^2, count] per region.
 // `out`: per-pixel scalar output (visibility, or shadow-rgb's mean of clamped channels); `pen`: per-pixel
-// penumbra flag (null = 0.02 < ref < 0.98 on the scalar reference)
-function dynScore(f, out, s, prevS, hist, key = 'visibility', pen = null) {
+// penumbra flag (null = 0.02 < ref < 0.98 on the scalar reference); `e3` / `prevE3` (rgb, shadow-rgb): per-channel
+// signed errors of this / the previous frame, so the region MSE and the temporal sums are per channel (as the
+// pooled PSNR and the live test bed), not of the channel mean
+function dynScore(f, out, s, prevS, hist, key = 'visibility', pen = null, e3 = null, prevE3 = null) {
   const { tap, dyn } = dynFrame(f, key);
   const tap1 = f > 0 && !m.frames[f].reset ? dynFrame(f - 1, key).tap : null;
   const ref = dynRef(f, key), depth = capFrame(f).depth;
@@ -168,12 +170,19 @@ function dynScore(f, out, s, prevS, hist, key = 'visibility', pen = null) {
   // boil: second temporal difference along the history (hist = [out_t-1, out_t-2] clamped, or nulls)
   for (let i = 0; i < N; i++) {
     if (!(depth[i] > 0 && depth[i] < 1)) continue;
-    const e = s[i], e2 = e * e;
+    const e = s[i], e2 = e3 ? (e3[3 * i] ** 2 + e3[3 * i + 1] ** 2 + e3[3 * i + 2] ** 2) / 3 : e * e;
     const isPen = pen ? pen[i] === 1 : ref[i] > 0.02 && ref[i] < 0.98;
     if (dyn[i]) { r.dSse += e2; r.dN++; } else { r.sSse += e2; r.sN++; if (isPen) { r.spSse += e2; r.spN++; } }
     if (prevS && tap[i] >= 0 && !Number.isNaN(prevS[tap[i]])) {
-      const d = e - prevS[tap[i]], t = dyn[i] ? r.dT : r.sT;
-      t[0] += Math.abs(d); t[1] += d * d; t[2]++;
+      const t = dyn[i] ? r.dT : r.sT;
+      if (e3 && prevE3) {
+        let a = 0, q = 0;
+        for (let k = 0; k < 3; k++) { const d = e3[3 * i + k] - prevE3[3 * tap[i] + k]; a += Math.abs(d); q += d * d; }
+        t[0] += a / 3; t[1] += q / 3; t[2]++;
+      } else {
+        const d = e - prevS[tap[i]];
+        t[0] += Math.abs(d); t[1] += d * d; t[2]++;
+      }
     }
     if (hist?.[1] && tap1 && tap[i] >= 0 && tap1[tap[i]] >= 0) {
       const b = cl(out[i]) - 2 * hist[0][tap[i]] + hist[1][tap1[tap[i]]];
@@ -271,28 +280,32 @@ function scoreSequence(getOut, signal, isBaseline = false) {
   const dynKey = signal === 'visibility' || signal === 'shadow-rgb' ? signal : null;
   const vsSh = signal === 'sh-diffuse' && chOf.diffuse_sh_ref;
   const per = [];
-  let prevS = null, prevSh = null;
+  let prevS = null, prevSh = null, prevE3 = null;
   let hist = [null, null];   // clamped outputs of frames t-1, t-2 (boil)
   for (let f = 0; f < m.frames.length; f++) {
     const c = capFrame(f);
     const out = getOut(f);
-    if (!out) { per.push(null); prevS = null; prevSh = null; hist = [null, null]; continue; }
+    if (!out) { per.push(null); prevS = null; prevSh = null; prevE3 = null; hist = [null, null]; continue; }
     if (m.frames[f].reset) hist = [null, null];
     if (out.length !== N * ch) throw new Error(`${signal} frame ${f}: ${out.length} floats, expected ${N * ch}`);
     const r = scoreFrame(out, c[refKeyOf(signal)], c.depth, ch, m.frames[f].reset ? null : prevS, clamp ? { clamp: true } : undefined);
     if (dynKey) {
       // per-pixel scalar output and (shadow-rgb) the any-channel penumbra mask
       const cl = (v) => Math.min(Math.max(v, 0), 1);
-      let outS = out, pen = null;
+      let outS = out, pen = null, e3 = null;
       if (clamp) {
-        outS = new Float32Array(N); pen = new Uint8Array(N);
+        outS = new Float32Array(N); pen = new Uint8Array(N); e3 = new Float32Array(N * 3);
         const rr = c.shadow_rgb_ref;
         for (let i = 0; i < N; i++) {
           outS[i] = (cl(out[3 * i]) + cl(out[3 * i + 1]) + cl(out[3 * i + 2])) / 3;
-          for (let k = 0; k < 3; k++) if (rr[3 * i + k] > 0.02 && rr[3 * i + k] < 0.98) { pen[i] = 1; break; }
+          for (let k = 0; k < 3; k++) {
+            if (rr[3 * i + k] > 0.02 && rr[3 * i + k] < 0.98) pen[i] = 1;
+            e3[3 * i + k] = (Number.isFinite(out[3 * i + k]) ? cl(out[3 * i + k]) : 0) - cl(rr[3 * i + k]);
+          }
         }
       }
-      r.dyn = dynScore(f, outS, r.s, m.frames[f].reset ? null : prevS, hist, dynKey, pen);
+      r.dyn = dynScore(f, outS, r.s, m.frames[f].reset ? null : prevS, hist, dynKey, pen, e3, m.frames[f].reset ? null : prevE3);
+      prevE3 = e3;
       hist = [Float32Array.from(outS, (v) => Math.min(Math.max(v, 0), 1)), hist[0]];
     }
     if (v1) r.v1 = v1Frame(f, out, signal, isBaseline);
