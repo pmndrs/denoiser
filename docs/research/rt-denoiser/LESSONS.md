@@ -678,3 +678,14 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   denoiser confidence did). Keep queries about anti-lag / history confidence on papers and talks (A-SVGF, studio
   talks), block github.com and deepwiki.com, and if a summary quotes NRD text, say so and use none of it.
   — public research 2022–2026, 2026-10-25
+- Byte-checking a default flip without fighting other agents' edits: `git archive HEAD packages/denoiser-realtime/src`
+  twice into scratch (before / after), copy only your changed files into "after", serve each with `RT_REALTIME_SRC` on
+  its own port, and replay one capture through both (std540-orbit, 16 frames, `warm=0`: ~2 min per side), then `cmp`
+  the `.f32` files. To add default-path entries without touching the registry, wrap it with a Vite `resolveId` plugin
+  that redirects `./denoisers` **only for `src/main.ts` / `src/run.ts`**: a plain `resolve.alias` regex on
+  `./denoisers` also catches the package's own `index.ts` re-export and the page dies with a missing-export error (the
+  headless runner then hangs until its timeout). Count `console.warn` around a constructor inside the wrapper and throw
+  on a mismatch to test "warns once" in the same run. — apply-decisions, 2026-10-25
+- Defaults compose: `OcclusionDenoiser`'s SVGF inherits SVGF's `antiLag` default, so two separate decisions (occlusion
+  → 'svgf', SVGF → 'auto') made the occlusion default A-SVGF. Registry ids whose names imply a config (`occlusion-svgf`,
+  `svgf-sh`) should pin it explicitly, or they silently turn into their `-auto` sibling. — apply-decisions, 2026-10-25
