@@ -140,6 +140,7 @@ async function main() {
     ...(q.has('enc') ? { shEncoding: q.get('enc') as 'normal-exact' | 'textbook' } : {}),
     ...(q.has('lightSharp') ? { shLightSharpness: num('lightSharp', 8) } : {}),
     ...(q.has('specRatio') ? { shSpecularRatio: q.get('specRatio') as 'sg' | 'l1' } : {}),
+    ...(q.has('ping') ? { shPingPacking: q.get('ping') as 'f16' | 'u8' } : {}),
     ...(q.has('maxRatio') ? { shMaxRatio: num('maxRatio', 4) } : {}),
     ...(q.has('fadeR') ? { shFadeRoughness: num('fadeR', 0.2) } : {}),
   };

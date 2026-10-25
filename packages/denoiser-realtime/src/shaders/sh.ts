@@ -34,6 +34,33 @@ fn shTr(v: vec2f) -> u32 {
   if (abs(r.y) > abs(v.y) && (u & 0x7fff0000u) != 0u) { u = u - 0x10000u; }
   return u;`;
 
+/**
+ * 64-bit packing of a filtered payload + standard deviation (SPEC M7-3 tune, for the non-accumulating
+ * a-trous ping-pong only): the six coefficients as 8-bit snorm of a shared scale S (an 8-bit exponent in
+ * quarter stops, S >= max |coefficient| and >= sigma / 128), sigma as an 8-bit log of sigma / S
+ * (1/16-stop steps). Layout: x = (a, b.x, b.y, b.z), y = Co | Cg << 8 | exponent << 16 | sigma << 24.
+ * Idea of the 6 x 8-bit + shared magnitude layout: SD24 p.30 / ACS25 s.57 (descriptions); this
+ * exponent / sigma layout is ours. Needs SH_CORE_WGSL.
+ */
+export const SH_PACK64_WGSL = /* wgsl */ `
+fn shPack64(p: SH) -> vec2u {
+  let m = max(max(max(abs(p.y.x), abs(p.y.y)), max(abs(p.y.z), abs(p.y.w))), max(max(abs(p.c.x), abs(p.c.y)), p.c.z * (1.0 / 128.0)));
+  if (!(m > 1e-30)) { return vec2u(0u); }
+  let e = u32(clamp(i32(ceil(4.0 * log2(m))) + 128, 0, 255));
+  let sq = exp2((f32(e) - 128.0) * 0.25);
+  let inv = 1.0 / sq;
+  let k = select(0u, u32(clamp(round(16.0 * log2(p.c.z * inv) + 128.0), 1.0, 255.0)), p.c.z > 0.0);
+  return vec2u(pack4x8snorm(p.y * inv), (pack4x8snorm(vec4f(p.c.xy * inv, 0.0, 0.0)) & 0xffffu) | (e << 16u) | (k << 24u));
+}
+fn shUnpack64(u: vec2u) -> SH {
+  let e = (u.y >> 16u) & 0xffu;
+  let k = u.y >> 24u;
+  let sq = select(0.0, exp2((f32(e) - 128.0) * 0.25), (u.x | u.y) != 0u);
+  let sd = select(0.0, sq * exp2((f32(k) - 128.0) * 0.0625), k != 0u);
+  return SH(unpack4x8snorm(u.x) * sq, vec4f(unpack4x8snorm(u.y & 0xffffu).xy * sq, sd, 0.0));
+}
+`;
+
 /** Payload struct, YCoCg conversions, pack / unpack, evaluation, luminance. No bindings. */
 export const SH_CORE_WGSL = /* wgsl */ `
 // y = (a, b.x, b.y, b.z) of the luma, c = (Co, Cg, s0, s1)

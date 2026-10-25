@@ -13,7 +13,7 @@
 // plus shaders/sh.ts for the payload. Per-pass changes: SPEC M7-7 (our design).
 import { Bindings, type PassDef } from './bindings';
 import { FRAME_WGSL, REPROJECT_WGSL } from './common';
-import { SH_CORE_WGSL, SH_RESOLVE_CORE_WGSL, shEncodeWgsl, type ShEncoding } from './sh';
+import { SH_CORE_WGSL, SH_PACK64_WGSL, SH_RESOLVE_CORE_WGSL, shEncodeWgsl, type ShEncoding } from './sh';
 import {
   antilagWgsl, B3, baseBindings, capWgsl, f32s, header, PARAMS_STRUCT, weightsWgsl, type AtrousVariant, type SignalKind,
 } from './svgf';
@@ -56,6 +56,10 @@ fn viewDirAt(p: vec2i, z: f32) -> vec3f {
   return normalize(F.camPos - (F.viewInv * vec4f(vp, 1.0)).xyz);
 }`;
 const hasSpec = (kinds: SignalKind[]) => kinds.includes('specular');
+/** A-trous ping-pong format: 8 x f16 (rgba32uint) or the 64-bit packing (rg32uint, SH_PACK64_WGSL). */
+const pingFmt = (p64: boolean) => (p64 ? 'rg32uint' : 'rgba32uint') as GPUTextureFormat;
+const pingStore = (p64: boolean, x: string) => (p64 ? `vec4u(shPack64(${x}), 0u, 0u)` : `shPack(${x})`);
+const pingLoad = (p64: boolean, tex: string, q: string) => (p64 ? `shUnpack64(textureLoad(${tex}, ${q}, 0).xy)` : `shUnpack(textureLoad(${tex}, ${q}, 0))`);
 
 /**
  * Sample loader for signal i: `loadCur{i}(p, ng) -> SH`. 'raw' encodes the plain sample
@@ -222,16 +226,17 @@ ${kinds.map((_, i) => perSignal(i)).join('\n')}
 
 // ---- variance estimation --------------------------------------------------------
 
-export function variancePassSh(kinds: SignalKind[]): PassDef {
+export function variancePassSh(kinds: SignalKind[], p64 = false): PassDef {
   const b = baseBindings(kinds);
   kinds.forEach((_, i) => {
     b.add(`accumCur${i}`, 'texture_2d<u32>', 'i');
     b.add(`momentsCur${i}`, 'texture_2d<f32>', 'f');
-    b.add(`outPing${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');
+    b.add(`outPing${i}`, `texture_storage_2d<${pingFmt(p64)}, write>`, pingFmt(p64));
   });
   const I = kinds.map((_, i) => i);
   const code = /* wgsl */ `
 ${headerSh(b)}
+${p64 ? SH_PACK64_WGSL : ''}
 ${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
 
 @compute @workgroup_size(8, 8)
@@ -280,12 +285,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   ${I.map((i) => /* wgsl */ `
   {
     if (t${i} >= 1.0) {
-      textureStore(outPing${i}, p, shPack(SH(a${i}.y, vec4f(a${i}.c.xy, sqrt(varT${i}), 0.0))));
+      textureStore(outPing${i}, p, ${pingStore(p64, `SH(a${i}.y, vec4f(a${i}.c.xy, sqrt(varT${i}), 0.0))`)});
     } else {
       let m = sm${i} / sw${i};
       let varS = (1.0 + P${i}.varBoost * max(0.0, 1.0 - n${i} / P${i}.rampFrames)) * max(0.0, m.y - m.x * m.x);
-      textureStore(outPing${i}, p, shPack(SH(mix(sy${i} / sw${i}, a${i}.y, t${i}),
-        vec4f(mix(sc${i} / sw${i}, a${i}.c.xy, t${i}), sqrt(mix(varS, varT${i}, t${i})), 0.0))));
+      textureStore(outPing${i}, p, ${pingStore(p64, `SH(mix(sy${i} / sw${i}, a${i}.y, t${i}),
+        vec4f(mix(sc${i} / sw${i}, a${i}.c.xy, t${i}), sqrt(mix(varS, varT${i}, t${i})), 0.0))`)});
     }
   }`).join('')}
 }
@@ -300,7 +305,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * either the resolve-ready output payload (M7-8, rgba32uint) or, with resolve 'fused',
  * the rgb resolved at the detail normal (M7-9, rgba16float; remodulated if asked).
  */
-export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShResolve[]): PassDef {
+export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShResolve[], p64 = false): PassDef {
   const b = baseBindings(kinds);
   b.uniform('I', 'Iter');
   const fused = v.last && resolve.some((r) => r === 'fused');
@@ -310,7 +315,8 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
     if (v.writeHist) b.add(`accumCur${i}`, 'texture_2d<u32>', 'i');
     const outRgb = v.last && resolve[i] === 'fused';
     if (outRgb) b.add(`demod${i}`, 'texture_2d<f32>', 'f');
-    b.add(`dst${i}`, outRgb ? 'texture_storage_2d<rgba16float, write>' : 'texture_storage_2d<rgba32uint, write>', outRgb ? 'rgba16float' : 'rgba32uint');
+    const fmt: GPUTextureFormat = outRgb ? 'rgba16float' : v.last ? 'rgba32uint' : pingFmt(p64);
+    b.add(`dst${i}`, `texture_storage_2d<${fmt}, write>`, fmt);
     if (v.writeHist) b.add(`hist${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');
   });
   const I = kinds.map((_, i) => i);
@@ -321,7 +327,7 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
   const h = (x: number, y: number) => (v.box ? 1 : B3[x + 2] * B3[y + 2]);
   // y, c: payload (vec4f, vec2f); sd: standard deviation
   const store = (i: number, y: string, c: string, sd: string) => {
-    if (!v.last) return `textureStore(dst${i}, p, shPack(SH(${y}, vec4f(${c}, ${sd}, 0.0))));`;
+    if (!v.last) return `textureStore(dst${i}, p, ${pingStore(p64, `SH(${y}, vec4f(${c}, ${sd}, 0.0))`)});`;
     if (resolve[i] === 'fused') {
       const resolveCall = kinds[i] === 'diffuse'
         ? `shResolveDiffuse(op, nDet, P${i}.shSharpen, g.n)`
@@ -358,6 +364,7 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
   }`;
   const code = /* wgsl */ `
 ${headerSh(b)}
+${p64 ? SH_PACK64_WGSL : ''}
 ${v.last ? SH_RESOLVE_CORE_WGSL : ''}
 struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
 ${kinds.map((k, i) => weightsWgsl(k, i) + shDirWgsl(k, i)).join('\n')}
@@ -368,17 +375,17 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
   let g = geoCenter(p);
-  ${I.map((i) => `let c${i} = shUnpack(textureLoad(src${i}, p, 0));`).join('\n  ')}
+  ${I.map((i) => `let c${i} = ${pingLoad(p64, `src${i}`, 'p')};`).join('\n  ')}
   if (g.z <= 0.0) {
     ${I.map((i) => (v.last
       ? (resolve[i] === 'fused' ? `textureStore(dst${i}, p, vec4f(0.0, 0.0, 0.0, 1.0));` : `textureStore(dst${i}, p, vec4u(0u));`)
-      : `textureStore(dst${i}, p, shPack(c${i}));`) + ' ' + hist(i, `c${i}.y`, `c${i}.c.xy`)).join('\n    ')}
+      : `textureStore(dst${i}, p, ${pingStore(p64, `c${i}`)});`) + ' ' + hist(i, `c${i}.y`, `c${i}.c.xy`)).join('\n    ')}
     return;
   }
   let vC = ${hasSpec(kinds) ? 'viewDirAt(p, g.z)' : 'vec3f(0.0, 0.0, 1.0)'};
   ${I.map((i) => /* wgsl */ `
   setCenter${i}(g);
-  ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : `shUnpack(textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0))`};`).join('\n  ')}
+  ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : pingLoad(p64, `src${i}`, `clampPix(p + vec2i(${x}, ${y}) * I.stride)`)};`).join('\n  ')}
   let gVar${i} = (${inner.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * s${i}_${k}.c.z * s${i}_${k}.c.z`).join(' + ')}) / 16.0;
   let ev${i} = shDir${i}(g.n, vC, g.rough);
   let lc${i} = shLum(c${i}, ev${i});
@@ -389,7 +396,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var sumV${i} = c${i}.c.z * c${i}.c.z * hc${i} * hc${i};
   var sumW${i} = hc${i};`).join('')}
   ${inner.map(([x, y], k) => (x === 0 && y === 0 ? '' : tap(x, y, (i) => `s${i}_${k}`))).join('')}
-  ${outer.map(([x, y]) => tap(x, y, (i) => `shUnpack(textureLoad(src${i}, q, 0))`)).join('')}
+  ${outer.map(([x, y]) => tap(x, y, (i) => pingLoad(p64, `src${i}`, 'q'))).join('')}
   ${I.map((i) => /* wgsl */ `
   {
     let outY = sumY${i} / sumW${i};

@@ -127,6 +127,12 @@ export interface SvgfOptions {
   shGuard?: number;
   /** SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0. */
   shSharpen?: number;
+  /**
+   * SH: format of the a-trous ping-pong (SPEC M7-3 tune). 'f16' (8 x f16, 16 B/px per buffer) or 'u8'
+   * (6 x 8-bit of a shared exponent + an 8-bit log sigma, 8 B/px per buffer: -16 B/px per signal).
+   * Default 'f16'. Structural.
+   */
+  shPingPacking?: 'f16' | 'u8';
   /** @internal Test only: f16 packing rounds toward zero (as rgba16float stores do on Metal), for the plain-vs-SH regression. */
   shPackTruncate?: boolean;
 }
@@ -210,6 +216,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shGuard: o.shGuard ?? 1,
     shSharpen: o.shSharpen ?? 0,
     shPackTruncate: o.shPackTruncate ?? false,
+    shPingPacking: o.shPingPacking ?? 'f16',
     specularHistoryScale: o.specularHistoryScale ?? 1,
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
     lobeFraction: o.lobeFraction ?? 0.75,
@@ -269,7 +276,7 @@ class SignalState {
 /** Options that change the pass structure: signals in one pipeline must agree on these. */
 export function structuralKey(o: ResolvedOptions) {
   const k: (string | number | boolean)[] = [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion];
-  if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate);
+  if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate, o.shPingPacking);
   return k.join('|');
 }
 
@@ -323,12 +330,13 @@ export class SvgfPipeline {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
       }
       // temporal and gradient_create are built per input form on first use (encode)
-      make('variance', variancePassSh(kinds));
+      const p64 = o.shPingPacking === 'u8';
+      make('variance', variancePassSh(kinds, p64));
       const res = signals.map((s) => shResolveOf(s.kind, s.opts));
       for (const writeHist of [false, true]) {
         for (const last of [false, true]) {
           if (writeHist && !o.feedback) continue;
-          make(`atrous_${+writeHist}${+last}`, atrousPassSh(kinds, { writeHist, last, box }, res));
+          make(`atrous_${+writeHist}${+last}`, atrousPassSh(kinds, { writeHist, last, box }, res, p64));
         }
       }
     } else {
@@ -380,7 +388,8 @@ export class SvgfPipeline {
       s.accum = [tex('accum0', cf), tex('accum1', cf)];
       s.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];
       if (this.opts.feedback) s.hist = tex('history', cf);
-      s.ping = [tex('ping', cf), tex('pong', cf)];
+      const pf: GPUTextureFormat = this.sh && this.opts.shPingPacking === 'u8' ? 'rg32uint' : cf;
+      s.ping = [tex('ping', pf), tex('pong', pf)];
       s.out = tex('output', this.sh && shResolveOf(s.kind, s.opts) !== 'fused' ? 'rgba32uint' : 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
       if (this.opts.antiLag !== 'off') {
         // v1: (g0, g1) rgba32float ping-pong; v2: one packed rgba32uint ping-pong
