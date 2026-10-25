@@ -554,7 +554,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `deployed: false` (local `yarn examples` only) and in the three-temporal Vite build; flip `deployed` + add a shot when
       `denoiser/realtime` should show on the site — found by m6, owner spec-author (fold into SPEC §12) / Dennis
 
-- [ ] **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
+- [~] (e1) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
 - [ ] **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
