@@ -9,8 +9,8 @@ export default defineConfig({
   base: './',
   // rtCapture(): capture I/O endpoints (/__rt-capture/*) for realtime-gi's capture mode (?path=orbit&ref=1);
   // files go to tools/rt-capture/captures/, or $RT_CAPTURE_DIR/captures/ (dev server only)
-  // sceneAssets(): /__scene-assets/* serves the Bistro / Sponza models of ?scene=bistro|sponza from a folder outside git
-  // ($RT_SCENE_ASSETS, default ../vsm/bench/public/assets next to the repo; CAPTURES.md "Bistro and Sponza")
+  // sceneAssets(): /__scene-assets/* serves the Bistro / Sponza models of ?scene=bistro|sponza
+  // ($RT_SCENE_ASSETS, default examples/three-temporal/scene-assets (Git LFS); CAPTURES.md "Bistro and Sponza")
   plugins: [rtCapture(), sceneAssets()],
   esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: {

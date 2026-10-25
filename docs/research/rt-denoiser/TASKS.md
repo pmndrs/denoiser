@@ -801,7 +801,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `historyFix: 'spatial'` (6 dispatch). — found by t1, owners svgf / recurrent / testbed
 - [x] (bistro-sponza; commits ab3f4d7, f96caa0, 1303313 + results) **Bistro and Sponza as scoring scenes** (SPEC §12
       item 7): `realtime-gi.html?scene=sponza|bistro` (models loaded by path from outside git, `$RT_SCENE_ASSETS`, default
-      `../vsm/bench/public/assets`; Sponza = Cryengine Limited License, Bistro = CC BY 4.0, never committed), sun + local
+      `examples/three-temporal/scene-assets` (Git LFS since 2026-10-26); Sponza = Cryengine Limited License, Bistro = CC BY 4.0), sun + local
       light, 6 scripted paths and captures (`sponza-orbit|pan|move`, `bistro-orbit|pan|move`, 48 f, 960×540, 3.28 GB
       each, validated; `run-realtime.mjs capture --set=<name> --chunk=8`); replayed at ab3f4d7 with the corner and the
       test bed's std540 captures on the same snapshot. Rankings agree on every signal (diffuse `svgf-auto` > `svgf` >

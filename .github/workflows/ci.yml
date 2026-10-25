@@ -54,12 +54,12 @@ jobs:
     name: ONNX converter parity (CPU)
     runs-on: ubuntu-latest
     steps:
-      # `actions/checkout` with `lfs: true` runs `git lfs pull` itself, so the
-      # .tza blobs in packages/denoiser/tzas/ (git-LFS objects) are real content
-      # by the time this step finishes — no separate `git lfs checkout` needed.
+      # Only the .tza blobs in packages/denoiser/tzas/ (git-LFS objects) are
+      # needed; the ~210 MB of research scene models in
+      # examples/three-temporal/scene-assets/ (also LFS) are not fetched.
       - uses: actions/checkout@v4
-        with:
-          lfs: true
+      - name: Fetch .tza weights (git LFS)
+        run: git lfs pull --include "packages/denoiser/tzas/*"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'

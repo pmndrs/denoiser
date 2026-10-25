@@ -123,10 +123,10 @@ Occlusion entries replay with `&signals=ao` (`so` has no reference here).
 Two real asset scenes on the same realtime pages, so defaults are judged on more than the corner and the test bed
 (SPEC §12 item 7). Results: [results/scenes-bistro-sponza.md](../../docs/research/rt-denoiser/results/scenes-bistro-sponza.md).
 
-**The models are not in this repository and must never be committed.** The dev server serves them from a folder
-outside git (`scene-assets-plugin.ts`, endpoint `/__scene-assets/*`): `$RT_SCENE_ASSETS`, else
-`../vsm/bench/public/assets` next to the repo (Dennis's VSM checkout, where `npm run assets` fetches Sponza and Bistro
-is placed by hand). Layout: `sponza/Sponza.gltf` + `sponza/Sponza.bin`, `bistro/bistro-uncompressed.glb`.
+**The models are in this repository under Git LFS** (Dennis, 2026-10-26): `scene-assets/` (licences and attribution in
+`scene-assets/NOTICE.md`). Run `git lfs pull --include "examples/three-temporal/scene-assets/**"` if the files are LFS
+pointers. The dev server serves them (`scene-assets-plugin.ts`, endpoint `/__scene-assets/*`) from `$RT_SCENE_ASSETS`, else
+`scene-assets/`. Layout: `sponza/Sponza.gltf` + `sponza/Sponza.bin`, `bistro/bistro-uncompressed.glb`. CI does not fetch them.
 
 | model | source | licence | used as |
 |---|---|---|---|
@@ -134,7 +134,7 @@ is placed by hand). Layout: `sponza/Sponza.gltf` + `sponza/Sponza.bin`, `bistro/
 | Bistro (exterior) | Amazon Lumberyard Bistro, NVIDIA ORCA; glTF conversion by Cody Bennett (Blender glTF export) | **CC BY 4.0**, © 2017 Amazon Lumberyard: "Amazon Lumberyard Bistro, Open Research Content Archive (ORCA), Amazon Lumberyard, 2017, http://developer.nvidia.com/orca/amazon-lumberyard-bistro" | modified: geometry only (textures, UVs, tangents dropped), flat colours and roughness from material-name keywords (wet pavement 0.12, glass 0.08), the one BLEND material (a decal) removed, MASK foliage solid: 2,827,910 triangles, 1,532 primitives |
 
 (VSM's NOTICE has the full attributions. The brief's guesses "Crytek Sponza CC BY 3.0" don't apply to this copy: the
-Khronos Sponza is under the Cryengine agreement, which is one more reason never to redistribute it.)
+Khronos Sponza is under the Cryengine agreement, which `scene-assets/NOTICE.md` records.)
 
 Loading (`src/realtime/assets.ts`, a minimal glTF reader: node transforms baked to world space, one merged mesh per
 material for raster, one merged geometry of everything static for the BVH) takes ~0.3 s for Bistro's 201 MB GLB on the

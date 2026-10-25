@@ -1,7 +1,7 @@
-// Dev-server endpoint for third-party scene models that are NOT in this repository (Bistro, Sponza:
-// examples/three-temporal/CAPTURES.md "Bistro and Sponza"). The realtime pages' ?scene=bistro|sponza
-// fetch them from /__scene-assets/<file>; the files are read from a folder outside git:
-//   $RT_SCENE_ASSETS, else <repo>/../vsm/bench/public/assets (Dennis's VSM checkout, a sibling of this repo).
+// Dev-server endpoint for the third-party scene models (Bistro, Sponza: examples/three-temporal/CAPTURES.md
+// "Bistro and Sponza", licences in scene-assets/NOTICE.md). The realtime pages' ?scene=bistro|sponza
+// fetch them from /__scene-assets/<file>; the files are read from:
+//   $RT_SCENE_ASSETS, else examples/three-temporal/scene-assets (Git LFS; `git lfs pull` if they are pointer files).
 // Expected layout: sponza/Sponza.gltf + sponza/Sponza.bin, bistro/bistro-uncompressed.glb.
 // Missing files answer 404 here (Vite's SPA fallback would answer index.html with 200; LESSONS e2).
 import type { Plugin, Connect } from 'vite';
@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const SCENE_ASSETS_DIR = path.resolve(process.env.RT_SCENE_ASSETS ?? path.join(REPO, '..', 'vsm', 'bench', 'public', 'assets'));
+export const SCENE_ASSETS_DIR = path.resolve(process.env.RT_SCENE_ASSETS ?? path.join(REPO, 'examples', 'three-temporal', 'scene-assets'));
 const PREFIX = '/__scene-assets/';
 const TYPES: Record<string, string> = { '.gltf': 'model/gltf+json', '.glb': 'model/gltf-binary', '.bin': 'application/octet-stream' };
 
