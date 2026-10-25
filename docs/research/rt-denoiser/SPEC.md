@@ -1,9 +1,21 @@
-# SPEC v0.3: our real-time denoisers (`denoiser/realtime`)
+# SPEC v0.4: our real-time denoisers (`denoiser/realtime`)
 
-_v0.3, 2026-10-25 (late night), spec author (RULES.md rule 8: may not see NRD code; writes our
-design). Status: **provisional until Dennis reviews** (TASKS T0.1)._
+_v0.4, 2026-10-25 (late night), spec author (RULES.md rule 8: may not see NRD code; writes our
+design). Status: **reviewed** for the §12 decisions (Dennis, 2026-10-25, every item as
+recommended); the algorithms stay provisional until scored on more scenes (§12 item 7)._
 
 **Changelog**
+- **v0.3 → v0.4 (2026-10-25, late night):** Dennis decided every §12 item as recommended.
+  §12 marks each one; §0.1 / §0.3 are the short form. Applied in code: SVGF `antiLag: 'auto'`
+  default (M7 agent), shadows `uniformSnap: 'change'` default and `antiLag` → `antiLagGain` (M8
+  agent), `OcclusionDenoiser` default `'svgf'`, `DiffuseSpecularDenoiser({ filter: 'recurrent' })`
+  = recurrent for both signals, recurrent `antiLag` → `historyAntiLag` (both renames keep the old
+  name as a deprecated alias that warns once per instance). §0.2 / §10.3 carry the native results
+  (native/results/PHASE4-5.md): same-GPU locked-clock cost ours / native 1.00–1.39× diffuse +
+  specular, 1.12× shadows, 1.12–1.48× occlusion; quality ahead of native NRD at its default
+  settings on every comparable signal, with an integration issue not ruled out. PLAN §8's targets as
+  decided: ≤ 2× native binding, 4 ms on the M5 Pro a guide ± 10 %, ~140 B/px accepted, shadows
+  ~0.75 ms. §7 gets a short v2.1 / v2.2 note (full rewrite still pending).
 - **v0.2 → v0.3 (2026-10-25, late night):** two milestones specified, nothing built.
   **M7 SH/SG directional variants** (§8.5 rewritten, decisions M7-1…M7-14): an L1 payload (Y with
   4 coefficients, Co / Cg as L0, after the public Snowdrop / AC Shadows recipe) in a per-sample
@@ -86,17 +98,17 @@ recurrent vs SVGF swapped, M1 §11).
 
 ### 0.1 State of each part
 
-| part | SPEC | built | status (v0.2) |
+| part | SPEC | built | status (v0.4) |
 |---|---|---|---|
 | shared temporal core | §3 | yes, used by every filter | v0.1 notes (Catmull-Rom gating C-8, anti-lag window and detector C-10/C-10b); the recurrent filter uses a cheaper reprojection (§5.1) |
-| SVGF / A-SVGF | §4 | yes (M1), anti-lag v2 | provisional; the `antiLag` default is **review item 2** |
-| recurrent diffuse | §5 | yes (M2) | provisional; below SVGF on the test bed (**item 1**) |
-| recurrent specular | §5.6 | yes (M3) | provisional; v0.2 describes it as built |
-| shadows | §7 | yes (M4, v2) | provisional; v2 as built |
-| occlusion | §8 | yes (M5) | provisional; v0.2 describes it as built; its default filter is part of **item 1** |
-| TSL nodes, real-scene pages | — | in progress (M6) | outside this spec; its first real-scene numbers feed item 7 |
-| SH/SG directional | §8.5 | no (M7) | **specified, not built** (v0.3): L1 YCoCg payload through SVGF + resolve helpers; items 10–12 |
-| translucent shadows | §7.10 | no (M8) | **specified, not built** (v0.3): RGB transmittance channel on `ShadowDenoiser` v2.2; items 13–14 |
+| SVGF / A-SVGF | §4 | yes (M1), anti-lag v2 | **the default filter for every radiance and occlusion signal, `antiLag: 'auto'` by default** (items 1–2, decided 2026-10-25) |
+| recurrent diffuse | §5 | yes (M2) | opt-in, memory-lean; not the default (item 1, decided) |
+| recurrent specular | §5.6 | yes (M3) | opt-in; `filter: 'recurrent'` on the joint class = recurrent for both signals (item 1, decided) |
+| shadows | §7 | yes (M4, v2.2) | provisional; §7 describes v2, the v2.1 / v2.2 note at its top has the rest; `uniformSnap: 'change'` default (item 5, decided) |
+| occlusion | §8 | yes (M5) | default filter `'svgf'` (item 1, decided); AO curve kept (item 6) |
+| TSL nodes, real-scene pages | — | yes (M6) | outside this spec; the real scene is the second scoring scene (item 7); the pages stay local (decided) |
+| SH/SG directional | §8.5 | yes (M7) | provisional (results/M7.md); payload, resolve and scope as recommended (items 10–12, decided) |
+| translucent shadows | §7.10 | yes (M8) | provisional (results/M8.md); output and storage limit as recommended (items 13–14, decided) |
 
 ### 0.2 Where we stand
 
@@ -107,34 +119,58 @@ where it was reported); GPU ms on the M5 Pro at 1080p; internal memory in bytes 
 
 | filter | diffuse PSNR | specular PSNR | joint ms | B/px |
 |---|---|---|---|---|
-| SVGF, `antiLag: 'off'` (package default) | 38.88 (39.00) | 33.46 (34.09) | **4.00** bench / 4.02 dev page | 132 |
-| A-SVGF, `antiLag: 'auto'` (v2) | **39.12** | **35.04** | 4.23 bench | 140 |
-| recurrent, both signals in shared dispatches | 38.26 (38.44) | 34.10 (34.41) | **3.99** bench / 4.44 dev page (4.05 with `blurTaps: 4`, dev page) | **105.5** |
-| `DiffuseSpecularDenoiser({ filter: 'recurrent' })` today: recurrent diffuse + A-SVGF specular | 38.26 | 35.04 (= A-SVGF's, bit-identical) | 4.79 bench (anti-lag v2; v1 on the dev page: 5.98) | ≈ 138 |
+| SVGF, `antiLag: 'off'` (package default until 2026-10-25) | 38.88 (39.00) | 33.46 (34.09) | **4.00** bench / 4.02 dev page | 132 |
+| A-SVGF, `antiLag: 'auto'` (v2; **package default** since 2026-10-25) | **39.12** | **35.04** | 4.23 bench | 140 |
+| recurrent, both signals in shared dispatches (= `{ filter: 'recurrent' }` since 2026-10-25) | 38.26 (38.44) | 34.10 (34.41) | **3.99** bench / 4.44 dev page (4.05 with `blurTaps: 4`, dev page) | **105.5** |
+| explicit mix `{ filter: 'recurrent', specular: { filter: 'svgf', antiLag: 'auto' } }` (what `filter: 'recurrent'` meant until 2026-10-25) | 38.26 | 35.04 (= A-SVGF's, bit-identical) | 4.79 bench (anti-lag v2; v1 on the dev page: 5.98) | ≈ 138 |
 
 **Occlusion** (M5; A-SVGF row re-measured with anti-lag **v2** in [REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §3, where SVGF and recurrent reproduced M5 exactly; ms = fastest frame of the solo bench, "both" = joint `dispatchBoth` on the same bench, whose medians are 2.62 / 2.89 / 3.10):
 
 | filter | AO PSNR | SO PSNR | ms AO / SO / both | B/px AO / both |
 |---|---|---|---|---|
-| recurrent occlusion-only mode (`OcclusionDenoiser` default) | 38.02 | 37.37 | **1.32 / 1.32 / 2.27** | **57.5 / 73.5** |
-| SVGF on ĥ | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 |
-| A-SVGF `auto` on ĥ (v2) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 |
+| recurrent occlusion-only mode (`OcclusionDenoiser` default until 2026-10-25) | 38.02 | 37.37 | **1.32 / 1.32 / 2.27** | **57.5 / 73.5** |
+| SVGF on ĥ, `antiLag: 'off'` | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 |
+| A-SVGF `auto` on ĥ (v2; **`OcclusionDenoiser` default** since 2026-10-25: `'svgf'` + SVGF's default anti-lag) | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 |
 | recurrent radiance output's alpha ("free" AO/SO) | 35.15 | 35.47 | 0 extra | 0 extra |
 
 **Shadows** (M4 §10): ours (v2) **37.11** dB, penumbra **28.57**, disoccluded 34.68, FLIP
 0.018, 0.48–0.59 ms, 40 B/px; FFX shadows 31.20 / 23.50 / 32.91 / 0.038, 0.50–0.61 ms. Ahead on
-every path. `uniformSnap` at 1080p ([REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §4): `true` (default) 37.11 / 28.57 / FLIP 0.0182,
-`'change'` 37.23 / 28.75 / 0.0186, `false` 37.29 / 28.88 / 0.0198.
+every path. v2.1 (M4 §11.3): 38.12 / 29.05 / 35.33 / FLIP 0.0129; v2.2 (M4 §12, the code today):
+38.22, penumbra 29.16, FLIP 0.013, **0.55–0.72 ms**, 48 B/px (all with `uniformSnap: true`).
+`uniformSnap` at 1080p on v2 ([REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md) §4): `true` 37.11 / 28.57 / FLIP 0.0182,
+`'change'` (**default** since 2026-10-25) 37.23 / 28.75 / 0.0186, `false` 37.29 / 28.88 / 0.0198.
+
+**Against native NRD** (NRD v4.18.0 at its **default settings**, fed our captures through its public
+API; everything on one RTX 3060 Laptop GPU; [native/results/PHASE4-5.md](native/results/PHASE4-5.md)).
+Pooled PSNR, mean over the 8 standard captures:
+
+| signal | ours | native |
+|---|---|---|
+| diffuse | `svgf-auto` 37.80, `svgf` 37.69, `recurrent` 36.57 | RELAX 34.68, REBLUR 33.63 |
+| specular | `svgf-auto` 34.24, `svgf` 33.58, `recurrent` 32.78 | RELAX 29.73, REBLUR 29.69 |
+| shadows (penumbra) | `shadows` 35.62 (26.69) | SIGMA 22.04 (12.51); plain `accumulate` 23.67 (15.50) |
+
+The real-scene captures (`three-orbit` / `three-pan`) rank the same way (diffuse ours 39.8–40.4 vs
+RELAX 37.6 / 38.7; shadows 30.9 / 31.1 vs SIGMA 24.9 / 25.8). AO is not comparable yet (native
+normalizes on its own curve, P3). **Caveat:** SIGMA scoring below plain accumulation points to an
+input-convention problem in the harness rather than a real quality gap; light size, jitter units and
+the specular hit-distance / roughness conventions (P2) were probed without closing any gap, but a
+native integration issue is not ruled out. Cost, same GPU, clocks locked at 1200 / 7001 MHz,
+`std1080-orbit`: diffuse + specular `svgf` 5.35 ms, `recurrent` 5.48, `svgf-auto` 6.09, the explicit
+mix 7.47 vs REBLUR 5.38 (RELAX 7.24): **1.00–1.39×**; shadows 1.07 vs SIGMA 0.96: **1.12×**; AO + SO
+`occlusion-recurrent` 3.76, `-svgf` 4.15, `-svgf-auto` 4.95 vs REBLUR occlusion 3.36: **1.12–1.48×**.
 
 **Against PLAN §8:**
 
+Targets as decided 2026-10-25 (§12 items 3–4 and the shadows target):
+
 | target | measured | status |
 |---|---|---|
-| diffuse + specular ≤ 4 ms (M5 Pro, 1080p) | test-bed bench: SVGF 4.00, A-SVGF auto v2 4.23, recurrent 3.99, `filter: 'recurrent'` hybrid 4.79 (recurrent on the dev page: 4.44, 4.05 with `blurTaps: 4`) | SVGF and recurrent at target; A-SVGF auto 6 % over, hybrid 20 % over |
-| shadows ≤ 0.6 ms | 0.48–0.59 (`thin` 0.59) | at target (`thin` within run-to-run noise) |
-| ≤ 100 B/px (diffuse + specular) | recurrent 105.5 (93.5 with half-res fast history, not built), SVGF 132, A-SVGF 140 | over in every configuration (item 4) |
-| ≤ 2× native on the same GPU | our WGSL has not run on the RTX machine | not measurable yet (item 3) |
-| quality within ~0.5 dB of native | synthetic plane only (M1 §7: SVGF −1.6 … +5.2 dB vs RELAX); the blue-noise test-bed captures await their native replay | not measurable yet |
+| **≤ 2× native on the same GPU** (binding) | locked clocks: diffuse + specular 1.00–1.39× REBLUR, shadows 1.12× SIGMA, AO + SO 1.12–1.48× REBLUR occlusion | **met** by every configuration |
+| diffuse + specular: 4 ms on the M5 Pro at 1080p, a guide ± 10 % | test-bed bench: A-SVGF auto v2 (default) 4.23, SVGF `'off'` 4.00, recurrent 3.99, explicit mix 4.79 (recurrent on the dev page: 4.44, 4.05 with `blurTaps: 4`) | default within the guide; the mix 20 % over |
+| shadows ~0.75 ms (was ≤ 0.6) | v2.2: 0.55–0.72 (`thin` 0.72) | met |
+| memory: ~140 B/px accepted for the SVGF default (was ≤ 100) | A-SVGF 140, SVGF 132, recurrent 105.5 (93.5 with half-res fast history, not built) | met; recurrent is the lean option |
+| quality within ~0.5 dB of native | ours ahead of native NRD at its defaults on every comparable signal (diffuse +3.1, specular +4.5 dB std set) | met, with the integration caveat above |
 
 **The central finding, plainly.** On our test bed SVGF / A-SVGF beats the recurrent filter on
 every signal: diffuse (A-SVGF auto 39.12 vs recurrent 38.26 dB; recurrent loses all 7 paths to
@@ -148,7 +184,10 @@ variance-guided luminance weight keeps beating the recurrent blur's fixed tolera
 could still change the ranking: **native NRD on the test-bed captures** (pending; the only native
 comparison so far is a synthetic plane) and **a real scene** (M6, in progress; every default was
 tuned on the scene it is scored on). Shadows are the clear win: 5.9 dB pooled over FFX shadows at
-the same cost.
+the same cost. **Update (v0.4):** both have now been measured. The real scene (M6) keeps the
+ranking, and native NRD at its default settings scores below all of our filters on our captures
+(above); Dennis decided item 1 as recommended (SVGF default, recurrent opt-in), to be re-checked if a
+fixed native integration or the new scenes change the picture.
 
 Sources: M1 §11–12, M2-M3 §2–4, M4 §10, M5 headline and §5, [REMEASURE-2026-10-25](results/REMEASURE-2026-10-25.md). Benches differ: "bench" = test-bed
 solo bench (`orbit`, uncontended; REMEASURE: median over 9 runs of each run's 200-frame median,
@@ -156,36 +195,38 @@ M1: median of 100 frames); "dev page" = the package's synthetic scene (min of 40
 report the fastest clock state. For SVGF they agree within a few % (joint 4.00 vs 4.02 ms); the
 recurrent filter reads 11 % higher on the dev page (4.44 vs 3.99), so compare filters on one bench.
 
-### 0.3 Open for review (short; options, evidence and recommendations in §12)
+### 0.3 Decided (short; options and evidence in §12)
 
-One list, ordered by how much each item blocks (TASKS "Questions for Dennis" points here).
+**Dennis decided every item as recommended on 2026-10-25** (decisions page q01–q17; TASKS
+"Questions for Dennis" points here). Nothing is open for review; re-checks are noted.
 
-1. **Default filter per signal** (diffuse / specular / occlusion; the M2/M3 go/no-go).
-   Recommendation: SVGF for all three (with item 2's anti-lag); recurrent stays an opt-in,
-   memory-lean filter; `DiffuseSpecularDenoiser({ filter: 'recurrent' })` should mean recurrent
-   for both signals (today's hybrid is dominated). Re-decide after the native replay.
-2. **SVGF `antiLag` default.** Recommendation: `'auto'` (v2): +0.25 ms joint for +0.24 dB
-   diffuse, +1.58 dB specular, 3-frame specular light recovery (`'off'`: 8).
-3. **4 ms on the M5 Pro vs ≤ 2× native.** Recommendation: ≤ 2× native binding once measurable;
-   4 ms an M5 Pro guide with ~10 % tolerance (test-bed bench medians: A-SVGF auto 4.23 passes, recurrent 3.99, hybrid 4.79 fails; [REMEASURE](results/REMEASURE-2026-10-25.md)).
-4. **Memory over 100 B/px.** Recommendation: accept ~140 B/px for the SVGF default (an untested
-   output-aliasing cut gives −16); recurrent with half-res fast history (93.5) is the ≤ 100 option.
-5. **Shadows: uniform snap.** Recommendation: `'change'`, after one 1080p check.
-6. **AO look / hit-distance curve.** Recommendation: keep the rational curve; choose the AO
-   scale `a` after a look at M6's real scenes and native's curve (probe P3).
-7. **Tuning scene.** Recommendation: M6's real-scene pages as the second scene; defaults stay
-   provisional until scored there and natively.
-8. **API items.** Recommendation: keep `remodulate` + caller factor, `dispatchBoth` and the
-   occlusion API; ship `'gradient'` as experimental; shadows standalone for now.
-9. **Listing policy.** **Decided 2026-10-25 (Dennis): keep, by caution** (RULES §2, RTG II note).
-10. **M7 colour payload** (v0.3). Recommendation: YCoCg with chroma as L0 (6 channels), RGB L1
-    (12) as an option; decide on the coloured-bounce scene.
-11. **M7 resolve location.** Recommendation: diffuse returns the SH (caller resolves), specular
-    resolves in the denoiser's last pass; both available either way.
-12. **M7 scope.** Recommendation: SVGF only; a recurrent SH mode only if item 1 keeps recurrent.
-13. **M8 output.** Recommendation: one rgba16float `(v̂·τ̂ rgb, v̂)`.
-14. **M8 storage limit.** Recommendation: use the adapter's 8 storage textures when offered, a
-    packed rgba32uint history otherwise.
+1. **Default filter per signal** (q01): SVGF for diffuse, specular and occlusion; recurrent is the
+   opt-in, memory-lean filter; `DiffuseSpecularDenoiser({ filter: 'recurrent' })` = recurrent for
+   both signals (the hybrid stays reachable explicitly). Re-check if a fixed native integration
+   changes the ranking.
+2. **SVGF `antiLag` default** (q02): `'auto'` (v2).
+3. **Cost target** (q03): ≤ 2× native on the same GPU is binding (met: 1.00–1.48×); 4 ms on the
+   M5 Pro is a guide ± 10 %.
+4. **Memory** (q04): ~140 B/px accepted for the SVGF default; recurrent is the ≤ 100 B/px option.
+5. **Shadows uniform snap** (q06): `'change'` by default, still a setting. Shadows cost target
+   ~0.75 ms (q05).
+6. **AO curve** (q07): keep the rational curve; choose the AO scale `a` after the real scenes and
+   P3, whose data is now in [native/results/PHASE4-5.md](native/results/PHASE4-5.md).
+7. **Scenes** (q08): the test bed plus the three.js real scene; Bistro / Sponza are coming.
+8. **API** (q11): as is (`remodulate` + caller factor, `dispatchBoth`, the occlusion API,
+   `'gradient'` experimental, shadows standalone); the overloaded `antiLag` booleans / numbers are
+   renamed (q10): recurrent `historyAntiLag`, shadows `antiLagGain`, old names deprecated aliases.
+9. **Listing policy:** keep, by caution (decided earlier, RULES §2).
+10. **M7 colour payload** (q12): YCoCg with chroma as L0 by default, `'sh-rgb'` opt-in.
+11. **M7 resolve location** (q13): diffuse returns the SH, specular resolves in the last pass; both
+    modes on both signals.
+12. **M7 scope** (q14): SVGF only.
+13. **M8 output** (q15): one rgba16float `(v̂·τ̂ rgb, v̂)`.
+14. **M8 storage limit** (q16): the adapter's extra storage texture when offered, a packed history
+    otherwise.
+
+Also decided: the realtime example pages stay local (`deployed: false`, q09); the captures are kept
+(q17).
 
 ---
 
@@ -781,9 +822,10 @@ recovery 4 / 3 frames (`'off'` 5 / 8). Joint cost on the uncontended bench **4.2
 samples) runs the same v2 reconstruction, unmeasured (no producer on the test bed). A shared
 gradient for both signals was not built: after these levers it could save ~0.2 ms at most and
 would lose the per-signal floor. Whether `'auto'` becomes the default is review item 2.
+**v0.4:** decided, `'auto'` is the default (64a1123).
 
 ---
-## 5. Family 2: recurrent blur (M2 diffuse, M3 specular) — provisional; below SVGF on the test bed (review item 1)
+## 5. Family 2: recurrent blur (M2 diffuse, M3 specular) — opt-in; below SVGF on the test bed (review item 1, decided)
 
 Pipeline shape from RTG II ch. 49 §49.5 (Fig. 49-3) and GTC 2020: the **post-blur output
 is next frame's history** (the recurrent loop, RTG2 §49.3), and a separate stabilization
@@ -795,7 +837,10 @@ below as a v0.1 or v0.2 note. `DiffuseSpecularDenoiser({ filter: 'recurrent' })`
 recurrent diffuse + SVGF `antiLag: 'auto'` specular (two pipelines, shared prepass); `specular:
 { filter: 'recurrent' }` puts both signals in shared recurrent dispatches (review item 1
 proposes making that the meaning of `filter: 'recurrent'`). The same passes also run an
-occlusion-only mode (§8.2).
+occlusion-only mode (§8.2). **v0.4:** item 1 decided: the recurrent filter is opt-in (SVGF is
+the default for every signal) and `filter: 'recurrent'` on the joint class means both signals in
+shared dispatches; the mix is explicit (`specular: { filter: 'svgf', antiLag: 'auto' }`). The
+anti-lag switch is `historyAntiLag` (was `antiLag`, kept as a deprecated alias).
 
 Measured (M2-M3 §2, M1 §11; all three filters in one page, pooled with the per-frame mean in
 brackets): recurrent diffuse **38.26 (38.44)** vs SVGF 38.88 (39.00) and A-SVGF auto v2 39.12;
@@ -1318,6 +1363,25 @@ Better than FFX on every path (+4.9 … +8.9 dB pooled), including disoccluded r
 on the `std1080-orbit` reset replay v2 scores 35.42 vs FFX 35.40 pooled (v1 34.25); FFX is still
 0.2–0.5 dB ahead on frames 0–2, ours from frame 3 on (M4 §10.2).
 
+**v0.4 note: v2.1, v2.2 and the 2026-10-25 decisions** (short; §7.1–7.8 still describe v2, the full
+rewrite is pending; M4 §11–12 have the numbers):
+- **v2.1 (reset fix, M4 §11):** the history clamp window uses only the 5×5 taps that pass a normal
+  test (`clampGeometry` true, at least `clampMinTaps` 3, else the full window), widened by
+  `clampEdgePx` 2 next to hard edges; the young-history mean runs over the first `youngFrames` 8
+  frames with weight tapering by `youngTaper` 0.25 (replaces `youngSpan`); "fresh" = a per-pixel
+  frame counter since the pixel was new, not A. 1080p, 7 paths: 38.12 / penumbra 29.05 / disoccluded
+  35.33 / FLIP 0.0129 (v2: 37.11 / 28.57 / 34.68 / 0.0182); frame 2 after a reset now above frame 1
+  on the real scene. Cost +0.07…0.14 ms (temporal 0.42–0.47).
+- **v2.2 (moving shadows, M4 §12):** a fifth pass, `stabilize`: a short history of the final output,
+  reprojected, clamped to the 3×3 min / max of this frame's spatial output, blended by `stabilize`
+  0.25, gated by the 3×3 range (`stabilizeBox` 0.05 at 1080p, × 1080 / height) and with an anti-lag
+  on the clamp distance (`stabilizeAntiLag` 64); penumbra tiles only; never feeds back (RTG II
+  §49.5.7 prose). Knot-shadow boil 0.0062 → 0.0013 (FFX 0.0011); 1080p 38.22 / penumbra 29.16 /
+  FLIP 0.013; `light` −0.19 dB. **0.55–0.72 ms**, **48 B/px** (+16 B per tile).
+- **2026-10-25 decisions (§12):** `uniformSnap` default `'change'` (item 5; the v2.1 / v2.2 numbers
+  above were taken with `true`); the numeric `antiLag` (§7.4) is now `antiLagGain` (default 64, old
+  name a deprecated alias); cost target ~0.75 ms (v2.2 meets it).
+
 ### 7.1 SH-1 Inputs
 
 `visibility` ∈ [0, 1] (fractional kept end to end, never thresholded), occluder distance `h`
@@ -1706,7 +1770,7 @@ luminance-driven anti-lag. Making the alpha as good would change the radiance ou
 the radiance blur's radius and hit-distance weight), so it stays a preview. PLAN §1's "occlusion
 nearly free on top of the radiance filter" holds for cost, not for quality.
 
-### 8.2 O-2 Recurrent occlusion-only mode (`filter: 'recurrent'`, today's default)
+### 8.2 O-2 Recurrent occlusion-only mode (`filter: 'recurrent'`; the default until v0.4, opt-in since)
 
 The recurrent passes with the radiance channels dropped. The radiance kinds compile to the same
 WGSL as before (generated code diffed over 6 configurations).
@@ -1727,7 +1791,7 @@ diffuse filter (2.02 ms), because per-tap geometry loads and plane tests dominat
 only the pre-blur goes away. Untried levers: bilinear history instead of the 16-load Catmull-Rom
 (temporal 0.47 ms), 4-tap blur, a single-signal fast history as r32float (−8 B/px).
 
-### 8.3 SVGF on ĥ (`filter: 'svgf'`, new in v0.2)
+### 8.3 SVGF on ĥ (`filter: 'svgf'`, new in v0.2; the default since v0.4, with SVGF's default `antiLag: 'auto'`)
 
 Not in v0.1. A normalization pass (`HitDistanceNormalizer`, also exported for a noisy AO / SO
 preview) writes ĥ as a gray rgba16float image; the unchanged SVGF pipeline (§4) filters it with
@@ -2154,21 +2218,23 @@ until the next dispatch" contract): −8 B/px per signal, 132 → 124 (140 → 1
 
 ### 10.3 Measured cost and memory vs PLAN §8
 
-PLAN §8: diffuse + specular ≤ 4 ms and ≤ 100 B/px on the M5 Pro at 1080p; shadows ≤ 0.6 ms;
-≤ 2× native on the same GPU; quality within ~0.5 dB of native.
+PLAN §8 as written: diffuse + specular ≤ 4 ms and ≤ 100 B/px on the M5 Pro at 1080p; shadows
+≤ 0.6 ms; ≤ 2× native on the same GPU; quality within ~0.5 dB of native. **As decided 2026-10-25
+(§12 items 3–4):** ≤ 2× native binding, 4 ms on the M5 Pro a guide ± 10 %, ~140 B/px accepted for
+the SVGF default, shadows ~0.75 ms. The last column judges against the decided targets.
 
-| configuration | dispatches | GPU ms (1080p, M5 Pro) | B/px | vs PLAN §8 |
+| configuration | dispatches | GPU ms (1080p, M5 Pro) | B/px | vs targets |
 |---|---|---|---|---|
-| SVGF diffuse + specular (`antiLag: 'off'`, default) | 8 | **3.99** (bench, M1 §12.4) / 4.02 (dev page, M2-M3 §4) | 132 | at target; memory over |
-| A-SVGF diffuse + specular (`antiLag: 'auto'` v2) | 14 | **4.24** (bench; v1: 5.61 bench, 5.55 dev page) | 140 | 6 % over; memory over |
-| recurrent diffuse + specular, shared dispatches | 8 | **3.99** test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md)); 4.44 dev page; 4.05 with `blurTaps: 4` (dev page; −0.07 dB, +5 % flicker) | 105.5 | at target on the test-bed bench; memory 5.5 % over |
+| SVGF diffuse + specular (`antiLag: 'off'`, explicit) | 8 | **3.99** (bench, M1 §12.4) / 4.02 (dev page, M2-M3 §4) | 132 | within |
+| A-SVGF diffuse + specular (`antiLag: 'auto'` v2, **default**) | 14 | **4.24** (bench; v1: 5.61 bench, 5.55 dev page) | 140 | within the guide (+6 %) and the accepted memory |
+| recurrent diffuse + specular, shared dispatches (`filter: 'recurrent'`) | 8 | **3.99** test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md)); 4.44 dev page; 4.05 with `blurTaps: 4` (dev page; −0.07 dB, +5 % flicker) | 105.5 | within |
 | recurrent diffuse alone / specular alone | 8 | 2.38 / 2.79 (dev page) | 73.5 / 73.5 | SVGF alone: 2.11–2.18 / 2.68–2.99 |
-| `filter: 'recurrent'` joint default today (recurrent diffuse + A-SVGF specular, shared prepass) | 21 | **4.79** test-bed bench median, anti-lag v2 ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 dev page: 5.98) | ≈ 138 | 20 % over |
+| explicit mix: recurrent diffuse + A-SVGF specular, shared prepass (the joint `filter: 'recurrent'` until 2026-10-25) | 21 | **4.79** test-bed bench median, anti-lag v2 ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 dev page: 5.98) | ≈ 138 | 20 % over the guide |
 | skeleton: 8 recurrent passes with trivial kernels, both signals | 8 | 0.85 | — | dispatch + centre I/O ≈ ⅕ of 4 ms |
 | occlusion AO: recurrent / SVGF / A-SVGF `auto` (v1) | 7 / 7 / 13 | 1.32 / 1.37 / 2.16 (fastest clock) | 57.5 / 84 / 92 | no PLAN target |
 | occlusion AO + SO joint: recurrent / SVGF / A-SVGF `auto` (v2) | 7 / 8 / 14 | 2.62 / 2.89 / 3.10 test-bed bench median ([REMEASURE](results/REMEASURE-2026-10-25.md); v1 8-frame replay min: 2.39 / 2.99 / 5.27) | 73.5 / 148 / 156 | no PLAN target |
 | shadows (v2) | 4 | **0.48–0.59** fastest of 4 runs (`thin` 0.59); FFX 0.50–0.61 | 40 (+12 B per tile) | at target |
-| shadows v2.2 (results/M4.md §12.6; §7 not yet rewritten for it) | 5 | 0.55–0.72 fastest run (`thin` 0.72) | 48 (+16 B per tile) | `thin` over 0.6 |
+| shadows v2.2 (results/M4.md §12.6; §7's v2.1 / v2.2 note) | 5 | 0.55–0.72 fastest run (`thin` 0.72) | 48 (+16 B per tile) | within ~0.75 ms |
 | _estimate, not built:_ SVGF diffuse SH (M7, §8.5.5) alone / + specular SH | 8 / 8 | ≈ 2.9–3.4 / ≈ 5.4–6.4 | 116 / 212 (fused output: 108 / 196; +8 with anti-lag v2) | SH target: ≤ 1.5× plain, ≤ 2× native `*_SH` |
 | _estimate, not built:_ translucent shadows (M8, §7.10.3) | 5 | ≈ 0.70–0.95 on glass paths, ≈ +0.1 elsewhere | ≈ 80 | ≤ 2× native translucency |
 
@@ -2178,9 +2244,20 @@ frames on the dev page. They agree within a few % where they overlap. Joint SVGF
 8-frame `std1080-orbit` replay (M1 §6: 4.20 / 6.31 ms) overweight young histories and are
 superseded by the bench.
 
-Not measurable yet: **≤ 2× native** (our WGSL on the Windows RTX machine, NATIVE-HARNESS phase 5;
-native there: RELAX diffuse + specular 6.74 ms, REBLUR 5.61, SIGMA 1.09 at 1080p, M1 §7) and
-**quality vs native** (only the synthetic-plane captures were replayed natively).
+**Same GPU as native** (v0.4; [native/results/PHASE4-5.md](native/results/PHASE4-5.md) "Cost"): RTX 3060
+Laptop, clocks locked at 1200 MHz graphics / 7001 MHz memory (unlocked, the driver kept Chrome's work
+at ≤ 780 MHz and our times were bimodal), `std1080-orbit`, GPU time around the dispatches, median of
+frames 1–7, median of 3 runs. Our Chrome / Dawn submission adds 2.1–3.4 ms of wall time per frame
+that the table leaves out (native: 0.1–0.15 ms).
+
+| signals | ours (GPU ms) | native (GPU ms) | ours / native |
+|---|---|---|---|
+| diffuse + specular | `svgf` 5.35 · `recurrent` 5.48 · `svgf-auto` 6.09 · explicit mix 7.47 | REBLUR 5.38 (RELAX 7.24) | **1.00 / 1.02 / 1.13 / 1.39×** REBLUR (0.74–1.03× RELAX) |
+| shadows | `shadows` 1.07 (`ffx-shadows` 0.96) | SIGMA 0.96 | **1.12×** |
+| AO + SO | `occlusion-recurrent` 3.76 · `-svgf` 4.15 · `-svgf-auto` 4.95 | REBLUR occlusion 3.36 | **1.12 / 1.24 / 1.48×** |
+
+Every configuration meets "≤ 2× native". Quality vs native: §0.2 (ours ahead at native's defaults,
+integration caveat).
 
 Levers, measured (TASKS, M2-M3 §4, M1 §12, M4 §10.4, M5 §5):
 - **Recurrent** 7.00 (first virtual motion) → 4.44 ms joint: dead options removed, bilinear
@@ -2199,13 +2276,14 @@ Levers, measured (TASKS, M2-M3 §4, M1 §12, M4 §10.4, M5 §5):
 
 ## 11. What's next for implementers (v0.2; M7 / M8 added in v0.3)
 
-1. **Native replays** of the blue-noise test-bed captures (Windows), for the PLAN §8 quality
+1. ~~**Native replays** of the blue-noise test-bed captures (Windows), for the PLAN §8 quality
    target and review item 1; then NATIVE-HARNESS phase 5 (our WGSL on the RTX machine) for
-   "≤ 2× native" (item 3).
+   "≤ 2× native" (item 3).~~ Done (native/results/PHASE4-5.md). Next: rule out a native
+   integration issue (SIGMA below plain accumulation), then re-score.
 2. **M6 real-scene numbers** (`results/M6-real-scene.md`) for item 7, with every filter in the
    same page as on the test bed.
-3. Once Dennis decides items 1–2: flip the defaults (`antiLag`, `OcclusionDenoiser` filter, the
-   meaning of `filter: 'recurrent'` on the joint class), update README tables.
+3. ~~Once Dennis decides items 1–2: flip the defaults (`antiLag`, `OcclusionDenoiser` filter, the
+   meaning of `filter: 'recurrent'` on the joint class), update README tables.~~ Done 2026-10-25.
 4. Small measurement gaps (TASKS): A-SVGF `auto` v2 on occlusion; `uniformSnap: 'change'` at
    1080p; the hybrid default with anti-lag v2.
 5. If recurrent stays in play: half-res fast history (memory, item 4), and the untried
@@ -2247,6 +2325,12 @@ _M8 (translucent shadows, §7.10)_
 
 ## 12. Open for Dennis's review
 
+**v0.4: all decided.** Dennis decided every item as recommended on 2026-10-25 (via the decisions
+page, q01–q17). Each item below starts with its decision in one line; options and evidence are kept
+as the record. Decisions outside the numbered items: shadows' cost target becomes ~0.75 ms (q05; v2.2
+measures 0.55–0.72); the realtime example pages stay local, `deployed: false` (q09); the captures are
+kept (q17).
+
 **v0.2:** one list, merged with TASKS "Questions for Dennis" (which now points here), ordered by
 how much each item blocks. Each item has options, evidence (test bed, 1080p, 7 paths, pooled PSNR
 unless noted) and our recommendation.
@@ -2260,6 +2344,11 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 
 1. **Default filter per signal: diffuse, specular, occlusion.** Blocks the M2/M3 go/no-go, the
    defaults of M6's nodes, and M7 (SH/SG waits for it).
+   **Decided 2026-10-25 (Dennis): (a).** SVGF for all three, recurrent opt-in; `OcclusionDenoiser` default `'svgf'`;
+   `DiffuseSpecularDenoiser({ filter: 'recurrent' })` = recurrent for both signals, the hybrid explicit
+   (`specular: { filter: 'svgf', antiLag: 'auto' }`). In code since 6be4f23 (explicit paths and the new
+   defaults byte-checked against their explicit configs). Checkpoint (d) stays: re-check after a native
+   replay with the integration question settled (native at its defaults already scores below ours).
    - *Evidence.* PLAN §4.2 expects recurrent as the shipping default; M2's exit criterion is
      "beats M1 on quality or cost". Measured (§0.2): diffuse SVGF 38.88 / A-SVGF auto 39.12 /
      recurrent 38.26 dB (recurrent − SVGF per path: orbit −0.86, pan −1.25, light −0.67, thin
@@ -2287,6 +2376,7 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      default** on today's evidence; keep the code as the memory option and the native-parity bet.
 
 2. **SVGF `antiLag` default** (the svgf-antilag agent's proposal in TASKS).
+   **Decided 2026-10-25 (Dennis): (a).** `'auto'` (v2) is the default (64a1123); `'off'` stays an option.
    - *Evidence* (M1 §12). `'auto'` v2 vs `'off'`: diffuse 39.12 vs 38.88 (+0.24), specular 35.04
      vs 33.46 (+1.58; `glossy` +3.8, `'off'`'s specular lag), FLIP 0.033 / 0.046 vs 0.036 / 0.051,
      lower flicker; light-flip recovery 4 / 3 frames vs 5 / 8; joint 4.24 vs 3.99 ms (+0.25; v1
@@ -2299,6 +2389,9 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
    - *Recommendation:* (a). Item 3 decides whether 4.24 ms is acceptable.
 
 3. **The 4 ms budget vs ≤ 2× native.**
+   **Decided 2026-10-25 (Dennis): (b).** ≤ 2× native on the same GPU is binding, 4 ms on the M5 Pro a
+   guide ± 10 %. Measured since (native/results/PHASE4-5.md, locked clocks): ours / native 1.00–1.39×
+   diffuse + specular, 1.12× shadows, 1.12–1.48× occlusion, so every configuration meets it.
    - *Evidence.* Joint diffuse + specular on the M5 Pro, test-bed bench medians ([REMEASURE](results/REMEASURE-2026-10-25.md)): SVGF 4.00,
      A-SVGF auto v2 4.23, recurrent 3.99, hybrid 4.79 (recurrent on the dev page: 4.44). Native on the RTX 3060 Laptop: RELAX 6.74 ms,
      REBLUR 5.61 ms at 1080p (M1 §7); ours has never run there (NATIVE-HARNESS phase 5).
@@ -2309,6 +2402,8 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      scheduled before the defaults freeze.
 
 4. **Memory over 100 B/px.**
+   **Decided 2026-10-25 (Dennis): (a).** ~140 B/px accepted for the SVGF default; (c) if it measures clean; recurrent (+ half-res
+   `F`, not built) is the documented lean option.
    - *Evidence.* Diffuse + specular: recurrent 105.5 (half-res `F` → 93.5, not built), SVGF 132,
      A-SVGF auto v2 140, today's hybrid ≈ 138. AO: recurrent 57.5, SVGF 84. Shadows 40 (+12 B per
      tile).
@@ -2319,6 +2414,8 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      documented ≤ 100 B/px option if item 1 keeps recurrent.
 
 5. **Shadows: uniform snap.**
+   **Decided 2026-10-25 (Dennis): `'change'`** as the default (255a06a), still a setting (`true` /
+   `false`). The 1080p check landed between on and off as predicted (REMEASURE §4).
    - *Evidence* (M4 §9, §10.5). Snap = where all 25 raw samples of the 5×5 window agree, the
      history takes their value. It was tuned against the per-frame-mean metric (empty `pan`
      frames scored 120 dB). Pooled, v2: on 37.11 / penumbra 28.57 / FLIP 0.0182; off 37.29 / 28.88 /
@@ -2333,6 +2430,9 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      1080p run to confirm it lands between there too (TASKS).
 
 6. **AO look / hit-distance curve** (v0 item 2).
+   **Decided 2026-10-25 (Dennis): (a).** Keep the rational curve and its defaults; choose the AO scale `a` (option b) after the
+   real scenes and P3, whose data is now in native/results/PHASE4-5.md ("P3": native's converged
+   output equals its normalized input, so the curve is the whole AO look).
    - *Evidence.* `ĥ = h / (h + a + b·d)`, a = 1, b = 0.05 (F-3), one curve for radiance and
      occlusion. It never clips (far hits survive for virtual motion), but as AO it is soft and
      mostly white on the test-bed scene (M5 §7). Native's normalized AO uses its own curve and
@@ -2346,6 +2446,8 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      returned; (c) only if the soft falloff is rejected on looks.
 
 7. **Tuned on the scene it is scored on.**
+   **Decided 2026-10-25 (Dennis): as recommended.** Scoring scenes: the test bed plus the three.js
+   real scene, with Bistro and Sponza coming; defaults stay provisional until scored there.
    - *Evidence.* Every default (SVGF sweep, recurrent radii and anti-lag, shadows clamp, radius and
      v2 constants, occlusion radii and σ_l) was tuned on the one analytic test-bed scene and scored
      on the same 7 paths. The dev page and the test bed already disagree by 2–3 dB on recurrent vs
@@ -2356,6 +2458,10 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
      more than ~0.5 dB there.
 
 8. **API items** (§1.2, §9).
+   **Decided 2026-10-25 (Dennis): (a)–(f) as recommended, API as is.** Plus the renames from TASKS
+   (q10): the recurrent filter's boolean `antiLag` is `historyAntiLag` (6be4f23) and the shadows'
+   numeric `antiLag` is `antiLagGain` (255a06a); SVGF keeps `antiLag: 'off' | 'auto' | 'gradient'`.
+   The old names stay as deprecated aliases that warn once per instance.
    - (a) `remodulate` + caller-supplied `inputs.demodulation` instead of `f0` and an in-denoiser
      E: keep (the caller owns its material terms).
    - (b) Two outputs via `dispatchBoth`, `dispatch()` returning the first (diffuse / AO): keep.
@@ -2382,6 +2488,7 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 measured):**
 
 10. **M7 colour payload: YCoCg with chroma as L0 (6 channels) or RGB L1 (12).**
+    **Decided 2026-10-25 (Dennis): (a).** 6 channels by default, `'sh-rgb'` opt-in.
     - *Evidence.* The shipped recipes use 6 channels (SD24 p.30, ACS25 s.57); 6 fit one rgba32uint
       per buffer (M7-3), 12 need two, ≈ +48 B/px per signal and more load-bound time. 6 channels
       lose coloured directionality (a bump facing a coloured wall keeps the pixel's average hue).
@@ -2390,6 +2497,7 @@ measured):**
       the detail band that `'sh-rgb'` removes.
 
 11. **M7 resolve location.**
+    **Decided 2026-10-25 (Dennis): (a).** diffuse `resolve: 'none'`, specular `'fused'` by default; both modes on both signals.
     - *Evidence.* A caller resolve keeps the payload for other uses (SH as a light source for any
       BSDF, SD24 p.37; rough-specular reuse, SD24 p.55, ACS25 s.65) but costs a full-screen pass and
       16 B of output; a fused resolve saves both and needs only the detail normal. Specular's ratio
@@ -2399,6 +2507,7 @@ measured):**
     - *Recommendation:* (a), both modes available on both signals.
 
 12. **M7 scope: which filter.**
+    **Decided 2026-10-25 (Dennis): (a).** SVGF only (item 1 keeps recurrent opt-in, so recurrent SH stays unbuilt).
     - *Evidence.* Item 1 recommends SVGF for diffuse and specular; recurrent SH needs larger buffers,
       a luminance-ratio stabilization clamp and either 16-load Catmull-Rom or a higher storage
       limit (§8.5.6). The shipped SH recipes run on recurrent-blur denoisers, so it is known to work.
@@ -2406,6 +2515,7 @@ measured):**
     - *Recommendation:* (a).
 
 13. **M8 output.**
+    **Decided 2026-10-25 (Dennis): (a).** one rgba16float `(v̂·τ̂ rgb, v̂)`.
     - *Evidence.* The shader needs `v̂·τ̂` (rgb); opaque-only consumers and the regression need v̂.
       One rgba16float carries both (8 B); separate τ̂ and v̂ would let a caller recombine but invite
       the biased product of plain means (M8-2).
@@ -2413,6 +2523,7 @@ measured):**
     - *Recommendation:* (a).
 
 14. **M8 storage limit** (M8-9).
+    **Decided 2026-10-25 (Dennis): (a).** the fifth storage texture when the device has it, the packed history otherwise.
     - *Evidence.* The temporal pass needs a fifth storage texture for the τ history. Our examples
       already request min(8, adapter); the WebGPU default is 4. Packing v's and τ's histories into
       one rgba32uint works at 4 but loses hardware filtering for v's Catmull-Rom history (16 loads,
