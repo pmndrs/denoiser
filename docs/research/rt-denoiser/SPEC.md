@@ -2484,3 +2484,8 @@ scene (§12 item 7). Moving occluders over static receivers (no motion vector fo
 captures: the rotating torus knot (`three-knot-static`, `three-knot-orbit`, and the frozen-knot control
 `three-knot-still`; examples/three-temporal/CAPTURES.md), scored with the dynamic region and boil; the
 test bed's `object` and `light` paths cover the same case analytically. A default stands only if both scenes, and later the native replay, agree.
+
+**Adoption rule (Dennis, 2026-10-25).** New techniques ship as options with today's behavior as the
+default (bit-identical default path). Promotion to a default needs an A/B on both scoring scenes
+(and native where it applies) with no regression beyond −0.1 dB pooled PSNR, +5 % FLIP, +5 % boil
+or flicker in any region, +10 % cost; look-changing defaults need Dennis's approval (TASKS rule 9).

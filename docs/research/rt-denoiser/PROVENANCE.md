@@ -57,6 +57,17 @@ written from public sources by another agent. Mitigation added to LESSONS: avoid
 on NRD anti-lag / confidence that pull README text into summaries. The orchestrator relayed only
 the fact of the exposure, not its content.
 
+**Exposure, orchestrator (2026-10-25, rule 7):** Dennis added
+`docs/research/independent-denoiser-implementation-brief.md`, an external review whose statements
+about NRD come from an audit of NRD 4.18.0's source and history. The orchestrator read its header,
+its "already implemented" table (about our code) and its first section, which says ReBLUR replaced
+mip-based history repair with direct spatial repair in 2022 (the "what" is also in the release audit,
+`sources/nrd-releases.md`, rule 3b) and gives one sentence on how the current repair works. It stopped
+there. Consequences: the orchestrator writes no passes and will not brief a history-repair design
+from that sentence; any change to history repair is designed from public sources, our measurements
+or black-box probes by an implementer who hasn't read the brief. Running agents were told not to open
+it. The brief is untracked and must not be given to implementers (RULES §1).
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").

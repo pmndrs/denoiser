@@ -41,7 +41,15 @@ to it before you finish._
    LESSONS.md, pick the next-best option or narrow scope, and say so in your report. If a
    question genuinely needs Dennis, add it under "Questions for Dennis" and continue with
    your best guess, marked as provisional.
-9. **Report back** (your final message): what's done (with commit hashes), numbers, what's
+9. **New techniques land as options, not as new defaults** (Dennis, 2026-10-25). Anything new (an
+   idea from research, a review, a probe, or your own design) goes in behind an option whose default
+   keeps today's behavior, with a bit-identical check of the default path. It becomes a default only
+   after an A/B on the test bed's 7 paths **and** the real-scene captures (and native where it
+   applies) shows no regression beyond: −0.1 dB pooled PSNR, +5 % FLIP, +5 % boil / flicker in any
+   region (static, dynamic, penumbra, disoccluded), +10 % cost. Record the A/B in the results doc and
+   propose the flip in TASKS; Dennis approves default changes that change the look. "It should be
+   better" is not evidence.
+10. **Report back** (your final message): what's done (with commit hashes), numbers, what's
    provisional, what's next, and anything a later agent must know.
 
 ## Milestones
