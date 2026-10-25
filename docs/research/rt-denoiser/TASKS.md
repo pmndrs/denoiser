@@ -55,6 +55,13 @@ to it before you finish._
    better" is not evidence.
 10. **Report back** (your final message): what's done (with commit hashes), numbers, what's
    provisional, what's next, and anything a later agent must know.
+11. **One heavy GPU job at a time on the Mac** (2026-10-26; two concurrent batches lost the GPU device in E-1). Code,
+   docs and short smoke tests (a few frames) may overlap; anything longer (captures, replays of more than one capture,
+   4096-spp references, timing) holds the lock: `L=$RT_GPU_LOCK; until mkdir "$L" 2>/dev/null; do sleep 30; done;
+   echo "<agent> <task> $(date)" > "$L/owner"; …batch…; rm -rf "$L"` (the orchestrator sets `RT_GPU_LOCK` in your
+   brief). Release it between batches so others can interleave; never hold it while you write code. If the owner file is
+   older than 3 h and its processes are gone, it's stale: remove it and say so in your report. Timing runs also need
+   the GPU otherwise idle, so take the lock and check no other headless Chrome is running.
 
 ## Milestones
 
