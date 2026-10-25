@@ -15,13 +15,14 @@ reflection denoisers (`denoiser/ffx` keeps working).
 | `OcclusionDenoiser` | AO / SO from hit distance (provisional, [Occlusion](#occlusion-provisional)) | `TemporalDenoiser<OcclusionInputs>` (+ `dispatchBoth`) |
 
 Classes are named by what they denoise; the algorithm is an option:
-`filter: 'svgf'` (default) or `filter: 'recurrent'` (**provisional**, built against
-SPEC v0 §5, which is not reviewed yet; see [Recurrent filter](#recurrent-filter-provisional)).
+`filter: 'svgf'` (the default for every signal, with `antiLag: 'auto'`) or `filter: 'recurrent'`
+(opt-in, the memory-lean filter; see [Recurrent filter](#recurrent-filter-provisional)). Defaults
+as decided by Dennis on 2026-10-25 (SPEC §12); everything stays experimental.
 
 ```ts
 import { DiffuseSpecularDenoiser } from 'denoiser/realtime';
 
-const gi = new DiffuseSpecularDenoiser(device, { filter: 'svgf', antiLag: 'auto' });
+const gi = new DiffuseSpecularDenoiser(device);   // filter 'svgf', antiLag 'auto' (the defaults)
 gi.configure({ width, height });
 // every frame, after the frame's inputs are submitted:
 if (cameraCut) gi.resetHistory();
@@ -46,8 +47,8 @@ const { diffuse, specular } = gi.dispatchBoth(
   normal / roughness, and its previous-frame copy) between both signals.
   `dispatch()` returns the diffuse texture (so it still conforms) and fills
   `outputs`; `dispatchBoth()` returns `{ diffuse, specular }`. Per-signal
-  options go in `{ diffuse: {...}, specular: {...} }`; shared ones at the top
-  level.
+  options go in `{ diffuse: {...}, specular: {...} }`; shared ones (including
+  `filter`) at the top level apply to both signals.
 
 ## Inputs and conventions
 
@@ -188,13 +189,15 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
 // rgb = denoised (demodulated); a = denoised normalized hit distance ĥ = h/(h + 1 + 0.05·depth), an AO estimate
 ```
 
-- **Diffuse** (M2) and **specular** (M3) are implemented; both are **provisional** and, on
-  the test bed, **below today's SVGF defaults** (see results). Specular adds virtual
-  (reflected-image) reprojection with a curvature-corrected distance, confidence, clamp and an
-  α-space blend with surface motion (SPEC R-9…R-12, D12c).
-- `DiffuseSpecularDenoiser({ filter: 'recurrent' })` runs recurrent diffuse + SVGF
-  (`antiLag: 'auto'`) specular (unchanged default, Dennis decides; SPEC §12 item 1);
-  `specular: { filter: 'recurrent' }` puts both in shared dispatches.
+- **Diffuse** (M2) and **specular** (M3) are implemented; both are **opt-in** (not the default,
+  SPEC §12 item 1, decided 2026-10-25): on the test bed, the real scene and against native NRD
+  they score **below the SVGF defaults** (see results), for about a fifth less memory. Specular
+  adds virtual (reflected-image) reprojection with a curvature-corrected distance, confidence,
+  clamp and an α-space blend with surface motion (SPEC R-9…R-12, D12c).
+- `DiffuseSpecularDenoiser({ filter: 'recurrent' })` runs **both signals recurrent** in shared
+  dispatches (since 2026-10-25). Until then it meant recurrent diffuse + A-SVGF specular; that
+  mix is now explicit: `{ filter: 'recurrent', specular: { filter: 'svgf', antiLag: 'auto' } }`
+  (byte-identical to the old default).
 - The output texture rotates between internal buffers (valid until the next dispatch,
   per the TemporalDenoiser contract).
 - Options (defaults): `hitDistanceScale` [1], `hitDistanceViewScale` [0.05],
@@ -204,7 +207,8 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   [8 diffuse / 4 specular], `blurTaps` [8], `postBlurTaps` [4] (4 or 8, compiled in),
   `maxAccumulatedFrames` [31], `fastFrames` [3], `historyFixFrames` [3],
   `historyFixDepthTolerance` [0.02], `historyFixMinWeight` [0.25], `fireflyThreshold` [1.5],
-  `antiLag` [true], `antiLagSigma` [1], `antiLagStandardError` [true], `antiLagExcess` [0.5],
+  `historyAntiLag` [true] (renamed from `antiLag`, SPEC §12 item 8; the old name still works and
+  warns once per instance), `antiLagSigma` [1], `antiLagStandardError` [true], `antiLagExcess` [0.5],
   `antiLagHitTolerance` [0.2], `antiLagCurrentSigma` [3], `antiLagCurrentHitTolerance`
   [0.05], `stabilizationFrames` [7], `planeDistance` [0.01], `lobeFraction` [0.75],
   `specularHistoryScale` [1], `virtualMotion` [true], `virtualClampSigma` [1],
@@ -258,9 +262,10 @@ vs 5 for A-SVGF). No NaNs in any run.
 | diffuse + specular, shared dispatches | 0.10 | 0.75 | 1.20 | 0.11 | 0.47 | 0.87 | 0.46 | 0.48 | **4.44 ms** |
 | skeleton (trivial kernels, same bindings), diffuse + specular | 0.10 | 0.23 | 0.15 | 0.09 | 0.09 | 0.05 | 0.06 | 0.09 | 0.85 ms |
 
-`blurTaps: 4` gives 4.05 ms (−0.07 dB diffuse, +5 % flicker). For comparison, joint SVGF is
-4.02 ms, joint A-SVGF `auto` 5.55 ms, and `DiffuseSpecularDenoiser({ filter: 'recurrent' })`
-(recurrent diffuse + A-SVGF specular) 5.98 ms.
+`blurTaps: 4` gives 4.05 ms (−0.07 dB diffuse, +5 % flicker). For comparison on this page (anti-lag
+v1 at the time), joint SVGF `'off'` is 4.02 ms, joint A-SVGF `auto` 5.55 ms, and the recurrent
+diffuse + A-SVGF specular mix 5.98 ms. On the test-bed bench with anti-lag v2 (SPEC §0.2): SVGF
+`'off'` 4.00, `'auto'` 4.23, recurrent 3.99, the mix 4.79 ms.
 
 ## Occlusion (provisional)
 
@@ -268,31 +273,31 @@ vs 5 for A-SVGF). No NaNs in any run.
 occlusion (SO, from the specular ray) as the **normalized hit distance** of the renderer's
 1-spp rays, ĥ = h / (h + a + b·depth) (SPEC F-3 / §8; a = `hitDistanceScale` = 1 world unit,
 b = `hitDistanceViewScale` = 0.05; miss → 1). Output: ĥ in `.r` (1 = open, → 0 at contact).
-Provisional: SPEC v0.1 §8 is an outline Dennis has not reviewed; defaults were tuned on the
-test bed it is scored on.
+**Default filter `'svgf'`** (since 2026-10-25, SPEC §12 item 1; it was `'recurrent'`), with SVGF's
+default `antiLag: 'auto'`. Provisional: defaults were tuned on the test bed it is scored on.
 
 ```ts
 import { OcclusionDenoiser } from 'denoiser/realtime';
 
-const ao = new OcclusionDenoiser(device, { filter: 'svgf' });          // or 'recurrent' (default)
+const ao = new OcclusionDenoiser(device);                                // filter 'svgf'; or { filter: 'recurrent' }
 ao.configure({ width, height });
 const aoTex = ao.dispatch({ hitDistance: diffuseHitT }, guides, camera); // ĥ in .r
 
-const both = new OcclusionDenoiser(device, { filter: 'svgf', signal: 'both' }); // SO needs guides.roughness
+const both = new OcclusionDenoiser(device, { signal: 'both' });         // SO needs guides.roughness
 const { diffuse, specular } = both.dispatchBoth(
   { diffuse: { hitDistance: diffuseHitT }, specular: { hitDistance: specularHitT } }, guides, camera);
 ```
 
-- `filter: 'recurrent'`: the recurrent pipeline's occlusion-only mode (signal kinds `ao` / `so`
+- `filter: 'recurrent'` (opt-in, memory-lean): the recurrent pipeline's occlusion-only mode (signal kinds `ao` / `so`
   in `src/shaders/recurrent.ts`): the same passes with the radiance channels dropped, one
   r32float per signal, no pre-blur (the temporal pass normalizes the raw hit distance), anti-lag
   on ĥ only, the slow ĥ clamped into the fast-history window, and for SO the fast ĥ follows the
   virtual (reflection) reprojection. Every `RecurrentOptions` key applies; occlusion defaults:
   AO blur radius 20 px, minimum radius 2 px.
-- `filter: 'svgf'`: SVGF (unchanged `SvgfPipeline`) on ĥ written as a gray image by a
+- `filter: 'svgf'` (default): SVGF (unchanged `SvgfPipeline`) on ĥ written as a gray image by a
   normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
   `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
-  1080p). `antiLag: 'auto'` works as for radiance.
+  1080p). `antiLag` as for radiance (`'auto'` by default, `'off'` is cheaper).
 - `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image). It
   starts at the denoiser's default curve (a 1, b 0.05); `setCurve(a, b, far)` changes it.
 - "Free" AO / SO: `filter: 'recurrent'` radiance outputs keep the denoised ĥ in alpha. It costs
@@ -306,8 +311,8 @@ mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `resu
 |---|---|---|---|---|---|---|
 | noisy 1 spp | 14.55 | 9.65 | 17.65 | 14.72 | | |
 | `recurrent` | 38.02 | 31.09 | 37.37 | 33.47 | **1.32** / **1.32** / **2.39** | **57.5** / **73.5** |
-| `svgf` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.92 / 2.99 | 84 / 148 |
-| `svgf`, `antiLag: 'auto'` | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.53 / 5.27 | 92 / 163 |
+| `svgf`, `antiLag: 'off'` | 38.93 | 33.53 | 38.76 | 35.66 | 1.37 / 1.92 / 2.99 | 84 / 148 |
+| `svgf`, `antiLag: 'auto'` (anti-lag v1; **the default**, re-measured with v2: 39.03 / 39.68 dB, 1.67 / 1.61 / 3.10 ms median joint, 88 / 156 B/px, REMEASURE §3) | **39.05** | **34.14** | **39.52** | **36.37** | 2.16 / 2.53 / 5.27 | 92 / 163 |
 | recurrent radiance alpha ("free") | 35.15 | 27.64 | 35.47 | 32.10 | 0 extra | 0 extra |
 
 (Medians run 15–60 % above the fastest-clock numbers; `results/M5.md` §5.)
@@ -315,7 +320,9 @@ mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `resu
 SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB AO,
 +1.4 dB SO), A-SVGF `auto` is best overall; recurrent is the memory-lean option and flickers
 least on the static-light path. The radiance alpha is 2.9 dB (AO) / 1.9 dB (SO) below the
-dedicated recurrent mode and doubles FLIP: "nearly free" holds for cost, not for quality.
+dedicated recurrent mode and doubles FLIP: "nearly free" holds for cost, not for quality. On the
+three.js scene with a moving camera (AO only, `docs/research/rt-denoiser/native/results/PHASE4-5.md`)
+plain SVGF leads (33.42 / 33.55 dB orbit / pan), `'auto'` 33.10 / 33.47, recurrent 32.53 / 32.59.
 
 ## Shadows (provisional)
 
@@ -507,6 +514,24 @@ L1 can't hold glints), so treat specular SH as experimental. Cost (1080p, conten
 diffuse 2.25 → 3.04 ms (1.35×), diffuse + specular 4.01 → 6.11 ms (1.52×). Memory: diffuse 116 B/px
 (108 with the fused resolve; plain 76), diffuse + specular 204 (plain 132), +8 with `antiLag: 'auto'`.
 
+
+## Against native NRD
+
+Native NRD v4.18.0 ran as a black box (public API only, RULES §4) on our captures, at **NRD's
+default settings**, all on one RTX 3060 Laptop GPU
+(`docs/research/rt-denoiser/native/results/PHASE4-5.md`). Pooled PSNR, mean of the 8 test-bed
+captures: diffuse ours 37.80 (`'auto'`) / 37.69 (`'off'`) / 36.57 (recurrent) vs RELAX 34.68,
+REBLUR 33.63; specular 34.24 / 33.58 / 32.78 vs 29.73 / 29.69; shadows 35.62 vs SIGMA 22.04 (plain
+accumulation: 23.67). The two real-scene captures rank the same way; AO isn't comparable yet
+(native uses its own hit-distance curve). **Ours is ahead on every comparable signal, but a native
+integration issue is not ruled out:** SIGMA scoring below plain accumulation points to an
+input-convention mismatch in the harness more than to a real quality gap.
+
+Cost on the same GPU, clocks locked (1200 / 7001 MHz), `std1080-orbit`, GPU time around the
+dispatches: diffuse + specular 1.00× (`'off'`), 1.02× (recurrent), 1.13× (`'auto'`), 1.39× (the
+recurrent + A-SVGF mix) of REBLUR's 5.38 ms; shadows 1.12× SIGMA; AO + SO 1.12× (recurrent),
+1.24× (`'off'`), 1.48× (`'auto'`) of REBLUR occlusion. Every configuration is within the 2× target
+(SPEC §12 item 3). Chrome / Dawn submission adds 2–3 ms of wall time per frame on our side.
 
 ## Dev page
 
