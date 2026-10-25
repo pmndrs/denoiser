@@ -19,6 +19,21 @@
 //   the sharpening by ambient + one extracted light renormalized at the guide normal
 //   (light extraction from L1 luma: idea of Snowdrop GDC 2024 p.37, description only).
 
+/** shPack as written below (pack2x16float rounds to nearest). */
+export const SH_PACK_NEAREST = 'return vec4u(pack2x16float(y.xy), pack2x16float(y.zw), pack2x16float(c.xy), pack2x16float(c.zw));';
+/**
+ * Test-only replacement (`shPackTruncate`): rounds toward zero like this GPU's rgba16float storage
+ * writes (Metal in Chrome truncates; measured), so SH and plain SVGF can be compared at equal precision.
+ */
+export const SH_PACK_TRUNCATE = /* wgsl */ `return vec4u(shTr(y.xy), shTr(y.zw), shTr(c.xy), shTr(c.zw));
+}
+fn shTr(v: vec2f) -> u32 {
+  var u = pack2x16float(v);
+  let r = unpack2x16float(u);
+  if (abs(r.x) > abs(v.x) && (u & 0x7fffu) != 0u) { u = u - 1u; }
+  if (abs(r.y) > abs(v.y) && (u & 0x7fff0000u) != 0u) { u = u - 0x10000u; }
+  return u;`;
+
 /** Payload struct, YCoCg conversions, pack / unpack, evaluation, luminance. No bindings. */
 export const SH_CORE_WGSL = /* wgsl */ `
 // y = (a, b.x, b.y, b.z) of the luma, c = (Co, Cg, s0, s1)
@@ -30,7 +45,7 @@ fn shClampH(v: vec4f) -> vec4f { return clamp(v, vec4f(-65504.0), vec4f(65504.0)
 fn shPack(p: SH) -> vec4u {
   let y = shClampH(p.y);
   let c = shClampH(p.c);
-  return vec4u(pack2x16float(y.xy), pack2x16float(y.zw), pack2x16float(c.xy), pack2x16float(c.zw));
+  ${SH_PACK_NEAREST}
 }
 fn shFinite4(v: vec4f) -> vec4f {
   let b = bitcast<vec4u>(v) & vec4u(0x7f800000u);

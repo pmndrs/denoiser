@@ -39,7 +39,8 @@
 //   svgf-sh            denoiser/realtime SVGF with the directional payload (M7, payload 'sh') on the v1
 //                      signals sh-diffuse / sh-specular: filters with shGuides() (normal_geom), fused resolve
 //                      at the shading normal; settings: svgf ones + m7.sharpen, m7.guard, m7.enc,
-//                      m7.ratio (sg|l1), m7.lightSharp, m7.maxRatio, m7.fadeR
+//                      m7.ratio (sg|l1), m7.lightSharp, m7.maxRatio, m7.fadeR, m7.truncate=1 (test: f16
+//                      packing rounds toward zero like the plain filter's rgba16float stores on Metal)
 //   svgf-sh-auto       the same with antiLag 'auto'
 //   v1 signals         sh-diffuse / sh-specular / shadow-rgb baselines (svgf-plain, svgf-plain-smooth,
 //                      shadows-lumt, ffx-shadows-lumt; passthrough / accumulate* extended): src/v1-entries.ts
@@ -382,6 +383,7 @@ function shOptions(st: Record<string, string>, defaults: SpecularSvgfOptions): S
   if (st['m7.lightSharp'] !== undefined) o.shLightSharpness = Number(st['m7.lightSharp']);
   if (st['m7.maxRatio'] !== undefined) o.shMaxRatio = Number(st['m7.maxRatio']);
   if (st['m7.fadeR'] !== undefined) o.shFadeRoughness = Number(st['m7.fadeR']);
+  if (st['m7.truncate'] !== undefined) (o as { shPackTruncate?: boolean }).shPackTruncate = st['m7.truncate'] === '1';
   return o;
 }
 function svgfSh(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {

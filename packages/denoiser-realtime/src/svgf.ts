@@ -15,7 +15,7 @@ import {
   GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientAtrousPassV2, gradientCreatePass, gradientCreatePassV2, gradientLambdaPass, gradientLambdaPassV2,
 } from './shaders/gradient';
 import { gradientCreatePassSh } from './shaders/sh-gradient';
-import type { ShEncoding } from './shaders/sh';
+import { SH_PACK_NEAREST, SH_PACK_TRUNCATE, type ShEncoding } from './shaders/sh';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
@@ -127,6 +127,8 @@ export interface SvgfOptions {
   shGuard?: number;
   /** SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0. */
   shSharpen?: number;
+  /** @internal Test only: f16 packing rounds toward zero (as rgba16float stores do on Metal), for the plain-vs-SH regression. */
+  shPackTruncate?: boolean;
 }
 
 /** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
@@ -207,6 +209,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shEncoding: o.shEncoding ?? 'normal-exact',
     shGuard: o.shGuard ?? 1,
     shSharpen: o.shSharpen ?? 0,
+    shPackTruncate: o.shPackTruncate ?? false,
     specularHistoryScale: o.specularHistoryScale ?? 1,
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
     lobeFraction: o.lobeFraction ?? 0.75,
@@ -266,7 +269,7 @@ class SignalState {
 /** Options that change the pass structure: signals in one pipeline must agree on these. */
 export function structuralKey(o: ResolvedOptions) {
   const k: (string | number | boolean)[] = [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion];
-  if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding);
+  if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate);
   return k.join('|');
 }
 
@@ -304,7 +307,8 @@ export class SvgfPipeline {
       d.queue.writeBuffer(b, 0, new Int32Array([1 << i, i, 0, 0]));
       this.iterParams.push(b);
     }
-    const make = (name: string, def: PassDef) => {
+    const make = (name: string, def0: PassDef) => {
+      const def = o.shPackTruncate ? { ...def0, code: def0.code.replace(SH_PACK_NEAREST, SH_PACK_TRUNCATE) } : def0;
       this.defs[name] = def;
       this.layouts[name] = makeLayout(d, `${label} ${name}`, def.entries.map((e) => e.kind));
       this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);
