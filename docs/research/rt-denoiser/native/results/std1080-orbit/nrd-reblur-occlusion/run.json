@@ -17,6 +17,7 @@
   "prevEqualsCurrent": false,
   "jitterUnits": "px",
   "fakeJitter": false,
+  "lightSizeScale": 1,
   "warmMs": 50,
   "specularHitDistanceScale": 1,
   "roughnessOverride": null,
@@ -32,5 +33,5 @@
  "driver": "592.00 (UMD 32.0.15.9200)",
  "os": "Windows 10.0.26200",
  "api": "D3D12 (headless, no swapchain), GPU timestamps around nrd::Integration::DenoiseD3D12",
- "date": "2026-10-25T11:37:08Z"
+ "date": "2026-10-25T14:07:40Z"
 }

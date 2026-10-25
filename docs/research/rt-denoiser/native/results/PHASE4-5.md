@@ -1,81 +1,130 @@
-# Native comparison, phases 4–5 (interim)
+# Native comparison, phases 4–5
 
 _Harness builder, 2026-10-25. Native NRD v4.18.0 (`e06852b`), default settings; ours from
-`feat/rt-denoiser-cleanroom` @ `7a8b980`. All on one RTX 3060 Laptop GPU (driver 592.00, D3D12;
-ours through Chrome 156 / Dawn). Scores: `tools/rt-capture/compare.mjs`, ranked on pooled PSNR.
-Images, metrics, timings and build facts only. Setup and script notes: [../SETUP.md](../SETUP.md)._
+`feat/rt-denoiser-cleanroom` @ `7a8b980`. Everything ran on one RTX 3060 Laptop GPU (driver 592.00,
+D3D12; ours through Chrome 156 / Dawn). Scores come from `tools/rt-capture/compare.mjs` (standard
+set) and `examples/three-temporal/score-captures.mjs` (real scene, plus AO and FLIP). Ranking is
+on pooled PSNR. Images, metrics, timings and build facts only. Setup and script notes are in
+[../SETUP.md](../SETUP.md). Raw outputs stay in `C:\dev\nrd-reference\outputs\`._
 
-**Interim:** the standard set, the probes and the jitter check are complete. Still to come: the
-real-scene captures (`three-orbit`, `three-pan`; being written now, slowed by thermal throttling),
-their replays, the AO/SO comparison on them, and the same-GPU cost table (the 1080p timings taken
-so far were under thermal throttling and are not reported).
+Columns, all pooled PSNR in dB (the PSNR of the mean squared error over every frame and pixel of a
+capture):
 
-## Ranking per signal: standard set (8 captures)
+- **std set**: mean over the 8 standard captures.
+- **settled**: frames ≥ 8 after a reset, so seven 960×540 captures only (`std1080-orbit` has
+  8 frames).
+- **real scene**: `three-orbit` (40 frames, slow orbit) and `three-pan` (32 frames, fast pan).
+- Per-capture tables are in `<capture>/compare.md` and, for the real scene,
+  `<capture>/score-captures.md` (with FLIP).
 
-Pooled PSNR (dB): PSNR of the mean squared error over all frames and pixels of a capture; "std set" =
-mean over the 8 captures. Settled = frames ≥ 8 after a reset, so only the seven 960×540 captures have
-it (`std1080-orbit` has 8 frames). Per-capture tables: `<capture>/compare.md`.
+## Diffuse
 
-### Diffuse
+| # | denoiser | side | std set | settled (7× 540) | 7× 960×540 | 1080p orbit | three-orbit | three-pan |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `svgf-auto` | ours | **37.80** | 38.07 | 37.60 | 39.21 | 39.83 | **40.39** |
+| 2 | `svgf` | ours | **37.69** | 37.87 | 37.48 | 39.15 | **39.89** | 40.27 |
+| 3 | `recurrent` (= `recurrent-svgfspec`) | ours | **36.57** | 37.47 | 36.52 | 36.96 | 38.78 | 39.55 |
+| 4 | `RELAX_DIFFUSE_SPECULAR` | native | **34.68** | 34.48 | 34.27 | 37.55 | 37.59 | 38.73 |
+| 5 | `REBLUR_DIFFUSE_SPECULAR` | native | **33.63** | 33.72 | 33.33 | 35.78 | 32.93 | 33.18 |
+| 6 | `accumulate` | ours | **21.76** | 26.38 | 21.95 | 20.41 | 28.53 | 26.47 |
+| – | noisy input | – | | | | | 16.88 | 17.09 |
 
-| # | denoiser | side | std set pooled | settled pooled (7× 540) | 7× 960×540 pooled | 1080p orbit pooled |
-|---|---|---|---|---|---|---|
-| 1 | `svgf-auto` | ours | **37.80** | 38.07 | 37.60 | 39.21 |
-| 2 | `svgf` | ours | **37.69** | 37.87 | 37.48 | 39.15 |
-| 3 | `recurrent` | ours | **36.57** | 37.47 | 36.52 | 36.96 |
-| 3 | `recurrent-svgfspec` | ours | **36.57** | 37.47 | 36.52 | 36.96 |
-| 5 | `RELAX_DIFFUSE_SPECULAR` | native | **34.68** | 34.48 | 34.27 | 37.55 |
-| 6 | `REBLUR_DIFFUSE_SPECULAR` | native | **33.63** | 33.72 | 33.33 | 35.78 |
-| 7 | `accumulate` | ours | **21.76** | 26.38 | 21.95 | 20.41 |
+## Specular
 
-### Specular
+| # | denoiser | side | std set | settled (7× 540) | 7× 960×540 | 1080p orbit | three-orbit | three-pan |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `svgf-auto` (= `recurrent-svgfspec`) | ours | **34.24** | 34.45 | 34.13 | 34.97 | 45.33 | 47.58 |
+| 2 | `svgf` | ours | **33.58** | 33.68 | 33.46 | 34.42 | 44.34 | 46.11 |
+| 3 | `recurrent` | ours | **32.78** | 33.43 | 32.77 | 32.85 | 43.02 | 44.29 |
+| 4 | `RELAX_DIFFUSE_SPECULAR` | native | **29.73** | 31.10 | 29.73 | 29.73 | 41.41 | 42.67 |
+| 5 | `REBLUR_DIFFUSE_SPECULAR` | native | **29.69** | 29.99 | 29.47 | 31.23 | 39.91 | 41.65 |
+| 6 | `accumulate` | ours | **22.90** | 27.30 | 23.24 | 20.48 | 39.28 | 37.34 |
+| 7 | `ffx-reflections` | ours | **20.86** | 21.82 | 21.21 | 18.41 | 39.11 | 40.85 |
+| – | noisy input | – | | | | | 34.79 | 35.87 |
 
-| # | denoiser | side | std set pooled | settled pooled (7× 540) | 7× 960×540 pooled | 1080p orbit pooled |
-|---|---|---|---|---|---|---|
-| 1 | `svgf-auto` | ours | **34.24** | 34.45 | 34.13 | 34.97 |
-| 1 | `recurrent-svgfspec` | ours | **34.24** | 34.45 | 34.13 | 34.97 |
-| 3 | `svgf` | ours | **33.58** | 33.68 | 33.46 | 34.42 |
-| 4 | `recurrent` | ours | **32.78** | 33.43 | 32.77 | 32.85 |
-| 5 | `RELAX_DIFFUSE_SPECULAR` | native | **29.73** | 31.10 | 29.73 | 29.73 |
-| 6 | `REBLUR_DIFFUSE_SPECULAR` | native | **29.69** | 29.99 | 29.47 | 31.23 |
-| 7 | `accumulate` | ours | **22.90** | 27.30 | 23.24 | 20.48 |
-| 8 | `ffx-reflections` | ours | **20.86** | 21.82 | 21.21 | 18.41 |
+The real scene's specular is three's SSR: it isn't demodulated, and its noisy input already scores
+35–36 dB, so its numbers sit far above the test bed's. `recurrent-svgfspec` = `recurrent` diffuse +
+`svgf-auto` specular, so rows coincide. RELAX's 29.73 twice is a coincidence (27.3–33.4 per capture).
 
-(`recurrent-svgfspec` = `recurrent` diffuse + `svgf-auto` specular, so the identical rows are expected.
-RELAX's 29.73 twice is a coincidence: per capture 27.3–33.4.)
+## Shadows (visibility)
 
-### Shadows (visibility)
+| # | denoiser | side | std set | settled (7× 540) | penumbra (std set) | 7× 960×540 | 1080p orbit | three-orbit | three-pan | penumbra orbit / pan |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `shadows` | ours | **35.62** | 36.29 | 26.69 | 35.47 | 36.66 | 30.92 | 31.08 | 26.81 / 26.71 |
+| 2 | `ffx-shadows` | ours | **31.42** | 29.91 | 23.77 | 30.85 | 35.40 | 26.32 | 27.86 | 22.61 / 23.20 |
+| 3 | `accumulate` | ours | **23.67** | 26.51 | 15.50 | 23.55 | 24.46 | 25.96 | 25.73 | 19.98 / 18.10 |
+| 4 | `SIGMA_SHADOW` | native | **22.04** | 22.05 | 12.51 | 21.92 | 22.87 | 24.93 | 25.79 | 17.36 / 17.62 |
+| – | noisy input | – | | | | | | 16.05 | 16.79 | 7.79 / 7.84 |
 
-| # | denoiser | side | std set pooled | settled pooled (7× 540) | penumbra pooled (std set) | 7× 960×540 pooled | 1080p orbit pooled |
-|---|---|---|---|---|---|---|---|
-| 1 | `shadows` | ours | **35.62** | 36.29 | 26.69 | 35.47 | 36.66 |
-| 2 | `ffx-shadows` | ours | **31.42** | 29.91 | 23.77 | 30.85 | 35.40 |
-| 3 | `accumulate` | ours | **23.67** | 26.51 | 15.50 | 23.55 | 24.46 |
-| 4 | `SIGMA_SHADOW` | native | **22.04** | 22.05 | 12.51 | 21.92 | 22.87 |
-
-Native SIGMA ranks below plain accumulation here (it beat accumulation on the synthetic plane). Its
-error is almost all in the penumbrae: on `std540-orbit` frame 15, penumbra RMSE 0.243 (ours 0.053,
-accumulate 0.111), lit 0.011, umbra 0.048. To rule out the harness's light conversion, the light size
-given to the penumbra helper was scaled (sphere diameter × s):
+Native SIGMA ranks below plain accumulation on the test bed and level with it on the real scene. Its
+error is almost all in the penumbrae: on `std540-orbit` frame 15 its penumbra RMSE is 0.243 (ours
+0.053, accumulate 0.111), against lit 0.011 and umbra 0.048. To rule out the harness's light
+conversion, I scaled the light size given to the penumbra helper (sphere diameter × s) on
+`std540-orbit`:
 
 | light size × | 0.5 | 1 (as reported) | 2 | 4 | 8 |
 |---|---|---|---|---|---|
-| `std540-orbit` pooled / penumbra pooled | 22.92 / 12.44 | 22.84 / 12.38 | 22.42 / 12.04 | 21.60 / 11.44 | 20.86 / 11.02 |
+| pooled / penumbra pooled | 22.92 / 12.44 | 22.84 / 12.38 | 22.42 / 12.04 | 21.60 / 11.44 | 20.86 / 11.02 |
 
-No setting helps, so the result stands as measured. Crops:
-[thin](std540-thin/crop_f15_visibility.png), [light](std540-light/crop_f12_visibility.png)
-(noisy | SIGMA | `shadows` | `ffx-shadows` | reference).
+No setting helps, so the result stands as measured. Crops (noisy | SIGMA | `shadows` | `ffx-shadows` |
+reference): [std540-thin](std540-thin/crop_f15_visibility.png),
+[std540-light](std540-light/crop_f12_visibility.png), [three-pan](three-pan/crop_f20_visibility.png).
 
-### AO / SO
+## AO / SO
 
-Not scorable on the standard set: its captures have no AO/SO references (the test bed scores AO
-live). On the real scene, `ao_ref` exists but is on **our** normalization curve; native occlusion
-outputs are on its own (P3), so a native AO score against `ao_ref` would not be meaningful. Ours vs
-`ao_ref` on the real scene follows with the real-scene replays; native AO needs references rendered on
-its curve (P3 gives the data).
+AO is scorable only on the real scene, against its `ao_ref` buffer; the standard set has no AO/SO
+references, and the real scene has no SO reference.
 
-Crops: [glossy specular](std540-glossy/crop_f15_specular.png), [pan diffuse](std540-pan/crop_f15_diffuse.png)
-(noisy | REBLUR | RELAX | `svgf-auto` | `recurrent` | reference).
+| # | denoiser | side | three-orbit | three-pan |
+|---|---|---|---|---|
+| 1 | `occlusion-svgf` | ours | **33.42** | **33.55** |
+| 2 | `occlusion-svgf-auto` | ours | 33.10 | 33.47 |
+| 3 | `occlusion-recurrent` | ours | 32.53 | 32.59 |
+| – | `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` | native | not comparable | not comparable |
+| – | noisy input (1-ray ĥ on our curve) | – | 12.52 | 12.74 |
+
+`ao_ref` holds the mean of ĥ = h / (h + 1 + 0.05·(−viewz)) per ray, which is our normalization.
+Native's output is on its own normalization (P3 below), so scoring it against `ao_ref` measures the
+curve difference more than the denoiser. (For the record, that score is 23.01 / 21.74, but it is not
+a ranking.) A fair comparison needs references rendered on native's curve, and P3 gives the data
+for that.
+
+## Cost: same GPU, `std1080-orbit`, clocks locked
+
+Both sides ran with the GPU locked at **1200 MHz graphics / 7001 MHz memory** (`nvidia-smi -lgc` /
+`-lmc`). Each timed run started below 82 °C, and every one of 1,991 clock samples (every 200 ms)
+held 1200 / 7001 MHz with no thermal slowdown (76–79 °C). Before each timed frame, each side
+ran the same 50 ms ALU warm-up. GPU ms = timestamps around the denoiser's dispatches (ours: the
+WebGPU timestamp queries summed as `total`; native: around `DenoiseD3D12`). The value is the median of
+frames 1–7, then the median of 3 runs; the range across runs is in brackets. Data and per-run
+`timings.csv`: [std1080-orbit/cost/](std1080-orbit/cost/).
+
+| signals | ours | GPU ms | native | GPU ms | ours / native |
+|---|---|---|---|---|---|
+| diffuse + specular | `svgf` | 5.351 [5.349–5.354] | `REBLUR_DIFFUSE_SPECULAR` | 5.377 [5.373–5.378] | **1.00×** (RELAX: 0.74×) |
+| | `recurrent` | 5.477 [5.477–5.502] | | | **1.02×** (0.76×) |
+| | `svgf-auto` | 6.089 [6.084–6.097] | | | **1.13×** (0.84×) |
+| | `recurrent-svgfspec` | 7.471 [7.469–7.555] | | | **1.39×** (1.03×) |
+| | | | `RELAX_DIFFUSE_SPECULAR` | 7.241 [6.975–7.250] | |
+| shadows | `shadows` | 1.071 [1.070–1.071] | `SIGMA_SHADOW` | 0.959 [0.959–0.961] | **1.12×** |
+| | `ffx-shadows` | 0.962 [0.961–0.963] | | | 1.00× |
+| AO + SO | `occlusion-recurrent` | 3.763 [3.748–3.764] | `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` | 3.356 [3.354–3.359] | **1.12×** |
+| | `occlusion-svgf` | 4.146 [4.144–4.146] | | | **1.24×** |
+| | `occlusion-svgf-auto` | 4.952 [4.618–4.988] | | | **1.48×** |
+| specular only | `ffx-reflections` | 3.100 | – | – | |
+| all three, baseline | `accumulate` | 1.817 | – | – | |
+
+**Every one of our denoisers is within the 2× target**: 1.00–1.39× REBLUR on diffuse + specular,
+1.12× SIGMA on shadows, 1.12–1.48× REBLUR occlusion on AO + SO. Wall time (submit to done) adds
+about 2.1–3.4 ms per frame on our side (Chrome / Dawn submission), against 0.1–0.15 ms native (e.g.
+`svgf` 8.5 ms wall vs `REBLUR` 5.5).
+
+These are locked-clock numbers, so they are not the speeds the laptop reaches on its own. Locking
+was necessary: unlocked, the driver kept our Chrome work at ≤ 780 MHz with the memory clock
+dropping to 810 MHz (P5) on some frames, making our times bimodal (e.g. `svgf` 5.3 ↔ 28 ms), while
+native boosted to ~1.9 GHz. A visible (non-headless) Chrome window gave the same 28 ms, so headless
+mode isn't the cause. The `GPU ms` columns in this session's `compare.md` / `score-captures.md`
+files come from unlocked runs: **don't use them.**
 
 ## P2: is native specular low because of input conventions? **No.**
 
@@ -98,24 +147,27 @@ Specular only, sequence pooled PSNR (last frame in brackets), `compare.mjs`:
 
 Noisy input: 12.87 (static), 12.79 (plane).
 
-- Range of the normalized specular hit distance the helper produced in (a), default parameters
-  (3, 0.1, 20), over scored pixels of all frames: **p1 0.021, p50 0.056–0.061, p99 0.20–0.22**
-  (min 0.011, max 0.28–0.29), both captures.
-- (d): parameters (2, 0.08, 1) were picked by measuring the dumped range: p1 0.28, p5 0.36, p50 0.59,
-  p95 0.83, p99 0.87. Gain: +0.1 dB.
-- REBLUR is sensitive to hit-distance scale (shorter hits +1.6 to +2.3 dB, longer −1.6 to −1.7),
-  RELAX barely (≤ 0.5 dB). Forcing roughness costs both. No variant closes the gap to ours
-  (28.7–29.4 on these captures per results/M1.md §7), and on the test bed the gap persists
-  (specular std set: native 29.7, ours 34.2).
+- **Range in (a).** The normalized specular hit distance the helper produced with default
+  parameters (3, 0.1, 20), over scored pixels of all frames: **p1 0.021, p50 0.056–0.061,
+  p99 0.20–0.22** (min 0.011, max 0.28–0.29), on both captures.
+- **Choice of (d).** I picked (2, 0.08, 1) by measuring the dumped range: p1 0.28, p5 0.36,
+  p50 0.59, p95 0.83, p99 0.87. It gains 0.1 dB.
+- **Sensitivities.** REBLUR responds to hit-distance scale (shorter hits +1.6 to +2.3 dB, longer
+  −1.6 to −1.7). RELAX barely does (≤ 0.5 dB). Forcing roughness costs both.
+- **No variant closes the gap to ours** (28.7–29.4 on these captures, per results/M1.md §7). The
+  gap persists on the test bed (std set: native 29.7, ours 34.2) and the real scene (best of ours vs best native: +3.9 / +4.9 dB).
 
 ## P3: native occlusion's hit-distance curve (data)
 
-Probe captures (`harness/tools/gen-probe.mjs`): static camera facing a wall at exactly viewZ = −d,
-64×64, 32 noise-free frames, constant hit distance h for both lobes, roughness 0.3 left half / 0.8
-right half. Our 0 (miss) is passed as 65504. Default hit-distance parameters. Converged output at frame
-31 (frame 15 is already identical). `REBLUR_DIFFUSE_OCCLUSION` + `REBLUR_SPECULAR_OCCLUSION` (separate
-instances) and `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` (joint) give identical values. AO does not depend on
-roughness.
+Probe captures (`harness/tools/gen-probe.mjs`):
+- static camera facing a wall at exactly viewZ = −d, 64×64, 32 noise-free frames;
+- constant hit distance h for both lobes;
+- roughness 0.3 on the left half, 0.8 on the right;
+- our 0 (miss) passed as 65504; default hit-distance parameters.
+
+The table gives the converged output at frame 31; frame 15 is already identical.
+`REBLUR_DIFFUSE_OCCLUSION` + `REBLUR_SPECULAR_OCCLUSION` (separate instances) and
+`REBLUR_DIFFUSE_SPECULAR_OCCLUSION` (joint) give identical values. AO doesn't depend on roughness.
 
 | viewZ | h | AO | SO, r = 0.3 | SO, r = 0.8 |
 |---|---|---|---|---|
@@ -134,13 +186,14 @@ roughness.
 | −20 | 30 | 1.0000 | 0.6241 | 0.9997 |
 | −20 | 0 (miss) | 1.0000 | 1.0000 | 1.0000 |
 
-The converged output equals the normalized input given to the denoiser to within ±0.004; small values
-come out on steps of 1/255 (0.0039, 0.0078, …).
+The converged output equals the normalized input given to the denoiser to within ±0.004. Small
+values come out on steps of 1/255 (0.0039, 0.0078, …).
 
-## Jitter units (re-check on a test-bed capture with edges)
+## Jitter units (re-checked on a test-bed capture with edges)
 
-The test bed writes no jitter, so this tells native a jitter the capture doesn't have: Halton(2,3)
-− 0.5 (±0.5 px) on the truly unjittered `std540-orbit`, given as pixels, as UV (÷ size), or not at all.
+The test bed writes no jitter, so this test tells native about a jitter the capture doesn't have.
+The capture is the truly unjittered `std540-orbit`. The false jitter is Halton(2,3) − 0.5 (±0.5 px),
+given as pixels, as UV (÷ size), or not at all.
 
 | | REBLUR diff / spec | RELAX diff / spec | SIGMA |
 |---|---|---|---|
@@ -148,15 +201,12 @@ The test bed writes no jitter, so this tells native a jitter the capture doesn't
 | false jitter, passed as UV | 34.149 / 28.814 | 35.858 / 27.633 | 22.840 |
 | false jitter, passed as pixels | 34.150 / 28.813 | 35.861 / 27.625 | 22.840 |
 
-Passing ±0.5 as pixels changes scores by ≤ 0.02 dB; if native read the value as UV, that would be
+Passing ±0.5 as pixels changes scores by ≤ 0.02 dB. If native read the value as UV, that would be
 half the screen and the run would have collapsed. **Pixel units are consistent**, and the setting
-barely matters on these captures (all of ours are unjittered).
+barely matters on these captures, all of which are unjittered.
 
-## Cost (pending)
+## Crops
 
-The 1080p cost table on `std1080-orbit` will be re-measured: during today's runs the GPU sat at
-98–100 °C with hardware thermal slowdown active and clocks at 210 MHz (max 2100), which made our
-per-frame times bimodal (e.g. `shadows` 1.6 → 5.6 ms mid-run, `svgf` 28 ↔ 65 ms). The `GPU ms`
-columns in this session's `compare.md` files come from those runs: **don't use them.** The re-run
-waits for the GPU to cool below 70 °C before every timed run and logs clocks and temperature
-(`harness/tools/timing-1080.ps1`).
+- **Diffuse:** [std540-pan](std540-pan/crop_f15_diffuse.png), [three-pan](three-pan/crop_f20_diffuse.png).
+  Panels: noisy | REBLUR | RELAX | `svgf-auto` | `recurrent` | reference.
+- **Specular:** [std540-glossy](std540-glossy/crop_f15_specular.png), same panels.

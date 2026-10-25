@@ -179,6 +179,31 @@ Changes I made (runner scripts only, no denoiser code):
 - Thermals: the GPU hit 98–100 °C with hardware thermal slowdown and 210 MHz clocks during long runs
   (fixed by elevating the laptop and adding fans: 88 °C, 900 MHz, slowdown off). Timings taken while
   throttled are discarded; see results/PHASE4-5.md "Cost".
+- Real-scene captures: `three-orbit` 40 frames at 62 s/frame (partly throttled), `three-pan`
+  32 frames at 27 s/frame (cooled); both VALID, 4.7 GB together. Our replays of them use the
+  documented queries (`mode=replay&capture=three-orbit&denoiser=<id>`, occlusion entries with
+  `&signals=ao`) through `run-headless.mjs --serve`.
+
+### Timing on this laptop: lock both clocks
+
+Unlocked, the NVIDIA driver clocks Chrome's WebGPU work and the native harness differently. While
+our replays ran, the GPU stayed at ≤ 780 MHz (mean 564), and the memory clock dropped to 810 MHz
+(P5) on some frames, which made our per-frame times bimodal (`svgf` 5.3 ↔ 28 ms,
+`accumulate` 1.8 ↔ 18–44 ms). Native boosted to ~1.9 GHz. A visible Chrome window behaved the same
+as headless. Locking the graphics clock alone isn't enough, because the memory clock still drops.
+What works (admin PowerShell; both reset on reboot):
+
+```
+nvidia-smi -lgc 1200,1200     # graphics clock
+nvidia-smi -lmc 7001,7001     # memory clock (supported: 405, 810, 6001, 7001)
+#   ... timing runs ...
+nvidia-smi -rgc ; nvidia-smi -rmc
+```
+
+`harness/tools/timing-1080.ps1` runs the cost table. It alternates ours (Chrome) and native per
+denoiser, 3 runs, and waits for the GPU to cool below a start temperature before each run. With
+memory locked at 7001 MHz the idle GPU sits at ~78 °C, so the gate was 82 °C. It logs clocks every
+200 ms. Result: every sample at 1200 / 7001 MHz, no slowdown, run-to-run spread ≤ 0.1 ms.
 
 Library build on Windows (`yarn build:lib`) fails in `packages/denoiser-realtime`: its `tsc` step
 can't find the WebGPU type names (`GPUDevice`, …; 212 errors). Every other package has a
@@ -192,7 +217,7 @@ the same `global.d.ts` to `packages/denoiser-realtime/src`.
 My own slip, for the record: launching from a shell whose working directory was `tools/rt-capture`
 fails with MODULE_NOT_FOUND; run the commands from the repo root as written.
 
-### Harness additions (C:\dev\nrd-reference\harness, commit 8e90f1a)
+### Harness additions (C:\dev\nrd-reference\harness, commits 8e90f1a, c73bb07)
 
 - `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` (`--denoisers reblur-occlusion`, folder `nrd-reblur-occlusion`)
   and the separate `REBLUR_DIFFUSE_OCCLUSION` + `REBLUR_SPECULAR_OCCLUSION`

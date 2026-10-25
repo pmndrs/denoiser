@@ -1,0 +1,90 @@
+2026-10-25T23:00:53.2516858+09:00,start ours accumulate run1 temp78
+2026-10-25T23:01:04.7413083+09:00,end ours accumulate run1
+2026-10-25T23:01:04.8263364+09:00,start ours svgf run1 temp78
+2026-10-25T23:01:16.2150735+09:00,end ours svgf run1
+2026-10-25T23:01:16.2968883+09:00,start ours svgf-auto run1 temp77
+2026-10-25T23:01:28.7607783+09:00,end ours svgf-auto run1
+2026-10-25T23:01:28.8248718+09:00,start ours recurrent run1 temp77
+2026-10-25T23:01:40.8115864+09:00,end ours recurrent run1
+2026-10-25T23:01:40.8676894+09:00,start ours recurrent-svgfspec run1 temp77
+2026-10-25T23:01:53.3223193+09:00,end ours recurrent-svgfspec run1
+2026-10-25T23:01:53.3907332+09:00,start ours shadows run1 temp77
+2026-10-25T23:02:03.7227922+09:00,end ours shadows run1
+2026-10-25T23:02:03.7884367+09:00,start ours ffx-shadows run1 temp77
+2026-10-25T23:02:13.2566043+09:00,end ours ffx-shadows run1
+2026-10-25T23:02:13.3521983+09:00,start ours ffx-reflections run1 temp76
+2026-10-25T23:02:23.7450897+09:00,end ours ffx-reflections run1
+2026-10-25T23:02:23.8100994+09:00,start ours occlusion-svgf run1 temp76
+2026-10-25T23:02:33.9623335+09:00,end ours occlusion-svgf run1
+2026-10-25T23:02:34.0224014+09:00,start ours occlusion-svgf-auto run1 temp76
+2026-10-25T23:02:44.3550745+09:00,end ours occlusion-svgf-auto run1
+2026-10-25T23:02:44.4221702+09:00,start ours occlusion-recurrent run1 temp76
+2026-10-25T23:02:54.7141271+09:00,end ours occlusion-recurrent run1
+2026-10-25T23:02:54.7888596+09:00,start native reblur run1 temp77
+2026-10-25T23:02:57.9003227+09:00,end native reblur run1
+2026-10-25T23:02:57.9644257+09:00,start native relax run1 temp78
+2026-10-25T23:03:01.2284972+09:00,end native relax run1
+2026-10-25T23:03:01.2879212+09:00,start native sigma run1 temp79
+2026-10-25T23:03:04.2273948+09:00,end native sigma run1
+2026-10-25T23:03:04.2871578+09:00,start native reblur-occlusion run1 temp78
+2026-10-25T23:03:07.0806563+09:00,end native reblur-occlusion run1
+2026-10-25T23:03:07.1426022+09:00,start ours accumulate run2 temp79
+2026-10-25T23:03:18.0910951+09:00,end ours accumulate run2
+2026-10-25T23:03:18.1679143+09:00,start ours svgf run2 temp77
+2026-10-25T23:03:28.5630440+09:00,end ours svgf run2
+2026-10-25T23:03:28.6408603+09:00,start ours svgf-auto run2 temp77
+2026-10-25T23:03:41.2070706+09:00,end ours svgf-auto run2
+2026-10-25T23:03:41.2969976+09:00,start ours recurrent run2 temp76
+2026-10-25T23:03:53.8704464+09:00,end ours recurrent run2
+2026-10-25T23:03:53.9370711+09:00,start ours recurrent-svgfspec run2 temp76
+2026-10-25T23:04:07.1728207+09:00,end ours recurrent-svgfspec run2
+2026-10-25T23:04:07.2367411+09:00,start ours shadows run2 temp76
+2026-10-25T23:04:18.1714047+09:00,end ours shadows run2
+2026-10-25T23:04:18.2249336+09:00,start ours ffx-shadows run2 temp76
+2026-10-25T23:04:29.2025064+09:00,end ours ffx-shadows run2
+2026-10-25T23:04:29.2649217+09:00,start ours ffx-reflections run2 temp76
+2026-10-25T23:04:39.6251394+09:00,end ours ffx-reflections run2
+2026-10-25T23:04:39.6922002+09:00,start ours occlusion-svgf run2 temp76
+2026-10-25T23:04:50.2098849+09:00,end ours occlusion-svgf run2
+2026-10-25T23:04:50.2798402+09:00,start ours occlusion-svgf-auto run2 temp76
+2026-10-25T23:05:00.8448707+09:00,end ours occlusion-svgf-auto run2
+2026-10-25T23:05:00.9092329+09:00,start ours occlusion-recurrent run2 temp76
+2026-10-25T23:05:12.2648230+09:00,end ours occlusion-recurrent run2
+2026-10-25T23:05:12.3316740+09:00,start native reblur run2 temp76
+2026-10-25T23:05:15.4097481+09:00,end native reblur run2
+2026-10-25T23:05:15.4763791+09:00,start native relax run2 temp78
+2026-10-25T23:05:18.5872518+09:00,end native relax run2
+2026-10-25T23:05:18.6419690+09:00,start native sigma run2 temp79
+2026-10-25T23:05:21.3275503+09:00,end native sigma run2
+2026-10-25T23:05:21.3786599+09:00,start native reblur-occlusion run2 temp79
+2026-10-25T23:05:24.0761522+09:00,end native reblur-occlusion run2
+2026-10-25T23:05:24.1456310+09:00,start ours accumulate run3 temp79
+2026-10-25T23:05:36.3350029+09:00,end ours accumulate run3
+2026-10-25T23:05:36.4006618+09:00,start ours svgf run3 temp76
+2026-10-25T23:05:47.7552211+09:00,end ours svgf run3
+2026-10-25T23:05:47.8207865+09:00,start ours svgf-auto run3 temp76
+2026-10-25T23:05:59.1986724+09:00,end ours svgf-auto run3
+2026-10-25T23:05:59.2835061+09:00,start ours recurrent run3 temp76
+2026-10-25T23:06:10.9054351+09:00,end ours recurrent run3
+2026-10-25T23:06:10.9825597+09:00,start ours recurrent-svgfspec run3 temp76
+2026-10-25T23:06:23.4574820+09:00,end ours recurrent-svgfspec run3
+2026-10-25T23:06:23.5242360+09:00,start ours shadows run3 temp76
+2026-10-25T23:06:33.8773236+09:00,end ours shadows run3
+2026-10-25T23:06:33.9450794+09:00,start ours ffx-shadows run3 temp76
+2026-10-25T23:06:44.9800728+09:00,end ours ffx-shadows run3
+2026-10-25T23:06:45.0406623+09:00,start ours ffx-reflections run3 temp76
+2026-10-25T23:06:55.4137831+09:00,end ours ffx-reflections run3
+2026-10-25T23:06:55.4831915+09:00,start ours occlusion-svgf run3 temp76
+2026-10-25T23:07:05.7988318+09:00,end ours occlusion-svgf run3
+2026-10-25T23:07:05.8675190+09:00,start ours occlusion-svgf-auto run3 temp76
+2026-10-25T23:07:16.4791968+09:00,end ours occlusion-svgf-auto run3
+2026-10-25T23:07:16.5463142+09:00,start ours occlusion-recurrent run3 temp76
+2026-10-25T23:07:27.9614766+09:00,end ours occlusion-recurrent run3
+2026-10-25T23:07:28.0332043+09:00,start native reblur run3 temp76
+2026-10-25T23:07:31.9981007+09:00,end native reblur run3
+2026-10-25T23:07:32.0532716+09:00,start native relax run3 temp77
+2026-10-25T23:07:35.0665544+09:00,end native relax run3
+2026-10-25T23:07:35.1162829+09:00,start native sigma run3 temp79
+2026-10-25T23:07:37.7897383+09:00,end native sigma run3
+2026-10-25T23:07:37.8351049+09:00,start native reblur-occlusion run3 temp79
+2026-10-25T23:07:40.7570064+09:00,end native reblur-occlusion run3
