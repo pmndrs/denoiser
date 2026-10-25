@@ -54,6 +54,21 @@ The audit's output is a list of names, licenses and citations. It never describe
 implements anything. Third-party open code found this way is used from its own upstream
 (rule 2), never from NRD's copy.
 
+## 3b. Second exception: the release audit (decided by Dennis, 2026-10-25)
+
+NRD's public release information may be read, like any product's release notes, by a
+**release auditor** only:
+
+- GitHub release notes (release bodies) and `UPDATE.md` **prose**. Not code blocks, not source
+  files, not shaders, not the README.
+- The output is `sources/nrd-releases.md`: **what** changed (features, new denoisers or modes,
+  inputs/outputs and API changes, settings that appeared or disappeared, published performance and
+  memory figures, and behavior-level claims such as "less ghosting on disocclusion"). It never says
+  **how**: no formulas, thresholds, constants, pass structure, or algorithm names beyond what a
+  public talk or paper already names. When in doubt, a line is left out.
+- The auditor doesn't write our passes (rule 8), like the provenance auditor.
+- Implementers and researchers read only `sources/nrd-releases.md`, never the raw notes.
+
 ## 4. Native NRD as a black box
 
 We may build and run native NRD to compare quality and performance, because its license
@@ -90,6 +105,7 @@ else writes the affected pass.
 | spec author / implementers | agents or people writing `SPEC.md` and the WGSL | no | yes |
 | provenance auditor | the audit agent of 2026-10-24 | yes, for references only (rule 3) | **no** (contaminated: grep of NRD source) |
 | research agent, shadows/specular | wrote `sources/shadows-specular.md` (2026-10-24) | no code; it read NRD's README prose before the README was ruled out. Those passages were removed from its report | not without review: if reused, its passes get a second reviewer |
+| release auditor | the release-audit agent of 2026-10-25 (rule 3b) | release notes and `UPDATE.md` prose only, no code | **no** |
 | harness builder | the agent on the Windows RTX machine ([NATIVE-HARNESS.md](NATIVE-HARNESS.md)) | public headers, integration layer, `NRD.hlsli` (rule 4) | **no** |
 
 Any new agent gets this file in its brief and a clear role from this table.
