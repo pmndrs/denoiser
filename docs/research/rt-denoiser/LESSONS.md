@@ -188,6 +188,22 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - TS overloads keyed on an option literal (`realtimeOcclusion`'s `denoiser.signal`): add a last overload with the
   plain option type and a union return, or a caller holding a non-literal `signal` stops compiling. — api-fixes, 2026-10-25
 
+- Another agent's Vite server may serve the test bed's `src/` from the worktree (E-1 did, with only the registry
+  pinned): editing scene / main / metrics there changes their next page load, and a half-done multi-file edit
+  hangs it. Develop in a scratch mirror instead: `git archive HEAD examples/realtime-denoiser examples/_shared
+  tools/rt-capture packages/denoiser-{core,ffx,realtime} package.json | tar -x -C <mirror>`, symlink the repo's
+  `node_modules` into it, serve it on your own port with `RT_CAPTURE_DIR=<repo>/tools/rt-capture` (captures land in
+  the shared place), and copy the finished files back to commit. Mirror captures record generator commit `?`
+  (no git there): write the captures you keep from a worktree server. — testbed-v1, 2026-10-25
+- Python `str.replace` scripts that insert TS: a `'\n'` inside a non-raw Python string becomes a real newline,
+  so `${B ? '  ng: vec3f,\n' : ''}` turns into an unterminated TS string (tsc: "Unterminated string literal").
+  Use backtick templates for multi-line inserts, and run `tsc -p examples/realtime-denoiser` before any page.
+  — testbed-v1, 2026-10-25
+- Node 22 imports `.ts` directly, but not extensionless relative imports: to dump a module's generated WGSL,
+  copy it to scratch with `from './x'` rewritten to `from './x.ts'` and `import()` both old and new versions
+  (diff of the standard build vs the original module = the bit-identity proof before any GPU run).
+  — testbed-v1, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -294,6 +310,17 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `window.__rt`). Size readback buffers for `bytesPerRow` × rows, or `mapAsync` hangs the run silently.
   — m7-sh, 2026-10-25
 
+- Scene variants without touching the original paths: generate the tracer WGSL from a TS template per build
+  (`sceneWgsl('standard' | 'bumpy' | 'glass')`) and insert the new code with ``${B ? `...` : ''}``, so the standard
+  build's existing entries are textually the original code and new entry points / bindings are only appended
+  (unused bindings don't enter `layout: 'auto'`). Result: the 7 old paths' captures were byte-identical. Runtime
+  `if (u.scene == …)` branches would have risked codegen (contraction) changes. Per-invocation state a shared
+  helper needs (the geometric normal for the below-surface test) goes in a `var<private>` set by `primary()`.
+  — testbed-v1, 2026-10-25
+- A per-pixel 6-float payload doesn't fit one texture or `readTextures` (1–4 channels): keep two rgba32float halves
+  on the GPU, read both and interleave on the CPU (`CaptureWriter` `{ parts: [...] }`), and upload as two textures
+  in replay (`name`, `name#4`). The refs' second half needs its own accumulation buffer (`acc2`). — testbed-v1, 2026-10-25
+
 ## Conventions
 
 - Motion is an NDC delta, current − previous, +y up (three's `velocity`); row 0 of capture
@@ -332,6 +359,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - `run-headless.mjs` is deterministic in quality: two runs of the same query on a frozen
   package give identical PSNR to 4 decimals, so a FLIP run can be compared cell by cell with
   a `flip=0` run, and parallel runs don't disturb quality numbers. — metrics, 2026-10-25
+
+- An encoded reference made from the SAME samples as the plain one is a free correctness test: the test bed's
+  `*_sh_ref` averages the M7-2 payloads of `*_ref`'s samples, so `a + b·n_s` must equal YCoCg-Y of `*_ref`
+  (validate.mjs `*ExactAtSamplingNormal`). It agrees to ~0.3 %, the precision of the rgba16float `normal` it is
+  evaluated with. Consequence for M7-13: resolving `diffuse_sh_ref` at the detail normal (reference (1)) gives
+  almost exactly `diffuse_ref` (reference (2)); they differ only by the guard, the chroma ratio and sharpening.
+  — testbed-v1, 2026-10-25
+- RGB region metrics: square the per-channel error, not the channel-mean signed error. compare.mjs's dynamic /
+  static split (written for scalar visibility) reused `s = mean_c e` for shadow-rgb and scored a grey output
+  against a coloured reference 8 dB too high (opposite-sign channel errors cancel); per channel it matches the
+  live test bed within 0.03 dB (the rest is the two history-validity tests' masks). — testbed-v1, 2026-10-25
+- v1 capture sizes at 960×540 (f32, 256-spp refs): sh-diffuse + sh-specular 50 floats/px = 103.7 MB/frame,
+  sh-diffuse alone 34 = 70.5 MB, shadow-rgb 28 = 58.1 MB; capture only the v1 signals a capture is for
+  (`signal=sh-diffuse,sh-specular`), not `all,v1` (60 floats, 124 MB). — testbed-v1, 2026-10-25
 
 ## Denoiser design
 

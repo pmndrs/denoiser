@@ -1,7 +1,8 @@
 # rt-capture
 
 Capture I/O for the real-time denoiser work: write, check, replay and score captures in
-[CAPTURE-FORMAT v0](../../docs/research/rt-denoiser/CAPTURE-FORMAT.md). Captures and
+[CAPTURE-FORMAT v0 / v1](../../docs/research/rt-denoiser/CAPTURE-FORMAT.md) (v1 = v0 + the SPEC v0.3 M7 / M8
+buffers; a capture with only v0 buffers is still version 0). Captures and
 outputs live in `captures/` and `outputs/` here (gitignored; `RT_CAPTURE_DIR` moves both).
 Never commit raw captures.
 
@@ -32,6 +33,7 @@ Chrome path, `CHROME_FLAGS=` adds flags).
 | `src/vite-plugin.ts` | `rtCapture()`: dev-server endpoints that write/serve `captures/` and `outputs/` |
 | `src/writer.ts` | `CaptureWriter`: GPU textures → f32 → dev server (for the test bed's exporter) |
 | `src/replay.ts` | `replay()`, `CaptureTextures`, `loadManifest()`: run any denoiser over a capture; 50 ms GPU warm-up before each timed dispatch (`warmMs`, `&warm=`; without it an idle GPU clocks down and timestamps read 4-9x high) |
+| `src/v1-entries.ts` | registry entries for the v1 signals `sh-diffuse`, `sh-specular`, `shadow-rgb`: baselines `svgf-plain` (filter normal = shading normal), `svgf-plain-smooth` (= `normal_geom`), `shadows-lumt` / `ffx-shadows-lumt` (scalar shadow denoiser on v·lum(T), grey output); `passthrough` / `accumulate*` accept the v1 signals |
 | `src/denoisers.ts` | **the project's one denoiser registry** (the test bed runs it too): `passthrough`, `accumulate`, `accumulate-static`, `accumulate-32`, `accumulate-8`, `ffx-shadows`, `ffx-reflections`, `svgf`, `svgf-auto`, `svgf-diffuse`, `svgf-specular`; `registerDenoiser()`, `perSignal()`, `svgfOptions()` |
 | `src/oidn-entries.ts` | **offline** entries `oidn` (quality `high`) and `oidn-default` (the Denoiser's default `fast`): OIDN 2 single-frame baseline (SPEC §13, E-2) on diffuse / specular / visibility / ao. Async, so they implement `ReplayDenoiser.dispatchAsync` and are registered by the replay page only (`src/main.ts`), not the test bed. Settings `oidn.quality`, `oidn.precision`, `oidn.aux=one\|albedo\|none`, `oidn.scalar=hdr\|ldr`, `oidn.ae=0`; the model each signal ran lands in run.json `denoiserInfo` |
 | `src/accumulate.ts` | reference accumulation (our analogue of native `REFERENCE`) |
@@ -58,3 +60,16 @@ An optional `info()` adds `denoiserInfo` to run.json.
 **Dev-server environment** (`vite.config.ts`): `RT_REALTIME_SRC=<dir>` pins denoiser/realtime to a frozen
 `src/` copy (as the test bed's config), `RT_NO_HMR=1` turns HMR off for long headless batches, and
 `/tzas/*` serves the OIDN weights from `packages/denoiser/tzas`.
+
+**v1 signals** (CAPTURE-FORMAT v1). A capture with `diffuse` + `diffuse_dir` (`specular` + `specular_dir`,
+`visibility` + `transmittance`) can be replayed for `sh-diffuse` (`sh-specular`, `shadow-rgb`): the entry gets
+`frame.inputs['sh-diffuse'] = { radiance, direction, hitDistance }` (replay.ts `ShInputs`) or
+`frame.inputs['shadow-rgb'] = { visibility, hitDistance, translucency, translucencyHitDistance, radiance: v·T,
+visibilityLumT }` (`TranslucentShadowInputs`), `frame.guides.geometricNormal` = `normal_geom` (`shGuides(frame)` makes
+it the filter normal and moves the shading normal to `detailNormal`), and writes `<signal>.f32` (3 ch: resolved
+demodulated rgb at `normal`, or v̂·τ̂). 6-channel buffers upload as `textures[name]` + `textures[name + '#4']`.
+`validate.mjs` checks the v1 buffers (incl. the SH references' exactness at the sampling normal), `compare.mjs`
+scores the v1 signals (bump region, detail band, floor fraction, `vsShRef` with `--sh-k` / `--sh-s`; shadow-rgb
+clamp tonemap, tint region, chroma error, dynamic / boil) and `preview.mjs --strip sh-diffuse|shadow-rgb` shows
+them. The writer takes `{ parts: [{ texture, channels }, ...] }` for buffers wider than 4 channels.
+
