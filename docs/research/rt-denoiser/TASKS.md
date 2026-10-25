@@ -46,7 +46,11 @@ to it before you finish._
    keeps today's behavior, with a bit-identical check of the default path. It becomes a default only
    after an A/B on the test bed's 7 paths **and** the real-scene captures (and native where it
    applies) shows no regression beyond: −0.1 dB pooled PSNR, +5 % FLIP, +5 % boil / flicker in any
-   region (static, dynamic, penumbra, disoccluded), +10 % cost. Record the A/B in the results doc and
+   region (static, dynamic, penumbra, disoccluded), +10 % cost. For diffuse, specular and AO, also
+   score the A/B against 4096-spp references on `orbit` / `light` / `glossy` (E-1 setup:
+   `&refspp=4096&ref2spp=256&ref2salt=0`, results/E1-high-reference.md): the 256-spp references cap
+   those signals at 37–42 dB and shrink gaps 2–3×, so a close call there is decided at 4096 spp
+   (shadows and SO references are clean enough at 256). Record the A/B in the results doc and
    propose the flip in TASKS; Dennis approves default changes that change the look. "It should be
    better" is not evidence.
 10. **Report back** (your final message): what's done (with commit hashes), numbers, what's
