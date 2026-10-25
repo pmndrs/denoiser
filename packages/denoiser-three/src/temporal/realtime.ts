@@ -112,6 +112,10 @@ export interface RealtimeSpecularOptions extends RadianceCommon {
   hitDistance?: TextureNodeLike;
   demodulation?: TextureNodeLike;
   denoiser?: SpecularDenoiserOptions;
+  /** `denoiser.payload: 'sh'` (SPEC M7, experimental for specular): world-space direction of each sample's ray. */
+  direction?: TextureNodeLike;
+  /** `payload: 'sh'`: the normal-mapped normal (the specular resolve is always fused here). */
+  detailNormal?: TextureNodeLike;
 }
 
 export interface RealtimeDiffuseSpecularOptions extends RadianceCommon {
@@ -207,7 +211,7 @@ class BothNode<I extends object> extends TemporalDenoiseNode<I> {
 }
 
 /**
- * Directional (SH) diffuse: the detail normal rides along as an input (`guide.detailNormal`) and is
+ * Directional (SH) diffuse / specular: the detail normal rides along as an input (`guide.detailNormal`) and is
  * moved into the guides here; a resolve-ready payload (resolve 'none', rgba32uint) is resolved with
  * ShResolver so the node's output stays rgb.
  */
@@ -313,6 +317,16 @@ export function realtimeSpecular(radiance: TextureNodeLike, options: RealtimeSpe
     hitDistance: scalarTexture(options.hitDistance ?? radiance.a, scale, true),
   };
   if (options.demodulation) inputs.demodulation = options.demodulation;
+  if ((options.denoiser as { payload?: string } | undefined)?.payload === 'sh') {
+    if (!options.direction) throw new Error("realtimeSpecular: payload 'sh' needs `direction`");
+    inputs.direction = toSignalTexture(options.direction, scale, (n) => vec4(n.xyz, 0), { force: !options.direction.isTextureNode });
+    if (options.detailNormal) inputs['guide.detailNormal'] = worldNormalTexture(options.detailNormal, options);
+    const den = { ...options.denoiser, resolve: 'fused' } as SpecularDenoiserOptions;
+    return denoiseNodeObject(new ShDiffuseNode(
+      (device) => new SpecularDenoiser(device, den) as unknown as TemporalDenoiser<object>, inputs, guidesOf(options, options.roughness),
+      options.camera, options as RealtimeDiffuseOptions,
+    ));
+  }
   return denoiseNodeObject(new TemporalDenoiseNode(
     (device) => new SpecularDenoiser(device, options.denoiser), inputs, guidesOf(options, options.roughness), options.camera, options.node,
   ));
