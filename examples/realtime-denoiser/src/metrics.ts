@@ -19,6 +19,16 @@
 //               e_t - e_{t-1} = (out_t - out_{t-1}) - (ref_t - ref_{t-1}), this is the
 //               usual "temporal difference vs the reference's temporal difference".
 //   packLdr     tonemapped LDR copy of a texture for the CPU-side FLIP (flip.ts).
+//   Dynamic / static split (moving shadows; results/M4.md "Moving shadows"): inside Scorer, a pixel
+//               is *dynamic* in frame t when its reference value changed by more than DYN_DELTA (0.05)
+//               within the last DYN_K (4) frames: the range of its reference over frames t-4..t,
+//               the older values carried along the history (reprojected through the footprint tap
+//               whose previous reference is closest, valid history only; static camera: the same
+//               pixel). Same definition as tools/rt-capture/compare.mjs. Regions 'dynamic', 'static' and 'static-penumbra' are plain regions
+//               (pooled PSNR, bias). 'dynamic-temporal' / 'static-temporal' reuse the region record for
+//               the motion-compensated temporal sums of that region: there psnrNoisy / psnrDen are the
+//               TEMPORAL PSNR (-10 log10 mean (e_t - e_t-1)^2) and biasDen is the motion-compensated
+//               flicker (mean |e_t - e_t-1|) of the denoised output.
 //
 // val(): shadows score visibility clamped to [0,1]; diffuse / specular score each
 // channel after a Reinhard x/(1+x) tonemap (as examples/ffx-denoiser), so a few hot
@@ -71,8 +81,67 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-export const SLOTS = 11;
-export const REGIONS = ['all', 'penumbra', 'disoccluded', 'rough<0.15', 'rough<0.35', 'rough<0.6', 'rough>=0.6'] as const;
+export const SLOTS = 16;
+export const REGIONS = ['all', 'penumbra', 'disoccluded', 'rough<0.15', 'rough<0.35', 'rough<0.6', 'rough>=0.6',
+  'dynamic', 'static', 'static-penumbra', 'dynamic-temporal', 'static-temporal'] as const;
+/** Partial-sum slot of each region in REGIONS (slots 7..10 are temporal / lum / non-finite / fixed flicker). */
+const REGION_SLOTS = [0, 1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15];
+/** Dynamic region: reference change threshold and window in frames (see the header). */
+export const DYN_DELTA = 0.05;
+export const DYN_K = 4;
+
+// dynamic flag: range of the reference over frames t-DYN_K..t > delta. Lags (ref at t, t-1, t-2, t-3;
+// -1 = none) are carried through the reprojection for the next frame.
+export const DYN_WGSL = /* wgsl */ `
+struct D { dims: vec2u, mode: u32, validPrev: u32, delta: f32, p0: f32, p1: f32, p2: f32 };
+@group(0) @binding(0) var<uniform> d: D;
+@group(0) @binding(1) var t_ref: texture_2d<f32>;
+@group(0) @binding(2) var t_prevLag: texture_2d<f32>;
+@group(0) @binding(3) var t_motion: texture_2d<f32>;
+@group(0) @binding(4) var t_age: texture_2d<f32>;
+@group(0) @binding(5) var o_dyn: texture_storage_2d<r32float, write>;
+@group(0) @binding(6) var o_lag: texture_storage_2d<rgba32float, write>;
+fn sval(c: vec4f) -> f32 {
+  if (d.mode == 0u) { return clamp(c.r, 0.0, 1.0); }
+  let x = max(c.rgb, vec3f(0.0));
+  let t = x / (1.0 + x);
+  return (t.x + t.y + t.z) / 3.0;
+}
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= d.dims)) { return; }
+  let pix = vec2i(id.xy);
+  let r = sval(textureLoad(t_ref, pix, 0));
+  var lag = vec4f(r, -1.0, -1.0, -1.0);
+  var dyn = 0.0;
+  if (d.validPrev != 0u && textureLoad(t_age, pix, 0).r >= 1.0) {
+    let mo = textureLoad(t_motion, pix, 0).xy;
+    let pp = vec2f(id.xy) + 0.5 - vec2f(mo.x, -mo.y) * 0.5 * vec2f(d.dims) - 0.5;
+    let base = vec2i(floor(pp));
+    let fr = pp - vec2f(base);
+    var dmin = 1e9;
+    var near = vec2i(-1);
+    for (var k = 0; k < 4; k++) {
+      let o = vec2i(k & 1, k >> 1);
+      let q = base + o;
+      let w = select(1.0 - fr.x, fr.x, o.x == 1) * select(1.0 - fr.y, fr.y, o.y == 1);
+      if (w <= 1e-3 || any(q < vec2i(0)) || any(q >= vec2i(d.dims))) { continue; }
+      let dq = abs(r - textureLoad(t_prevLag, q, 0).x);
+      if (dq < dmin) { dmin = dq; near = q; }
+    }
+    if (near.x >= 0) {
+      let pl = textureLoad(t_prevLag, near, 0);
+      lag = vec4f(r, pl.xyz);
+      var lo = r;
+      var hi = r;
+      for (var k = 0; k < 4; k++) { if (pl[k] >= 0.0) { lo = min(lo, pl[k]); hi = max(hi, pl[k]); } }
+      dyn = select(0.0, 1.0, hi - lo > d.delta);
+    }
+  }
+  textureStore(o_dyn, pix, vec4f(dyn));
+  textureStore(o_lag, pix, lag);
+}
+`;
 
 export const SCORE_WGSL = /* wgsl */ `
 struct M { dims: vec2u, mode: u32, validPrev: u32, ageK: f32, hasPen: u32, _p: vec2u };
@@ -90,6 +159,7 @@ struct M { dims: vec2u, mode: u32, validPrev: u32, ageK: f32, hasPen: u32, _p: v
 @group(0) @binding(11) var o_EN: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(12) var o_ED: texture_storage_2d<rgba32float, write>;
 @group(0) @binding(13) var<storage, read_write> partials: array<vec4f>;
+@group(0) @binding(14) var t_dyn: texture_2d<f32>;
 
 const NS: u32 = ${SLOTS}u;
 var<workgroup> sh: array<vec4f, 256>;
@@ -138,6 +208,12 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
       }
       let age = textureLoad(t_age, pix, 0).r;
       if (age < m.ageK) { s[2] = reg; }
+      // dynamic / static split (DYN_WGSL flag)
+      let isDyn = textureLoad(t_dyn, pix, 0).r > 0.5;
+      if (isDyn) { s[11] = reg; } else {
+        s[12] = reg;
+        if (m.hasPen == 1u) { let pv = textureLoad(t_pen, pix, 0).r; if (pv > 0.02 && pv < 0.98) { s[13] = reg; } }
+      }
       let rough = textureLoad(t_rough, pix, 0).r;
       let bin = select(select(select(6u, 5u, rough < 0.6), 4u, rough < 0.35), 3u, rough < 0.15);
       s[bin] = reg;
@@ -150,6 +226,8 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
         let dn = en - textureLoad(t_prevEN, q, 0).rgb;
         s[7] = vec4f((abs(dd.x) + abs(dd.y) + abs(dd.z)) / 3.0, dot(dd, dd) / 3.0, (abs(dn.x) + abs(dn.y) + abs(dn.z)) / 3.0, 1.0);
         s[8].w = dot(dn, dn) / 3.0;
+        // region-shaped temporal sums: [noisy de^2, denoised de^2, count, denoised |de|]
+        s[select(15u, 14u, isDyn)] = vec4f(dot(dn, dn) / 3.0, dot(dd, dd) / 3.0, 1.0, (abs(dd.x) + abs(dd.y) + abs(dd.z)) / 3.0);
       }
       if (m.validPrev != 0u) {
         // fixed-pixel flicker (examples/ffx-denoiser and tools/rt-capture/compare.mjs definition):
@@ -265,18 +343,29 @@ export class Scorer {
   private readback: GPUBuffer;
   private cur = 0;
   private wg: [number, number];
+  // dynamic region (DYN_WGSL): flag, and the reference lags (ping-pong)
+  private dynPipe: GPUComputePipeline;
+  private dynU: GPUBuffer;
+  private dynFlag: GPUTexture;
+  private dynLag: GPUTexture[];
   constructor(private device: GPUDevice, private W: number, private H: number, pipe: GPUComputePipeline) {
     this.pipe = pipe;
     const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
     const t = (l: string) => device.createTexture({ label: l, size: [W, H], format: 'rgba32float', usage });
     this.eN = [t('eN0'), t('eN1')];
     this.eD = [t('eD0'), t('eD1')];
+    this.dynFlag = device.createTexture({ label: 'dynFlag', size: [W, H], format: 'r32float', usage });
+    this.dynLag = [t('dynLag0'), t('dynLag1')];
+    this.dynPipe = Scorer.dynPipelines.get(device) ?? device.createComputePipeline({ label: 'dyn', layout: 'auto', compute: { module: device.createShaderModule({ label: 'dyn', code: DYN_WGSL }), entryPoint: 'main' } });
+    Scorer.dynPipelines.set(device, this.dynPipe);
+    this.dynU = device.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST });
     this.wg = [Math.ceil(W / 16), Math.ceil(H / 16)];
     const size = this.wg[0] * this.wg[1] * SLOTS * 16;
     this.partials = device.createBuffer({ size, usage: U.STORAGE | U.COPY_SRC });
     this.readback = device.createBuffer({ size, usage: U.MAP_READ | U.COPY_DST });
     this.u = device.createBuffer({ size: 32, usage: U.UNIFORM | U.COPY_DST });
   }
+  private static dynPipelines = new WeakMap<GPUDevice, GPUComputePipeline>();
   static pipeline(device: GPUDevice) {
     return device.createComputePipeline({ label: 'score', layout: 'auto', compute: { module: device.createShaderModule({ label: 'score', code: SCORE_WGSL }), entryPoint: 'main' } });
   }
@@ -292,11 +381,20 @@ export class Scorer {
     const u = new Uint32Array(b), f = new Float32Array(b);
     u[0] = this.W; u[1] = this.H; u[2] = o.scalar ? 0 : 1; u[3] = o.validPrev ? 1 : 0; f[4] = o.ageK; u[5] = o.pen ? (o.contact ? 2 : 1) : 0;
     this.device.queue.writeBuffer(this.u, 0, b);
+    const db = new ArrayBuffer(32);
+    const du = new Uint32Array(db), df = new Float32Array(db);
+    du[0] = this.W; du[1] = this.H; du[2] = o.scalar ? 0 : 1; du[3] = o.validPrev ? 1 : 0; df[4] = DYN_DELTA;
+    this.device.queue.writeBuffer(this.dynU, 0, db);
     const enc = this.device.createCommandEncoder({ label: 'score' });
+    const dpass = enc.beginComputePass();
+    dpass.setPipeline(this.dynPipe);
+    dpass.setBindGroup(0, bindAll(this.device, this.dynPipe, [this.dynU, o.ref, this.dynLag[prev], o.motion, o.age, this.dynFlag, this.dynLag[this.cur]]));
+    dpass.dispatchWorkgroups(Math.ceil(this.W / 8), Math.ceil(this.H / 8));
+    dpass.end();
     const pass = enc.beginComputePass();
     pass.setPipeline(this.pipe);
     pass.setBindGroup(0, bindAll(this.device, this.pipe, [this.u, o.noisy, o.den, o.ref, o.depth, o.rough, o.age, o.motion, o.pen ?? o.ref,
-      this.eN[prev], this.eD[prev], this.eN[this.cur], this.eD[this.cur], this.partials]));
+      this.eN[prev], this.eD[prev], this.eN[this.cur], this.eD[this.cur], this.partials, this.dynFlag]));
     pass.dispatchWorkgroups(...this.wg);
     pass.end();
     enc.copyBufferToBuffer(this.partials, 0, this.readback, 0, this.partials.size);
@@ -308,7 +406,7 @@ export class Scorer {
     this.readback.unmap();
     const slot = (i: number) => [s[4 * i], s[4 * i + 1], s[4 * i + 2], s[4 * i + 3]];
     return {
-      regions: REGIONS.map((_, i) => slot(i)),
+      regions: REGION_SLOTS.map(slot),
       temporal: slot(7),
       lum: { den: s[32], ref: s[33], noisy: s[34] },
       sumDeNoisy2: s[35],
