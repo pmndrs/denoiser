@@ -448,6 +448,13 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   on SSR input). A specular ranking from one signal type (traced, demodulated, true hit distance) doesn't transfer to
   SSR input; say which specular signal a ranking was measured on. — real-scene-motion, 2026-10-25
 
+- Public evidence on recurrent vs variance-guided (sources/nrd-public-2022-2026.md): Epic's MegaLights (2025) runs its
+  spatial pass after accumulation with no feedback "to make the output sharper and quickly converge … after
+  disocclusion"; Ubisoft ships a recurrent blur as the cheap option and ranks it blurrier than ReBLUR/ReLAX. Same
+  pattern as our test bed. Shipped anti-lags shorten the frame cap in proportion to how far the history sits outside
+  the clamp box and never drop it to 0; our shadows' restart-to-0 is the outlier and the likely moving-shadow boiling
+  cause. — public research 2022–2026, 2026-10-25
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._
@@ -549,3 +556,8 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   directory reshuffles and counts every old file as deleted. Chain consecutive-release diffs instead, and split removed
   lines into edited vs deleted files (`--name-status` status per path) so file merges (packaging) don't read as
   rewrites. — change auditor, 2026-10-25
+
+- Search-engine summaries can quote NRD's README even when you never open it (a query about RTXDI gradients and
+  denoiser confidence did). Keep queries about anti-lag / history confidence on papers and talks (A-SVGF, studio
+  talks), block github.com and deepwiki.com, and if a summary quotes NRD text, say so and use none of it.
+  — public research 2022–2026, 2026-10-25

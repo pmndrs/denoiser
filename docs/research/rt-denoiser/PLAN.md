@@ -90,6 +90,14 @@ Windows harness builder never write our passes.
   penumbra kernel, a fix for overlapping penumbrae, the hit-distance normalization
   curve, ReBLUR's confidence/parallax constants, and multi-light schemes.
 
+- **Public research 2022–2026** ([sources/nrd-public-2022-2026.md](sources/nrd-public-2022-2026.md)).
+  NVIDIA has published nothing technical on ReBLUR/ReLAX/SIGMA since RTG II; studio talks fill in.
+  Epic's MegaLights (2025) ships a variance-guided, deliberately non-recurrent denoiser; Ubisoft ships
+  a recurrent blur as its cheap, blurrier option. For moving shadows: shorten history in proportion to
+  the clamp distance, never restart to 0 (MegaLights), a bias/variance blend weight (Philippi 2023,
+  CC BY), or renderer flags for moving occluders (Lumen, Callisto). Plus dual-source specular
+  reprojection (AMD 2023) and a public L1-SH recipe for M7 (Snowdrop, AC Shadows, idTech8).
+
 ## 4. Architecture
 
 ### 4.1 Shape

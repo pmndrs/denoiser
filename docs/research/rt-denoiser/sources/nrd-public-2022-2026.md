@@ -496,13 +496,9 @@ U4 and U12 are the levers on SVGF's cost.
 
 ## 6. Exposure notes (rule 7)
 
-- **NRD README text in a search summary.** One WebSearch (query about RTXDI temporal gradients and
-  denoiser confidence) returned a summary that quoted three sentences from NRD's README "History
-  confidence" section (off limits, RULES §2): roughly, that confidence inputs are the best way to
-  fight temporal lag, that apps should not rely only on the built-in anti-lag, and that gradients
-  should be blurred spatially rather than accumulated. I did not open the page and none of it is used
-  above; §3.4/§3.5 rely on A-SVGF (2018), LU22, CP23, ML25 and nrd-releases.md instead. **To log in
-  PROVENANCE.md** (not my file).
+- **NRD README text in a search summary.** One WebSearch summary quoted a few sentences from an
+  off-limits section of NRD's README (RULES §2). The page was not opened and nothing from it is used
+  in this report. Logged in PROVENANCE.md by the orchestrator (890f1bf).
 - Search snippets from a news article about NRD 4.18.0 (mixed-news.com) repeated release-note
   facts (time-based accumulation, a SIGMA penumbra flag). Not opened; nrd-releases.md covers them.
 - Not opened, by rule or caution: NRD's GitHub (source, README, releases), deepwiki, alain.xyz,
