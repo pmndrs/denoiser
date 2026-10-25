@@ -57,11 +57,11 @@ export interface RecurrentOptions {
    * How the history fix rebuilds young pixels (A < historyFixFrames). 'mips' (default, SPEC D7): a 3-level
    * mip pyramid of the accumulated signal, bilaterally upsampled by view depth. 'spatial' (target 1
    * candidate, results/T1-recovery.md): no mips; 16 disk taps of the full-resolution accumulated signal,
-   * weighted by plane distance and normal, radius historyFixRadius at A = 0 halving per frame.
+   * weighted by plane distance and normal, radius historyFixRadius (8 px) at A = 0 halving per frame.
    * Structural (pipelines differ).
    */
   historyFix?: 'mips' | 'spatial';
-  /** 'spatial' history fix: tap radius in pixels at A = 0 (not scaled with resolution, like the mips). Default 12. */
+  /** 'spatial' history fix: tap radius in pixels at A = 0, halving per frame (not scaled with resolution, like the mips). Default 8 (results/T1-recovery.md: 4 / 6 / 8 / 12 / 16 / 24 measured; 8 is best for specular, within 0.1 dB of best for diffuse). */
   historyFixRadius?: number;
   /** Anti-firefly: centre luminance ≤ k × second-largest neighbour (SPEC D9); 0 disables. Default 1.5. */
   fireflyThreshold?: number;
@@ -181,7 +181,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixDepthTolerance: o.historyFixDepthTolerance ?? 0.02,
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
     historyFix: o.historyFix ?? 'mips',
-    historyFixRadius: o.historyFixRadius ?? 12,
+    historyFixRadius: o.historyFixRadius ?? 8,
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,

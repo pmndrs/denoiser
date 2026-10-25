@@ -932,7 +932,7 @@ fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> ${VT(kinds[i])} {
  * value plus 16 disk taps of this frame's accumulated signal (no mips), rotated per pixel and frame
  * (blurRotation), weighted by the plane distance at the A = 0 geometry tolerance (relative to view
  * distance, the blur's test) and the normal (cos > 0.9, the same smooth Wt falloff). Radius
- * r0 · 2^(3 (s - 1)) px with s = (1 - A / A_fix) · rho: at A = 0 the footprint of the mips' level-3
+ * r0 · 2^(3 (s - 1)) px with s = (1 - A / A_fix) · rho (r0 = 8 by default; 12 matches the mips' level-3
  * tent (±12 px), halving per frame like the mip level does (RTG2 p.829: full reconstruction for
  * 1-3 frames). No repair below a 1.5 px radius or with < 0.5 tap weight. r0 = historyFixRadius (RParams.pad7).
  */
