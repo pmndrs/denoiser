@@ -1,6 +1,6 @@
 # NRD change-magnitude audit: how much changed since the 2021 public descriptions
 
-_Status: **in progress** (public-research comparison pending). Audit date: 2026-10-25. Auditor: the change-magnitude agent (RULES.md rule 3c; RULES §8 register
+_Status: **final** (2026-10-25). Audit date: 2026-10-25. Auditor: the change-magnitude agent (RULES.md rule 3c; RULES §8 register
 row "change auditor"). The auditor does not write or review our passes (rule 8)._
 
 This file measures NVIDIA's NRD history **as numbers only**: tags, dates, line and file counts
@@ -145,7 +145,11 @@ a different code base from the book's.
 notes, at the "what" level: new denoisers, inputs, settings, behaviour claims. The "how" is what the
 notes don't give, by design of the rule 3b audit (about 417 items left out,
 [nrd-releases.md](nrd-releases.md) line 297). One release with large churn has **no** matching note
-(SIGMA in v2.9.0). A few are partly explained (section 2).
+(SIGMA in v2.9.0). A few are partly explained (section 2). Public talks and papers since 2021 add
+nothing on how NRD changed: NVIDIA has published no technical description of ReBLUR, ReLAX or SIGMA
+since RTG II ([nrd-public-2022-2026.md](nrd-public-2022-2026.md) lines 14, 283, 474). In practice,
+the RTG II / GTC material is the newest public "how" there is, for code that has since been almost
+entirely rewritten.
 
 ### Verdict per area and window
 
@@ -244,8 +248,22 @@ Sources compared:
 
 - [nrd-releases.md](nrd-releases.md) (release auditor, rule 3b), as committed in `b4b38bd`. Cited as
   "R:L*n*" = its line *n*.
-- `sources/nrd-public-2022-2026.md` (public research): **pending**. It was not on disk or in `git log`
-  when this audit was written. The "public" column below says "pending" until it lands.
+- [nrd-public-2022-2026.md](nrd-public-2022-2026.md) (research agent, public talks and papers
+  2022–2026), as committed in `4feaf4e` (text complete, final polish was still in progress). Cited as
+  "P:L*n*".
+
+**What the public material adds.** Very little about NRD itself: "NVIDIA has published almost nothing
+technical about ReBLUR, ReLAX or SIGMA since RTG II (2021)"; its pages are product blurbs and "no
+NVIDIA talk, paper or blog since RTG II describes how any of the three denoisers works" (P:L14,
+P:L283, P:L474). The ReLAX GTC 2021 talk and any SIGMA description could not be found (P:L476,
+P:L478). The only NRD-specific public items are the NRD 2.0 / 2.9 blog posts (P:L279), the CY23
+"simplified layout" slide that still cites RTG II (P:L190), and CL22's use of NRD on decomposed
+path-tracer signals (P:L202–209). Third parties describe their own pipelines that resemble NRD's
+public stage names (Ubisoft's MSD, P:L110–112, P:L132–134), which say nothing about NRD's code.
+
+So the "public" column below upgrades **no** flag except ReLAX v2.9.0 (already explained by the notes)
+and downgrades none. Every "explained" in this section means explained at the **what** level by the
+release notes; at the **how** level, no change since RTG II is publicly explained.
 
 Flags: **explained** = the notes announce changes in that area in that release on a scale that fits
 the churn (new denoiser, input, settings rework, packaging, or several behaviour claims);
@@ -256,17 +274,17 @@ the churn (new denoiser, input, settings rework, packaging, or several behaviour
 
 | release | churn | what the release notes say | flag | public |
 |---|---|---|---|---|
-| pre-tag Apr–Jul 2021 (`53f4ad4` → v2.5.0) | 43–52 % | v2.5.0 notes list specular-tracking, history-rejection, roughness and hit-distance fixes (R:L44). Nothing covers the months before v2.5.0 (no earlier release on GitHub, R:L17). | **partly explained** | pending |
-| v2.9.0 (2021-11) | 79 %; 3040 lines removed in edited files + 1674 in deleted files, of 5952; **92 % of shader lines** | New occlusion denoisers, confidence inputs, direction-PDF inputs for an optional advanced pre-pass, `accumulationMode`, material-ID filtering, "REBLUR anti-firefly reworked", less specular smearing, better tracking on curved surfaces (R:L45) | **partly explained**: features added, but a near-total shader rewrite is described only as behaviour | pending |
-| v3.0.0 (2022-03) | 29 % | Settings reworked into `ReblurSettings`, performance mode, better disocclusions, more normal and shadow detail, low-roughness reprojection fixed (R:L50) | explained | pending |
-| v3.1.0 | 22 % | Firefly suppression always on, diffuse-only denoisers skip specular work (R:L51) | explained | pending |
-| v3.2.3 | 25 % | Hit-distance reconstruction, probabilistic lobe sampling, pre-pass settings, ~13 % faster, several reprojection claims (R:L52) | explained | pending |
-| v3.4.0 | 27 % | SH denoisers, TS can be turned off, memory reduced, better history reconstruction in disocclusions (R:L55) | explained | pending |
-| v4.4.0 (2023-12) | 28 % (1372 edited + 896 deleted) | Flexible DRS, "no denoiser uses mips any more", thin objects, material-boundary outlines, disocclusion colour bleeding (R:L76) | explained | pending |
-| v4.14.0 | 8 % | "REBLUR outputs are no longer used as history", +6 % / +10 % perf, −10 % memory, specular motion changed (old method kept behind a define) (R:L93) | explained | pending |
-| v4.15.0 – v4.16.0 (2025) | 5 % / 13 % / 33 %; in v4.16.0 1490 of 2246 removed lines are in deleted files | Compile-time specialization; "160+ hand-written shader permutations replaced by ShaderMake generation"; history length in `.w`; `fastHistoryClampingSigmaScale`, `ResponsiveAccumulationSettings`; better disocclusions and glossy history (R:L95–97) | explained | pending |
-| v4.17.2 (2026-03) | 15 % (424 edited + 470 deleted) | MV patching and `IN_BASECOLOR_METALNESS` removed; faster; less noise at lobe boundaries; less bias, better shadow preservation (R:L101) | explained | pending |
-| v4.18.0 (2026-10, pre-release) | 15 %, 835 lines removed in edited files, no deleted files | Time-based accumulation (`REBLUR_FRAME_RATE_COMPENSATION`); specular tracking on glossy, camera-attached and tiled surfaces; less ghosting from bright foreground reflections; strafing smear fixed; diffuse disocclusions; zero hit distances (R:L103) | explained | pending |
+| pre-tag Apr–Jul 2021 (`53f4ad4` → v2.5.0) | 43–52 % | v2.5.0 notes list specular-tracking, history-rejection, roughness and hit-distance fixes (R:L44). Nothing covers the months before v2.5.0 (no earlier release on GitHub, R:L17). | **partly explained** | none; GTC 2021 / RTG II are the last technical NVIDIA sources (P:L14) |
+| v2.9.0 (2021-11) | 79 %; 3040 lines removed in edited files + 1674 in deleted files, of 5952; **92 % of shader lines** | New occlusion denoisers, confidence inputs, direction-PDF inputs for an optional advanced pre-pass, `accumulationMode`, material-ID filtering, "REBLUR anti-firefly reworked", less specular smearing, better tracking on curved surfaces (R:L45) | **partly explained**: features added, but a near-total shader rewrite is described only as behaviour | NRD 2.9 blog (Nov 2021) names the new AO / SO denoisers only (P:L279); nothing on the rest |
+| v3.0.0 (2022-03) | 29 % | Settings reworked into `ReblurSettings`, performance mode, better disocclusions, more normal and shadow detail, low-roughness reprojection fixed (R:L50) | explained | none; CY23 (SIGGRAPH 2023) still shows the RTG II-era layout and cites the chapter (P:L190) |
+| v3.1.0 | 22 % | Firefly suppression always on, diffuse-only denoisers skip specular work (R:L51) | explained | none (P:L283, P:L474) |
+| v3.2.3 | 25 % | Hit-distance reconstruction, probabilistic lobe sampling, pre-pass settings, ~13 % faster, several reprojection claims (R:L52) | explained | none (P:L283, P:L474) |
+| v3.4.0 | 27 % | SH denoisers, TS can be turned off, memory reduced, better history reconstruction in disocclusions (R:L55) | explained | none (P:L283, P:L474) |
+| v4.4.0 (2023-12) | 28 % (1372 edited + 896 deleted) | Flexible DRS, "no denoiser uses mips any more", thin objects, material-boundary outlines, disocclusion colour bleeding (R:L76) | explained | none (P:L283, P:L474) |
+| v4.14.0 | 8 % | "REBLUR outputs are no longer used as history", +6 % / +10 % perf, −10 % memory, specular motion changed (old method kept behind a define) (R:L93) | explained | none (P:L283, P:L474) |
+| v4.15.0 – v4.16.0 (2025) | 5 % / 13 % / 33 %; in v4.16.0 1490 of 2246 removed lines are in deleted files | Compile-time specialization; "160+ hand-written shader permutations replaced by ShaderMake generation"; history length in `.w`; `fastHistoryClampingSigmaScale`, `ResponsiveAccumulationSettings`; better disocclusions and glossy history (R:L95–97) | explained | none (P:L283, P:L474) |
+| v4.17.2 (2026-03) | 15 % (424 edited + 470 deleted) | MV patching and `IN_BASECOLOR_METALNESS` removed; faster; less noise at lobe boundaries; less bias, better shadow preservation (R:L101) | explained | none (P:L283, P:L474) |
+| v4.18.0 (2026-10, pre-release) | 15 %, 835 lines removed in edited files, no deleted files | Time-based accumulation (`REBLUR_FRAME_RATE_COMPENSATION`); specular tracking on glossy, camera-attached and tiled surfaces; less ghosting from bright foreground reflections; strafing smear fixed; diffuse disocclusions; zero hit distances (R:L103) | explained | none; a news snippet repeated release-note facts only (P:L502) |
 
 The notes date two structural changes that touch what RTG II describes: mips dropped in v4.4.0
 (R:L76; the chapter's history fix is mip-based, [reblur.md](reblur.md)) and outputs no longer used
@@ -278,13 +296,13 @@ before the notes' v4.4.0 entry. That gap is not explained by the notes.
 
 | release | churn | what the release notes say | flag | public |
 |---|---|---|---|---|
-| v2.9.0 | 36 %, +6042 lines, 22 files added | Stand-alone `RELAX_DIFFUSE` and specular-only denoisers; more stable specular, less darkening at low rpp, 0.5-rpp history (R:L45) | explained | pending |
-| v3.0.0 (2022-03) | 71 %; 6166 of 6924 removed lines in 49 deleted files; edits 8 % | Settings renames (`diffuseLobeAngleFraction`, material test, roughness fraction, reprojection tests), quarter-resolution and concave-surface fixes (R:L50). Nothing about merging the per-signal code | **partly explained** (packaging not mentioned; the edits fit the fixes) | pending |
-| v3.1.0 – v3.4.0 | 11–16 % each | Hit-distance reconstruction, luminance weights, ~17 % faster, memory (v3.2.3, R:L52); confidence-driven relaxation settings, better anti-firefly (v3.4.0, R:L55) | explained | pending |
-| v4.4.0 (2023-12) | 40 %: 65 % of host lines, 32 % of shader lines | RELAX separate diffuse/specular settings structs removed, "RELAX host code 181 KB → 99 KB", flexible DRS, no mips (R:L76) | explained for the host part; **partly** for the shader part (no RELAX behaviour claim) | pending |
-| v4.11.0 | 11 % (14 % of shader lines) | One shared lobe fraction, "max accumulated frames" clamped, dummy allocation removed (R:L87) | partly explained | pending |
-| v4.16.0 | 34 %; 1631 of 2246 removed lines in deleted files | ShaderMake permutations; RELAX returns history length instead of squared variance in `.w` (R:L97) | explained | pending |
-| v4.18.0 | 16 %, 885 shader lines removed in edited files | `RELAX_FRAME_RATE_COMPENSATION`, zero-hit-distance handling, hit-distance reconstruction roughness weighting fixed, "SIGMA/RELAX slightly faster" (R:L103, R:L229) | partly explained (few ReLAX-specific behaviour items for ~20 % of its shader lines) | pending |
+| v2.9.0 | 36 %, +6042 lines, 22 files added | Stand-alone `RELAX_DIFFUSE` and specular-only denoisers; more stable specular, less darkening at low rpp, 0.5-rpp history (R:L45) | explained | NRD 2.9 blog: ReLAX diffuse-only / specular-only (P:L279). Explained publicly too |
+| v3.0.0 (2022-03) | 71 %; 6166 of 6924 removed lines in 49 deleted files; edits 8 % | Settings renames (`diffuseLobeAngleFraction`, material test, roughness fraction, reprojection tests), quarter-resolution and concave-surface fixes (R:L50). Nothing about merging the per-signal code | **partly explained** (packaging not mentioned; the edits fit the fixes) | none; the GTC 2021 ReLAX talk could not be found (P:L476) |
+| v3.1.0 – v3.4.0 | 11–16 % each | Hit-distance reconstruction, luminance weights, ~17 % faster, memory (v3.2.3, R:L52); confidence-driven relaxation settings, better anti-firefly (v3.4.0, R:L55) | explained | none (P:L283, P:L474) |
+| v4.4.0 (2023-12) | 40 %: 65 % of host lines, 32 % of shader lines | RELAX separate diffuse/specular settings structs removed, "RELAX host code 181 KB → 99 KB", flexible DRS, no mips (R:L76) | explained for the host part; **partly** for the shader part (no RELAX behaviour claim) | none (P:L283, P:L474) |
+| v4.11.0 | 11 % (14 % of shader lines) | One shared lobe fraction, "max accumulated frames" clamped, dummy allocation removed (R:L87) | partly explained | none (P:L283, P:L474) |
+| v4.16.0 | 34 %; 1631 of 2246 removed lines in deleted files | ShaderMake permutations; RELAX returns history length instead of squared variance in `.w` (R:L97) | explained | none (P:L283, P:L474) |
+| v4.18.0 | 16 %, 885 shader lines removed in edited files | `RELAX_FRAME_RATE_COMPENSATION`, zero-hit-distance handling, hit-distance reconstruction roughness weighting fixed, "SIGMA/RELAX slightly faster" (R:L103, R:L229) | partly explained (few ReLAX-specific behaviour items for ~20 % of its shader lines) | none (P:L283, P:L474) |
 
 ReLAX's main public description, the GTC 2021 talk, is still unread in our notes
 ([svgf-relax.md](svgf-relax.md) S13). So ReLAX has both a large change and a thin public baseline.
@@ -293,12 +311,12 @@ ReLAX's main public description, the GTC 2021 talk, is still unread in our notes
 
 | release | churn | what the release notes say | flag | public |
 |---|---|---|---|---|
-| v2.9.0 (2021-11) | 40 %: 592 lines removed (51 % of shader lines), no deleted files, 8 renames | **No SIGMA item.** The v2.9.0 notes are about REBLUR, RELAX and the common API (R:L45). The SIGMA claims ("2× faster", "closer to the reference in umbra–penumbra", "no lag on hard shadows") are in v2.5.0 (R:L44), the release before | **unexplained** | pending |
-| v3.1.0 / v4.1.0 | 15 % / 13 % | No SIGMA item (R:L51, R:L67) | unexplained, but moderate | pending |
-| v4.4.0 (2023-12) | 28 % | "SIGMA less bias, more stable" (R:L76) | explained | pending |
-| v4.7.0 – v4.11.0 (2024) | 6 %, 6 %, 4 %, 2 %, 2 %, 11 % (v4.7.0, v4.8.0, v4.8.2, v4.9.0, v4.10.0, v4.11.0) | Large claims: TS optional for many lights, `lightDirection`, umbra in wide penumbra (v4.7.0, R:L80); shared viewZ, renamed inputs (v4.8.0, R:L81); sub-pixel and nested penumbrae, less flicker (v4.8.2, R:L83); "notable IQ improvements: less flickering in motion, better responsiveness" (v4.10.0, R:L86); ghosting at disocclusions removed (v4.11.0, R:L87) | explained; the reverse case: **big behaviour claims from small edits** (v4.10.0: 36 lines removed) | pending |
-| v4.16.0 | 21 % (159 edited + 240 deleted) | Honours the denoising range, better at screen edges; ShaderMake (R:L97) | explained | pending |
-| v4.18.0 | 10 %, 176 lines removed in edited files | Checkerboard support, "better spatial filtering and TS", better umbra in penumbra, `SIGMA_PRESERVE_SHADOWS_IN_PENUMBRA` (R:L103) | explained | pending |
+| v2.9.0 (2021-11) | 40 %: 592 lines removed (51 % of shader lines), no deleted files, 8 renames | **No SIGMA item.** The v2.9.0 notes are about REBLUR, RELAX and the common API (R:L45). The SIGMA claims ("2× faster", "closer to the reference in umbra–penumbra", "no lag on hard shadows") are in v2.5.0 (R:L44), the release before | **unexplained** | none; no public SIGMA description at all, 2021–2026 (P:L478) |
+| v3.1.0 / v4.1.0 | 15 % / 13 % | No SIGMA item (R:L51, R:L67) | unexplained, but moderate | none (P:L478) |
+| v4.4.0 (2023-12) | 28 % | "SIGMA less bias, more stable" (R:L76) | explained | none (P:L478) |
+| v4.7.0 – v4.11.0 (2024) | 6 %, 6 %, 4 %, 2 %, 2 %, 11 % (v4.7.0, v4.8.0, v4.8.2, v4.9.0, v4.10.0, v4.11.0) | Large claims: TS optional for many lights, `lightDirection`, umbra in wide penumbra (v4.7.0, R:L80); shared viewZ, renamed inputs (v4.8.0, R:L81); sub-pixel and nested penumbrae, less flicker (v4.8.2, R:L83); "notable IQ improvements: less flickering in motion, better responsiveness" (v4.10.0, R:L86); ghosting at disocclusions removed (v4.11.0, R:L87) | explained; the reverse case: **big behaviour claims from small edits** (v4.10.0: 36 lines removed) | none (P:L478) |
+| v4.16.0 | 21 % (159 edited + 240 deleted) | Honours the denoising range, better at screen edges; ShaderMake (R:L97) | explained | none (P:L478) |
+| v4.18.0 | 10 %, 176 lines removed in edited files | Checkerboard support, "better spatial filtering and TS", better umbra in penumbra, `SIGMA_PRESERVE_SHADOWS_IN_PENUMBRA` (R:L103) | explained | none; a news snippet repeated the penumbra flag only (P:L503) |
 
 SIGMA has **no public algorithm description at all** in our sources (no chapter or talk;
 [shadows-specular.md](shadows-specular.md) builds shadows from other public work). Its 2021
@@ -308,17 +326,17 @@ baseline is the release notes themselves.
 
 | area / release | churn | what the release notes say | flag | public |
 |---|---|---|---|---|
-| SH variants, v4.1.0 | 13 %, 28 files added | SH → SG resolve, re-jittering, RELAX gains SH (R:L67) | explained | pending |
-| SH variants, v4.4.0 | 38 %, mostly host code, no deleted files | Host and API rework: flexible DRS, RELAX host code shrink, RELAX settings structs merged (R:L76). No SH-specific item | explained (host part); partly for the rest | pending |
-| SH / occlusion variants, v4.15.1 / v4.16.0 | 15–47 %, ≥ 88 % in deleted files | Compile-time specialization, ShaderMake permutations (R:L96–97). From v4.16.0 these variants have **no shader files of their own**: only host setup files remain; their shader code lives in the shared ReBLUR / ReLAX files, where line counts cannot separate it | explained (packaging) | pending |
-| occlusion variants, v3.0.0 – v3.4.0 | 34–43 %; v3.0.0 mostly edits, v3.2.3 / v3.4.0 60–70 % in deleted files | Directional occlusion fixes and memory "significantly" reduced come in v3.4.x / v3.5.0 (R:L56–57); nothing occlusion-specific in v3.0.0 – v3.2.3 | partly explained | pending |
-| shared shader code, v3.1.0 | 44 %, 8 mip-generation files deleted | Normal encoding via CMake, Slang fixes (R:L51). Nothing about mips until v4.4.0 (R:L76) | partly explained | pending |
-| library core, v3.9.0 | 48 % (host) | Validation layer moved to a per-frame setting, 2.5D motion vectors, no double clears for grouped denoisers (R:L61) | partly explained | pending |
-| library core, v4.1.0 / v4.2.0 | 32 % / 28 % | ShaderMake, `NRD_HEADER_ONLY` removed (R:L67); one instance for any mix of denoisers, `Denoiser` → `Instance` rename (R:L69; the files were renamed accordingly) | explained | pending |
-| integration, v4.15.0 | 50 % | "Integration reworked: wraps native D3D11 / D3D12 / Vulkan objects", `Recreate`, `ResourceSnapshot` (R:L95) | explained | pending |
-| API headers, v2.9.0 / v3.0.0 / v4.4.0 | 27 % / 15 % / 24 % | Long lists of new, renamed and removed settings in each (R:L45, R:L50, R:L76) | explained | pending |
-| NRD.hlsli, v2.12.0 / v4.1.0 / v4.17.0 | 16 % / 23 % / 12 % | Packing helpers (R:L47); SG helpers (R:L67); SG resolve and re-jitter changes (R:L99) | explained | pending |
-| build/scripts, v4.0.0 / v4.1.0 / v4.15.0 | 35 % / 31 % / 28 % | CMake rewritten (R:L64), ShaderMake (R:L67), CMake `NRD_NRI` (R:L95) | explained | pending |
+| SH variants, v4.1.0 | 13 %, 28 files added | SH → SG resolve, re-jittering, RELAX gains SH (R:L67) | explained | none on NRD's SG resolve; third-party SH recipes only (P:L410, P:L404) |
+| SH variants, v4.4.0 | 38 %, mostly host code, no deleted files | Host and API rework: flexible DRS, RELAX host code shrink, RELAX settings structs merged (R:L76). No SH-specific item | explained (host part); partly for the rest | none (P:L283, P:L474) |
+| SH / occlusion variants, v4.15.1 / v4.16.0 | 15–47 %, ≥ 88 % in deleted files | Compile-time specialization, ShaderMake permutations (R:L96–97). From v4.16.0 these variants have **no shader files of their own**: only host setup files remain; their shader code lives in the shared ReBLUR / ReLAX files, where line counts cannot separate it | explained (packaging) | none (P:L283, P:L474) |
+| occlusion variants, v3.0.0 – v3.4.0 | 34–43 %; v3.0.0 mostly edits, v3.2.3 / v3.4.0 60–70 % in deleted files | Directional occlusion fixes and memory "significantly" reduced come in v3.4.x / v3.5.0 (R:L56–57); nothing occlusion-specific in v3.0.0 – v3.2.3 | partly explained | none (P:L283, P:L474) |
+| shared shader code, v3.1.0 | 44 %, 8 mip-generation files deleted | Normal encoding via CMake, Slang fixes (R:L51). Nothing about mips until v4.4.0 (R:L76) | partly explained | none (P:L283, P:L474) |
+| library core, v3.9.0 | 48 % (host) | Validation layer moved to a per-frame setting, 2.5D motion vectors, no double clears for grouped denoisers (R:L61) | partly explained | none (P:L283, P:L474) |
+| library core, v4.1.0 / v4.2.0 | 32 % / 28 % | ShaderMake, `NRD_HEADER_ONLY` removed (R:L67); one instance for any mix of denoisers, `Denoiser` → `Instance` rename (R:L69; the files were renamed accordingly) | explained | none on NRD; CL22 (GDC/GTC 2022) runs NRD kernels on several decomposed signals of one path tracer (P:L202–209), the use case a multi-denoiser instance serves |
+| integration, v4.15.0 | 50 % | "Integration reworked: wraps native D3D11 / D3D12 / Vulkan objects", `Recreate`, `ResourceSnapshot` (R:L95) | explained | none (P:L283, P:L474) |
+| API headers, v2.9.0 / v3.0.0 / v4.4.0 | 27 % / 15 % / 24 % | Long lists of new, renamed and removed settings in each (R:L45, R:L50, R:L76) | explained | none (P:L283, P:L474) |
+| NRD.hlsli, v2.12.0 / v4.1.0 / v4.17.0 | 16 % / 23 % / 12 % | Packing helpers (R:L47); SG helpers (R:L67); SG resolve and re-jitter changes (R:L99) | explained | none (P:L283, P:L474) |
+| build/scripts, v4.0.0 / v4.1.0 / v4.15.0 | 35 % / 31 % / 28 % | CMake rewritten (R:L64), ShaderMake (R:L67), CMake `NRD_NRI` (R:L95) | explained | none (P:L283, P:L474) |
 
 **Consistency checks.** v4.6.0 says "no algorithmic changes" (R:L79) and measures < 1 % in every
 denoiser. v4.3.1 – v4.3.6, v4.9.x and v4.14.1 – v4.14.3 are fix releases in the notes and measure
@@ -329,6 +347,10 @@ denoiser. v4.3.1 – v4.3.6, v4.9.x and v4.14.1 – v4.14.3 are fix releases in 
 Ranked by "large change, little public explanation", weighted by how much our denoiser leans on the
 area. Each item gives a next step. No item says anything about NRD's implementation; the probes
 compare outputs only (rule 4). T-numbers are the release audit's scenarios (R:L268–291).
+
+The public research already searched 2022–2026 and found no NVIDIA technical material on any of the
+three denoisers (P:L474–478). So for every item below, **the black-box probe is the first step**;
+public searches are reduced to the few leads that research could not reach.
 
 1. **SIGMA (shadows): unexplained 2021 rework, steady change since, no public description ever.**
    v2.9.0 rewrote about half of SIGMA's shader lines with no SIGMA note; 2023–2025 replaced another
@@ -342,8 +364,10 @@ compare outputs only (rule 4). T-numbers are the release audit's scenarios (R:L2
      v4.18.0** on T1: the notes put the moving-shadow claims in v4.10.0 – v4.11.0 (R:L86–87) and the
      line counts say those were small edits, so a before/after output comparison isolates that
      behaviour cheaply.
-   - **Public search:** any SIGMA talk or slide deck (GTC / GDC 2021–2026, "SIGMA shadow denoiser"),
-     and postmortems of games that used it (e.g. *Dark Souls 2: PT*, named in R:L100).
+   - **Public material:** none on SIGMA exists (P:L478). For our own design, the research lists
+     adjacent published techniques for moving shadows (P:L362–392, U1/U2/U6/U7 at P:L452–458); those
+     are design inputs, not explanations of SIGMA. Remaining lead: postmortems of games that shipped
+     NRD shadows (e.g. *Dark Souls 2: PT*, named in R:L100).
 
 2. **ReBLUR's 2021 rework, after the book.** The book's ReBLUR is the code of early to mid 2021. That
    code was half replaced by v2.5.0 and 92 % of the shader lines again in v2.9.0, which the notes
@@ -357,9 +381,12 @@ compare outputs only (rule 4). T-numbers are the release audit's scenarios (R:L2
      motion), T16 (uneven frame pacing). Compare NRD's frame-by-frame response curves with what the
      chapter's description predicts and with ours; where NRD's curve departs from the chapter's, that
      is post-2021 behaviour to design for ourselves.
-   - **Public search:** talks or posts on ReBLUR after 2021 (NRD 3.x / 4.x announcements, GDC /
-     SIGGRAPH 2022–2026 denoising talks by NVIDIA), especially on the history fix without mips and on
-     disocclusion handling.
+   - **Public material:** none on ReBLUR after RTG II (P:L474); CY23 (2023) still presents the
+     chapter's layout (P:L190). Remaining leads are talks whose slides are not public: GDC 2023
+     *Cyberpunk 2077 RT: Overdrive*, GDC 2024 *Alan Wake 2 path tracing*, GDC 2025 *Indiana Jones*
+     (P:L481–485); check for recorded video. Third-party recurrent pipelines with similar public stage
+     names (Ubisoft MSD, P:L110–112, P:L299–303) are design references for us, not evidence about
+     NRD.
    - Also unexplained by the notes: mip-generation file names vanish in v3.1.0 / v3.4.0, while the
      notes date the end of mips to v4.4.0. A public source that dates this would settle which release
      first changed the history-fix behaviour; a v3.3.1 vs v3.4.0 probe on T15 would show it directly.
@@ -367,9 +394,11 @@ compare outputs only (rule 4). T-numbers are the release audit's scenarios (R:L2
 3. **ReLAX: big shader churn, thin public baseline.** 2022 (v3.0.0, mostly merged files) and v4.4.0
    (32 % of shader lines) carry little ReLAX-specific behaviour text; v4.11.0 and v4.18.0 edit 14–20 %
    of its shader lines with one or two ReLAX items each. Our SVGF-family filter relies on ReLAX's
-   public description, which is still missing its main source.
-   - **Public search first:** the GTC 2021 ReLAX talk (S32759; [svgf-relax.md](svgf-relax.md) S13),
-     then anything later on ReLAX anti-lag (added in v4.3.0, R:L72) and ReLAX SH (v4.1.0, R:L67).
+   public description, whose main source (the GTC 2021 talk, S32759) the public research could not
+   find either (P:L476). Nothing later covers ReLAX anti-lag (v4.3.0, R:L72) or ReLAX SH (v4.1.0,
+   R:L67).
+   - **Public lead:** only NVIDIA On-Demand with an account, for the GTC 2021 talk
+     ([svgf-relax.md](svgf-relax.md) S13).
    - **Probe:** T2 (light change) and T15 (disocclusion) with ReLAX, plus the history length it can
      output (validation since v4.0.0, `.w` since v4.16.0) to see accumulation speed per pixel from the
      outside.
@@ -843,6 +872,7 @@ figure.
 
 The scratch clone
 `/private/tmp/claude-502/-Users-dex-Developer-Denoiser-nrd-cleanroom/e9f5ef6a-5b0b-422e-b903-b6fd737cf629/scratchpad/nrd-churn/`
-was deleted with `rm -rf` after the numbers above were computed (2026-10-25 21:14 JST; checked absent afterwards). The per-area numbers
+was deleted with `rm -rf` after the numbers above were computed (2026-10-25 21:14 JST; checked absent afterwards),
+before the orchestrator's pause; the comparison step afterwards needed only the saved counts. The per-area numbers
 (JSON with counts and paths only) stay in the scratch directory for this session and are not
 committed.
