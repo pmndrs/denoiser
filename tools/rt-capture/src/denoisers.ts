@@ -161,7 +161,8 @@ registerDenoiser({
 
 const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance', 'normalThreshold', 'atrousIterations',
   'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
-  'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale'] as const;
+  'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale',
+  'spatialVarianceRadius', 'spatialHistoryWeight'] as const;
 const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight'] as const;
 
 /** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
@@ -222,7 +223,8 @@ registerDenoiser({
  * `s.<option>` (diffuse / specular only). Outputs stay demodulated.
  */
 export function recurrentOptions(st: Record<string, string>, signal?: 'diffuse' | 'specular'): RecurrentOptions {
-  const val = (v: string) => (v === 'true' ? true : v === 'false' ? false : Number(v));
+  // numbers, true / false, other strings as is (e.g. r.historyFix=spatial)
+  const val = (v: string) => (v === 'true' ? true : v === 'false' ? false : Number.isNaN(Number(v)) ? v : Number(v));
   const o: Record<string, unknown> = { filter: 'recurrent' };
   const tune: Record<string, unknown> = {};
   const own = signal === 'diffuse' ? 'd.' : signal === 'specular' ? 's.' : null;
