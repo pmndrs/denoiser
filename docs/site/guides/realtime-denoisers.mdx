@@ -390,12 +390,14 @@ import { HitDistanceNormalizer } from 'denoiser/realtime';
 
 const norm = new HitDistanceNormalizer(device);       // depth from a viewZ texture
 norm.configure(width, height);
-norm.setCurve(1, 0.05, far);                           // a, b, far: match the denoiser's curve
+norm.setCurve(1, 0.05, far);                           // optional: a, b, far (sky at viewZ <= -far)
 const noisyAO = norm.run(diffuseHit, viewZ);           // rgba16float, submitted immediately
 ```
 
-Call `setCurve()` before the first `run()`: the curve has no default yet. `run()`
-submits its own command buffer.
+The curve starts at the denoiser's default (a = 1, b = 0.05, no far plane). Call
+`setCurve()` to match other `hitDistanceScale` / `hitDistanceViewScale` values, or to pass
+the camera's far plane when your viewZ writes sky as −far. `run()` submits its own
+command buffer.
 
 ## Cost and memory at 1080p
 
@@ -433,7 +435,7 @@ the nodes never choose a filter or a default of their own.
 | `realtimeDiffuse(radiance, options)` | `DiffuseDenoiser` | rgb (+ ĥ in `.a` with `'recurrent'` and a hit distance) |
 | `realtimeSpecular(radiance, options)` | `SpecularDenoiser` | rgb |
 | `realtimeDiffuseSpecular({ diffuse, specular }, options)` | `DiffuseSpecularDenoiser` | diffuse; `.diffuse` / `.specular` nodes |
-| `realtimeOcclusion(hitDistance, options)` | `OcclusionDenoiser` | ĥ in `.r`; `.diffuse` / `.specular` with `signal: 'both'` |
+| `realtimeOcclusion(hitDistance, options)` | `OcclusionDenoiser` | ĥ in `.r`; `.diffuse` / `.specular` with `signal: 'both'` (one signal: only its own getter, and the return type follows `signal`) |
 
 The shared setup (the same MRT as the FFX nodes):
 

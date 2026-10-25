@@ -293,7 +293,8 @@ const { diffuse, specular } = both.dispatchBoth(
   normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
   `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
   1080p). `antiLag: 'auto'` works as for radiance.
-- `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image).
+- `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image). It
+  starts at the denoiser's default curve (a 1, b 0.05); `setCurve(a, b, far)` changes it.
 - "Free" AO / SO: `filter: 'recurrent'` radiance outputs keep the denoised ĥ in alpha. It costs
   nothing extra but is clearly worse than either dedicated filter (below).
 

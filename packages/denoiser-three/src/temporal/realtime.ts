@@ -107,6 +107,14 @@ export type TwoOutputNodeObject<I extends object> = TemporalDenoiseNodeObject<I>
   readonly specular: Node<'vec4'>;
 };
 
+/**
+ * `realtimeOcclusion()` with one signal: the node itself is the output, and `.diffuse` (AO) or
+ * `.specular` (SO), whichever signal it denoises, is the same output as a texture node.
+ */
+export type OcclusionNodeObject<S extends 'diffuse' | 'specular'> = TemporalDenoiseNodeObject<object> & {
+  readonly [K in S]: Node<'vec4'>;
+};
+
 // ---- helpers ---------------------------------------------------------------------
 
 const asR = (n: TextureNodeLike): TextureNodeLike => (n?.isTextureNode ? n.r : n);
@@ -277,12 +285,30 @@ export function realtimeDiffuseSpecular(
  * @param hitDistance - world units, 0 = miss (a float node or a texture node's .r). With
  *   `denoiser.signal: 'both'` pass `{ diffuse, specular }` (AO and SO rays).
  * @returns a node whose value is the denoised normalized hit distance ĥ in .r (1 = open,
- *   -> 0 at contact); with 'both', `.diffuse` (AO) and `.specular` (SO) texture nodes.
+ *   -> 0 at contact); with 'both', `.diffuse` (AO) and `.specular` (SO) texture nodes. The
+ *   return type follows `denoiser.signal`: an AO-only node has `.diffuse` but no `.specular`.
  */
+export function realtimeOcclusion(
+  hitDistance: { diffuse: TextureNodeLike; specular: TextureNodeLike },
+  options: RealtimeOcclusionOptions & { denoiser: OcclusionDenoiserOptions & { signal: 'both' } },
+): TwoOutputNodeObject<object>;
+export function realtimeOcclusion(
+  hitDistance: TextureNodeLike,
+  options: RealtimeOcclusionOptions & { denoiser: OcclusionDenoiserOptions & { signal: 'specular' } },
+): OcclusionNodeObject<'specular'>;
+export function realtimeOcclusion(
+  hitDistance: TextureNodeLike,
+  options: RealtimeOcclusionOptions & { denoiser?: OcclusionDenoiserOptions & { signal?: 'diffuse' } },
+): OcclusionNodeObject<'diffuse'>;
+/** `denoiser.signal` not known at compile time: narrow the result yourself. */
 export function realtimeOcclusion(
   hitDistance: TextureNodeLike | { diffuse: TextureNodeLike; specular: TextureNodeLike },
   options: RealtimeOcclusionOptions,
-): TwoOutputNodeObject<object> {
+): OcclusionNodeObject<'diffuse'> | OcclusionNodeObject<'specular'> | TwoOutputNodeObject<object>;
+export function realtimeOcclusion(
+  hitDistance: TextureNodeLike | { diffuse: TextureNodeLike; specular: TextureNodeLike },
+  options: RealtimeOcclusionOptions,
+): OcclusionNodeObject<'diffuse'> | OcclusionNodeObject<'specular'> | TwoOutputNodeObject<object> {
   const scale = options.resolutionScale ?? 1;
   const both = options.denoiser?.signal === 'both';
   const needsRoughness = options.denoiser?.signal === 'specular' || both;
@@ -298,8 +324,8 @@ export function realtimeOcclusion(
     }, guides, options.camera, options.node, 2));
   }
   const node = new TemporalDenoiseNode<object>(create, { hitDistance: scalarTexture(hitDistance, scale, true) }, guides, options.camera, options.node);
-  const obj = denoiseNodeObject(node) as TwoOutputNodeObject<object>;
-  const sig = options.denoiser?.signal ?? 'diffuse';
+  const sig = (options.denoiser?.signal ?? 'diffuse') as 'diffuse' | 'specular';
+  const obj = denoiseNodeObject(node) as OcclusionNodeObject<'diffuse'> | OcclusionNodeObject<'specular'>;
   Object.defineProperty(node, sig, { get: () => node.getOutputNode(0), configurable: true });
   return obj;
 }

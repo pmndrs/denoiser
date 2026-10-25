@@ -62,6 +62,10 @@ type Kind = 'diffuse' | 'specular';
 export type ResolvedOcclusion = { filter: 'recurrent'; signals: Kind[]; o: ResolvedRecurrent }
   | { filter: 'svgf'; signals: Kind[]; o: ResolvedOptions; perSignal: ResolvedOptions[]; hitDistanceScale: number; hitDistanceViewScale: number };
 
+/** The curve's defaults (SPEC F-3), shared by OcclusionDenoiser and HitDistanceNormalizer. */
+const DEFAULT_A = 1;
+const DEFAULT_B = 0.05;
+
 function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion {
   const { signal = 'diffuse', filter = 'recurrent', ...rest } = options as OcclusionCommon & { filter?: string };
   const signals: Kind[] = signal === 'both' ? ['diffuse', 'specular'] : [signal];
@@ -71,7 +75,7 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
     return { filter, signals, o: resolveRecurrent({ ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
   }
   if (filter !== 'svgf') throw new Error(`OcclusionDenoiser: unknown filter '${filter}'`);
-  const { hitDistanceScale = 1, hitDistanceViewScale = 0.05, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
+  const { hitDistanceScale = DEFAULT_A, hitDistanceViewScale = DEFAULT_B, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
   // occlusion defaults (test bed, fast preset, 7 paths; T5 / results/M5.md): a tighter luminance
   // weight and 3 à-trous iterations (AO 36.12 -> 37.93 dB, SO 34.78 -> 36.24 vs the radiance
   // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default)
@@ -83,7 +87,8 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
 /**
  * Normalized hit distance as a gray image (ĥ, ĥ, ĥ, 1; rgba16float): the noisy AO / SO
  * input of a filter that doesn't normalize itself. Depth from GuidePass's packed geometry
- * (`'geo'`) or from a three.js viewZ texture (`'viewz'`, sky at viewZ <= -far).
+ * (`'geo'`) or from a three.js viewZ texture (`'viewz'`, sky at viewZ <= -far). Starts
+ * with OcclusionDenoiser's default curve (a 1, b 0.05, far ∞); `setCurve()` changes it.
  */
 export class HitDistanceNormalizer {
   private layout: GPUBindGroupLayout;
@@ -96,6 +101,7 @@ export class HitDistanceNormalizer {
     this.layout = makeLayout(device, label, ['u', 'f', depth === 'geo' ? 'i' : 'f', 'rgba16float']);
     this.pipe = makePipeline(device, label, normalizeHitWgsl(depth), this.layout);
     this.params = device.createBuffer({ label, size: OCC_NORM_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.setCurve(DEFAULT_A, DEFAULT_B);
   }
 
   /** `count` output textures (one per signal normalized per frame). */
@@ -106,11 +112,18 @@ export class HitDistanceNormalizer {
     }));
   }
 
+  /**
+   * ĥ = h / (h + a + b·depth). `far`: with `'viewz'` depth, viewZ <= -far is sky (output 0);
+   * pass the camera's far plane when the renderer writes sky as -far. Default ∞.
+   */
   setCurve(a: number, b: number, far = 1e30) {
     this.device.queue.writeBuffer(this.params, 0, new Float32Array([a, b, far, 0]));
   }
 
-  /** Records the pass into `enc`; returns output `slot`. */
+  /**
+   * @internal Records the pass into `enc` (OcclusionDenoiser; `timer` is the package's
+   * PassTimer); returns output `slot`. Use `run()` from outside the package.
+   */
   encode(enc: GPUCommandEncoder, timer: PassTimer | undefined, name: string, hit: GPUTexture, depth: GPUTexture, slot = 0): GPUTexture {
     const out = this.outs[slot];
     runPass(enc, timer, name, this.pipe, makeBindGroup(this.device, this.layout, [this.params, hit, depth, out]),
