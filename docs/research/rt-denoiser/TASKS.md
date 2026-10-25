@@ -904,6 +904,21 @@ harness builder runs them and returns images/metrics only.)_
       (models now in git LFS, 1a3dc42; copy the 19.7 GB of captures over the NAS or regenerate them per CAPTURES.md
       "Bistro and Sponza"; `lights[0]` is directional on sun captures and a per-frame moving sphere on `bistro-move`). — orchestrator
 
+- [ ] **Review target D: distance information degrading over long histories** (Dennis, 2026-10-26; lead = a public
+      blog's "what", relayed by Dennis, no code or technique: distance feeds both filtering and reflection tracking,
+      repeated processing can distort it, and recent work ties better distance handling to less specular pixelation
+      and less long-history contact-shadow banding, i.e. images that get worse as frames accumulate). Reproduce first
+      (rule 9; long holds overlap review target 7): ≥ 300-frame stationary holds plus slow motion on `three-knot-still`,
+      `glossy`, `thin` and a Bistro view; per-frame error curves in the contact, penumbra and specular regions; does
+      error rise after it first settles? Our own candidate causes to test, in order: (a) shadows store the penumbra scale
+      g (from hit distance) in rgba16float history, and Metal truncates f16 stores toward zero (LESSONS m8; see the
+      f16 item above): does g drift down over a long hold and band the contact shadows? (b) recurrent carries hit
+      distance through f16 buffers and re-filters it every frame: does the accumulated hit distance drift from the
+      per-frame mean and mis-size radii / virtual motion (specular pixelation)? (c) SVGF / A-SVGF specular uses no hit
+      distance at all (reflections reproject with surface motion): overlaps review target 2. (d) AO / SO filter a
+      normalized hit distance: long-hold contact darkening (target 7). Fixes land as options. — orchestrator,
+      owner: unassigned (after the shadows-look agent and the 4096-spp runs)
+
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
