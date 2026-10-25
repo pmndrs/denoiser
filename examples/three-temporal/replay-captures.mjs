@@ -4,7 +4,8 @@
 // score-captures.mjs (pooled PSNR, penumbra, FLIP, flicker; AO against ao_ref).
 //
 //   node examples/three-temporal/replay-captures.mjs [--captures three-orbit,three-pan]
-//        [--denoisers <id[:signals]>,...] [--json out.json] [--no-score]
+//        [--denoisers <id[:signals]>,...] [--json out.json] [--no-score] [--preset=scenes]
+//   --preset=scenes: the Bistro / Sponza captures and denoiser list (results/scenes-bistro-sponza.md)
 //
 // Needs the test bed's dev server (examples/realtime-denoiser) at $BASE (default http://127.0.0.1:5220/);
 // pin denoiser/realtime with RT_REALTIME_SRC when another agent edits the package (LESSONS). The
@@ -23,8 +24,16 @@ export const DEFAULT_DENOISERS = [
   'svgf', 'svgf-auto', 'recurrent', 'ffx-reflections',
   'occlusion-svgf:ao', 'occlusion-svgf-auto:ao', 'occlusion-recurrent:ao',
 ];
-const captures = opt('captures', 'three-orbit,three-pan').split(',');
-const dens = opt('denoisers', DEFAULT_DENOISERS.join(',')).split(',');
+// --preset=scenes: the Bistro / Sponza comparison (results/scenes-bistro-sponza.md, CAPTURES.md "Bistro and Sponza")
+export const SCENE_CAPTURES = ['sponza-orbit', 'sponza-pan', 'sponza-move', 'bistro-orbit', 'bistro-pan', 'bistro-move'];
+export const SCENE_DENOISERS = [
+  'svgf', 'svgf-auto', 'recurrent', 'recurrent-svgfspec', 'ffx-reflections',
+  'shadows', 'ffx-shadows', 'accumulate-32',
+  'occlusion-svgf:ao', 'occlusion-recurrent:ao', 'occlusion-accumulate-32:ao',
+];
+const scenes = opt('preset') === 'scenes';
+const captures = opt('captures', scenes ? SCENE_CAPTURES.join(',') : 'three-orbit,three-pan').split(',');
+const dens = opt('denoisers', (scenes ? SCENE_DENOISERS : DEFAULT_DENOISERS).join(',')).split(',');
 const queries = captures.flatMap((c) => dens.map((d) => {
   const [id, signals] = d.split(':');
   return `mode=replay&capture=${c}&denoiser=${id}${signals ? `&signals=${signals}` : ''}`;

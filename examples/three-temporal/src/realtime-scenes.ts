@@ -511,7 +511,12 @@ export async function main(log: (m: string) => void) {
     return shadowLight === 'sun' ? [sun, loc] : [loc, sun];
   };
   /** Capture mode: writes path frames [start, start + frames) as a CAPTURE-FORMAT v0 capture (see realtime-gi.ts capturePath). */
-  const capturePath = async (o: { name: string; start?: number; frames?: number; refShadow?: number; refDiffuse?: number; refSpec?: number; write?: boolean }) => {
+  /**
+   * `continues`: this call writes a later chunk of a longer capture (run-realtime.mjs --chunk): its first frame takes
+   * its motion from path frame start - 1 (not a reset) and the reference seeds start at start * 1000, so chunks written
+   * by separate page loads join into one capture (merged by run-realtime.mjs).
+   */
+  const capturePath = async (o: { name: string; start?: number; frames?: number; refShadow?: number; refDiffuse?: number; refSpec?: number; write?: boolean; continues?: boolean }) => {
     if (!capMode || !capGuides || !pathDef) throw new Error('capturePath needs ?scene=..&path=..&ref=1');
     const start = o.start ?? 0;
     const n = Math.min(o.frames ?? pathDef.frames - start, pathDef.frames - start);
@@ -520,6 +525,7 @@ export async function main(log: (m: string) => void) {
     const specFrames = Math.max(1, o.refSpec ?? 256);
     const write = o.write ?? true;
     visRef.max = visFrames; difRef.max = difFrames; specRef.max = specFrames;
+    frame = Math.max(frame, start * 1000); // reference seeds (uSeed = frame counter) differ between chunks
     capturing = true;
     setMoving(false);
     modes.view = 'split'; buildOutput();
@@ -547,7 +553,7 @@ export async function main(log: (m: string) => void) {
       extra: {
         threeTemporal: {
           scene: sceneId, model: cfg.attribution, triangles: tris, cull: cullQ ?? null,
-          path: pathDef.name, pathDescription: pathDef.description, start, frames: n, shadowLight,
+          path: pathDef.name, pathDescription: pathDef.description, start, frames: n, shadowLight, ...(o.continues ? { continues: true } : {}),
           ...(mover ? { moverMotion: 'object motion of the moving torus knot from its previous pose (motion, motion_z); the receivers of its shadow are static' } : {}),
           ...(pathDef.local ? { movingLight: 'the shadow light moves every frame (per-frame lights); receivers are static' } : {}),
           sampling: 'blue (1-ray signals: spatiotemporal blue noise, index = path frame)',
@@ -576,7 +582,7 @@ export async function main(log: (m: string) => void) {
     for (let k = 0; k < n; k++) {
       const tf = performance.now();
       const f = start + k;
-      setPose(k === 0 ? f : f - 1);
+      setPose(k === 0 && !o.continues ? f : f - 1);
       pv.copy(camera.matrixWorldInverse); pp.copy(camera.projectionMatrix);
       const moverPrev = mover ? mover.matrixWorld.clone() : new THREE.Matrix4();
       setPose(f);
@@ -620,7 +626,7 @@ export async function main(log: (m: string) => void) {
         position: camera.position.toArray() as [number, number, number],
       };
       uHold.value = 0;
-      await writer?.writeFrame({ reset: k === 0, camera: fc, extra: { pathFrame: f, lights: lightsOf() } }, bufs);
+      await writer?.writeFrame({ reset: k === 0 && !o.continues, camera: fc, extra: { pathFrame: f, lights: lightsOf() } }, bufs);
       perFrameS.push((performance.now() - tf) / 1000);
       log(`capture ${o.name}: frame ${k + 1}/${n} (path frame ${f}) ${perFrameS.at(-1)!.toFixed(2)} s`);
     }

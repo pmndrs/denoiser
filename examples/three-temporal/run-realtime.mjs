@@ -21,6 +21,7 @@
 //        Default set "moving": three-orbit (path frames 0-39) and three-pan (32-63; the pan starts at 8).
 //        --set=knot-static / --set=knot-orbit: the moving-occluder captures (torus knot rotating, CAPTURES.md):
 //        three-knot-static (48 frames, static camera) / three-knot-orbit (path frames 0-39); --path= overrides.
+//        --chunk=N: write each window in N-frame chunks, one page load per chunk (retried, resumable), then merge.
 //        --set=sponza-orbit|sponza-pan|sponza-move|bistro-orbit|bistro-pan|bistro-move: the Bistro / Sponza captures
 //        (48 frames each on realtime-gi.html?scene=..; CAPTURES.md "Bistro and Sponza").
 //
@@ -301,6 +302,69 @@ async function runCapture(cdp) {
   }
 }
 
+// --chunk=N (capture): each window is written in N-frame chunks, one page load per chunk (a page reloaded under GPU
+// contention mid-capture once; a failed chunk is retried up to 3 times, finished chunks are kept, so a rerun resumes),
+// then the chunks are merged into one capture (frame dirs renamed, manifests joined, one reset at frame 0) and validated.
+async function runChunkedCapture(url) {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const { CAPTURES_DIR, frameDir } = await import(path.join(repo, 'tools', 'rt-capture', 'lib', 'capture.mjs'));
+  const chunk = Number(opt('chunk'));
+  const windows = (opt('windows') ?? CAPTURE_SETS[opt('set', 'moving')]).split(',').map((w) => {
+    const [name, start, frames] = w.split(':');
+    return { name, start: Number(start ?? 0), frames: Number(frames ?? 64) };
+  });
+  const refs = { refShadow: Number(opt('refShadow', 1024)), refDiffuse: Number(opt('refDiffuse', 1024)), refSpec: Number(opt('refSpec', 256)) };
+  for (const w of windows) {
+    const parts = [];
+    for (let s = w.start; s < w.start + w.frames; s += chunk) {
+      const n = Math.min(chunk, w.start + w.frames - s);
+      const name = `${w.name}.part${String(s).padStart(3, '0')}`;
+      parts.push(name);
+      const man = path.join(CAPTURES_DIR, name, 'capture.json');
+      if (fs.existsSync(man) && JSON.parse(fs.readFileSync(man, 'utf8')).frames.length === n) { console.log(`  ${name}: done before, kept`); continue; }
+      let ok = false;
+      for (let attempt = 1; attempt <= 3 && !ok; attempt++) {
+        const { cdp, close } = await openPage(url);
+        try {
+          const state = await waitReady(cdp);
+          if (!state?.ready) throw new Error(`page not ready: ${JSON.stringify(state)}`);
+          const T = makeT(cdp);
+          const r = await T(`window.__t.capturePath(${JSON.stringify({ name, start: s, frames: n, continues: s > w.start, ...refs })})`);
+          console.log(`  ${name}: ${r.frames} frames in ${r.seconds} s (${(r.seconds / r.frames).toFixed(1)} s/frame), gpu errors ${r.gpuErrors}`);
+          ok = !!r.path && r.frames === n;
+        } catch (e) { console.log(`  ${name}: attempt ${attempt} failed: ${String(e.message ?? e).slice(0, 300)}`); }
+        finally { close(); await sleep(1500); }
+      }
+      check(`capture ${name} written`, ok);
+      if (!ok) return;
+    }
+    // merge
+    const dst = path.join(CAPTURES_DIR, w.name);
+    fs.rmSync(dst, { recursive: true, force: true });
+    fs.mkdirSync(dst, { recursive: true });
+    let base = null, k = 0;
+    for (const p of parts) {
+      const m = JSON.parse(fs.readFileSync(path.join(CAPTURES_DIR, p, 'capture.json'), 'utf8'));
+      for (const fr of m.frames) {
+        fs.renameSync(path.join(CAPTURES_DIR, p, frameDir(fr.index)), path.join(dst, frameDir(k)));
+        (base ??= { ...m, frames: [] }).frames.push({ ...fr, index: k, reset: k === 0 });
+        k++;
+      }
+      fs.rmSync(path.join(CAPTURES_DIR, p), { recursive: true, force: true });
+    }
+    if (base.threeTemporal) {
+      delete base.threeTemporal.continues;
+      Object.assign(base.threeTemporal, { start: w.start, frames: k, chunks: `${parts.length} chunks of <= ${chunk} frames, one page load each (merged by run-realtime.mjs --chunk)` });
+    }
+    fs.writeFileSync(path.join(dst, 'capture.json'), JSON.stringify(base, null, 1));
+    check(`capture ${w.name} merged`, k === w.frames, `${k} frames`);
+    if (!flag('no-validate')) {
+      const v = spawnSync(process.execPath, [path.join(repo, 'tools', 'rt-capture', 'validate.mjs'), w.name, '--quiet'], { stdio: 'inherit', env: process.env });
+      check(`validate.mjs ${w.name}`, v.status === 0, `exit ${v.status}`);
+    }
+  }
+}
+
 async function main() {
   setTimeout(() => { console.error('FAILED: timed out'); process.exit(3); }, Number(opt('timeout', 1_800_000))).unref();
   const page = scenario === 'smoke' ? opt('page', 'shadows.html') : `${opt('page', scenario === 'gi' || scenario === 'capture' ? 'realtime-gi' : 'realtime-shadows').replace(/\.html$/, '')}.html`;
@@ -308,6 +372,14 @@ async function main() {
   const extra = [scenario === 'capture' ? `${pathQ}&ref=1` : scenario === 'path' ? pathQ : '', opt('query', '')].filter(Boolean).join('&');
   const url = `http://127.0.0.1:${PORT}/${page}?manual=1${extra ? '&' + extra : ''}`;
   console.log(url);
+  if (scenario === 'capture' && opt('chunk')) {
+    await runChunkedCapture(url);
+    const json = opt('json');
+    if (json) fs.writeFileSync(json, JSON.stringify(results, null, 1));
+    const failed = results.checks.filter((c) => !c.ok);
+    console.log(failed.length ? `\n${failed.length} check(s) FAILED` : '\nall checks passed');
+    process.exit(failed.length ? 1 : 0);
+  }
   const { cdp, close } = await openPage(url);
   try {
     if (scenario === 'smoke') {
