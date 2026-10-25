@@ -56,6 +56,11 @@ structure without smooth bias). **Frames to band**: the first age (or frame afte
 bucket stays within 0.5 dB of the shipped default's settled level, the band fixed per capture and signal before
 comparing candidates (the evaluation agreement's "common reference-based error band").
 
+The T1 windows (10 GB, deleted afterwards) regenerate with `node examples/realtime-denoiser/run-headless.mjs
+"mode=capture&name=t1-cut&path=cut&start=16&frames=64"` (and `name=t1-pan&path=pan&start=0&frames=48`,
+`name=t1-object&path=object&start=0&frames=48`); replays: `"mode=replay&capture=<c>&denoiser=<id>&output=<name>&<settings>"`,
+then `node docs/research/rt-denoiser/results/data/t1-score.mjs <c> --den <names> --json <out>`.
+
 Raw: [data/t1-captures.json](data/t1-captures.json) (every capture × signal × denoiser: region scores, age curve,
 per-frame PSNR), [data/t1-live.json](data/t1-live.json) (live pages). Scripts: [data/t1-score.mjs](data/t1-score.mjs),
 [data/t1-summary.mjs](data/t1-summary.mjs), [data/t1-events.mjs](data/t1-events.mjs), [data/t1-strip.mjs](data/t1-strip.mjs).
