@@ -162,7 +162,7 @@ registerDenoiser({
 const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance', 'normalThreshold', 'atrousIterations',
   'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
   'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale',
-  'spatialVarianceRadius', 'spatialHistoryWeight'] as const;
+  'spatialVarianceRadius', 'spatialHistoryWeight', 'youngLuminanceWeight', 'youngLuminanceFrames'] as const;
 const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight'] as const;
 
 /** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
