@@ -133,6 +133,18 @@ export interface ShadowInputs {
    * Filters that size penumbrae from `hitDistance` need it; others ignore it.
    */
   light?: ShadowLight;
+  /**
+   * Optional RGB transmittance of the translucent layers the shadow ray crossed (rgba16float /
+   * rgba8unorm, rgb in [0, 1]; product of the layers' transmittances, 1 where it crossed none),
+   * for coloured shadows. Ignored where visibility is 0. Only denoisers that support it read it
+   * (e.g. denoiser/realtime's ShadowDenoiser with `translucency: true`).
+   */
+  translucency?: GPUTexture;
+  /**
+   * Optional distance to the nearest translucent layer that attenuated the ray (r16float / r32float,
+   * world units; 0 = none): sizes coloured penumbrae like `hitDistance` sizes opaque ones.
+   */
+  translucencyHitDistance?: GPUTexture;
 }
 
 /** Reflections / specular indirect: 1 sample per pixel. */
