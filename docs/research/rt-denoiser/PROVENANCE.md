@@ -66,7 +66,9 @@ mip-based history repair with direct spatial repair in 2022 (the "what" is also 
 there. Consequences: the orchestrator writes no passes and will not brief a history-repair design
 from that sentence; any change to history repair is designed from public sources, our measurements
 or black-box probes by an implementer who hasn't read the brief. Running agents were told not to open
-it. The brief is untracked and must not be given to implementers (RULES §1).
+it. The brief was never committed; Dennis removed it from the worktree the same day (as was the
+snapshot JSON), and must not be given to implementers (RULES §1). Its author is asked to produce a
+filtered what-not-how targets file, `sources/nrd-review-targets.md`, checked by a clean reviewer first.
 
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
