@@ -13,7 +13,8 @@
 //   accumulate-32      capped accumulation, 32 frames, 2.5D depth test (the test bed's
 //                      baseline row; needs viewz + motion_z); `maxFrames` overrides
 //   accumulate-8       the same, 8 frames
-//   svgf               denoiser/realtime SVGF, diffuse + specular (DiffuseSpecularDenoiser,
+//   svgf               denoiser/realtime SVGF with antiLag 'off' (pinned; the package default is
+//                      'auto' since 2026-10-25), diffuse + specular (DiffuseSpecularDenoiser,
 //                      dispatchBoth; a single requested signal runs that signal's class)
 //   svgf-auto          the same with A-SVGF anti-lag 'auto' (renderer-free gradients)
 //   svgf-diffuse       DiffuseDenoiser alone;  svgf-specular  SpecularDenoiser alone
@@ -200,7 +201,7 @@ function svgfJoint(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
 
 registerDenoiser({
   id: 'svgf', description: 'denoiser/realtime SVGF (diffuse + specular, joint dispatch)', signals: ['diffuse', 'specular'],
-  create: svgfJoint({}),
+  create: svgfJoint({ antiLag: 'off' }), // pinned: the package default is 'auto' since Dennis's q02
 });
 registerDenoiser({
   id: 'svgf-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), diffuse + specular", signals: ['diffuse', 'specular'],
@@ -208,11 +209,11 @@ registerDenoiser({
 });
 registerDenoiser({
   id: 'svgf-diffuse', description: 'denoiser/realtime SVGF DiffuseDenoiser', signals: ['diffuse'],
-  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st))),
+  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st, { antiLag: 'off' }))),
 });
 registerDenoiser({
   id: 'svgf-specular', description: 'denoiser/realtime SVGF SpecularDenoiser (needs roughness)', signals: ['specular'],
-  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st))),
+  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st, { antiLag: 'off' }))),
 });
 
 /**
