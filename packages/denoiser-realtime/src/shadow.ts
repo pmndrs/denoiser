@@ -71,9 +71,11 @@ export interface ShadowDenoiserOptions {
    */
   clampEdgePx?: number;
   /**
-   * Anti-lag: history length drops toward 1 frame as the clamp moves the history by 1/antiLag
+   * Anti-lag gain: history length drops toward 1 frame as the clamp moves the history by 1/antiLagGain
    * (0 = off). Default 64 (any noticeable clamp restarts the history at 1 frame).
    */
+  antiLagGain?: number;
+  /** @deprecated Old name of `antiLagGain` (still accepted; warns once per instance). */
   antiLag?: number;
   /** Radius factor 1 + freshBoost / (1 + A) for young histories (disocclusions, anti-lag). Default 0. */
   freshBoost?: number;
@@ -122,8 +124,8 @@ export interface ShadowDenoiserOptions {
   /**
    * Where all 25 raw samples of the 5x5 window agree, the history takes their value exactly (no
    * residual lag in lit / umbra areas). 'change': only where the history sits outside the clamp
-   * window (after a change such as a light flip). Default true (best FLIP; off is +0.18 dB pooled,
-   * results/M4.md §10.5: a taste call).
+   * window (after a change such as a light flip). Default 'change' (Dennis, SPEC §12 item 5: between true
+   * (best FLIP) and false (+0.18 dB pooled) on every metric, results/M4.md §10.5, REMEASURE §4).
    */
   uniformSnap?: boolean | 'change';
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
@@ -211,7 +213,7 @@ export interface ShadowDenoiserOptions {
   timestamps?: boolean;
 }
 
-type Resolved = Required<Omit<ShadowDenoiserOptions, 'light'>> & { light?: ShadowLight };
+type Resolved = Required<Omit<ShadowDenoiserOptions, 'light' | 'antiLag'>> & { light?: ShadowLight };
 
 export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
   return {
@@ -223,7 +225,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     clampGeometry: o.clampGeometry ?? true,
     clampMinTaps: o.clampMinTaps ?? 3,
     clampEdgePx: o.clampEdgePx ?? 2,
-    antiLag: o.antiLag ?? 64,
+    antiLagGain: o.antiLagGain ?? o.antiLag ?? 64,
     antiLagHistory: o.antiLagHistory ?? 0,
     freshBoost: o.freshBoost ?? 0,
     youngMean: o.youngMean ?? 0.75,
@@ -249,7 +251,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     anisotropy: o.anisotropy ?? false,
     anisotropyMax: o.anisotropyMax ?? 4,
     catmullRom: o.catmullRom ?? true,
-    uniformSnap: o.uniformSnap ?? true,
+    uniformSnap: o.uniformSnap ?? 'change',
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
     mergeMin: o.mergeMin ?? true,
@@ -383,6 +385,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   constructor(device: GPUDevice, options: ShadowDenoiserOptions = {}) {
     this.device = device;
     this.options = resolveShadowOptions(options);
+    if (options.antiLag !== undefined) console.warn('ShadowDenoiser: option `antiLag` is deprecated, use `antiLagGain`');
     const o = this.options;
     if (o.translucency) {
       const wideOk = device.limits.maxStorageTexturesPerShaderStage >= WIDE_STORAGE;
@@ -659,7 +662,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f.set(B0, 28); f[31] = o.clampFloor;
     f.set(Bx, 32); f[35] = o.planeDistance;
     f.set(By, 36); f[39] = o.radiusScale;
-    f.set(lightVec, 40); f[43] = o.antiLag;
+    f.set(lightVec, 40); f[43] = o.antiLagGain;
     const ortho = P[15] === 1;
     f[44] = ortho ? 0 : 2 / (P[5] * H);
     f[45] = ortho ? 2 / (P[5] * H) : 0;

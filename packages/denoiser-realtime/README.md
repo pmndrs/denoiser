@@ -356,16 +356,16 @@ const out = shadows.dispatch(
   samples (golden-ratio animation for a scalar, R2 for 2-D samples). The temporal clamp relies
   on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
-  [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLag` [64], `antiLagHistory` [0],
+  [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLagGain` [64] (old name `antiLag` still accepted, deprecated), `antiLagHistory` [0],
   `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0.618],
-  `uniformSnap` [true], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
+  `uniformSnap` ['change'], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
   `youngFrames` [8], `youngTaper` [0.25], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
   [16 px @1080p], `geometryTolerance` [0.02], `normalAngle` [30°], `normalWeight` [true],
   `pass1Phase` [0.382], `spatialPasses` [2], `tileSkip` [true], `anisotropy` [false],
-  `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` also takes
-  `'change'` (snap only after a change). Every one is documented in `src/shadow.ts`; M4.md has
+  `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` takes `true` (snap
+  wherever the 5×5 samples agree: best FLIP), `'change'` (default: only after a change) or `false` (+0.18 dB pooled). Every one is documented in `src/shadow.ts`; M4.md has
   the measurements behind them.
 
 | pass | threads | reads → writes |
