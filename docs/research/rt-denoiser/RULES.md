@@ -69,6 +69,20 @@ NRD's public release information may be read, like any product's release notes, 
 - The auditor doesn't write our passes (rule 8), like the provenance auditor.
 - Implementers and researchers read only `sources/nrd-releases.md`, never the raw notes.
 
+## 3c. Third exception: the change-magnitude audit (decided by Dennis, 2026-10-25)
+
+To judge whether NRD changed enough since the 2021 public descriptions to be worth chasing, a
+**change auditor** may measure NRD's history **as numbers only**:
+
+- from a clone kept outside this repo (scratch space, deleted afterwards): tags, dates, and
+  `git diff --numstat` / `--stat` line and file counts between releases, grouped by area
+  (per denoiser, common code, API headers, integration). File **paths** may be used to group;
+  file **contents**, diff hunks, and commit message bodies are never opened or printed.
+- The output, `sources/nrd-change-magnitude.md`, gives churn per area per release, and compares it
+  with `sources/nrd-releases.md` (rule 3b) and the public research, to flag "large change, little
+  public explanation" areas worth a black-box probe or more research. It never describes code.
+- The change auditor doesn't write our passes (rule 8).
+
 ## 4. Native NRD as a black box
 
 We may build and run native NRD to compare quality and performance, because its license
@@ -106,6 +120,7 @@ else writes the affected pass.
 | provenance auditor | the audit agent of 2026-10-24 | yes, for references only (rule 3) | **no** (contaminated: grep of NRD source) |
 | research agent, shadows/specular | wrote `sources/shadows-specular.md` (2026-10-24) | no code; it read NRD's README prose before the README was ruled out. Those passages were removed from its report | not without review: if reused, its passes get a second reviewer |
 | release auditor | the release-audit agent of 2026-10-25 (rule 3b) | release notes and `UPDATE.md` prose only, no code | **no** |
+| change auditor | the change-magnitude agent of 2026-10-25 (rule 3c) | line/file counts and paths only, no contents | **no** |
 | harness builder | the agent on the Windows RTX machine ([NATIVE-HARNESS.md](NATIVE-HARNESS.md)) | public headers, integration layer, `NRD.hlsli` (rule 4) | **no** |
 
 Any new agent gets this file in its brief and a clear role from this table.
