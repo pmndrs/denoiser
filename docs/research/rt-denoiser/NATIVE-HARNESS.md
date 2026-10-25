@@ -72,11 +72,26 @@ C:\dev\nrd-reference\            (outside any checkout of this repo)
    if Chrome isn't in Program Files or LocalAppData. Then replay them through native NRD into
    `C:\dev\nrd-reference\outputs\<capture>\<DENOISER>\` (CAPTURE-FORMAT "Outputs from a
    replay"; frame metadata extras such as per-frame `lights` are informational).
+   Native denoisers to run on every capture: `REBLUR_DIFFUSE_SPECULAR`, `RELAX_DIFFUSE_SPECULAR`,
+   `SIGMA_SHADOW`, and `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` (fed the normalized hit distance from
+   the `*_hitt` buffers with its own default parameters; see probe P3 in TASKS before comparing
+   its AO with ours).
+   **Real-scene captures** (the three.js corner scene, moving camera, per-pose references;
+   [examples/three-temporal/CAPTURES.md](../../../examples/three-temporal/CAPTURES.md)): start the
+   page server, then write `three-orbit` and `three-pan` (≈ 4.9 GB, ≈ 12 min):
+   ```
+   $env:RT_CAPTURE_DIR = "C:\dev\nrd-reference"
+   node node_modules/vite/bin/vite.js examples/three-temporal --port 5370 --strictPort --host 127.0.0.1
+   # second shell, from examples/three-temporal:
+   node run-realtime.mjs capture --port=5370 --set=moving --refShadow=1024 --refDiffuse=2048 --refSpec=256 --stepTimeout=3600000
+   ```
+   Their specular is three.js SSR (not demodulated) and the light is a rectangle passed as an
+   equal-area sphere; both are stated in the manifests.
 5. **Same-GPU comparison:** replay our WGSL denoisers over the same captures in Chrome on
    the same GPU, into the same `outputs\` tree, then score ours and native together:
    ```
    $env:RT_CAPTURE_DIR = "C:\dev\nrd-reference"
-   node examples/realtime-denoiser/run-headless.mjs --serve --set=standard --replay=accumulate,svgf,svgf-auto,ffx-shadows,ffx-reflections
+   node examples/realtime-denoiser/run-headless.mjs --serve --set=standard --replay=accumulate,svgf,svgf-auto,recurrent,recurrent-svgfspec,shadows,ffx-shadows,ffx-reflections,occlusion-svgf,occlusion-svgf-auto,occlusion-recurrent
    node tools/rt-capture/compare.mjs std540-orbit       # one capture: every denoiser folder under outputs\std540-orbit\
    ```
    The first command replays each capture through each listed denoiser
@@ -84,7 +99,10 @@ C:\dev\nrd-reference\            (outside any checkout of this repo)
    warm-up per frame) and runs `compare.mjs` per capture for those ids; the second scores
    every folder of one capture, native ones included (`compare.md` / `compare.json` next to
    them). One replay by hand:
-   `node examples/realtime-denoiser/run-headless.mjs --serve "mode=replay&capture=std540-orbit&denoiser=svgf"`.
+   `node examples/realtime-denoiser/run-headless.mjs --serve "mode=replay&capture=std540-orbit&denoiser=svgf"`
+   (the same query with `capture=three-orbit` / `three-pan` replays the real-scene captures).
+   For cost tables use the denoisers' solo timings on `std1080-orbit` (the 960×540 captures are
+   dominated by fixed overhead).
    _Untested on Windows (written and reviewed on macOS): Chrome discovery, headless WebGPU
    on D3D12, and process cleanup. If headless WebGPU fails, try `CHROME_FLAGS=--enable-features=Vulkan`
    or report the page log the runner prints._
