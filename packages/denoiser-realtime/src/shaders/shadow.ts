@@ -59,6 +59,10 @@
 //   exact value when all 25 samples agree, history cap ~ (penumbra width in px)^2 against
 //   reprojection blur, analytic terminator radius (light partly below the horizon), affine
 //   reprojection taps (plane distance linear in the tap pixel).
+// - v2.2 output stabilization (results/M4.md "Moving shadows"): a short history of the final output,
+//   clamped to the 3x3 range of this frame's output, gated to narrow ranges, anti-lag on the clamp
+//   distance; source RTG II ch. 49 Sec. 49.5.7 prose (stabilization pass with its own history,
+//   outside the feedback loop, TAA-like clamping); the gate and the anti-lag gain are ours.
 // - Disk taps and rotation: SPEC R-3 / D3b (golden-angle spiral, Vogel 1979; animated 4x4
 //   Bayer rotation, Zhdan, Ray Tracing Gems II ch. 49 Sec. 49.5.5 prose; golden-ratio
 //   animation, Wolfe, RTG II ch. 24 Sec. 24.7.2).
@@ -78,7 +82,7 @@ export const SF_SNAP = 128;       // uniform 5x5 neighbourhood: history := its v
 export const SF_SNAP_CHANGE = 256; // ... only where the history sits outside the clamp window (a change)
 
 /** Size of ShadowParams in bytes. */
-export const SP_SIZE = 92 * 4;
+export const SP_SIZE = 96 * 4;
 
 const PARAMS_WGSL = /* wgsl */ `
 struct ShadowParams {
@@ -101,7 +105,8 @@ struct ShadowParams {
   PB0: vec3f, youngTaper: f32,
   PBx: vec3f, pass1Phase: f32,
   PBy: vec3f, youngBase: f32,   // history A channel = A + youngBase x (young frames left), see temporal
-  clampMinTaps: f32, clampEdgePx: f32, r2: f32, r3: f32,
+  clampMinTaps: f32, clampEdgePx: f32, rotationStep: f32, stabilize: f32,
+  stabilizeBox: f32, stabilizeAntiLag: f32, stabilizeYoung: f32, q3: f32,
 }
 // history length A from the history's A channel (strips the young-frames counter)
 fn histA(z: f32) -> f32 { return z - SP.youngBase * floor(z / SP.youngBase); }
@@ -519,6 +524,7 @@ ${PARAMS_WGSL}
 @group(0) @binding(2) var<storage, read_write> tileMinG: array<u32>;
 @group(0) @binding(3) var<storage, read_write> args: array<atomic<u32>>;   // [count, 1, 1]
 @group(0) @binding(4) var<storage, read_write> list: array<u32>;
+@group(0) @binding(5) var<storage, read_write> activeTile: array<u32>;   // 1 = in the list (stabilize's box source)
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -538,6 +544,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   tileMinG[idx] = minG;
   // penumbra in the 3x3 tiles: a fractional history, or raw samples that disagree
   let isActive = (fl & 1u) != 0u || (fl & 6u) == 6u || spFlag(SF_NO_SKIP);
+  activeTile[idx] = select(0u, 1u, isActive);
   if (isActive) {
     let k = atomicAdd(&args[0], 1u);
     list[k] = idx;
@@ -691,7 +698,7 @@ ${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's 
 
   // per-pixel rotation: animated 4x4 Bayer (SPEC D3b), a different angle per pass
   // pass offset pass1Phase (default 2 - phi = 0.382 turn, the golden angle): our choice, see the option
-  let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + f32(F.frameIndex) * 0.6180339887
+  let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + f32(F.frameIndex) * SP.rotationStep
     + f32(PASS) * SP.pass1Phase);
   let cs = cos(phi);
   let sn = sin(phi);
@@ -711,3 +718,85 @@ ${taps.join('')}
 }
 `;
 }
+
+// ---------------------------------------------------------------------------- stabilize
+
+/**
+ * Optional output stabilization (option `stabilize` > 0; our design, results/M4.md "Moving shadows"):
+ * a short history of the FINAL output, reprojected with the motion vectors, clamped to the 3x3
+ * min / max of this frame's spatial output and blended with it by `stabilize`; indirect over the
+ * penumbra tiles. It averages the
+ * frame-to-frame noise the spatial passes leave in wide penumbrae (each frame's raw sample enters the
+ * temporal history with weight 1/(A+1), and the kernel sees it); the box keeps it from lagging a
+ * moving shadow by more than the local spread; it fades out where that range exceeds stabilizeBox
+ * (full blend below it, none above twice it), so sharp edges keep this frame's value. The temporal history stays raw visibility (no
+ * spatial output feeds back into it). Source: the temporal stabilization pass of Zhdan, RTG II
+ * ch. 49 Sec. 49.5.7 (prose): an output history of its own that never enters the temporal feedback
+ * loop, "logically very close to temporal supersampling with variance color clamping", with anti-lag.
+ * Ours (our design, measured): 3x3 min / max box of the current output instead of a variance box, the
+ * box-width gate (stabilizeBox) and the clamp-distance anti-lag (stabilizeAntiLag).
+ */
+export const SHADOW_STABILIZE_WGSL = /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_WGSL}
+@group(0) @binding(0) var<uniform> F: Frame;
+@group(0) @binding(1) var<uniform> SP: ShadowParams;
+@group(0) @binding(2) var curTex: texture_2d<f32>;     // this frame's spatial output (penumbra tiles)
+@group(0) @binding(3) var boxTex: texture_2d<f32>;     // T: the unfiltered copy in tiles the spatial passes skipped
+@group(0) @binding(4) var prevTex: texture_2d<f32>;    // last frame's final output
+@group(0) @binding(5) var motionTex: texture_2d<f32>;
+@group(0) @binding(6) var histCur: texture_2d<f32>;    // this frame's temporal history (A: 0 = no valid history)
+@group(0) @binding(7) var<storage, read> list: array<u32>;
+@group(0) @binding(8) var<storage, read> activeTile: array<u32>;
+@group(0) @binding(9) var outTex: texture_storage_2d<r32float, write>;   // final output (other tiles: the unfiltered copy)
+
+var<workgroup> sC: array<f32, 100>;   // 10x10: 8x8 tile + 1-px halo of the spatial output
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wid: vec3u) {
+  // indirect over the penumbra tiles (as the spatial passes); elsewhere the final output already holds
+  // the temporal pass's unfiltered copy, which the box clamp would pass through unchanged
+  let tile = list[wid.x];
+  let t0 = vec2i(i32((tile % SP.tilesX) * 8u), i32((tile / SP.tilesX) * 8u));
+  let base = t0 - 1;
+  for (var i = li; i < 100u; i += 64u) {
+    let q = clampPix(base + vec2i(i32(i % 10u), i32(i / 10u)));
+    // halo pixels in tiles the spatial passes skipped: T holds their (exact) unfiltered value there
+    if (activeTile[u32(q.y / 8) * SP.tilesX + u32(q.x / 8)] != 0u) { sC[i] = textureLoad(curTex, q, 0).r; }
+    else { sC[i] = textureLoad(boxTex, q, 0).r; }
+  }
+  workgroupBarrier();
+  let p = t0 + vec2i(lid.xy);
+  if (!inside(p)) { return; }
+  let cur = textureLoad(curTex, p, 0).r;
+  var lo = cur;
+  var hi = cur;
+  for (var dy = 0u; dy < 3u; dy++) {
+    for (var dx = 0u; dx < 3u; dx++) {
+      let v = sC[(lid.y + dy) * 10u + lid.x + dx];
+      lo = min(lo, v);
+      hi = max(hi, v);
+    }
+  }
+  var v = cur;
+  let A = histA(textureLoad(histCur, p, 0).z);
+  if (!hasFlag(FRAME_RESET) && A > 0.5) {
+    let mv = textureLoad(motionTex, p, 0).xy;
+    let pp = (uvOf(p) - vec2f(mv.x, -mv.y) * 0.5) * F.dims - 0.5;
+    let b = vec2i(floor(pp));
+    let f = pp - floor(pp);
+    let h = mix(mix(textureLoad(prevTex, clampPix(b), 0).r, textureLoad(prevTex, clampPix(b + vec2i(1, 0)), 0).r, f.x),
+                mix(textureLoad(prevTex, clampPix(b + vec2i(0, 1)), 0).r, textureLoad(prevTex, clampPix(b + vec2i(1, 1)), 0).r, f.x), f.y);
+    // only where the 3x3 range is narrow (wide, smooth penumbrae, where the boil is): at sharp edges
+    // the range spans the step, the clamp holds nothing back and resampling would blur the edge
+    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)));
+    let hc = clamp(h, lo, hi);
+    // anti-lag: a history the box had to move (stabilizeAntiLag), or a short temporal history (anti-lag
+    // restarts of the temporal pass mark changing penumbrae; stabilizeYoung), takes more of this frame
+    a = max(a, saturate(abs(hc - h) * SP.stabilizeAntiLag));
+    if (SP.stabilizeYoung > 0.0) { a = max(a, saturate(1.0 - A / SP.stabilizeYoung)); }
+    v = mix(hc, cur, a);
+  }
+  textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));
+}
+`;

@@ -323,7 +323,9 @@ denoiser for 1-ray (or few-ray) shadow visibility, built against SPEC v0.1 §7 (
 yet: **provisional**). Fractional visibility is kept end to end (never thresholded), the
 history accumulates raw visibility only (no spatial output fed back), and the spatial kernel
 is sized per pixel from the penumbra width (Mehta et al. 2012, from the occluder distance and
-the light size) blended with a noise estimate (Heitz et al. 2018). Sources per pass:
+the light size) blended with a noise estimate (Heitz et al. 2018). A short stabilization history of
+the final output (v2.2, RTG II ch. 49 §49.5.7) removes the frame-to-frame "boil" of wide, soft
+penumbrae. Sources per pass:
 `src/shaders/shadow.ts` header and `docs/research/rt-denoiser/PROVENANCE.md` "Shadows (M4)".
 
 ```ts
@@ -343,7 +345,7 @@ const out = shadows.dispatch(
   { depth, normal, motion, viewZ /* optional */, motionZ /* optional */ },
   { view, projection, prevView, prevProjection, near, far },
 );
-// out: r32float denoised visibility (valid until the next dispatch)
+// out: r32float denoised visibility (valid until the next dispatch; two textures alternate)
 ```
 
 - Without `hitDistance` or `light` it falls back to the noise-driven radius alone (H18).
@@ -354,6 +356,7 @@ const out = shadows.dispatch(
   on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
   [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLag` [64], `antiLagHistory` [0],
+  `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0.618],
   `uniformSnap` [true], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
@@ -370,9 +373,11 @@ const out = shadows.dispatch(
 | `tiles` | 1 per 8×8 tile | 3×3-tile nearest-occluder scale; indirect list of penumbra tiles |
 | `spatial0` | indirect, penumbra tiles | out copy → T: 8-tap rotated disk on the receiver's tangent plane |
 | `spatial1` | indirect, penumbra tiles | T → out: same, half radius, another rotation |
+| `stabilize` | indirect, penumbra tiles | out + last frame's final output → final output: reprojected, clamped to the 3×3 range of this frame's output, blended 0.25; only where that range is narrow (wide penumbrae); anti-lag on the clamp distance (v2.2) |
 
-Memory: **40 B/px** + 12 B per 8×8 tile (83 MB at 1080p). Core WebGPU only (≤ 4 storage
-textures per pass).
+With `stabilize` on (default) the temporal pass writes its unfiltered copy into the final output pair
+and the spatial passes run final → T → out. Memory: **48 B/px** (40 without `stabilize`) + 16 B per 8×8
+tile (100 MB at 1080p). Core WebGPU only (≤ 4 storage textures per pass).
 
 ### Results (provisional; tables in `docs/research/rt-denoiser/results/M4.md`)
 
@@ -385,9 +390,14 @@ visibility, **pooled** (PSNR of the mean squared error over all frames and pixel
 | FFX shadows (`denoiser/ffx`) | 31.20 | 23.50 | 32.91 | 0.038 | 0.0053 | 0.50–0.61 |
 | `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
 | `ShadowDenoiser` v2 | 37.11 | 28.57 | 34.68 | 0.018 | 0.0033 | 0.48–0.59 |
-| **`ShadowDenoiser` (defaults, v2.1)** | **38.12** | **29.05** | **+0.65 vs v2** | **0.013** | **−18 % vs v2** | **0.58–0.69** |
+| `ShadowDenoiser` v2.1 | 38.12 | 29.05 | 35.33 | 0.0129 | 0.0027 | 0.58–0.69 |
+| **`ShadowDenoiser` (defaults, v2.2)** | **38.22** | **29.16** | **35.51** | 0.0131 | **0.0024** | see M4.md §12 |
 
-Ahead of FFX on every path. v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
+Ahead of FFX on every path. **v2.2** (M4.md §12, "Moving shadows") fixes visible boiling in wide,
+soft penumbrae (the rotating torus knot's shadow on the three.js page): in that shadow the output's
+frame-to-frame noise drops from 4.9× FFX's to FFX's level (0.0013 vs 0.0062 per frame, FFX 0.0011) while
+staying 8 dB more accurate; on the test bed flicker −11 % and temporal PSNR +0.5 dB at 1080p, worst path
+`light` −0.19 dB (a little lag after light changes). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
 from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
 normal-tested clamp), so 5 of 7 paths are over the 0.6 ms target (`clampGeometry: false` returns
 to v2's cost and gives up ~1 dB pooled; SPEC §12). GPU

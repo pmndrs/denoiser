@@ -9,9 +9,13 @@
 //   tiles      3x3 tile neighbourhood: nearest-occluder scale + indirect list of penumbra tiles
 //   spatial 0  out copy -> T      (penumbra tiles only)
 //   spatial 1  T -> out           (penumbra tiles only)
+//   stabilize  out (+ T's 3x3 range) + last frame's final output -> final output (v2.2, option
+//              `stabilize`; penumbra tiles only: with it on, the temporal pass writes its unfiltered
+//              copy into the final output, the spatial passes run final -> T -> out)
 //
-// Memory at W x H: history 2 x 8 B + geometry 2 x 8 B + T 4 B + out 4 B = 40 B/px, plus
-// three tile-sized buffers (12 B per 8x8 tile).
+// Memory at W x H: history 2 x 8 B + geometry 2 x 8 B + T 4 B + out 4 B = 40 B/px (+ 2 x 4 B
+// stabilized ping-pong with `stabilize` > 0, the default: 48 B/px), plus four tile-sized buffers
+// (16 B per 8x8 tile).
 import type {
   FrameCamera, FrameGuides, ShadowInputs, ShadowLight, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
@@ -20,7 +24,7 @@ import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
-  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_TILES_WGSL, SP_SIZE,
+  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
   shadowSpatialWgsl, shadowTemporalWgsl,
 } from './shaders/shadow';
 
@@ -120,6 +124,28 @@ export interface ShadowDenoiserOptions {
    * next frame (our choice; measured insensitive, results/M4.md "v2").
    */
   pass1Phase?: number;
+  /**
+   * Per-frame step of the spatial passes' disk rotation, in turns. Default 0.618 (the golden ratio,
+   * SPEC D3b); 0 = a fixed per-pixel rotation (no frame-to-frame change of the kernel).
+   */
+  rotationStep?: number;
+  /**
+   * Output stabilization (v2.2): weight of this frame's spatial output against a short, reprojected
+   * history of the final output clamped to the 3x3 range of this frame's output (0 = off: no pass, no
+   * memory). Averages the frame-to-frame noise ("boil") the spatial passes leave in wide, slowly moving
+   * penumbrae (results/M4.md "Moving shadows"). Default 0.25; +8 B/px and one full-screen pass when on.
+   */
+  stabilize?: number;
+  /**
+   * Stabilization only where the 3x3 range of the output is below this (fading out up to twice it),
+   * at 1080p, scaled by 1080 / height (a penumbra's per-pixel slope scales with resolution). Default 0.05
+   * (0.1 at 540p).
+   */
+  stabilizeBox?: number;
+  /** Stabilization anti-lag: blend weight raised to saturate(gain x distance the box moved the history). Default 64 (0 = off). */
+  stabilizeAntiLag?: number;
+  /** Stabilization anti-lag: blend weight raised to saturate(1 - A / stabilizeYoung) for short temporal histories. Default 0 (off). */
+  stabilizeYoung?: number;
   /** Spatial passes: 0, 1 or 2. Default 2. */
   spatialPasses?: number;
   /** Skip tiles without penumbra (TR19 slide 72). Default true. */
@@ -168,6 +194,11 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     youngTaper: o.youngTaper ?? 0.25,
     youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
     pass1Phase: o.pass1Phase ?? 0.3819660113,
+    rotationStep: o.rotationStep ?? 0.6180339887,
+    stabilize: o.stabilize ?? 0.25,
+    stabilizeBox: o.stabilizeBox ?? 0.05,
+    stabilizeAntiLag: o.stabilizeAntiLag ?? 64,
+    stabilizeYoung: o.stabilizeYoung ?? 0,
     planeDistance: o.planeDistance ?? 0.01,
     radiusScale: o.radiusScale ?? 0.75,
     historyShrink: o.historyShrink ?? 0.5,
@@ -250,7 +281,7 @@ function unprojectZ(projInv: M4, ndc: [number, number], vz: number): [number, nu
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
-const PASSES = ['temporal', 'tiles', 'spatial0', 'spatial1'] as const;
+const PASSES = ['temporal', 'tiles', 'spatial0', 'spatial1', 'stabilize'] as const;
 
 export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   readonly name = 'shadows';
@@ -270,7 +301,9 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private params: GPUBuffer;
   private dummy: GPUTexture;
   private sampler: GPUSampler;
-  private layouts: Record<'temporalDepth' | 'temporalFloat' | 'tiles' | 'spatial', GPUBindGroupLayout>;
+  private layouts: Record<'temporalDepth' | 'temporalFloat' | 'tiles' | 'spatial' | 'stabilize', GPUBindGroupLayout>;
+  private stabPipe?: GPUComputePipeline;
+  private stab: GPUTexture[] = [];
   private pipes: Partial<Record<'temporalDepth' | 'temporalFloat', GPUComputePipeline>> = {};
   private tilesPipe: GPUComputePipeline;
   private spatialPipes: GPUComputePipeline[];
@@ -283,6 +316,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private tileMinG?: GPUBuffer;
   private args?: GPUBuffer;
   private list?: GPUBuffer;
+  private activeTile?: GPUBuffer;
 
   constructor(device: GPUDevice, options: ShadowDenoiserOptions = {}) {
     this.device = device;
@@ -297,9 +331,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.layouts = {
       temporalDepth: layout(device, 'shadows temporal (depth)', temporalKinds('d')),
       temporalFloat: layout(device, 'shadows temporal (float)', temporalKinds('f')),
-      tiles: layout(device, 'shadows tiles', ['u', 'sbr', 'sb', 'sb', 'sb']),
+      tiles: layout(device, 'shadows tiles', ['u', 'sbr', 'sb', 'sb', 'sb', 'sb']),
       spatial: layout(device, 'shadows spatial', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']),
+      stabilize: layout(device, 'shadows stabilize', ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', 'r32float']),
     };
+    if (this.options.stabilize > 0 && this.options.spatialPasses > 0) this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     this.withE = this.options.noiseBlend > 0 || this.options.noiseYoung > 0;
     this.tilesPipe = pipeline(device, 'shadows tiles', SHADOW_TILES_WGSL, this.layouts.tiles);
     this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
@@ -322,10 +358,12 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.hist = [0, 1].map((i) => tex(`history ${i}`, 'rgba16float'));
     this.tTex = tex('T', 'r32float');
     this.out = tex('output', 'r32float');
+    if (this.stabPipe) this.stab = [0, 1].map((i) => tex(`stabilized ${i}`, 'r32float'));
     const tiles = this.tilesX * this.tilesY;
     this.tileStats = d.createBuffer({ label: 'shadows tile stats', size: tiles * 8, usage: GPUBufferUsage.STORAGE });
     this.tileMinG = d.createBuffer({ label: 'shadows tile scale', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
     this.list = d.createBuffer({ label: 'shadows tile list', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
+    this.activeTile = d.createBuffer({ label: 'shadows active tiles', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
     this.args = d.createBuffer({
       label: 'shadows indirect args', size: 16,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT | GPUBufferUsage.COPY_DST,
@@ -375,13 +413,14 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     pass('temporal', tp, group(d, this.layouts[kind], [
       this.frame, this.params, depthView, guides.viewZ ?? this.dummy, guides.normal, guides.motion,
       guides.motionZ ?? this.dummy, inputs.visibility, inputs.hitDistance ?? this.dummy,
-      this.geo[prev], this.hist[prev], this.geo[cur], this.hist[cur], this.tTex!, this.out, this.tileStats!, this.sampler,
+      // with stabilization the unfiltered copy goes straight into the final output (kept in non-penumbra tiles)
+      this.geo[prev], this.hist[prev], this.geo[cur], this.hist[cur], this.tTex!, this.stabPipe ? this.stab[cur] : this.out, this.tileStats!, this.sampler,
     ]), this.tilesX, this.tilesY);
     if (o.spatialPasses > 0) {
       enc.clearBuffer(this.args!, 0, 4);
-      pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!]),
+      pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!, this.activeTile!]),
         Math.ceil(this.tilesX / 8), Math.ceil(this.tilesY / 8));
-      const src = [this.out, this.tTex!];
+      const src = [this.stabPipe ? this.stab[cur] : this.out, this.tTex!];
       const dst = o.spatialPasses === 1 ? [this.out] : [this.tTex!, this.out];
       for (let i = 0; i < o.spatialPasses; i++) {
         pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, [
@@ -389,11 +428,18 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
         ]), 0, 1, true);
       }
     }
+    let result = this.out;
+    if (this.stabPipe) {
+      result = this.stab[cur];
+      pass('stabilize', this.stabPipe, group(d, this.layouts.stabilize, [
+        this.frame, this.params, this.out, this.tTex!, this.stab[prev], guides.motion, this.hist[cur], this.list!, this.activeTile!, result,
+      ]), 0, 1, true);
+    }
     const after = this.timer?.end(enc);
     d.queue.submit([enc.finish()]);
     after?.();
     this.cur ^= 1;
-    return this.out;
+    return result;
   }
 
   private writeParams(inputs: ShadowInputs, camera: FrameCamera) {
@@ -425,6 +471,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[87] = youngBase;
     f[88] = o.clampMinTaps;
     f[89] = o.clampEdgePx;
+    f[90] = o.rotationStep;
+    f[91] = o.stabilize;
+    f[92] = o.stabilizeBox * 1080 / H;
+    f[93] = o.stabilizeAntiLag;
+    f[94] = o.stabilizeYoung;
     f[83] = o.pass1Phase;
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;
@@ -465,12 +516,13 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   }
 
   private destroyTargets() {
-    for (const t of [...this.geo, ...this.hist, this.tTex, this.out]) t?.destroy();
-    for (const b of [this.tileStats, this.tileMinG, this.args, this.list]) b?.destroy();
+    for (const t of [...this.geo, ...this.hist, ...this.stab, this.tTex, this.out]) t?.destroy();
+    this.stab = [];
+    for (const b of [this.tileStats, this.tileMinG, this.args, this.list, this.activeTile]) b?.destroy();
     this.geo = [];
     this.hist = [];
     this.tTex = this.out = undefined;
-    this.tileStats = this.tileMinG = this.args = this.list = undefined;
+    this.tileStats = this.tileMinG = this.args = this.list = this.activeTile = undefined;
   }
 
   dispose(): void {
