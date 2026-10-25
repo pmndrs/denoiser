@@ -15,7 +15,7 @@
 //
 // Memory at W x H: history 2 x 8 B + geometry 2 x 8 B + T 4 B + out 4 B = 40 B/px (+ 2 x 4 B
 // stabilized ping-pong with `stabilize` > 0, the default: 48 B/px), plus four tile-sized buffers
-// (16 B per 8x8 tile).
+// (20 B per 8x8 tile: stats 8, nearest occluder 4, list 4, active flag 4).
 //
 // Translucency (option `translucency`, SPEC v0.3 §7.10, M8; provisional): coloured shadows through
 // translucent layers. The opaque visibility v runs through the passes above unchanged (with T = 1 its
@@ -35,7 +35,7 @@ import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
   SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
-  TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type TrVariant,
+  TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type SpatialVariant, type TrVariant,
 } from './shaders/shadow';
 
 export interface ShadowDenoiserOptions {
@@ -128,6 +128,12 @@ export interface ShadowDenoiserOptions {
    * (best FLIP) and false (+0.18 dB pooled) on every metric, results/M4.md §10.5, REMEASURE §4).
    */
   uniformSnap?: boolean | 'change';
+  /**
+   * With uniformSnap 'change': also snap where the pixel's own penumbra is narrower than this many pixels
+   * (results/SHADOWS-LOOK.md: there 'change' keeps a fractional history that is only the resampling blur of
+   * the nearby hard edge, and moving cameras soften every hard edge). 0 = off. Default 0.
+   */
+  snapHardPx?: number;
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
   catmullRom?: boolean;
   /**
@@ -145,7 +151,8 @@ export interface ShadowDenoiserOptions {
    * Output stabilization (v2.2): weight of this frame's spatial output against a short, reprojected
    * history of the final output clamped to the 3x3 range of this frame's output (0 = off: no pass, no
    * memory). Averages the frame-to-frame noise ("boil") the spatial passes leave in wide, slowly moving
-   * penumbrae (results/M4.md "Moving shadows"). Default 0.25; +8 B/px and one full-screen pass when on.
+   * penumbrae (results/M4.md "Moving shadows"). Default 0.25; +8 B/px and one pass when on (indirect, over the
+   * penumbra tiles only, like the spatial passes).
    */
   stabilize?: number;
   /**
@@ -179,6 +186,20 @@ export interface ShadowDenoiserOptions {
    */
   noiseBlend?: number;
   noiseYoung?: number;
+  /**
+   * Cap of the noise-driven radius at noiseCap x the occluder-sized radius before the blend (pipeline variant
+   * when > 0; results/SHADOWS-LOOK.md: E is large at any clean hard edge, so near-hard shadows got a
+   * several-pixel kernel). 0 = off. Default 0.
+   */
+  noiseCap?: number;
+  /** noiseCap only on settled pixels (no young frames left, see youngFrames): fresh pixels keep the noise radius. Default false. */
+  noiseCapSettled?: boolean;
+  /**
+   * Pixels with the whole light below their horizon (n.l <= -sin of the light's angular radius) and no occluded
+   * sample of their own pass their input through instead of taking the terminator radius (pipeline variant;
+   * results/SHADOWS-LOOK.md). Default false.
+   */
+  backfacePass?: boolean;
   /**
    * Coloured shadows through translucent layers (SPEC v0.3 §7.10, M8; structural). The inputs may then
    * carry `translucency` (rgb transmittance T of the sample, ignored where v = 0; absent = 1) and
@@ -252,12 +273,16 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     anisotropyMax: o.anisotropyMax ?? 4,
     catmullRom: o.catmullRom ?? true,
     uniformSnap: o.uniformSnap ?? 'change',
+    snapHardPx: o.snapHardPx ?? 0,
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
     mergeMin: o.mergeMin ?? true,
     noiseRadius: o.noiseRadius ?? 32,
     noiseBlend: o.noiseBlend ?? 0.5,
     noiseYoung: o.noiseYoung ?? 0,
+    noiseCap: o.noiseCap ?? 0,
+    noiseCapSettled: o.noiseCapSettled ?? false,
+    backfacePass: o.backfacePass ?? false,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
     translucencyEpsilon: o.translucencyEpsilon ?? 0.01,
@@ -428,18 +453,19 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
+    const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
     this.tilesPipe = pipeline(device, 'shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
       // wide path: the v-only tiles run the opaque denoiser's own spatial passes (same code, same cost)
       this.spatialVLayout = layout(device, 'shadows spatial (v tiles)', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']);
-      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE), this.spatialVLayout!));
+      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, undefined, true, sv), this.spatialVLayout!));
     } else {
       this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
-        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, false), this.layouts.spatial));
+        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, false, sv), this.layouts.spatial));
     }
     if (tr) {
       this.spatialTauPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i} (tau tiles)`,
-        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, true), this.layouts.spatial));
+        shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, true, sv), this.layouts.spatial));
     }
   }
 
@@ -650,6 +676,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[92] = o.stabilizeBox * 1080 / H;
     f[93] = o.stabilizeAntiLag;
     f[94] = o.stabilizeYoung;
+    f[95] = o.noiseCap;
+    f[96] = o.snapHardPx;
     f[83] = o.pass1Phase;
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;
@@ -687,14 +715,14 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[62] = o.minHistory;
     f[63] = o.historyShrink;
     if (this.translucency) {
-      f[96] = o.translucencyEpsilon;
-      f[97] = o.translucencyHistory;
+      f[100] = o.translucencyEpsilon;
+      f[101] = o.translucencyHistory;
       // the translucent hit distance sizes footprints like h does, so it needs a light too
-      u[98] = (inputs.translucency ? TR_HAS_T : 0) | (inputs.translucencyHitDistance && light ? TR_HAS_HIT : 0)
+      u[102] = (inputs.translucency ? TR_HAS_T : 0) | (inputs.translucencyHitDistance && light ? TR_HAS_HIT : 0)
         | (o.translucencyOwnGate === true || o.translucencyOwnGate === 'box' ? TR_OWN_GATE : 0)
         | (o.translucencyOwnGate === true || o.translucencyOwnGate === 'antiLag' ? TR_OWN_ANTILAG : 0);
-      f[99] = o.translucencyClampSigma;
-      f[100] = o.translucencyClampFloor;
+      f[103] = o.translucencyClampSigma;
+      f[104] = o.translucencyClampFloor;
     }
     this.device.queue.writeBuffer(this.params, 0, f);
   }

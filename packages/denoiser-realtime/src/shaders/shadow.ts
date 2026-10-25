@@ -63,6 +63,9 @@
 //   clamped to the 3x3 range of this frame's output, gated to narrow ranges, anti-lag on the clamp
 //   distance; source RTG II ch. 49 Sec. 49.5.7 prose (stabilization pass with its own history,
 //   outside the feedback loop, TAA-like clamping); the gate and the anti-lag gain are ours.
+// - Options from results/SHADOWS-LOOK.md (our design, default off): `snapHardPx` ('change' also snaps
+//   uniform windows where the own penumbra is sub-2-px), `noiseCap` / `noiseCapSettled` (the H18 radius
+//   capped by the M12 occluder-sized one), `backfacePass` (whole light below the horizon: input kept).
 // - Disk taps and rotation: SPEC R-3 / D3b (golden-angle spiral, Vogel 1979; animated 4x4
 //   Bayer rotation, Zhdan, Ray Tracing Gems II ch. 49 Sec. 49.5.5 prose; golden-ratio
 //   animation, Wolfe, RTG II ch. 24 Sec. 24.7.2).
@@ -87,8 +90,8 @@ export const TR_HAS_HIT = 2;      // a translucency hit-distance texture is boun
 export const TR_OWN_GATE = 4;     // stabilize: S also gets its own box-width gate
 export const TR_OWN_ANTILAG = 8;  // stabilize: S also gets its own clamp-distance anti-lag
 
-/** Size of ShadowParams in bytes (the translucency variants read 4 more floats). */
-export const SP_SIZE = 104 * 4;
+/** Size of ShadowParams in bytes (the translucency variants read 8 more floats). */
+export const SP_SIZE = 108 * 4;
 
 /**
  * Translucency pipeline variant (SPEC v0.3 §7.10, M8): `packed` = the 4-storage-texture path (v's and
@@ -100,7 +103,7 @@ export const SP_SIZE = 104 * 4;
 export interface TrVariant { packed: boolean; compose?: boolean }
 
 const PARAMS_TR_FIELDS = /* wgsl */ `  trEps: f32, trMaxN: f32, trFlags: u32, trClampSigma: f32,
-  trClampFloor: f32, q5: f32, q6: f32, q7: f32,
+  trClampFloor: f32, q7: f32, q8: f32, q9: f32,
 `;
 
 const PARAMS_WGSL = /* wgsl */ `
@@ -125,7 +128,8 @@ struct ShadowParams {
   PBx: vec3f, pass1Phase: f32,
   PBy: vec3f, youngBase: f32,   // history A channel = A + youngBase x (young frames left), see temporal
   clampMinTaps: f32, clampEdgePx: f32, rotationStep: f32, stabilize: f32,
-  stabilizeBox: f32, stabilizeAntiLag: f32, stabilizeYoung: f32, q3: f32,
+  stabilizeBox: f32, stabilizeAntiLag: f32, stabilizeYoung: f32, noiseCap: f32,
+  snapHardPx: f32, q4: f32, q5: f32, q6: f32,
 }
 // history length A from the history's A channel (strips the young-frames counter)
 fn histA(z: f32) -> f32 { return z - SP.youngBase * floor(z / SP.youngBase); }
@@ -145,7 +149,7 @@ const G_INF = 0x7f800000u;   // +inf bits: "no occluder estimate"
 /** ShadowParams WGSL; the translucency variants add four fields (trEps, trMaxN, trFlags). */
 function paramsWgsl(tr: boolean): string {
   if (!tr) return PARAMS_WGSL;
-  return PARAMS_WGSL.replace('q3: f32,\n}', `q3: f32,\n${PARAMS_TR_FIELDS}}`) + /* wgsl */ `fn trFlag(f: u32) -> bool { return (SP.trFlags & f) != 0u; }
+  return PARAMS_WGSL.replace('q6: f32,\n}', `q6: f32,\n${PARAMS_TR_FIELDS}}`) + /* wgsl */ `fn trFlag(f: u32) -> bool { return (SP.trFlags & f) != 0u; }
 const TR_HAS_T = ${TR_HAS_T}u;
 const TR_HAS_HIT = ${TR_HAS_HIT}u;
 const TR_OWN_GATE = ${TR_OWN_GATE}u;
@@ -528,7 +532,10 @@ ${nb.join('\n')}
       // above only decides whether this is a change worth restarting for)
       // (SF_SNAP_CHANGE: only where the clamp fired, i.e. after a change such as a light flip;
       // a steady outer penumbra keeps its fractional history)
-      if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win)) { vC = mu; }
+      // (snapHardPx, our design: 'change' also snaps where the own penumbra is narrower than snapHardPx px;
+      // there a uniform 5x5 window means the pixel is outside the penumbra, and a kept fractional history is
+      // only resampling blur of the nearby edge)
+      if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win || wPx < SP.snapHardPx)) { vC = mu; }
       let An = min(A, cap) + 1.0;   // 0 after a disocclusion
       vAcc = mix(vC, vRaw, 1.0 / (1.0 + An));
       // young-frames counter (v2.1, our design): youngFrames on a fresh pixel (no valid history),
@@ -735,11 +742,27 @@ export const SHADOW_TILES_WGSL = shadowTilesWgsl(false);
 // ---------------------------------------------------------------------------- spatial
 
 /**
+ * Spatial-pass variants (options; each off by default, and off it leaves the WGSL text unchanged):
+ * `noiseCap` (option noiseCap > 0): the H18 noise-driven radius is capped at noiseCap x the occluder-sized
+ * radius before the blend (hard shadows: E is large at a clean step, the occluder says the penumbra is
+ * sub-pixel); `backface` (option backfacePass): pixels with the whole light below their horizon and no own
+ * occluder estimate pass their input through (nothing reaches them; filtering only pulls light in);
+ * `noiseCapSettled` (option noiseCapSettled): the cap only on pixels past their young frames (youngFrames).
+ */
+export interface SpatialVariant { noiseCap?: boolean; noiseCapSettled?: boolean; backface?: boolean }
+
+/**
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
  * Variant `withE`: radius blended toward the H18 noise radius.
  */
-export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false, tr?: TrVariant, tauTiles = true): string {
+export function shadowSpatialWgsl(pass: 0 | 1, normalWeight = true, withE = false, tr?: TrVariant, tauTiles = true, sv: SpatialVariant = {}): string {
   const packed = !!tr?.packed;
+  // pass-through store (input unchanged; translucency: tau too)
+  const passStore = tr ? `
+    textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0));
+    if (tAct) { textureStore(outTr, p, vec4f(tauC, 1.0)); }
+    return;
+  ` : ` textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; `;
   const vch = packed && pass === 0 ? 'a' : 'r';   // packed: pass 0 reads v from the final output's alpha
   const taps: string[] = [];
   const tap = (i: number, r: string) => taps.push(/* wgsl */ `
@@ -838,7 +861,8 @@ ${tr ? `  // translucency (M8-5/6): tile mode (v-only tiles skip tau, tau-only t
 ` : `  if (z <= 0.0) { textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0)); return; }
 `}${packed ? `  let hu0 = textureLoad(histCur, p, 0);
   var h = vec4f(unpack2x16float(hu0.x), unpack2x16float(hu0.y));` : `  var h = textureLoad(histCur, p, 0);`}
-  h.z = histA(h.z);
+${sv.noiseCapSettled ? `  let settled = h.z < SP.youngBase;   // (noiseCapSettled) no young frames left: >= youngFrames since new
+` : ''}  h.z = histA(h.z);
 
   // receiver frame in view space
   let pc = vec2f(p) + 0.5;
@@ -875,7 +899,11 @@ ${tr ? `  // translucency (M8-5/6): tile mode (v-only tiles skip tau, tau-only t
     Rw = gEff * SP.lightSize;
 ${withE ? `    // blend toward the H18 noise-driven radius (E in the geometry's roughness byte), more for young histories
     let bE = saturate(SP.noiseBlend + SP.noiseYoung / (1.0 + h.z));
-    Rw = mix(Rw, f32(gc.y >> 24u) / 255.0 * SP.noiseScale * pix, bE);` : ''}
+${sv.noiseCap ? `    // (noiseCap: at most noiseCap x the occluder-sized radius; near-hard shadows keep a near-hard kernel)
+    Rw = mix(Rw, min(f32(gc.y >> 24u) / 255.0 * SP.noiseScale * pix, ${sv.noiseCapSettled ? 'select(3.0e38, SP.noiseCap * Rw, settled)' : 'SP.noiseCap * Rw'}), bE);`
+    : `    Rw = mix(Rw, f32(gc.y >> 24u) / 255.0 * SP.noiseScale * pix, bE);`}` : ''}${sv.backface ? `
+    // (backfacePass: the whole light below the horizon, no occluded sample of its own: exact 0, keep it)
+    if (h.w <= 0.0 && nl <= -sinL) {${passStore}}` : ''}
     // self-shadowing terminator (part of the light below the horizon, occluder distance 0):
     // visibility follows n.l, smooth on a flat receiver; the normal weight limits curved ones
     if (h.w <= 0.0 && nl < sinL) { Rw = SP.terminatorPx * pix; }
