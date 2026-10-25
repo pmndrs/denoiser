@@ -55,17 +55,20 @@ export type ShEncoding = 'normal-exact' | 'textbook';
  * the sample's clamped-cosine lobe, rescaled to be exact at the sampling normal n_s:
  * a = Y/(1+2c), b = 2Y w/(1+2c), c = n_s.w (bounded weights). 'textbook': the cosine-
  * sampled projection a = Y/(4c'), b = Y w/(2c'), c' = max(c, 0.1) (the tune alternative).
+ * For c < 0 (specular only) 'normal-exact' keeps beta = 2: a = Y (1 - 2c), b = 2 Y w, exact
+ * at n_s (the CAPTURE-FORMAT v1 rule, so payloads match the test bed's *_sh_ref).
  * A zero direction encodes an isotropic sample (a = Y, b = 0).
  */
 export function shEncodeWgsl(enc: ShEncoding): string {
   const body = enc === 'textbook'
     ? /* wgsl */ `
-  let cf = max(c, 0.1);
+  let cf = max(c, 0.1);   // (c < 0 floors at 0.1 too)
   let s = select(1.0, 0.25 / cf, dl > 1e-6);
   return SH(vec4f(ycc.x * s, w * (2.0 * ycc.x * s)), vec4f(ycc.yz, 0.0, 0.0));`
     : /* wgsl */ `
-  let s = 1.0 / (1.0 + 2.0 * c);
-  return SH(vec4f(ycc.x * s, w * (2.0 * ycc.x * s)), vec4f(ycc.yz, 0.0, 0.0));`;
+  // c < 0 (specular lobes reaching behind D_s): beta stays 2, exact at n_s and bounded (CAPTURE-FORMAT v1)
+  let beta = 2.0 / (1.0 + 2.0 * max(c, 0.0));
+  return SH(vec4f(ycc.x * (1.0 - beta * c), w * (beta * ycc.x)), vec4f(ycc.yz, 0.0, 0.0));`;
   return /* wgsl */ `
 // rgb: the plain (demodulated) sample, dir: world direction of its ray (any length;
 // 0 = no direction), ns: the normal the ray was sampled around.
@@ -73,7 +76,7 @@ fn shEncode(rgb: vec3f, dir: vec3f, ns: vec3f) -> SH {
   let ycc = rgbToYCoCg(rgb);
   let dl = length(dir);
   let w = select(vec3f(0.0), dir / max(dl, 1e-20), dl > 1e-6);
-  let c = clamp(dot(ns, w), 0.0, 1.0);${body}
+  let c = clamp(dot(ns, w), -1.0, 1.0);${body}
 }`;
 }
 
