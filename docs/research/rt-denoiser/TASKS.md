@@ -217,7 +217,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `GPUTextureUsage` at module load (`const STORAGE_TEX = …`). Make it lazy (a function or
       numeric flags); `@pmndrs/denoiser-realtime` itself imports fine. — found by svgf, owner `packages/denoiser-ffx`
 
-- [ ] CAPTURE-FORMAT v1: per-frame lights. Test-bed captures move/resize the light (path
+- [x] (8911a08, testbed-v1: `frames[i].lights` is part of v1) CAPTURE-FORMAT v1: per-frame lights. Test-bed captures move/resize the light (path
       `light`) and move the sphere (`object`); v0 has one capture-level `lights`, so the test
       bed writes per-frame `frames[i].lights` and `frames[i].object` as extras (ReplayFrame
       exposes them as `frame.meta`). A shadow denoiser that needs the light size per frame
@@ -623,11 +623,28 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       — orchestrator, owner: unassigned
 - [x] spec-m7-m8 (spec author, 280cf3a) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
       (§7.10), §0.1 / §11 / §12 touch-ups, PROVENANCE "spec only, not built" rows.
-- [ ] CAPTURE-FORMAT v1 buffers for M7 / M8 (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
+- [~] testbed-v1 (c0e3876, 6821c69, 8911a08) **CAPTURE-FORMAT v1 buffers for M7 / M8** (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
       sampled ray), `normal_geom` (smooth normal for the filter; `normal` stays the shading normal), `diffuse_sh_ref`,
       `specular_sh_ref` (6 ch, mean of the M7-2 payloads); `transmittance` (rgb T of the shadow ray), `translucent_dist`,
       `shadow_rgb_ref` (mean of v·T). Test-bed scenes `bumpy`, coloured bounce, `glass`, `glass-moving`, `glass-still`
-      (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner
+      (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner. _Format, replay/validate/compare, test-bed
+      signals, scenes and metrics done (bit-identical on the 7 old paths and on v0 replays); open: the standard v1 capture
+      subset (CAPTURES.md). Usage notes below._
+- [x] (testbed-v1) **How to feed and score M7 / M8 (usage notes)**. Signals `sh-diffuse`, `sh-specular`, `shadow-rgb`
+      (test bed `signal=`, also `v1` = all three, `all,v1` = six). Paths `bumpy`, `bounce` (scene build 'bumpy') and `glass`,
+      `glass-moving`, `glass-still` ('glass'); on the 7 old paths the v1 signals run too (`normal_geom` = `normal`: the SPEC
+      M7-13 regression). Registry entry contract (`tools/rt-capture/src/replay.ts`): `frame.inputs['sh-diffuse' | 'sh-specular']`
+      = `{ radiance, direction, hitDistance }` (raw form); filter with `shGuides(frame)` (`normal` = `normal_geom`,
+      `detailNormal` = shading normal); return demodulated rgb resolved at the shading normal. `frame.inputs['shadow-rgb']` =
+      `{ visibility, hitDistance, translucency, translucencyHitDistance, radiance (= v·T), visibilityLumT }`, light from
+      `frame.meta.lights` / manifest (as `shadows`); return rgb v̂·τ̂ (rgba16float with v̂ in alpha is fine). Register with
+      `signals: ['sh-diffuse', ...]`; examples: `tools/rt-capture/src/v1-entries.ts` (baselines `svgf-plain`, `svgf-plain-smooth`,
+      `shadows-lumt`, `ffx-shadows-lumt`; `passthrough` / `accumulate*` accept v1 signals). Live results add `regions.bump`,
+      `floorFrac`, `detailBand` {psnrDen, energyRatioDen, …}, sh-diffuse `vsShRef` (diffuse_sh_ref resolved with M7-8/9,
+      `&refK=1&refS=0`: set to your resolve), shadow-rgb `regions.tint`, `chromaErr`, any-channel penumbra; compare.mjs the
+      same (`--sh-k`, `--sh-s`). The test bed's specular payload uses β = 2 / (1 + 2 max(c, 0)) so c < 0 stays exact and
+      bounded (CAPTURE-FORMAT v1). Example: `mode=eval&path=bumpy&signal=sh-diffuse&denoiser=svgf-plain,svgf-plain-smooth`
+      (8 frames: plain detail-normal band energy 1.76, smooth-normal 0.15). — testbed-v1
 - [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
       (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
       T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
