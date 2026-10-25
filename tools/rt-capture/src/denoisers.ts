@@ -19,10 +19,11 @@
 //   svgf-diffuse       DiffuseDenoiser alone;  svgf-specular  SpecularDenoiser alone
 //   (svgf settings from the URL: see svgfOptions(); antiLag 'gradient' needs renderer
 //   gradient samples that neither the test bed nor the captures provide)
-//   recurrent          denoiser/realtime recurrent blur (provisional, SPEC v0 §5) for diffuse AND
-//                      specular in shared dispatches (DiffuseSpecularDenoiser, dispatchBoth; a single
-//                      requested signal runs that signal's class with the same options)
-//   recurrent-svgfspec recurrent diffuse + SVGF (antiLag 'auto') specular, two pipelines
+//   recurrent          denoiser/realtime recurrent blur (SPEC §5) for diffuse AND specular in shared
+//                      dispatches (= DiffuseSpecularDenoiser({ filter: 'recurrent' }) since 2026-10-25;
+//                      dispatchBoth; a single requested signal runs that signal's class with the same options)
+//   recurrent-svgfspec recurrent diffuse + SVGF (antiLag 'auto') specular, two pipelines (the explicit
+//                      hybrid; until 2026-10-25 what `filter: 'recurrent'` meant on the joint class)
 //   recurrent-diffuse  DiffuseDenoiser alone;  recurrent-specular  SpecularDenoiser alone
 //   (recurrent settings from the URL: see recurrentOptions(); the output texture rotates
 //   between internal buffers, valid until the next dispatch)

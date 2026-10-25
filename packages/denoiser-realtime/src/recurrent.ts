@@ -55,7 +55,16 @@ export interface RecurrentOptions {
   historyFixMinWeight?: number;
   /** Anti-firefly: centre luminance ≤ k × second-largest neighbour (SPEC D9); 0 disables. Default 1.5. */
   fireflyThreshold?: number;
-  /** Anti-lag from the fast history (SPEC C-10). Default true. */
+  /**
+   * History anti-lag: shorten the history where the fast history (or this frame) disagrees
+   * with it (SPEC C-10; the `antiLag*` keys below tune it). Default true.
+   */
+  historyAntiLag?: boolean;
+  /**
+   * @deprecated Renamed `historyAntiLag` (SPEC §12 item 8, decided 2026-10-25): SVGF's
+   * `antiLag` is `'off' | 'auto' | 'gradient'` and shadows' is a gain, so the boolean got its own
+   * name. Still read when `historyAntiLag` is unset; warns once per instance.
+   */
   antiLag?: boolean;
   /** Anti-lag clamp window γ (in standard errors of the 3x3 fast-history mean, see antiLagStandardError). Default 1 (SPEC: 2 spreads). */
   antiLagSigma?: number;
@@ -131,9 +140,22 @@ export interface RecurrentTune {
   occClamp: number;
 }
 
-export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius'>> & {
+export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius' | 'antiLag'>> & {
   preBlurRadius?: number; blurRadius?: number; tune: RecurrentTune;
 };
+
+/**
+ * True when `o` sets the deprecated boolean `antiLag` (now `historyAntiLag`). The public
+ * classes call this per signal and warn once per instance.
+ */
+export function usesDeprecatedAntiLag(o: object | undefined): boolean {
+  return typeof (o as { antiLag?: unknown } | undefined)?.antiLag === 'boolean';
+}
+
+/** The one-per-instance warning for the deprecated recurrent `antiLag`. */
+export function warnDeprecatedAntiLag(who: string): void {
+  console.warn(`${who}: the recurrent option \`antiLag\` (boolean) is deprecated, use \`historyAntiLag\``);
+}
 
 export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRecurrent {
   return {
@@ -149,7 +171,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixDepthTolerance: o.historyFixDepthTolerance ?? 0.02,
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
-    antiLag: o.antiLag ?? true,
+    historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,
     antiLagExcess: o.antiLagExcess ?? 0.5,
     antiLagHitTolerance: o.antiLagHitTolerance ?? 0.2,
@@ -209,7 +231,7 @@ class SignalState {
 }
 
 function flagsOf(o: ResolvedRecurrent, hasHit: boolean) {
-  return (hasHit ? RP_HAS_HIT : 0) | (o.remodulate ? RP_REMODULATE : 0) | (o.antiLag ? 0 : RP_NO_ANTILAG)
+  return (hasHit ? RP_HAS_HIT : 0) | (o.remodulate ? RP_REMODULATE : 0) | (o.historyAntiLag ? 0 : RP_NO_ANTILAG)
     | (o.fireflyThreshold > 0 ? 0 : RP_NO_FIREFLY) | (o.historyFixFrames > 0 ? 0 : RP_NO_HISTORY_FIX)
     | (o.stabilizationFrames > 0 ? 0 : RP_NO_STABILIZE) | (o.virtualMotion ? 0 : RP_NO_VIRTUAL);
 }

@@ -9,8 +9,8 @@ import type {
 import { PassTimer } from './common';
 import { GuidePass } from './guides';
 import {
-  RECURRENT_PASSES, RecurrentPipeline, recurrentStructuralKey, resolveRecurrent, type RecurrentOptions,
-  type ResolvedRecurrent,
+  RECURRENT_PASSES, RecurrentPipeline, recurrentStructuralKey, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag,
+  type RecurrentOptions, type ResolvedRecurrent,
 } from './recurrent';
 import {
   resolveOptions, structuralKey, SvgfPipeline, type ResolvedOptions, type SpecularSvgfOptions, type SvgfOptions,
@@ -40,11 +40,14 @@ export interface RealtimeDiffuseSpecularInputs extends DiffuseSpecularInputs {
   specular: RealtimeSpecularInputs;
 }
 
-/** `filter: 'svgf'` (default) or `filter: 'recurrent'` (provisional, SPEC v0 §5). */
+/** `filter: 'svgf'` (default) or `filter: 'recurrent'` (opt-in, memory-lean; SPEC §5). */
 export type DiffuseDenoiserOptions = SvgfOptions | RecurrentOptions;
 export type SpecularDenoiserOptions = SpecularSvgfOptions | RecurrentOptions;
 export type DiffuseSpecularDenoiserOptions = (SpecularSvgfOptions | RecurrentOptions) & {
-  /** Overrides for the diffuse signal only (may switch its filter). */
+  /**
+   * Overrides for the diffuse signal only (may switch its filter). The shared options apply
+   * to both signals, whatever filter each ends up with.
+   */
   diffuse?: SvgfOptions | Partial<RecurrentOptions>;
   /** Overrides for the specular signal only (may switch its filter). */
   specular?: SpecularSvgfOptions | Partial<RecurrentOptions>;
@@ -68,6 +71,9 @@ function resolve(o: Partial<SpecularSvgfOptions> | Partial<RecurrentOptions>): R
   }
   if (filter === 'recurrent') return { filter, o: resolveRecurrent(rest as Partial<RecurrentOptions>) };
   if (filter && filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${filter}'`);
+  // a boolean `antiLag` is the recurrent filter's deprecated key (shared options of a joint
+  // denoiser whose other signal is recurrent); SVGF's takes 'off' | 'auto' | 'gradient'
+  if (typeof (rest as { antiLag?: unknown }).antiLag === 'boolean') delete (rest as { antiLag?: unknown }).antiLag;
   return { filter: 'svgf', o: resolveOptions(rest as SpecularSvgfOptions) };
 }
 
@@ -137,6 +143,7 @@ class Single {
   readonly r: Resolved;
   constructor(device: GPUDevice, kind: Kind, options: Partial<SpecularSvgfOptions> | Partial<RecurrentOptions>, readonly name: string) {
     this.r = resolve(options);
+    if (this.r.filter === 'recurrent' && usesDeprecatedAntiLag(options)) warnDeprecatedAntiLag(name);
     this.base = new Base(device, name, this.r.o.timestamps, 0, this.r.filter !== 'recurrent');
     this.pipe = makePipe(device, [{ kind, r: this.r }], name);
     this.base.setTimer(this.r.o.timestamps, this.pipe.passes + 1);
@@ -254,10 +261,10 @@ export class SpecularDenoiser implements TemporalDenoiser<RealtimeSpecularInputs
  * `dispatchBoth()` (or `outputs` after `dispatch()`) for both textures. Each pass
  * processes both signals per thread (SPEC §4.1, §5.1) unless their filters or
  * structural options differ; then they run separately and timings are prefixed
- * `diffuse/` and `specular/`. `{ filter: 'recurrent' }` currently means recurrent
- * diffuse + SVGF (antiLag 'auto') specular (provisional; recurrent specular measured
- * below A-SVGF on 6/7 test-bed paths, results/M2-M3.md); add
- * `specular: { filter: 'recurrent' }` for both recurrent in shared dispatches.
+ * `diffuse/` and `specular/`. The top-level `filter` applies to both signals:
+ * `{ filter: 'recurrent' }` runs both recurrent in shared dispatches (SPEC §12 item 1,
+ * decided 2026-10-25). Mixed filters are explicit, e.g. recurrent diffuse + A-SVGF
+ * specular: `{ filter: 'recurrent', specular: { filter: 'svgf', antiLag: 'auto' } }`.
  */
 export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuseSpecularInputs> {
   readonly name: string;
@@ -270,17 +277,19 @@ export class DiffuseSpecularDenoiser implements TemporalDenoiser<RealtimeDiffuse
 
   constructor(device: GPUDevice, options: DiffuseSpecularDenoiserOptions = {}) {
     const { diffuse: dOpts, specular: sOpts, ...shared } = options;
-    const rd = resolve({ ...shared, ...dOpts } as Partial<SpecularSvgfOptions>);
-    // `filter: 'recurrent'` denoises specular with SVGF + antiLag 'auto' (measured best on
-    // the test bed, results/M2-M3.md; the default is Dennis's call, SPEC §12); pass
-    // `specular: { filter: 'recurrent' }` for recurrent specular in shared dispatches.
-    const recurrentShared = shared.filter === 'recurrent' && !sOpts?.filter;
-    const rs = resolve((recurrentShared
-      ? { filter: 'svgf', antiLag: 'auto', remodulate: shared.remodulate, timestamps: shared.timestamps, ...sOpts }
-      : { ...shared, ...sOpts }) as Partial<SpecularSvgfOptions>);
+    // the shared options (incl. `filter`) apply to both signals; per-signal ones override.
+    // Until 2026-10-25 `filter: 'recurrent'` alone meant recurrent diffuse + A-SVGF specular
+    // (SPEC §12 item 1: dominated by SVGF on both, now explicit via `specular: { filter: 'svgf', antiLag: 'auto' }`).
+    const dMerged = { ...shared, ...dOpts };
+    const sMerged = { ...shared, ...sOpts };
+    const rd = resolve(dMerged as Partial<SpecularSvgfOptions>);
+    const rs = resolve(sMerged as Partial<SpecularSvgfOptions>);
     this.options = { diffuse: rd.o, specular: rs.o };
     this.filters = { diffuse: filterName(rd), specular: filterName(rs) };
     this.name = rd.filter === rs.filter ? `${rd.filter}-diffuse-specular` : `${rd.filter}+${rs.filter}-diffuse-specular`;
+    if ((rd.filter === 'recurrent' && usesDeprecatedAntiLag(dMerged)) || (rs.filter === 'recurrent' && usesDeprecatedAntiLag(sMerged))) {
+      warnDeprecatedAntiLag(this.name);
+    }
     const timestamps = rd.o.timestamps || rs.o.timestamps;
     const joint = key(rd) === key(rs);
     this.base = new Base(device, this.name, timestamps, 0, rd.filter !== 'recurrent' || rs.filter !== 'recurrent');

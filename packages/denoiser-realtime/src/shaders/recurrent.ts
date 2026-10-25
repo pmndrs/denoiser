@@ -78,7 +78,7 @@ const BIG = (k: RecurrentKind, x: string) => (isOccKind(k) ? x : `vec4f(${x})`);
 /** RParams.flags */
 export const RP_HAS_HIT = 1;
 export const RP_REMODULATE = 2;
-export const RP_NO_ANTILAG = 4;
+export const RP_NO_ANTILAG = 4;   // option `historyAntiLag: false` (was `antiLag`)
 export const RP_NO_FIREFLY = 8;
 export const RP_NO_HISTORY_FIX = 16;
 export const RP_NO_STABILIZE = 32;

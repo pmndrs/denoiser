@@ -1,24 +1,27 @@
 // OcclusionDenoiser: ambient occlusion (AO, diffuse rays) and specular occlusion (SO,
 // specular rays) from the normalized hit distance ĥ = h / (h + a + b·depth) of the
 // renderer's 1-spp rays (SPEC F-3, §8; "normalized hit distance = AO / SO": Zhdan, GTC 2020
-// s.9). Provisional (M5): built against SPEC v0.1 §8, which is an outline Dennis has not
-// reviewed.
+// s.9). Experimental (M5, SPEC §8). Default filter 'svgf' since 2026-10-25 (SPEC §12 item 1:
+// SVGF beat the recurrent mode on every test-bed path for AO and SO, and on the real scene).
 //
-//   filter 'recurrent' (default)  the recurrent pipeline's occlusion-only mode (SPEC O-2):
-//                                 the same passes as the radiance filter with the radiance
-//                                 channels dropped, one r32float per signal, no pre-blur
-//                                 (ĥ is never pre-blurred, GTC20 s.60), anti-lag from the ĥ
-//                                 detectors only (src/recurrent.ts, kinds `ao` / `so`)
-//   filter 'svgf'                 SVGF (Schied et al. 2017) on ĥ written as a gray image
+//   filter 'svgf' (default)       SVGF (Schied et al. 2017) on ĥ written as a gray image
 //                                 (src/svgf.ts unchanged; its luminance is ĥ)
+//   filter 'recurrent'            the recurrent pipeline's occlusion-only mode (SPEC O-2;
+//                                 the memory-lean option): the same passes as the radiance
+//                                 filter with the radiance channels dropped, one r32float per
+//                                 signal, no pre-blur (ĥ is never pre-blurred, GTC20 s.60),
+//                                 anti-lag from the ĥ detectors only (src/recurrent.ts, kinds `ao` / `so`)
 //
 // Output: ĥ in `.r` (recurrent: r32float; svgf: rgba16float gray). 1 = open, → 0 at
-// contact; the falloff is 1 / (1 + h / (a + b·depth)) (SPEC §12 item 9).
+// contact; the falloff is 1 / (1 + h / (a + b·depth)) (SPEC F-3, §12 item 6).
 import type { FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser } from '@pmndrs/denoiser-core';
 import { PassTimer } from './common';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
 import { GuidePass } from './guides';
-import { RECURRENT_PASSES, RecurrentPipeline, resolveRecurrent, type RecurrentOptions, type ResolvedRecurrent } from './recurrent';
+import {
+  RECURRENT_PASSES, RecurrentPipeline, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag, type RecurrentOptions,
+  type ResolvedRecurrent,
+} from './recurrent';
 import { normalizeHitWgsl, OCC_NORM_SIZE } from './shaders/occlusion';
 import { resolveOptions, SvgfPipeline, type ResolvedOptions, type SpecularSvgfOptions } from './svgf';
 
@@ -50,10 +53,10 @@ interface OcclusionCommon {
 }
 
 /** Recurrent occlusion-only mode: every RecurrentOptions key except radiance-only ones applies. */
-export type OcclusionRecurrentOptions = OcclusionCommon & { filter?: 'recurrent' }
+export type OcclusionRecurrentOptions = OcclusionCommon & { filter: 'recurrent' }
   & Partial<Omit<RecurrentOptions, 'filter' | 'remodulate' | 'maxRadiance' | 'preBlurRadius' | 'preBlurTaps' | 'fireflyThreshold'>>;
-/** SVGF on ĥ (luminance = ĥ). */
-export type OcclusionSvgfOptions = OcclusionCommon & { filter: 'svgf' } & Omit<SpecularSvgfOptions, 'remodulate'>;
+/** SVGF on ĥ (luminance = ĥ); the default filter. */
+export type OcclusionSvgfOptions = OcclusionCommon & { filter?: 'svgf' } & Omit<SpecularSvgfOptions, 'remodulate' | 'filter'>;
 export type OcclusionDenoiserOptions = OcclusionRecurrentOptions | OcclusionSvgfOptions;
 
 type Kind = 'diffuse' | 'specular';
@@ -67,7 +70,7 @@ const DEFAULT_A = 1;
 const DEFAULT_B = 0.05;
 
 function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion {
-  const { signal = 'diffuse', filter = 'recurrent', ...rest } = options as OcclusionCommon & { filter?: string };
+  const { signal = 'diffuse', filter = 'svgf', ...rest } = options as OcclusionCommon & { filter?: string };
   const signals: Kind[] = signal === 'both' ? ['diffuse', 'specular'] : [signal];
   if (filter === 'recurrent') {
     const r = rest as Partial<RecurrentOptions>;
@@ -147,7 +150,8 @@ export class HitDistanceNormalizer {
 }
 
 /**
- * Denoises AO and/or SO (provisional, SPEC §8). `dispatch()` takes one signal's hit
+ * Denoises AO and/or SO (experimental, SPEC §8; `filter: 'svgf'` by default, `'recurrent'`
+ * for less memory). `dispatch()` takes one signal's hit
  * distance and returns ĥ in `.r`; with `signal: 'both'` use `dispatchBoth()` (shared
  * dispatches for both signals; `dispatch()` then returns the diffuse output after running
  * both with the same hit distance, which is only meaningful for tests).
@@ -172,6 +176,7 @@ export class OcclusionDenoiser implements TemporalDenoiser<OcclusionInputs> {
     this.options = r;
     const sig = r.signals.length > 1 ? 'both' : r.signals[0];
     this.name = `${r.filter}-occlusion-${sig}`;
+    if (r.filter === 'recurrent' && usesDeprecatedAntiLag(options)) warnDeprecatedAntiLag(this.name);
     this.gp = new GuidePass(device, this.name, r.filter === 'svgf');
     let passes: number;
     if (r.filter === 'recurrent') {
