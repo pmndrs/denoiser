@@ -250,6 +250,7 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   `replay-captures.mjs --prefix=<p>` (outputs/<capture>/<p><id>, other runs' folders untouched) and point compare.mjs at a
   scratch root of symlinks (`--outputs`) so it doesn't overwrite the shared outputs/<capture>/compare.json.
   — bistro-sponza, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
