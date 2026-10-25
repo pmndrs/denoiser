@@ -16,6 +16,16 @@
 // Memory at W x H: history 2 x 8 B + geometry 2 x 8 B + T 4 B + out 4 B = 40 B/px (+ 2 x 4 B
 // stabilized ping-pong with `stabilize` > 0, the default: 48 B/px), plus four tile-sized buffers
 // (16 B per 8x8 tile).
+//
+// Translucency (option `translucency`, SPEC v0.3 §7.10, M8; provisional): coloured shadows through
+// translucent layers. The opaque visibility v runs through the passes above unchanged (with T = 1 its
+// result is bit-identical); a conditional transmittance tau = E[T | v = 1] (rgb) is accumulated over the
+// samples that reached the light, filtered with v's taps weighted by v in tiles where the colour
+// varies, and the output is rgba16float (v-hat tau-hat, v-hat). Wide path (>= 6 storage textures per
+// stage): tau history ping-pong 2 x 8 B + final output ping-pong 2 x 8 B on top of the 48 = 80 B/px;
+// the spatial passes' tau scratch reuses last frame's histories. Packed path (4 storage textures): v's
+// and tau's histories as 8 f16 in one rgba32uint (2 x 16 B), the final output doubles as v's unfiltered
+// copy and stabilization history, two tau scratch textures: 88 B/px.
 import type {
   FrameCamera, FrameGuides, ShadowInputs, ShadowLight, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
@@ -25,7 +35,7 @@ import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
   SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
-  shadowSpatialWgsl, shadowTemporalWgsl,
+  TR_HAS_HIT, TR_HAS_T, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type TrVariant,
 } from './shaders/shadow';
 
 export interface ShadowDenoiserOptions {
@@ -167,6 +177,30 @@ export interface ShadowDenoiserOptions {
    */
   noiseBlend?: number;
   noiseYoung?: number;
+  /**
+   * Coloured shadows through translucent layers (SPEC v0.3 §7.10, M8; structural). The inputs may then
+   * carry `translucency` (rgb transmittance T of the sample, ignored where v = 0; absent = 1) and
+   * `translucencyHitDistance` (distance to the nearest translucent layer, 0 = none). Output:
+   * rgba16float (v-hat tau-hat rgb, v-hat) instead of r32float v-hat; with T = 1 its alpha is the opaque
+   * output exactly (bit-identical before the f16 store). +32 B/px (wide path) or +40 (packed). Default false.
+   */
+  translucency?: boolean;
+  /** Translucency: a lit sample counts as attenuated (feeds the footprint, tau tile bits) when 1 - min_c T > this. Default 0.01. */
+  translucencyEpsilon?: number;
+  /** Translucency: sample cap n_tau of the conditional transmittance history. Default 7 (as maxScaleHistory). */
+  translucencyHistory?: number;
+  /**
+   * Translucency: the colour's stabilization weight also follows its own 3x3 range (box-width gate) and
+   * clamp distance (anti-lag), not only v's, so sharp coloured edges over uniform v aren't blurred by the
+   * output history. Default true.
+   */
+  translucencyOwnGate?: boolean;
+  /**
+   * Translucency storage path: 'wide' (a separate tau history; needs 6 storage textures per stage), 'packed'
+   * (v and tau histories in one rgba32uint, 4 storage textures; v's Catmull-Rom from 16 loads, not
+   * bit-identical), 'auto' (wide when the device allows). Default 'auto'.
+   */
+  translucencyPath?: 'auto' | 'wide' | 'packed';
   /** Light used when the inputs carry none. */
   light?: ShadowLight;
   /** Per-pass GPU timestamps into `gpuTimings`. Default true. */
@@ -219,6 +253,11 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseBlend: o.noiseBlend ?? 0.5,
     noiseYoung: o.noiseYoung ?? 0,
     terminatorRadius: o.terminatorRadius ?? 16,
+    translucency: o.translucency ?? false,
+    translucencyEpsilon: o.translucencyEpsilon ?? 0.01,
+    translucencyHistory: o.translucencyHistory ?? 7,
+    translucencyOwnGate: o.translucencyOwnGate ?? true,
+    translucencyPath: o.translucencyPath ?? 'auto',
     timestamps: o.timestamps ?? true,
     ...(o.light ? { light: o.light } : {}),
   };
@@ -227,11 +266,11 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
 /** Layout entry kinds used here (gpu.ts's set plus storage buffers). */
 type Kind = 'u' | 'f' | 'F' | 's' | 'i' | 'd' | 'sb' | 'sbr' | GPUTextureFormat;
 
-function layout(device: GPUDevice, label: string, kinds: Kind[]): GPUBindGroupLayout {
+function layout(device: GPUDevice, label: string, kinds: (Kind | null)[]): GPUBindGroupLayout {
   const C = GPUShaderStage.COMPUTE;
   return device.createBindGroupLayout({
     label,
-    entries: kinds.map((k, binding): GPUBindGroupLayoutEntry => {
+    entries: kinds.map((k, binding) => [k, binding] as const).filter((e): e is readonly [Kind, number] => e[0] !== null).map(([k, binding]): GPUBindGroupLayoutEntry => {
       switch (k) {
         case 'u': return { binding, visibility: C, buffer: { type: 'uniform' } };
         case 'f': return { binding, visibility: C, texture: { sampleType: 'unfilterable-float' } };
@@ -248,10 +287,10 @@ function layout(device: GPUDevice, label: string, kinds: Kind[]): GPUBindGroupLa
 }
 
 type Res = GPUBuffer | GPUTexture | GPUTextureView | GPUSampler;
-function group(device: GPUDevice, l: GPUBindGroupLayout, res: Res[]): GPUBindGroup {
+function group(device: GPUDevice, l: GPUBindGroupLayout, res: (Res | null)[]): GPUBindGroup {
   return device.createBindGroup({
     layout: l,
-    entries: res.map((r, binding): GPUBindGroupEntry => {
+    entries: res.map((r, binding) => [r, binding] as const).filter((e): e is readonly [Res, number] => e[0] !== null).map(([r, binding]): GPUBindGroupEntry => {
       if (r instanceof GPUBuffer) return { binding, resource: { buffer: r } };
       if (r instanceof GPUTexture) return { binding, resource: r.createView() };
       return { binding, resource: r };
@@ -283,10 +322,15 @@ function unprojectZ(projInv: M4, ndc: [number, number], vz: number): [number, nu
 
 const PASSES = ['temporal', 'tiles', 'spatial0', 'spatial1', 'stabilize'] as const;
 
+/** Storage textures the translucency wide path's temporal pass writes (geometry, two histories, two copies, output). */
+const WIDE_STORAGE = 6;
+
 export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   readonly name = 'shadows';
   readonly device: GPUDevice;
   readonly options: Readonly<Resolved>;
+  /** Translucency pipeline variant (undefined: opaque only). */
+  readonly translucency?: Readonly<TrVariant>;
   private timer?: PassTimer;
   private width = 0;
   private height = 0;
@@ -317,37 +361,76 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private args?: GPUBuffer;
   private list?: GPUBuffer;
   private activeTile?: GPUBuffer;
+  // translucency
+  private lastPipe?: GPUComputePipeline;   // stabilize (or compose) with the colour
+  private trHist: GPUTexture[] = [];        // wide: tau history ping-pong (tau rgb, n_tau)
+  private fOut: GPUTexture[] = [];          // final output (S rgb, v): ping-pong with stabilization
+  private trT?: GPUTexture;                 // packed: tau scratch of the spatial passes
+  private trOut?: GPUTexture;
+  private visResult?: GPUTexture;
 
   constructor(device: GPUDevice, options: ShadowDenoiserOptions = {}) {
     this.device = device;
     this.options = resolveShadowOptions(options);
-    if (this.options.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device, PASSES.length);
+    const o = this.options;
+    if (o.translucency) {
+      const wideOk = device.limits.maxStorageTexturesPerShaderStage >= WIDE_STORAGE;
+      if (o.translucencyPath === 'wide' && !wideOk) {
+        throw new Error(`ShadowDenoiser: translucencyPath 'wide' needs maxStorageTexturesPerShaderStage >= ${WIDE_STORAGE} (device: ${device.limits.maxStorageTexturesPerShaderStage})`);
+      }
+      const packed = o.translucencyPath === 'packed' || (o.translucencyPath === 'auto' && !wideOk);
+      this.translucency = { packed, compose: !(o.stabilize > 0) };
+    }
+    const tr = this.translucency;
+    if (o.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device, PASSES.length);
     this.frame = device.createBuffer({ label: 'shadows frame', size: FRAME_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.params = device.createBuffer({ label: 'shadows params', size: SP_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.dummy = device.createTexture({ label: 'shadows dummy', size: [1, 1], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
-    const temporalKinds = (depth: Kind): Kind[] => ['u', 'u', depth, 'f', 'f', 'f', 'f', 'f', 'f', 'i', 'F',
-      'rg32uint', 'rgba16float', 'r32float', 'r32float', 'sb', 's'];
+    const temporalKinds = (depth: Kind): Kind[] => {
+      if (tr?.packed) return ['u', 'u', depth, 'f', 'f', 'f', 'f', 'f', 'f', 'i', 'i', 'rg32uint', 'rgba32uint', 'r32float', 'rgba16float', 'sb', 's', 'f', 'f'];
+      const k: Kind[] = ['u', 'u', depth, 'f', 'f', 'f', 'f', 'f', 'f', 'i', 'F', 'rg32uint', 'rgba16float', 'r32float', 'r32float', 'sb', 's'];
+      return tr ? [...k, 'f', 'f', 'f', 'rgba16float', 'rgba16float'] : k;
+    };
+    let spatialKinds: Kind[] = ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float'];
+    if (tr) spatialKinds = tr.packed ? ['u', 'u', 'i', 'i', 'f', 'sbr', 'sbr', 'r32float', 'sbr', 'f', 'rgba16float'] : [...spatialKinds, 'sbr', 'f', 'f', 'rgba16float'];
+    let stabKinds: (Kind | null)[] = ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', 'r32float'];
+    if (tr?.packed) stabKinds = ['u', 'u', 'f', 'f', 'f', 'f', 'i', 'sbr', 'sbr', 'rgba16float', 'f'];
+    else if (tr) stabKinds = ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', tr.compose ? null : 'r32float', 'f', 'f', tr.compose ? null : 'f', 'rgba16float'];
     this.layouts = {
       temporalDepth: layout(device, 'shadows temporal (depth)', temporalKinds('d')),
       temporalFloat: layout(device, 'shadows temporal (float)', temporalKinds('f')),
       tiles: layout(device, 'shadows tiles', ['u', 'sbr', 'sb', 'sb', 'sb', 'sb']),
-      spatial: layout(device, 'shadows spatial', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']),
-      stabilize: layout(device, 'shadows stabilize', ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', 'r32float']),
+      spatial: layout(device, 'shadows spatial', spatialKinds),
+      stabilize: layout(device, 'shadows stabilize', stabKinds),
     };
-    if (this.options.stabilize > 0 && this.options.spatialPasses > 0) this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
-    this.withE = this.options.noiseBlend > 0 || this.options.noiseYoung > 0;
-    this.tilesPipe = pipeline(device, 'shadows tiles', SHADOW_TILES_WGSL, this.layouts.tiles);
+    if (tr) {
+      if (o.spatialPasses > 0) this.lastPipe = pipeline(device, 'shadows stabilize (translucency)', shadowStabilizeTrWgsl(tr), this.layouts.stabilize);
+    } else if (o.stabilize > 0 && o.spatialPasses > 0) {
+      this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
+    }
+    this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
+    this.tilesPipe = pipeline(device, 'shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
-      shadowSpatialWgsl(i as 0 | 1, this.options.normalWeight, this.withE),
+      shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr),
       this.layouts.spatial));
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
 
+  /** Bytes per pixel of the textures configure() allocates (tile buffers not included). */
+  get bytesPerPixel(): number {
+    const tr = this.translucency;
+    const stabilized = this.options.stabilize > 0 && this.options.spatialPasses > 0;
+    if (!tr) return 40 + (stabilized ? 8 : 0);
+    if (tr.packed) return 16 + 32 + 4 + 4 + 8 * (stabilized ? 2 : 1) + 16;
+    return 40 + (stabilized ? 8 : 0) + 16 + 8 * (stabilized ? 2 : 1);
+  }
+
   configure({ width, height }: TemporalConfig): void {
     this.destroyTargets();
     const d = this.device;
+    const tr = this.translucency;
     this.width = width;
     this.height = height;
     this.tilesX = Math.ceil(width / 8);
@@ -355,10 +438,20 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     const tex = (label: string, format: GPUTextureFormat) =>
       d.createTexture({ label: `shadows ${label}`, size: [width, height], format, usage: storageTex() });
     this.geo = [0, 1].map((i) => tex(`geometry ${i}`, 'rg32uint'));
-    this.hist = [0, 1].map((i) => tex(`history ${i}`, 'rgba16float'));
+    this.hist = [0, 1].map((i) => tex(`history ${i}`, tr?.packed ? 'rgba32uint' : 'rgba16float'));
     this.tTex = tex('T', 'r32float');
     this.out = tex('output', 'r32float');
-    if (this.stabPipe) this.stab = [0, 1].map((i) => tex(`stabilized ${i}`, 'r32float'));
+    if (this.stabPipe || (tr && !tr.packed && !tr.compose && this.lastPipe)) this.stab = [0, 1].map((i) => tex(`stabilized ${i}`, 'r32float'));
+    if (tr) {
+      const pingPong = !tr.compose && !!this.lastPipe;
+      this.fOut = (pingPong ? [0, 1] : [0]).map((i) => tex(`output (translucency) ${i}`, 'rgba16float'));
+      if (tr.packed) {
+        this.trT = tex('tau T', 'rgba16float');
+        this.trOut = tex('tau out', 'rgba16float');
+      } else {
+        this.trHist = [0, 1].map((i) => tex(`tau history ${i}`, 'rgba16float'));
+      }
+    }
     const tiles = this.tilesX * this.tilesY;
     this.tileStats = d.createBuffer({ label: 'shadows tile stats', size: tiles * 8, usage: GPUBufferUsage.STORAGE });
     this.tileMinG = d.createBuffer({ label: 'shadows tile scale', size: tiles * 4, usage: GPUBufferUsage.STORAGE });
@@ -375,18 +468,27 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
 
   resetHistory(): void { this.needsReset = true; }
 
-  /** Internal textures for debugging (history: v, g, A, n_g). */
-  debugTexture(name: 'history' | 'geometry' | 'T'): GPUTexture | undefined {
+  /**
+   * Internal textures for debugging (history: v, g, A, n_g; packed translucency: rgba32uint). 'visibility':
+   * the last dispatch's opaque visibility in r32float (with translucency, wide path: exactly what the
+   * opaque denoiser returns; packed path: undefined, alpha of the output only).
+   */
+  debugTexture(name: 'history' | 'geometry' | 'T' | 'visibility' | 'tauHistory'): GPUTexture | undefined {
     if (name === 'history') return this.hist[this.cur ^ 1];
     if (name === 'geometry') return this.geo[this.cur ^ 1];
+    if (name === 'visibility') return this.visResult;
+    if (name === 'tauHistory') return this.trHist[this.cur ^ 1];
     return this.tTex;
   }
 
   dispatch(inputs: ShadowInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     if (!this.out) throw new Error('ShadowDenoiser: call configure() first');
     const W = this.width, H = this.height;
+    const tr = this.translucency;
+    const trIn = tr ? inputs.translucency : undefined;
+    const trHitIn = tr ? inputs.translucencyHitDistance : undefined;
     for (const [k, t] of [['visibility', inputs.visibility], ['hitDistance', inputs.hitDistance], ['depth', guides.depth],
-      ['normal', guides.normal], ['motion', guides.motion]] as const) {
+      ['normal', guides.normal], ['motion', guides.motion], ['translucency', trIn], ['translucencyHitDistance', trHitIn]] as const) {
       if (t && (t.width !== W || t.height !== H)) throw new Error(`ShadowDenoiser: ${k} is ${t.width}x${t.height}, configured ${W}x${H}`);
     }
     const d = this.device;
@@ -400,7 +502,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });
@@ -410,22 +512,41 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       else cp.dispatchWorkgroups(x, y);
       cp.end();
     };
-    pass('temporal', tp, group(d, this.layouts[kind], [
+    // translucency textures: final output index, the wide path's tau scratch (last frame's histories)
+    const fi = this.fOut.length === 2 ? cur : 0;
+    const fCur = this.fOut[fi];
+    const trT = tr ? (tr.packed ? this.trT! : this.hist[prev]) : undefined;
+    const trOut = tr ? (tr.packed ? this.trOut! : this.trHist[prev]) : undefined;
+    // the unfiltered copy that becomes the final output where nothing filters (and pass 0's input)
+    const vOut = this.stab.length ? this.stab[cur] : this.out;
+    const common: Res[] = [
       this.frame, this.params, depthView, guides.viewZ ?? this.dummy, guides.normal, guides.motion,
       guides.motionZ ?? this.dummy, inputs.visibility, inputs.hitDistance ?? this.dummy,
+      this.geo[prev], this.hist[prev], this.geo[cur], this.hist[cur], this.tTex!,
+    ];
+    let temporalRes: Res[];
+    if (!tr) {
       // with stabilization the unfiltered copy goes straight into the final output (kept in non-penumbra tiles)
-      this.geo[prev], this.hist[prev], this.geo[cur], this.hist[cur], this.tTex!, this.stabPipe ? this.stab[cur] : this.out, this.tileStats!, this.sampler,
-    ]), this.tilesX, this.tilesY);
+      temporalRes = [...common, vOut, this.tileStats!, this.sampler];
+    } else if (tr.packed) {
+      temporalRes = [...common, fCur, this.tileStats!, this.sampler, trIn ?? this.dummy, trHitIn ?? this.dummy];
+    } else {
+      temporalRes = [...common, vOut, this.tileStats!, this.sampler, trIn ?? this.dummy, trHitIn ?? this.dummy,
+        this.trHist[prev], this.trHist[cur], fCur];
+    }
+    pass('temporal', tp, group(d, this.layouts[kind], temporalRes), this.tilesX, this.tilesY);
     if (o.spatialPasses > 0) {
       enc.clearBuffer(this.args!, 0, 4);
       pass('tiles', this.tilesPipe, group(d, this.layouts.tiles, [this.params, this.tileStats!, this.tileMinG!, this.args!, this.list!, this.activeTile!]),
         Math.ceil(this.tilesX / 8), Math.ceil(this.tilesY / 8));
-      const src = [this.stabPipe ? this.stab[cur] : this.out, this.tTex!];
+      const src = [tr?.packed ? fCur : vOut, this.tTex!];
       const dst = o.spatialPasses === 1 ? [this.out] : [this.tTex!, this.out];
+      const trSrc = tr ? [tr.packed ? this.dummy : this.trHist[cur], trT!] : [];
+      const trDst = tr ? (o.spatialPasses === 1 ? [trOut!] : [trT!, trOut!]) : [];
       for (let i = 0; i < o.spatialPasses; i++) {
-        pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, [
-          this.frame, this.params, this.geo[cur], this.hist[cur], src[i], this.tileMinG!, this.list!, dst[i],
-        ]), 0, 1, true);
+        const res: Res[] = [this.frame, this.params, this.geo[cur], this.hist[cur], src[i], this.tileMinG!, this.list!, dst[i]!];
+        if (tr) res.push(this.activeTile!, trSrc[i], ...(tr.packed ? [] : [this.trHist[cur]]), trDst[i]);
+        pass(`spatial${i}`, this.spatialPipes[i], group(d, this.layouts.spatial, res), 0, 1, true);
       }
     }
     let result = this.out;
@@ -434,6 +555,22 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       pass('stabilize', this.stabPipe, group(d, this.layouts.stabilize, [
         this.frame, this.params, this.out, this.tTex!, this.stab[prev], guides.motion, this.hist[cur], this.list!, this.activeTile!, result,
       ]), 0, 1, true);
+    }
+    this.visResult = this.stab.length ? this.stab[cur] : this.out;
+    if (tr) {
+      if (this.lastPipe) {
+        const fPrev = this.fOut.length === 2 ? this.fOut[prev] : this.dummy;
+        let res: (Res | null)[];
+        if (tr.packed) {
+          res = [this.frame, this.params, this.out, this.tTex!, tr.compose ? this.dummy : fPrev, guides.motion, this.hist[cur], this.list!, this.activeTile!, fCur, trOut!];
+        } else {
+          res = [this.frame, this.params, this.out, this.tTex!, tr.compose ? this.dummy : this.stab[prev], guides.motion, this.hist[cur], this.list!, this.activeTile!,
+            tr.compose ? null : this.stab[cur], this.trHist[cur], trOut!, tr.compose ? null : fPrev, fCur];
+        }
+        pass('stabilize', this.lastPipe, group(d, this.layouts.stabilize, res), 0, 1, true);
+      }
+      result = fCur;
+      if (tr.packed) this.visResult = undefined;
     }
     const after = this.timer?.end(enc);
     d.queue.submit([enc.finish()]);
@@ -512,16 +649,25 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[61] = o.historyScale;
     f[62] = o.minHistory;
     f[63] = o.historyShrink;
+    if (this.translucency) {
+      f[96] = o.translucencyEpsilon;
+      f[97] = o.translucencyHistory;
+      // the translucent hit distance sizes footprints like h does, so it needs a light too
+      u[98] = (inputs.translucency ? TR_HAS_T : 0) | (inputs.translucencyHitDistance && light ? TR_HAS_HIT : 0)
+        | (o.translucencyOwnGate ? TR_OWN_GATE : 0);
+    }
     this.device.queue.writeBuffer(this.params, 0, f);
   }
 
   private destroyTargets() {
-    for (const t of [...this.geo, ...this.hist, ...this.stab, this.tTex, this.out]) t?.destroy();
+    for (const t of [...this.geo, ...this.hist, ...this.stab, ...this.trHist, ...this.fOut, this.tTex, this.out, this.trT, this.trOut]) t?.destroy();
     this.stab = [];
+    this.trHist = [];
+    this.fOut = [];
     for (const b of [this.tileStats, this.tileMinG, this.args, this.list, this.activeTile]) b?.destroy();
     this.geo = [];
     this.hist = [];
-    this.tTex = this.out = undefined;
+    this.tTex = this.out = this.trT = this.trOut = this.visResult = undefined;
     this.tileStats = this.tileMinG = this.args = this.list = this.activeTile = undefined;
   }
 
