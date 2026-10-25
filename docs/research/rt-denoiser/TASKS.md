@@ -593,6 +593,11 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
       variance is high (MegaLights); à-trous access reordering (Dolp et al. I3D 2024, full text not
       yet obtained). — orchestrator, owner: unassigned
+- [ ] **Shadows v2.2 look** (Dennis, 2026-10-25, live `realtime-shadows.html`): no more boiling, but
+      the look is worse than before (likely softer / smeared penumbrae from the output
+      stabilization or the radius blend). Refine later: compare v2.1 / v2.2 / FFX side by side on
+      the knot and floor penumbrae, judge by eye plus FLIP and boil. Not blocking the phases.
+      — orchestrator, owner: unassigned
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
