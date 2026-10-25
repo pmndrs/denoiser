@@ -624,6 +624,9 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `specular_sh_ref` (6 ch, mean of the M7-2 payloads); `transmittance` (rgb T of the shadow ray), `translucent_dist`,
       `shadow_rgb_ref` (mean of v·T). Test-bed scenes `bumpy`, coloured bounce, `glass`, `glass-moving`, `glass-still`
       (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner
+- [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
+      (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
+      T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
