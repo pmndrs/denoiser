@@ -32,6 +32,14 @@ paraphrases or "summarizes the logic of" NRD code. That covers:
   upstream**, under its own license. This includes AMD FidelityFX 1.x (MIT), which we
   already ported.
 - Patents are not used as design sources.
+- **Ray Tracing Gems II** (decided by Dennis, 2026-10-25). The book, including every code listing
+  printed in it, is CC BY-NC-ND 4.0: read its prose and equations, never copy, port or paraphrase a
+  listing (porting is an adaptation, and our MIT library allows commercial use). The book's GitHub
+  repo (`Apress/Ray-Tracing-Gems-II`) is MIT (© 2021 NVIDIA, unless a chapter's files say
+  otherwise) and is usable under the rule above, but it only has chapters 7, 14, 16, 18, 20, 27–29,
+  31–33, 36, 39 and 47. **Chapter 49 (ReBLUR) has no code there**, and its listings likely mirror
+  NRD's code, so they stay off limits **even if our filter underperforms the chapter's results**.
+  When stuck, use the prose, public talks, our own design, or a black-box probe of native NRD.
 
 ## 3. One exception: the provenance audit
 

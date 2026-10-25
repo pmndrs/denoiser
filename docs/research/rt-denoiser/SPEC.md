@@ -164,7 +164,7 @@ One list, ordered by how much each item blocks (TASKS "Questions for Dennis" poi
    provisional until scored there and natively.
 8. **API items.** Recommendation: keep `remodulate` + caller factor, `dispatchBoth` and the
    occlusion API; ship `'gradient'` as experimental; shadows standalone for now.
-9. **Listing policy.** Recommendation: keep.
+9. **Listing policy.** **Decided 2026-10-25 (Dennis): keep, by caution** (RULES §2, RTG II note).
 
 ---
 
@@ -1805,7 +1805,9 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 9. **Listing policy** (v0 item 1, unchanged). We don't use formulas from RTG II ch. 49's numbered
    listings even though `sources/reblur.md` transcribed them; we do use GTC 2020 **slide**
    formulas (radius 1/(1+A), history-fix start level). Every recurrent pass now exists without
-   the listings. Recommendation: keep.
+   the listings. **Decided 2026-10-25 (Dennis): keep, by caution, even if our filter underperforms
+   the chapter.** The book and its listings are CC BY-NC-ND 4.0; the MIT GitHub repo has no ch. 49
+   code; RULES §2 records the details.
 
 Lower priority, kept from v0.1: **pre-blur strength** (recurrent diffuse 25 px, +0.10 dB over
 15; the bias is permanent near contacts, limited by D1b). It matters only if item 1 keeps
