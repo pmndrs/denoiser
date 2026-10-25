@@ -661,6 +661,28 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `SH_RESOLVE_WGSL`, fused resolve, anti-lag via an SH gradient pass; plain WGSL byte-identical), the three.js resolve
       node, tuning, specular SG ratio resolve; gate = 7-path regression within 0.05 dB; `bumpy` vs both references
       → results/M7.md — owner m7-sh
+- [ ] SPEC §7.10 deviations from the M8 build (results/M8.md §6) — found by m8-translucency, owner spec-author:
+      (a) wide path needs **6** storage textures in `temporal`, not 5: v's r32float copies stay as in v2.2 (bit identity: widening
+      them to rgba16float would round v to f16) and the f16 output (S rgb, v) is written for unfiltered tiles; the spatial passes'
+      τ scratch reuses last frame's histories, so memory is still **80 B/px**; packed path 4 storage textures, 88 B/px (the output
+      doubles as v's unfiltered copy and stabilization history, so v is f16 there and not bit-identical); (b) stabilization: S's weight =
+      max(v's, S's own clamp-distance anti-lag) (`translucencyOwnGate: 'antiLag'`; v's weight alone lost 0.15 dB on glass-moving, the
+      box-width half costs boil); (c) τ gets v's **uniform snap** and update forms exact for uniform inputs (f16 stores truncate and
+      drifted τ below 1); (d) the H18 noise estimate E is taken on v·mean(T) (coloured edges without h_τ get the noise radius);
+      (e) τ tile bits = lit sample attenuated / clear / τ differs from raw T; tau-only tiles pass v through and v-only tiles take
+      S = v̂·τ; (f) τ window keeps v2.1's √(25/n) factor; (g) the "T ≡ 1 bit-identical" gate holds for v in f32 and for the
+      output's rgb = f16-truncated v (results/M8.md §1).
+- [ ] Shadows (opaque): rgba16float history stores truncate on the M5 Pro (LESSONS, m8), so v's history (re-stored every frame
+      with weight A/(A+1)) may carry a small negative bias in penumbrae (estimate up to ~0.5 ulp × (A+1) ≈ −0.002 … −0.004 at
+      A = 15). Measure: r32float v history or a +0.5 ulp compensation, on the 7 paths and the knot captures — found by
+      m8-translucency, owner shadows
+- [ ] M8: static coloured penumbrae boil more than the grey baseline (`v1-glass-still` static-penumbra boil 0.012 vs
+      `shadows-lumt` 0.009; the opaque v channel is at v2.2's level): τ's own noise in coloured penumbrae. Candidates: a
+      longer τ history where the clamp doesn't fire, S stabilization without S's anti-lag in static regions, a per-channel
+      box gate. Dennis to judge the look on `realtime-glass.html` first — found by m8-translucency, owner shadows
+- [ ] `examples/three-temporal/realtime-glass.html` (M8 step 5, a71881a) is not in `examples/_shared/examples.json` (listing
+      policy, SPEC §12 item 9) and has no captures yet (a `glass` capture set with per-pose references would let
+      compare.mjs score it like the knot) — found by m8-translucency, owner orchestrator / three-temporal
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
