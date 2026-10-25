@@ -605,6 +605,16 @@ harness builder runs them and returns images/metrics only.)_
       parameters, 32 frames; return the converged output value per (h, viewZ), and the same for
       `REBLUR_SPECULAR_OCCLUSION` at roughness 0.3 and 0.8. Numbers only. With that table the test bed can render
       references on native's curve (scene.ts `occNorm`) and compare `occlusion-*` against native fairly. — occlusion
+- [ ] **P4: SIGMA across versions on a moving occluder** (change audit rank 1; `sources/nrd-change-magnitude.md`).
+      Build NRD v4.9.4, v4.11.0 and v4.18.0 (outside the repo, as for e06852b). Run `SIGMA_SHADOW` on
+      `three-knot-static`, `three-knot-orbit` and test-bed `std540-object` / `std540-light`. Score with
+      `compare.mjs`, including the dynamic / static region fields and `boil`. Return the per-version
+      table and a frame strip of the knot shadow. Also run our `shadows` (v2.2) and `ffx-shadows`
+      on the same GPU. — orchestrator
+- [ ] **P5: ReBLUR history-fix timing** (change audit rank 2). `REBLUR_DIFFUSE_SPECULAR` v3.3.1 vs v3.4.0
+      vs v4.18.0 on `std540-cut` and `std540-pan`, frames 0–12 after each reset/disocclusion, per-frame
+      pooled PSNR for diffuse and specular in the disoccluded region. Return the per-frame curves.
+      — orchestrator
 
 ## Questions for Dennis
 
