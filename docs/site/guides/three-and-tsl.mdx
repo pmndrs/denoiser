@@ -10,6 +10,10 @@ a renderer that has been initialized with `await renderer.init()`. The nodes fol
 the conventions of `@pmndrs/upscaler`'s `UpscalerNode`, so render, denoise and upscale
 can share one `GPUDevice`.
 
+The nodes for the experimental `denoiser/realtime` classes (`realtimeShadows`,
+`realtimeDiffuseSpecular`, `realtimeOcclusion`, …) are documented on
+[Real-time denoisers (experimental)](./realtime-denoisers).
+
 | export | what it is |
 |---|---|
 | `denoise(color, options)` / `DenoiseNode` | the single-image `Denoiser` as a node: async, on demand |
