@@ -720,3 +720,9 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - Defaults compose: `OcclusionDenoiser`'s SVGF inherits SVGF's `antiLag` default, so two separate decisions (occlusion
   → 'svgf', SVGF → 'auto') made the occlusion default A-SVGF. Registry ids whose names imply a config (`occlusion-svgf`,
   `svgf-sh`) should pin it explicitly, or they silently turn into their `-auto` sibling. — apply-decisions, 2026-10-25
+- The quarantined external review lives in `rt-denoiser-sources/quarantine/`, inside the same tree as the allowed
+  papers, so a clean agent that lists that tree to find SVGF or Dammertz sees its file names. List the subfolder you
+  need (`svgf/`, `reblur/`, `shadows-specular/`, `public-2022-2026/`) instead of the root, and never open
+  `quarantine/`; moving it outside `rt-denoiser-sources/` would remove the trap. When a clean review finds nothing to
+  redact, still update the reviewed file's status line, so readers don't keep treating it as "pending".
+  — clean reviewer (nrd-review-targets), 2026-10-25

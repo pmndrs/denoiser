@@ -70,6 +70,15 @@ it. The brief was never committed; Dennis removed it from the worktree the same 
 snapshot JSON), and must not be given to implementers (RULES §1). Its author is asked to produce a
 filtered what-not-how targets file, `sources/nrd-review-targets.md`, checked by a clean reviewer first.
 
+**Clean review of `sources/nrd-review-targets.md` (2026-10-25, commit c94934a):** reviewer status
+**clean** (no NRD code, README, release notes, fork or port, and not the quarantined brief or snapshot;
+listing `rt-denoiser-sources/` showed the quarantine folder's file names only, nothing opened). Checked
+every entry for formulas, thresholds, constants, defaults, pass structure, data layouts, internal tests,
+NRD names, non-public algorithm names, parameter-encoding targets and mechanism phrasing, against the
+release audit's level of detail; checked the five public references (SVGF §4.2, Dammertz 2010, the TAA
+survey, PBRT §9.6, A-SVGF) exist and say what is claimed. **Verdict: pass, no redactions; implementers may
+read it.** Review: [reviews/nrd-review-targets-review.md](reviews/nrd-review-targets-review.md).
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").

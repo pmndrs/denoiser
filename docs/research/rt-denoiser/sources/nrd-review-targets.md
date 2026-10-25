@@ -2,6 +2,8 @@
 
 Status: filtered handoff, pending review by the project's clean reviewer before implementation use. Prepared 2026-10-25 by the source-informed reviewer, acting only as a filter and evaluator.
 
+Clean review 2026-10-25: **passed, no redactions**; implementers may read this file ([review](../reviews/nrd-review-targets-review.md)).
+
 These are observable quality targets for the existing library. They prescribe no implementation technique. Their order reflects estimated visual impact, rather than a measured ranking against current NRD. The public references provide background for the image-quality problems; they do not establish how current NRD solves them. No current-NRD parity claim follows from this document.
 
 ## Evaluation agreement

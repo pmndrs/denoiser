@@ -739,6 +739,12 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `'auto'` now: registry `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain`, `svgf-plain-smooth` (so `svgf` = `svgf-auto` in
       new runs; pin `antiLag: 'off'` there if the ids should keep their meaning), and `OcclusionDenoiser({ filter: 'svgf' })`
       (its own defaults pass no `antiLag`). `svgf-sh` pins `'off'`. — found by m7-sh, owners registry / occlusion
+- [x] (reviews/nrd-review-targets-review.md) **Clean review of `sources/nrd-review-targets.md`** (c94934a): all 8
+      targets, the evaluation agreement and the no-action list pass; no redactions; the five public references check
+      out. Implementers may read it. Non-blocking notes for the evaluator: entry 1 says to test the recurrent option
+      first, but the shipped default (SVGF `'auto'`) is the primary baseline; `three-knot-*` captures are documented in
+      `examples/three-temporal/CAPTURES.md`; the E-1 link needs E-1's results committed. — found by clean reviewer,
+      owner the targets' evaluator
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
