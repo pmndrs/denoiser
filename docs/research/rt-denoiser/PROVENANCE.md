@@ -36,6 +36,13 @@ shaders. **No NRD code, README, fork or port was opened.** One web fetch (Unreal
 blog, for Karis 2014) was refused by the server; the constants used are the ones already
 recorded in CAPTURE-FORMAT.
 
+Status of the release auditor (2026-10-25, RULES rule 3b, register row "release auditor"):
+read RULES, NRD's GitHub release bodies `v2.5.0`…`v4.18.0` (78 releases) and the prose of
+`UPDATE.md` (blob `679097c`), both with fenced code blocks stripped by script before reading
+(none were present). **No NRD code, README, source, shader, header, Integration folder,
+NRD-Sample, fork or port was opened.** Output: [sources/nrd-releases.md](sources/nrd-releases.md)
+(what changed, never how). The auditor writes and reviews none of our passes.
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").

@@ -537,3 +537,9 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   and runs it synchronously, never loads them. — e2, 2026-10-25
 - `pkill -f <waiter script>` also kills the copy of that waiter a running batch script is blocked on. The batch then runs
   its next page at once, unquieted. Kill your own extra instance by PID. — e2, 2026-10-25
+- Reading a proprietary project's release notes cleanly (RULES 3b): fetch with `gh api`, strip fenced code blocks
+  with a script *before* the text reaches you, and read the stripped copy only. NRD's release bodies and `UPDATE.md`
+  had no fences, but `UPDATE.md` still carries inline usage snippets and default values in prose ("old value X matches
+  new Y"), so the fence strip is not enough: skip inline expressions and numbers by eye. Most lines in NRD's notes
+  are "how" (weights, tests, pass moves, tap counts: ~417 dropped vs ~200 kept), so keep a per-release tally in a
+  scratch file as you go rather than counting at the end. — release auditor, 2026-10-25

@@ -565,6 +565,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       routes scalars through the HDR weights meanwhile — found by e2, owner: OIDN package (`packages/denoiser-core`)
 - [ ] OIDN 3 real-time model (PLAN §1): when it lands in `denoiser/realtime`, register it in `tools/rt-capture` beside
       `oidn` and score it on the E-2 captures/table (bar: A-SVGF with history, flicker ≤ ~0.004–0.006) — found by e2, owner unassigned
+- [x] release audit → sources/nrd-releases.md (release auditor, rule 3b)
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
