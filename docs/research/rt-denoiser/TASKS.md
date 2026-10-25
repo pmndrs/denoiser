@@ -672,10 +672,13 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       11 captures, rgb = f16-truncated v. Glass 1080p pooled 38.83 / 34.21 / 40.61 (glass / moving / still) vs grey baseline
       28.42 / 26.25 / 26.51, accumulate-32 31.10 / 20.04 / 36.42; chroma err 0.002–0.006 vs 0.065. Cost 0.97–0.99 ms on glass,
       +0.12 … 0.17 ms elsewhere (over the SPEC estimate) — owner m8-translucency
-- [~] m7-sh (implementer, 2026-10-25) **M7 steps 2–5**: SVGF `payload: 'sh'` (24f2e4a: encode-on-load, ShResolver,
-      `SH_RESOLVE_WGSL`, fused resolve, anti-lag via an SH gradient pass; plain WGSL byte-identical), the three.js resolve
-      node, tuning, specular SG ratio resolve; gate = 7-path regression within 0.05 dB; `bumpy` vs both references
-      → results/M7.md — owner m7-sh
+- [x] m7-sh (24f2e4a … c15936e, results/M7.md) **M7 steps 2–5**: SVGF `payload: 'sh'` (encode-on-load, fused / payload
+      output, `ShResolver`, `SH_RESOLVE_WGSL`, anti-lag via an SH gradient pass, three.js `realtimeDiffuse` / `realtimeSpecular`
+      SH mode, registry `svgf-sh` / `svgf-sh-auto`). **Gate passes**: 7 paths within 0.013–0.038 dB pooled at equal f16
+      rounding (+0.03…+0.10 as shipped). `bumpy` diffuse: SH `'auto'` s 0.75 38.26 vs best plain 37.40 (bump region +2.1),
+      but band energy 0.25–0.5 and FLIP favours plain-shading-normal; `bounce`: plain ahead by 0.04–0.12. Specular SH does
+      not pay (−2.1 dB at best). Cost 1080p: diffuse 2.20 → 2.92 ms, joint 3.97 → 5.42; memory 116 / 204 B/px (= SPEC).
+      New defaults `shSharpen` 0.75, `shLightSharpness` 2. Open: steps 6–7 (probe P6, recurrent SH) — owner m7-sh
 - [ ] SPEC §7.10 deviations from the M8 build (results/M8.md §6) — found by m8-translucency, owner spec-author:
       (a) wide path needs **6** storage textures in `temporal`, not 5: v's r32float copies stay as in v2.2 (bit identity: widening
       them to rgba16float would round v to f16) and the f16 output (S rgb, v) is written for unfiltered tiles; the spatial passes'
@@ -713,6 +716,29 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Real-scene pages: `realtime-gi.html`'s AO (`realtimeOcclusion()` with class defaults) switched from recurrent to SVGF
       `'auto'`, so results/M6-real-scene.md's AO rows labelled "default" describe the old default — found by apply-decisions,
       owner results / three-temporal (FYI)
+- [ ] **SPEC §8.5 deviations from the M7 build** (results/M7.md §8) — found by m7-sh, owner spec author:
+      (a) M7-5: the à-trous luminance weight evaluates every tap's payload at the **centre's** direction (normal, or
+      the dominant direction for specular), not the tap's own (cheaper, +0.01–0.02 dB dev page); temporal and
+      gradient passes use each pixel's own. (b) M7-2 for c < 0: β stays 2 (CAPTURE-FORMAT v1 rule). (c) M7-10: the SG
+      ratio darkens systematically (the extracted light sits at the guide's reflection direction, so R(n_g) is the
+      peak); an `'l1'` ratio option was added; neither beat "no ratio" (test bed: SG λ_l 8 24.92, λ_l 2 29.71, `l1` 29.66, no ratio 29.13 vs plain shading normal 31.82; λ_l default now 2). (c2) `shSharpen` default 0.75 (SPEC 0), best on dev page, `bumpy`, `bounce`. (c3) SH loses bump contrast (band energy 0.25–0.5):
+      payloads encoded around different detail-normal hemispheres get averaged; worth a SPEC note. (d) Resolve default is per
+      signal (`'auto'`: diffuse 'none', specular 'fused'), also inside a joint pipeline (per-signal output formats).
+      (e) Anti-lag with SH needs its own gradient-create pass (16 loads of the unfilterable history per stratum);
+      `antiLagVersion: 1` + SH throws. (f) `historyFilter: 'catmull-rom'` is ignored in SH mode (bilinear).
+      (g) Not built: `'sh-rgb'` (12 channels need 3 storage textures per signal in the temporal pass, 6 joint: over the
+      default limit of 4) and the 64-bit à-trous packing (σ doesn't fit beside 6 × 8 bit + an f16 magnitude; needs a
+      shared-exponent layout; est. −0.4 ms / −16 B/px per signal). (h) `inputs.radiance` stays required with an encoded
+      `inputs.sh` (core type unchanged; ignored then). (i) `ShResolver` is diffuse only (specular: fused or
+      `SH_RESOLVE_WGSL`'s `shResolveSpecular`).
+- [ ] **Plain SVGF loses ~0.1–0.16 dB to f16 truncation** on Metal: `rgba16float` storage writes round toward zero
+      (LESSONS), `pack2x16float` to nearest. A half-ulp bias before each store (or packing by hand) is likely a free
+      gain for every rgba16float history/ping-pong in the package (SVGF, recurrent, occlusion, shadows); measure per
+      filter, it breaks bit-identity. — found by m7-sh, owner svgf / filter owners
+- [ ] **SVGF `antiLag` default is now `'auto'` (64a1123, Dennis q02)**: everything that relied on the implicit default runs
+      `'auto'` now: registry `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain`, `svgf-plain-smooth` (so `svgf` = `svgf-auto` in
+      new runs; pin `antiLag: 'off'` there if the ids should keep their meaning), and `OcclusionDenoiser({ filter: 'svgf' })`
+      (its own defaults pass no `antiLag`). `svgf-sh` pins `'off'`. — found by m7-sh, owners registry / occlusion
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

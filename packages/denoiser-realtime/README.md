@@ -492,46 +492,38 @@ const rgb = gi.dispatch(
   (`shUnpack`, `shResolveDiffuse(p, nDetail, sharpen, nGuide)`,
   `shResolveSpecular(p, nDetail, nGuide, view, roughness, lightSharp, rhoMax, fadeR)`), e.g.
   to light any BSDF with the payload.
-- **Options.** `shSharpen` (0, diffuse fused resolve: blend toward ambient + one extracted light),
+- **Options.** `shSharpen` (0.75, diffuse resolve: blend toward ambient + one extracted light; SPEC said 0),
   `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
-  `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (8), `shMaxRatio` (4), `shFadeRoughness` (0.2).
+  `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (2), `shMaxRatio` (4), `shFadeRoughness` (0.2);
+  `shPingPacking` ('f16' | 'u8').
   `payload` is structural; `filter: 'recurrent'` with `payload: 'sh'` throws (not built);
   `historyFilter: 'catmull-rom'` is ignored in SH mode (the history is unfilterable; bilinear).
 - **three.js:** `realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })`
   returns the resolved rgb (fused by default; with `resolve: 'none'` the node resolves with
   `ShResolver` at `shResolve.normal`).
 - **Equal to the plain filter where the normals agree:** resolved at the guide normal the SH
-  filter scores like plain SVGF (test bed, 7 paths: within 0.05 dB at equal f16 rounding; results/M7.md). A fixed difference: SH packs f16 by rounding to
+  filter scores like plain SVGF (test bed, 7 paths: within 0.04 dB at equal f16 rounding; results/M7.md). A fixed difference: SH packs f16 by rounding to
   nearest, the plain buffers' `rgba16float` stores truncate on Metal, so SH reads ~0.1 dB better.
 
 ### Results (provisional; full tables in `docs/research/rt-denoiser/results/M7.md`)
 
-Dev page, normal-mapped floor and wall (25° bumps), diffuse, scored against the exact irradiance at the
-detail normal (960×540, 30 frames): plain SVGF with the smooth normal 34.41 dB (bumps averaged away),
-with the detail normal 33.74 (neighbours rejected, noisy), **SH 36.80**, SH with `shSharpen: 0.5` 37.17.
-Specular SH does **not** pay on glossy bumps under a sharp light (plain with the detail normal is best;
-L1 can't hold glints), so treat specular SH as experimental. Cost (1080p, contended dev-page bench):
-diffuse 2.25 → 3.04 ms (1.35×), diffuse + specular 4.01 → 6.11 ms (1.52×). Memory: diffuse 116 B/px
-(108 with the fused resolve; plain 76), diffuse + specular 204 (plain 132), +8 with `antiLag: 'auto'`.
+| test bed, 1080p, `sh-diffuse` (pooled dB) | `bumpy` | `bumpy` bump region | `bounce` |
+|---|---|---|---|
+| plain SVGF, filter normal = shading normal (`'auto'`) | 37.40 | 34.23 | **39.21** |
+| plain SVGF, filter normal = smooth (`'auto'`) | 36.19 | 32.27 | – |
+| **SH** (`'auto'`, `shSharpen` 0.75, the default) | **38.26** | **36.32** | 39.09 |
 
-
-## Against native NRD
-
-Native NRD v4.18.0 ran as a black box (public API only, RULES §4) on our captures, at **NRD's
-default settings**, all on one RTX 3060 Laptop GPU
-(`docs/research/rt-denoiser/native/results/PHASE4-5.md`). Pooled PSNR, mean of the 8 test-bed
-captures: diffuse ours 37.80 (`'auto'`) / 37.69 (`'off'`) / 36.57 (recurrent) vs RELAX 34.68,
-REBLUR 33.63; specular 34.24 / 33.58 / 32.78 vs 29.73 / 29.69; shadows 35.62 vs SIGMA 22.04 (plain
-accumulation: 23.67). The two real-scene captures rank the same way; AO isn't comparable yet
-(native uses its own hit-distance curve). **Ours is ahead on every comparable signal, but a native
-integration issue is not ruled out:** SIGMA scoring below plain accumulation points to an
-input-convention mismatch in the harness more than to a real quality gap.
-
-Cost on the same GPU, clocks locked (1200 / 7001 MHz), `std1080-orbit`, GPU time around the
-dispatches: diffuse + specular 1.00× (`'off'`), 1.02× (recurrent), 1.13× (`'auto'`), 1.39× (the
-recurrent + A-SVGF mix) of REBLUR's 5.38 ms; shadows 1.12× SIGMA; AO + SO 1.12× (recurrent),
-1.24× (`'off'`), 1.48× (`'auto'`) of REBLUR occlusion. Every configuration is within the 2× target
-(SPEC §12 item 3). Chrome / Dawn submission adds 2–3 ms of wall time per frame on our side.
+- **Regression:** on the 7 standard paths SH at the guide normal matches plain SVGF within 0.013–0.038 dB
+  at equal f16 rounding (as shipped +0.03…+0.10 dB, see the f16 note above).
+- SH keeps only 25–50 % of the bump contrast (detail-band energy) and FLIP prefers plain with the shading
+  normal on `bumpy` (0.0405 vs 0.0439): use SH where noise across bumps is the problem, plain with the
+  shading normal where crisp bumps matter.
+- **Specular SH does not pay** (≥ 2 dB below plain with the shading normal on the glossy bumpy floor);
+  experimental.
+- Cost (1080p, quiet dev-page bench): diffuse 2.20 → 2.92 ms (1.33×), diffuse + specular 3.97 → 5.42 ms
+  (1.37×); `antiLag: 'auto'` 2.56 → 3.41 / 4.41 → 6.13. Memory: diffuse 116 B/px (108 fused; plain 76),
+  diffuse + specular 204 with the default resolves (plain 132), +8 with `'auto'`; `shPingPacking: 'u8'`
+  −16 per signal (faster for diffuse alone, slower joint).
 
 ## Dev page
 
