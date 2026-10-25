@@ -70,6 +70,10 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       the single ordered review list (Questions for Dennis below points to it)._
       _v0.4 (2026-10-25 late night, spec author / apply-decisions agent, 8fc3f00): §12 decided by Dennis (all as
       recommended), §0.1 / §0.3 short form, §0.2 / §10.3 native results and the decided targets, §7 v2.1 / v2.2 note._
+      _v0.5 (2026-10-26, spec author, 546c777): §7 shadows rewritten as built (v2.2, history §7.0), §7.10 (M8) and §8.5 (M7)
+      marked built with as-built deviation tables and measured cost / memory, E-1's 4096-spp gaps in §0.2 / §12 items 1–2,
+      T1's options and recovery numbers (§4.3–4.5, §5.8, §0.2, §13), §12 items 15–16 (open: `youngNormalPower: 16`,
+      `historyFix: 'spatial'`), §4.5 / §4.6 `antiLag: 'auto'` default, §9 / §10.3 / §11 refreshed._
 - [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [x] (0a035e3, 85783f8, 0047bfb, 10ecb5b) testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
@@ -527,11 +531,11 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [x] (SPEC v0.4: Dennis set the shadows cost target to ~0.75 ms, q05; v2.2 0.55–0.72 ms meets it) Shadows v2.1 cost: the normal-tested clamp window adds +0.07 … 0.14 ms at 1080p (temporal 0.32–0.37 → 0.42–0.47 ms;
       totals 0.58–0.69, over the ≤ 0.6 target on 5 of 7 paths; FFX 0.51–0.63) for +1.0 dB pooled / −29 % FLIP. Lever:
       `clampGeometry: false` (v2's cost, −1 dB). Fold into SPEC §12 (cost item) — found by shadows-reset, owner spec-author
-- [~] (SPEC v0.4, 8fc3f00: short v2.1 / v2.2 note at the top of §7, §0.2 and §10.3 rows; the §7.4–7.8 rewrite is still open) SPEC §7 / §0.2 shadows rows for v2.1 (results/M4.md §11): clamp window over normal-tested 5×5 taps (`clampGeometry`,
+- [x] (spec-author, 546c777: SPEC v0.5 §7 rewritten as built (§7.0 history, §7.4 pseudo-code and parameter table, §0.2, §10.3); v0.4 note 8fc3f00) SPEC §7 / §0.2 shadows rows for v2.1 (results/M4.md §11): clamp window over normal-tested 5×5 taps (`clampGeometry`,
       `clampMinTaps` 3), hard-edge widening (`clampEdgePx` 2), young mean over 8 frames (`youngFrames` 8, `youngTaper`
       0.25, replaces `youngSpan`; "which pixels count as fresh" row: a frame counter since the pixel was new, not A), new
       1080p / reset-window numbers — found by shadows-reset, owner spec-author
-- [ ] `packages/denoiser-realtime/README.md` shadows section: `youngSpan` [1] is gone (now `youngFrames` [8], `youngTaper`
+- [x] (spec-author, 8f578d0: the options list was already current; SPEC pointer, v2.2 per-pass ms, 20 B per tile, the ~0.75 ms target and a `uniformSnap` note fixed) `packages/denoiser-realtime/README.md` shadows section: `youngSpan` [1] is gone (now `youngFrames` [8], `youngTaper`
       [0.25]); add `clampGeometry` [true], `clampMinTaps` [3], `clampEdgePx` [2]; the 1080p numbers / costs there are v2's
       (results/M4.md §11.3, §11.6) — found by shadows-reset, owner `packages/denoiser-realtime` README
 - [ ] Shadows: anti-lag restarts in static penumbrae cost a −0.15 … −0.3 dB step at frame 5 on the real scene (v2 and
@@ -591,7 +595,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 
 - [x] (e1, results/E1-high-reference.md; test bed d256615) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
-- [ ] Fold E-1 into SPEC §0.2 / §12 items 1–2: quote the 4096-spp gaps (recurrent vs A-SVGF `auto` diffuse −2.51 dB on 5
+- [x] (spec-author, 546c777: §0.2 4096-spp table and central finding, §12 items 1–2, §4.6, §13 note; the leftovers below stay open) Fold E-1 into SPEC §0.2 / §12 items 1–2: quote the 4096-spp gaps (recurrent vs A-SVGF `auto` diffuse −2.51 dB on 5
       paths, AO −2.33 on 7, specular −1.91; `antiLag: 'auto'` vs `'off'` diffuse +0.93, specular +2.81) next to the 256-spp
       ones, and the 256-spp ceilings (diffuse 41.7, specular 36.9 dB) in §13. No recommendation flips. results/E1-high-reference.md
       — found by e1, owner spec-author
@@ -605,7 +609,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       static penumbrae, per-frame kernel rotation, raw-history update). Fix v2.2: output stabilization pass (RTG II §49.5.7),
       box-gated, clamp-distance anti-lag: knot-shadow boil 0.0062 → 0.0013 (FFX 0.0011); 1080p 7 paths 38.12 → 38.22 /
       penumbra +0.11 / flicker −11 %; `light` −0.19; +0.03…0.05 ms (0.55–0.72 ms), 48 B/px
-- [~] (SPEC v0.4, 8fc3f00: see the v2.1 item; §7.4–7.8 rewrite open) SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
+- [x] (spec-author, 546c777: §7.5 SH-5b stabilization with its parameter table, §7.8 memory / per-pass cost, §0.2, §10.3) SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
       0.05 @1080p, `stabilizeAntiLag` 64), 48 B/px, the 1080p / capture numbers; §10.3 memory and cost rows — found by
       moving-shadows, owner spec-author
 - [ ] Shadows v2.2 leftovers (results/M4.md §12.7): `light` −0.19 dB (stabilizer lag while the light orbits / after the
@@ -685,7 +689,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       but band energy 0.25–0.5 and FLIP favours plain-shading-normal; `bounce`: plain ahead by 0.04–0.12. Specular SH does
       not pay (−2.1 dB at best). Cost 1080p: diffuse 2.20 → 2.92 ms, joint 3.97 → 5.42; memory 116 / 204 B/px (= SPEC).
       New defaults `shSharpen` 0.75, `shLightSharpness` 2. Open: steps 6–7 (probe P6, recurrent SH) — owner m7-sh
-- [ ] SPEC §7.10 deviations from the M8 build (results/M8.md §6) — found by m8-translucency, owner spec-author:
+- [x] (spec-author, 546c777: SPEC §7.10 as-built table (a)–(g), tuned constants, measured cost / memory in §7.10.3, §9, §10.3) SPEC §7.10 deviations from the M8 build (results/M8.md §6) — found by m8-translucency, owner spec-author:
       (a) wide path needs **6** storage textures in `temporal`, not 5: v's r32float copies stay as in v2.2 (bit identity: widening
       them to rgba16float would round v to f16) and the f16 output (S rgb, v) is written for unfiltered tiles; the spatial passes'
       τ scratch reuses last frame's histories, so memory is still **80 B/px**; packed path 4 storage textures, 88 B/px (the output
@@ -704,14 +708,17 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `shadows-lumt` 0.009; the opaque v channel is at v2.2's level): τ's own noise in coloured penumbrae. Candidates: a
       longer τ history where the clamp doesn't fire, S stabilization without S's anti-lag in static regions, a per-channel
       box gate. Dennis to judge the look on `realtime-glass.html` first — found by m8-translucency, owner shadows
-- [ ] `examples/three-temporal/realtime-glass.html` (M8 step 5, a71881a) is not in `examples/_shared/examples.json` (listing
+- [x] (spec-author, 8f578d0: listed, `deployed: false`, id `three-temporal-realtime-glass` as its `mountShell` uses; the capture half is split into the next item) `examples/three-temporal/realtime-glass.html` (M8 step 5, a71881a) is not in `examples/_shared/examples.json` (listing
       policy, SPEC §12 item 9) and has no captures yet (a `glass` capture set with per-pose references would let
       compare.mjs score it like the knot) — found by m8-translucency, owner orchestrator / three-temporal
+- [ ] A `glass` capture set with per-pose references for `examples/three-temporal/realtime-glass.html` (static and
+      `?moving=1`), so compare.mjs scores it like the knot captures (boil, dynamic region, tint) — split from the listing
+      item by spec-author, owner three-temporal
 - [ ] M8 temporal-pass cost (results/M8.md §6): +0.11 ms full screen with no transmittance (τ history taps + store, output
       store), +0.04 for the raw T tile, +0.22 in tiles with glass (per-channel 5×5 stats + normal tile). Levers: skip the τ history
       taps where last frame's tile flags say τ ≡ 1 (dilated for motion), τ stats only for pixels with lit attenuated taps, a
       cheaper τ history format; target ≤ 0.9 ms on the glass paths (M5 Pro guide) — found by m8-translucency, owner shadows
-- [ ] `packages/denoiser-realtime/dev/main.ts` header comment still says `filter=recurrent&signal=both` defaults to "recurrent
+- [x] (spec-author, 8f578d0: comment fixed; it also notes the page's own `antiLag` default `'off'` vs the package's `'auto'`) `packages/denoiser-realtime/dev/main.ts` header comment still says `filter=recurrent&signal=both` defaults to "recurrent
       diffuse + SVGF antiLag 'auto' specular"; since 6be4f23 it runs both signals recurrent (pass `specularFilter=svgf` for the
       mix). Comment only — found by apply-decisions, owner package dev page (M7 agent's file)
 - [x] (occlusion-antilag-off, **reverted 2026-10-26** by the orchestrator: under rule 9 `'off'` loses AO contact −0.6 dB, AO flicker +15 %, SO −0.9 dB; the default inherits `'auto'` again and `'off'` is documented as the cheaper option, revert byte-checked in results/OCCLUSION-ANTILAG.md. The flip itself was decided by Dennis 2026-10-25; class default byte-identical to `occlusion-svgf`, explicit `'auto'` / `'off'` / recurrent unchanged on `std540-orbit` + `three-orbit`; SPEC §8.3 / §12 item 2, README, docs page) `OcclusionDenoiser()` now means SVGF with SVGF's default `antiLag: 'auto'` (= registry `occlusion-svgf-auto`; the
@@ -722,7 +729,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Real-scene pages: `realtime-gi.html`'s AO (`realtimeOcclusion()` with class defaults) switched from recurrent to SVGF
       `'auto'`, so results/M6-real-scene.md's AO rows labelled "default" describe the old default — found by apply-decisions,
       owner results / three-temporal (FYI). (The occlusion-antilag-off flip to `'off'` was reverted: the class default is `'auto'` = M6's `occlusion-svgf-auto` rows.)
-- [ ] **SPEC §8.5 deviations from the M7 build** (results/M7.md §8) — found by m7-sh, owner spec author:
+- [x] (spec-author, 546c777: SPEC §8.5 as-built table (a)–(i), measured results, cost / memory in §8.5.5, §9, §10.3) **SPEC §8.5 deviations from the M7 build** (results/M7.md §8) — found by m7-sh, owner spec author:
       (a) M7-5: the à-trous luminance weight evaluates every tap's payload at the **centre's** direction (normal, or
       the dominant direction for specular), not the tap's own (cheaper, +0.01–0.02 dB dev page); temporal and
       gradient passes use each pixel's own. (b) M7-2 for c < 0: β stays 2 (CAPTURE-FORMAT v1 rule). (c) M7-10: the SG
@@ -745,6 +752,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `'auto'` now: registry `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain`, `svgf-plain-smooth` (so `svgf` = `svgf-auto` in
       new runs; pin `antiLag: 'off'` there if the ids should keep their meaning), and `OcclusionDenoiser({ filter: 'svgf' })`
       (its own defaults pass no `antiLag`). `svgf-sh` pins `'off'`. — found by m7-sh, owners registry / occlusion.
+      _SPEC: §4.5 / §4.6 / §8.3 / §12 item 2 show the `'auto'` default and the reverted occlusion `'off'` since v0.5 (546c777); the registry part stays open._
       _Occlusion part: settled. `'off'` was tried as the occlusion default and reverted (results/OCCLUSION-ANTILAG.md), so `OcclusionDenoiser` inherits `'auto'` on purpose._
 - [x] (reviews/nrd-review-targets-review.md) **Clean review of `sources/nrd-review-targets.md`** (c94934a): all 8
       targets, the evaluation agreement and the no-action list pass; no redactions; the five public references check
@@ -776,7 +784,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the single frame right after a cut at 1080p (better from the next frame). Proposal: keep `'mips'` unless Dennis
       reads the boil change as acceptable for the recurrent filter (results/T1-recovery.md §5.2). — found by t1, owner
       recurrent / Dennis
-- [ ] SPEC deviations for the spec author (results/T1-recovery.md): §4.3 / §4.4 gain the options `spatialHistoryWeight`
+- [x] (spec-author, 546c777: §4.3 / §4.4 / §4.5 v0.5, §5.8 v0.5 + D7 row, §0.2 / §13 recovery numbers, §12 items 15–16; `youngNormalPower: 16` written as a proposal awaiting Dennis and a quiet-GPU cost check, the default stays 0) SPEC deviations for the spec author (results/T1-recovery.md): §4.3 / §4.4 gain the options `spatialHistoryWeight`
       (null), `youngLuminanceWeight` (loss), `youngNormalPower` (proposal, above); §5.8 (D7) gains `historyFix: 'spatial'`
       + `historyFixRadius` (8 px, halving per frame, no mips / depth atlas); §0.2 / §13 can quote the T1 recovery numbers
       (frames to band after a cut: SVGF diffuse 4, specular 0, shadows 4; recurrent young pixels 1.5–2 dB under SVGF).
@@ -815,6 +823,23 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (`static: false`); specular is SSR, not demodulated (`demodulation.specular: "none"`); AO reference is the extra
       `ao_ref` (ĥ = h/(h + 1 + 0.05·(−viewz))). Score with `compare.mjs` + `score-captures.mjs` like ours — found by
       bistro-sponza, owner harness builder
+- [ ] **Doc/code mismatch, shadows radius formula** (found while writing SPEC v0.5 §7.5): SPEC v0.2 §7.5 and results/M4.md
+      §10 write `R = ½·0.75·W·shrink + ½·32 px·E` (noise term unscaled); `shadowSpatialWgsl` blends first,
+      `R = lerp(lightSize·g, 32 px·E, noiseBlend)`, then multiplies by `radiusScale` 0.75 × `lerp(1, historyShrink, A/maxHistory)`
+      × 0.5 in pass 1. The H18 fallback is likewise 0.75·shrink·32 px·E (SPEC v0.1 / v0.2 said 24 / 32 px·E). The sweeps
+      ran on the code, so only the written formula was off; SPEC v0.5 describes the code. M4 §10's formula line could
+      get a correction note — found by spec-author, owner results (M4.md) / shadows
+- [ ] **Doc/code mismatch, shadows comments**: the tile buffers are **20 B per 8×8 tile** (stats `vec2u` 8 + nearest
+      occluder 4 + list 4 + active flag 4; +4 for the τ list with `translucency`), but the `src/shadow.ts` header says
+      "four tile-sized buffers (16 B per 8x8 tile)", results/M4.md §12.3 "+4 B per tile", results/M8.md §6 "+16 B per
+      tile" (≈ 0.3 B/px, so no table moves); and the `stabilize` option's doc in `src/shadow.ts` says "one full-screen pass
+      when on", but the pass is indirect over the penumbra tiles since 033a869. SPEC v0.5 §7.8 and the README use 20 B.
+      Comment-only fix — found by spec-author, owner shadows (`packages/denoiser-realtime/src/shadow.ts`)
+- [ ] **Shipped shadows defaults never measured together at 1080p**: every v2.2 number (results/M4.md §12, E-1, M8)
+      ran `uniformSnap: true`; the default is `'change'` since 255a06a, measured only on v2 (REMEASURE §4: +0.12 dB
+      pooled, FLIP +2 %) and inside T1's cut / pan windows. Run `denoiser=shadows,shadows@sh.uniformSnap=true` on the 7
+      paths at 1080p and the knot captures (boil), so SPEC §0.2 / §7 can quote the shipped configuration — found by
+      spec-author, owner results / shadows
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

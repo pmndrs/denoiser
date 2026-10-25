@@ -652,6 +652,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - On the real scene A-SVGF's anti-lag pulls n under 4 on many old pixels, so any "young history" option also acts after
   anti-lag events there (`youngNormalPower` gained +0.2–0.3 dB on settled pixels of `three-*`, nothing on the test bed).
   — t1, 2026-10-26
+- A results doc's formula line is a summary, not the code: shadows' radius was written `½·0.75·W·shrink + ½·32 px·E`
+  in M4 §10 and copied into SPEC v0.2, while the shader scales the whole blend by 0.75 × shrink (and the fallback too).
+  When folding results into SPEC, read the option defaults (`resolve*Options`) and the shader expression, not only
+  the results text. Same for "which defaults did this table run with": every v2.2 shadows number predates the
+  `uniformSnap: 'change'` default. — spec-author (SPEC v0.5), 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
