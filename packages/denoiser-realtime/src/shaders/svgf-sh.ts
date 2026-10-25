@@ -3,7 +3,10 @@
 // rgba32uint per buffer) filtered with the plain weights. Every scalar the filter uses
 // (moments, variance, luminance edge-stop, anti-lag) is the Rec. 709 luminance of the
 // payload evaluated at the filter's normal (M7-5), so the tuned SVGF constants carry
-// over; all six channels share one weight per tap (M7-6). The plain passes are kept
+// over; all six channels share one weight per tap (M7-6). In the a-trous luminance weight every
+// tap's payload is evaluated at the CENTRE's direction (normal / dominant direction), not its own:
+// like is compared with like, no per-tap dominant-direction ALU, and it measured equal or slightly
+// better than per-tap directions (dev page: +0.01..+0.02 dB). The plain passes are kept
 // separate and untouched, so `payload: 'radiance'` stays bit-identical.
 //
 // Sources: as shaders/svgf.ts (Schied et al. 2017 / 2018 and the A-SVGF BSD-3 code),
@@ -344,7 +347,7 @@ export function atrousPassSh(kinds: SignalKind[], v: AtrousVariant, resolve: ShR
       if (gq.z > 0.0) {
         ${I.map((i) => /* wgsl */ `{
           let s = ${sample(i)};
-          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(shLum(s, shDir${i}(gq.n, vC, gq.rough)) - lc${i}) / lumDenom${i});
+          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(shLum(s, ev${i}) - lc${i}) / lumDenom${i});
           sumY${i} += s.y * w;
           sumC${i} += s.c.xy * w;
           sumV${i} += s.c.z * s.c.z * w * w;
