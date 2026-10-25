@@ -617,7 +617,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       stabilization or the radius blend). Refine later: compare v2.1 / v2.2 / FFX side by side on
       the knot and floor penumbrae, judge by eye plus FLIP and boil. Not blocking the phases.
       — orchestrator, owner: unassigned
-- [~] spec-m7-m8 (spec author) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
+- [x] spec-m7-m8 (spec author, 280cf3a) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
       (§7.10), §0.1 / §11 / §12 touch-ups, PROVENANCE "spec only, not built" rows.
 - [ ] CAPTURE-FORMAT v1 buffers for M7 / M8 (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
       sampled ray), `normal_geom` (smooth normal for the filter; `normal` stays the shading normal), `diffuse_sh_ref`,
