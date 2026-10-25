@@ -723,6 +723,7 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - The quarantined external review lives in `rt-denoiser-sources/quarantine/`, inside the same tree as the allowed
   papers, so a clean agent that lists that tree to find SVGF or Dammertz sees its file names. List the subfolder you
   need (`svgf/`, `reblur/`, `shadows-specular/`, `public-2022-2026/`) instead of the root, and never open
-  `quarantine/`; moving it outside `rt-denoiser-sources/` would remove the trap. When a clean review finds nothing to
+  `quarantine/`. (Done 2026-10-26: the orchestrator moved it to a folder outside `rt-denoiser-sources/`;
+  `rt-denoiser-sources/` now holds only allowed material.) When a clean review finds nothing to
   redact, still update the reviewed file's status line, so readers don't keep treating it as "pending".
   — clean reviewer (nrd-review-targets), 2026-10-25
