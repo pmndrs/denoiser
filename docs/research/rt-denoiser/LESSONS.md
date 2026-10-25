@@ -163,6 +163,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   different `RT_REALTIME_SRC` snapshots (scratch config, `hmr: false`) give before/after on the same page; files in a
   snapshot outside the Vite root are still served fresh after an edit (no restart). — shadows-reset, 2026-10-25
 
+- Claude Code's safety check refuses some zsh expansions in a long command (`${(s:,:)V}` inside a pipeline
+  was flagged as "can't be checked for rm"); pass comma lists to scripts as one argument and split them
+  in the script instead. Probe pages that switch the realtime-shadows view to `ours`/`ffx` mid-session
+  hung once; the split view (`view: 'split'`) captures both sides in one page. — moving-shadows, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -454,6 +459,21 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   pattern as our test bed. Shipped anti-lags shorten the frame cap in proportion to how far the history sits outside
   the clamp box and never drop it to 0; our shadows' restart-to-0 is the outlier and the likely moving-shadow boiling
   cause. — public research 2022–2026, 2026-10-25
+
+- **Flicker and temporal PSNR on the error can't see boiling in soft shadows.** e_t − e_t−1 includes the
+  reference's own frame-to-frame noise (2048-ray references: ~0.004 per frame in a wide penumbra), as
+  large as a good output's change, so v2.1's 4.7× FFX output noise on the knot's shadow scored *better*
+  flicker than FFX in the dynamic region. Look at the output's own temporal change (compare.mjs `boil`:
+  RMS second temporal difference / √6, with the reference's boil as the floor) and at frame-difference
+  strips. — moving-shadows, 2026-10-25
+- **Run a frozen control before blaming motion.** The "moving shadow boils" report turned out to be wide,
+  soft penumbrae boiling whether the knot moved or not (rect boil 0.0069 frozen vs 0.0062 rotating); the
+  knot's shadow is just the widest. A dynamic region defined by reference change (0.05 over 4 frames)
+  flagged 761 px/frame of a 40k px shadow. — moving-shadows, 2026-10-25
+- An output stabilization history (box-clamped to the 3×3 range of the current output) is TAA, and blurs
+  hard edges the same way: the box spans the step and holds nothing back (−5.5 dB on the test bed).
+  Gate it to narrow ranges, and scale that threshold with resolution (a penumbra's per-pixel slope
+  halves at 2× resolution: the 540p threshold cost 0.45 dB on `light` at 1080p). — moving-shadows, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

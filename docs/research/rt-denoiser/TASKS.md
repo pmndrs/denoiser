@@ -558,6 +558,22 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
 - [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
+- [x] (moving-shadows, d02613d e573a04 033a869 + docs commit; results/M4.md §12) **moving-shadows**: the rotating knot's shadow
+      boiled with ours. Measured: knot captures `three-knot-static` / `-orbit` / `-still` (control), dynamic-region and boil
+      metrics (compare.mjs, test bed). Cause: wide soft penumbrae boil whether the knot moves or not (anti-lag restarts in
+      static penumbrae, per-frame kernel rotation, raw-history update). Fix v2.2: output stabilization pass (RTG II §49.5.7),
+      box-gated, clamp-distance anti-lag: knot-shadow boil 0.0062 → 0.0013 (FFX 0.0011); 1080p 7 paths 38.12 → 38.22 /
+      penumbra +0.11 / flicker −11 %; `light` −0.19; +0.03…0.05 ms (0.55–0.72 ms), 48 B/px
+- [ ] SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
+      0.05 @1080p, `stabilizeAntiLag` 64), 48 B/px, the 1080p / capture numbers; §10.3 memory and cost rows — found by
+      moving-shadows, owner spec-author
+- [ ] Shadows v2.2 leftovers (results/M4.md §12.7): `light` −0.19 dB (stabilizer lag while the light orbits / after the
+      flip; `stabilizeBox` 0.03 or a higher anti-lag gain untested at 1080p); `thin` at 0.72 ms; dynamic-region flicker
+      +2.5 % over FFX on the 16-frame std540-object replay. The anti-lag v3 candidates (MegaLights p.35 etc.) should be
+      measured with the knot captures' boil and the frozen control, not only the dynamic region — found by moving-shadows,
+      owner shadows
+- [ ] Native SIGMA on `three-knot-static` / `three-knot-still` (Windows harness): compare boil (compare.mjs) — the
+      captures carry object motion for the knot (`static: false`) — found by moving-shadows, owner harness builder
 - [ ] OIDN LDR route on 1-spp scalars brightens dark regions (E2-oidn-baseline "Inputs": shadows 19.3 vs 30.3 dB via
       HDR weights on std540-orbit, AO no better than noisy; an umbra at 0.11 came out 0.77). Check `Denoiser.denoiseTextures({ hdr: false })`
       on a float binary-dither image against native `oidnDenoise` (LDR, srgb on/off): LDR network behaviour, or the

@@ -391,13 +391,14 @@ visibility, **pooled** (PSNR of the mean squared error over all frames and pixel
 | `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
 | `ShadowDenoiser` v2 | 37.11 | 28.57 | 34.68 | 0.018 | 0.0033 | 0.48–0.59 |
 | `ShadowDenoiser` v2.1 | 38.12 | 29.05 | 35.33 | 0.0129 | 0.0027 | 0.58–0.69 |
-| **`ShadowDenoiser` (defaults, v2.2)** | **38.22** | **29.16** | **35.51** | 0.0131 | **0.0024** | see M4.md §12 |
+| **`ShadowDenoiser` (defaults, v2.2)** | **38.22** | **29.16** | **35.51** | 0.0131 | **0.0024** | 0.55–0.72 |
 
 Ahead of FFX on every path. **v2.2** (M4.md §12, "Moving shadows") fixes visible boiling in wide,
 soft penumbrae (the rotating torus knot's shadow on the three.js page): in that shadow the output's
 frame-to-frame noise drops from 4.9× FFX's to FFX's level (0.0013 vs 0.0062 per frame, FFX 0.0011) while
 staying 8 dB more accurate; on the test bed flicker −11 % and temporal PSNR +0.5 dB at 1080p, worst path
-`light` −0.19 dB (a little lag after light changes). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
+`light` −0.19 dB (a little lag after light changes). The stabilization pass costs 0.03–0.05 ms (`stabilize: 0`
+turns it off: v2.1's cost, 40 B/px; v2.1 read 0.52–0.66 ms on the same bench). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
 from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
 normal-tested clamp), so 5 of 7 paths are over the 0.6 ms target (`clampGeometry: false` returns
 to v2's cost and gives up ~1 dB pooled; SPEC §12). GPU

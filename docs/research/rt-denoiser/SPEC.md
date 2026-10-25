@@ -1856,7 +1856,17 @@ the per-frame mean and the 60 dB-capped mean kept for continuity. FLIP (perceptu
 temporal PSNR (stability), bias and energy (darkening and brightening), and region breakdowns
 (penumbra, disoccluded, after-cut, roughness bins, contact) are reported next to it. A filter that
 wins pooled PSNR but loses FLIP or flicker is a judgement call, not a win.
+For shadows two more (results/M4.md §12): a **dynamic region** (pixels whose reference range over
+frames t−4..t exceeds 0.05, carried along the reprojected history) with its own pooled PSNR, flicker and
+temporal PSNR next to the static rest and the static penumbra; and **boil**, the RMS of the output's own
+second temporal difference / √6, reported with the reference's own boil as its floor. Flicker and
+temporal PSNR measure the change of the error, which includes the reference's frame-to-frame noise; on
+slowly moving soft shadows that noise is as large as a good output's change and hid visible boiling.
+Boil doesn't see the reference, but it also rewards a frozen output: read it with PSNR.
 
 **Scenes.** The analytic test bed is where defaults were tuned, so it can't be the only judge. The
 real three.js scene's moving-camera captures (`three-orbit`, `three-pan`) are the second scoring
-scene (§12 item 7). A default stands only if both scenes, and later the native replay, agree.
+scene (§12 item 7). Moving occluders over static receivers (no motion vector follows the shadow) have their own
+captures: the rotating torus knot (`three-knot-static`, `three-knot-orbit`, and the frozen-knot control
+`three-knot-still`; examples/three-temporal/CAPTURES.md), scored with the dynamic region and boil; the
+test bed's `object` and `light` paths cover the same case analytically. A default stands only if both scenes, and later the native replay, agree.
