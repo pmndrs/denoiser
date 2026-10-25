@@ -193,9 +193,10 @@ export interface ShadowDenoiserOptions {
   translucencyClampSigma?: number;
   translucencyClampFloor?: number;
   /**
-   * Translucency: the colour's stabilization weight also follows its own 3x3 range (box-width gate) and
-   * clamp distance (anti-lag), not only v's, so sharp coloured edges over uniform v aren't blurred by the
-   * output history. 'box' / 'antiLag': only that half. Default true.
+   * Translucency: the colour's stabilization weight also follows its own 3x3 range (box-width gate) and / or
+   * clamp distance (anti-lag), not only v's, so a moving coloured edge over uniform v isn't held back by the
+   * output history. 'box' / 'antiLag': only that half. Default 'antiLag' (results/M8.md: the same PSNR as
+   * true within 0.05 dB, 4-6 % less boil in static coloured penumbrae; false loses 0.15 dB on a moving panel).
    */
   translucencyOwnGate?: boolean | 'box' | 'antiLag';
   /**
@@ -261,7 +262,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     translucencyHistory: o.translucencyHistory ?? 7,
     translucencyClampSigma: o.translucencyClampSigma ?? o.clampSigma ?? 0.4,
     translucencyClampFloor: o.translucencyClampFloor ?? o.clampFloor ?? 0.05,
-    translucencyOwnGate: o.translucencyOwnGate ?? true,
+    translucencyOwnGate: o.translucencyOwnGate ?? 'antiLag',
     translucencyPath: o.translucencyPath ?? 'auto',
     timestamps: o.timestamps ?? true,
     ...(o.light ? { light: o.light } : {}),
