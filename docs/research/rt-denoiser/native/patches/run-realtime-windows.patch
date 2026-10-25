@@ -1,0 +1,46 @@
+diff --git a/examples/three-temporal/run-realtime.mjs b/examples/three-temporal/run-realtime.mjs
+index d5ca043..ffe19f8 100644
+--- a/examples/three-temporal/run-realtime.mjs
++++ b/examples/three-temporal/run-realtime.mjs
+@@ -26,8 +26,9 @@ import fs from 'node:fs';
+ import os from 'node:os';
+ import path from 'node:path';
+ import { fileURLToPath } from 'node:url';
++import { chromeArgs, chromePath } from '../../tools/rt-capture/lib/headless.mjs';
+ 
+-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
++const CHROME = chromePath(); // $CHROME, else the platform's default install
+ const args = process.argv.slice(2);
+ const opt = (k, d) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
+ const flag = (k) => args.includes(`--${k}`);
+@@ -73,13 +74,11 @@ function cdpClient(ws, onEvent) {
+ 
+ async function openPage(url) {
+   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rt-headless-m6-'));
+-  const chrome = spawn(CHROME, [
+-    '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu', '--enable-webgpu-developer-features',
+-    '--window-size=1100,900', '--remote-debugging-port=0', `--user-data-dir=${profile}`, url,
+-  ], { stdio: 'ignore' });
++  // same flags as tools/rt-capture/lib/headless.mjs (--use-angle=metal only on macOS, $CHROME_FLAGS)
++  const chrome = spawn(CHROME, chromeArgs({ userDir: profile, url, windowSize: '1100,900' }), { stdio: 'ignore' });
+   const portFile = path.join(profile, 'DevToolsActivePort');
+   let port;
+-  for (let i = 0; i < 100 && !port; i++) { await sleep(150); if (fs.existsSync(portFile)) port = fs.readFileSync(portFile, 'utf8').split('\n')[0]; }
++  for (let i = 0; i < 100 && !port; i++) { await sleep(150); if (fs.existsSync(portFile)) port = fs.readFileSync(portFile, 'utf8').split(/\r?\n/)[0]; }
+   if (!port) throw new Error('Chrome did not start');
+   let tab;
+   for (let i = 0; i < 60 && !tab; i++) {
+@@ -97,7 +96,12 @@ async function openPage(url) {
+   });
+   await cdp.send('Runtime.enable');
+   await cdp.send('Log.enable');
+-  const close = () => { try { ws.close(); } catch { /* noop */ } chrome.kill('SIGKILL'); setTimeout(() => fs.rmSync(profile, { recursive: true, force: true }), 500); };
++  // the profile can stay locked for a moment after the kill on Windows: retry, never throw
++  const close = () => {
++    try { ws.close(); } catch { /* noop */ }
++    chrome.kill('SIGKILL');
++    setTimeout(() => { try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* temp dir, best effort */ } }, 500);
++  };
+   return { cdp, close };
+ }
+ 
