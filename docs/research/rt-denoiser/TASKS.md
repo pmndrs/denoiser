@@ -68,6 +68,8 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       _v0.2 (2026-10-25 night, spec author): recurrent specular + budget (M3), shadows v2, occlusion
       (M5) and A-SVGF anti-lag v2 folded in; rankings on pooled PSNR; §0 / §10 refreshed; §12 is now
       the single ordered review list (Questions for Dennis below points to it)._
+      _v0.4 (2026-10-25 late night, spec author / apply-decisions agent, 8fc3f00): §12 decided by Dennis (all as
+      recommended), §0.1 / §0.3 short form, §0.2 / §10.3 native results and the decided targets, §7 v2.1 / v2.2 note._
 - [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [x] (0a035e3, 85783f8, 0047bfb, 10ecb5b) testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
@@ -270,7 +272,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       diffuse 39.12 (v1 39.13, off 38.88), specular 35.04 (v1 34.96, off 33.46); static diffuse n
       p50 36–43 (v1 13); light recovery 4 / 3 frames (off 5 / 8); joint 4.24 ms vs off 3.99 (v1 5.61),
       solo bench uncontended round. α_min with 'auto': keep 0.1 for both signals._
-- [ ] **Proposal (Dennis decides, SPEC §12 item 2): make `antiLag: 'auto'` the SVGF default.** With
+- [x] (decided by Dennis 2026-10-25, SPEC §12 item 2; flipped in 64a1123) **Proposal (Dennis decides, SPEC §12 item 2): make `antiLag: 'auto'` the SVGF default.** With
       v2 it costs +0.25 ms on the joint denoiser at 1080p (4.24 vs 3.99 ms) for +0.24 dB diffuse and
       +1.58 dB specular pooled (7 paths), lower FLIP (0.033 / 0.046 vs 0.036 / 0.051) and flicker,
       and 3-frame light recovery for specular (off: 8). It also fixes `'off'`'s specular lag on
@@ -504,7 +506,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       is described as "for stabilization", but no pass reads the `m·c_v` bits since the R7 virtual
       candidate was removed (SPEC v0.2 §5.11–5.12). Behaviour matches SPEC; comments only — found by
       spec-author, owner `packages/denoiser-realtime`
-- [ ] (only if Dennis picks SPEC §12 item 4c) SVGF output aliasing: let the last à-trous iteration
+- [ ] (Dennis picked SPEC §12 item 4 (a), plus (c) "if it measures clean": so this is now an open, optional task; land it as an option and A/B it per rule 9) SVGF output aliasing: let the last à-trous iteration
       write into the ping-pong target instead of a separate `out` texture (−8 B/px per signal, 132 →
       124; output valid until the next dispatch, as recurrent's already is). Untested proposal; check
       that nothing reads the ping buffer after the last iteration — found by spec-author, owner
@@ -522,10 +524,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       overall, −1.0 … −2.2 dB penumbra; FFX ahead at frame 2 on the wide shot). Repro: `examples/three-temporal`
       `node run-realtime.mjs shadows --metrics --metrics-only` (rows f1 / f2), results/M6-real-scene.md — found by m6,
       owner `packages/denoiser-realtime` (shadows)
-- [ ] Shadows v2.1 cost: the normal-tested clamp window adds +0.07 … 0.14 ms at 1080p (temporal 0.32–0.37 → 0.42–0.47 ms;
+- [x] (SPEC v0.4: Dennis set the shadows cost target to ~0.75 ms, q05; v2.2 0.55–0.72 ms meets it) Shadows v2.1 cost: the normal-tested clamp window adds +0.07 … 0.14 ms at 1080p (temporal 0.32–0.37 → 0.42–0.47 ms;
       totals 0.58–0.69, over the ≤ 0.6 target on 5 of 7 paths; FFX 0.51–0.63) for +1.0 dB pooled / −29 % FLIP. Lever:
       `clampGeometry: false` (v2's cost, −1 dB). Fold into SPEC §12 (cost item) — found by shadows-reset, owner spec-author
-- [ ] SPEC §7 / §0.2 shadows rows for v2.1 (results/M4.md §11): clamp window over normal-tested 5×5 taps (`clampGeometry`,
+- [~] (SPEC v0.4, 8fc3f00: short v2.1 / v2.2 note at the top of §7, §0.2 and §10.3 rows; the §7.4–7.8 rewrite is still open) SPEC §7 / §0.2 shadows rows for v2.1 (results/M4.md §11): clamp window over normal-tested 5×5 taps (`clampGeometry`,
       `clampMinTaps` 3), hard-edge widening (`clampEdgePx` 2), young mean over 8 frames (`youngFrames` 8, `youngTaper`
       0.25, replaces `youngSpan`; "which pixels count as fresh" row: a frame counter since the pixel was new, not A), new
       1080p / reset-window numbers — found by shadows-reset, owner spec-author
@@ -557,7 +559,9 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `pmndrs.github.io/denoiser/docs/guides/`). Marked experimental, documents today's class defaults; every snippet
       type-checked against the built packages; MDX compiles (mdx-js 3 + GFM; the pmndrs docs image was not run, Docker
       was down). Examples referenced as local only (`deployed: false` unchanged) — found by m6, done by m6-docs
-- [ ] Docs page upkeep (`docs/site/guides/realtime-denoisers.mdx`): when Dennis decides SPEC §12 items 1 / 2 / 5 (default
+- [x] (apply-decisions, c9c8022: default rows, occlusion default note, cost table, renamed options and "Against NVIDIA NRD"
+      with the native phases 4–5 numbers done; the deploy part is moot for now: Dennis decided the pages stay local, q09)
+      Docs page upkeep (`docs/site/guides/realtime-denoisers.mdx`): when Dennis decides SPEC §12 items 1 / 2 / 5 (default
       filter per signal, `antiLag` default, `uniformSnap`), update the "today's default" rows, the occlusion default note
       and the cost table; when the native replay of the test-bed / three.js captures lands, fill "Against NVIDIA NRD"
       (comparison context only, RULES §6); when the realtime pages deploy, switch their links to live URLs and add them
@@ -568,7 +572,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       hit normalizes to ĥ = 1 until `setCurve()` is called; default it to the denoiser's (a 1, b 0.05, far ∞) in the
       constructor. Its public `encode()` also takes the internal `PassTimer` and a `'geo'` depth mode that only the
       package can produce: mark it `@internal` — found by m6-docs, owner `packages/denoiser-realtime`
-- [ ] API (awkward to document): `antiLag` means three things: SVGF `'off' | 'auto' | 'gradient'`, recurrent a boolean,
+- [x] (decided q10; recurrent `historyAntiLag` 6be4f23, shadows `antiLagGain` 255a06a; old names warn once per instance) API (awkward to document): `antiLag` means three things: SVGF `'off' | 'auto' | 'gradient'`, recurrent a boolean,
       `ShadowDenoiser` a number (a gain, default 64). Rename the boolean / numeric ones before the API leaves experimental
       (e.g. `historyAntiLag`, `antiLagGain`) — found by m6-docs, owner spec-author (SPEC §12 "API items") / Dennis
 - [x] (api-fixes, a5ed52e: overloads by `denoiser.signal`: 'both' → `TwoOutputNodeObject`, one signal →
@@ -580,7 +584,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] three-temporal realtime pages: per-pass ms on the light realtime-shadows page read 2–3× the test bed (slow GPU clock);
       the same ShadowDenoiser reads 0.59 ms at 1080p on the busier GI page (test bed 0.55). For cost tables use the
       split view (same clock for both) or a busier page — found by m6, owner any agent (FYI)
-- [ ] Deploying the experimental realtime pages (question for Dennis, one line for SPEC §12 "API items"):
+- [x] (decided by Dennis 2026-10-25, q09: they stay local, `deployed: false`; SPEC §12 header) Deploying the experimental realtime pages (question for Dennis, one line for SPEC §12 "API items"):
       `three-temporal/realtime-shadows.html` / `realtime-gi.html` are in `examples/_shared/examples.json` with
       `deployed: false` (local `yarn examples` only) and in the three-temporal Vite build; flip `deployed` + add a shot when
       `denoiser/realtime` should show on the site — found by m6, owner spec-author (fold into SPEC §12) / Dennis
@@ -595,7 +599,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       static penumbrae, per-frame kernel rotation, raw-history update). Fix v2.2: output stabilization pass (RTG II §49.5.7),
       box-gated, clamp-distance anti-lag: knot-shadow boil 0.0062 → 0.0013 (FFX 0.0011); 1080p 7 paths 38.12 → 38.22 /
       penumbra +0.11 / flicker −11 %; `light` −0.19; +0.03…0.05 ms (0.55–0.72 ms), 48 B/px
-- [ ] SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
+- [~] (SPEC v0.4, 8fc3f00: see the v2.1 item; §7.4–7.8 rewrite open) SPEC §7 / §0.2 shadows rows for v2.2 (results/M4.md §12): the stabilization pass (`stabilize` 0.25, `stabilizeBox`
       0.05 @1080p, `stabilizeAntiLag` 64), 48 B/px, the 1080p / capture numbers; §10.3 memory and cost rows — found by
       moving-shadows, owner spec-author
 - [ ] Shadows v2.2 leftovers (results/M4.md §12.7): `light` −0.19 dB (stabilizer lag while the light orbits / after the
@@ -698,6 +702,17 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       store), +0.04 for the raw T tile, +0.22 in tiles with glass (per-channel 5×5 stats + normal tile). Levers: skip the τ history
       taps where last frame's tile flags say τ ≡ 1 (dilated for motion), τ stats only for pixels with lit attenuated taps, a
       cheaper τ history format; target ≤ 0.9 ms on the glass paths (M5 Pro guide) — found by m8-translucency, owner shadows
+- [ ] `packages/denoiser-realtime/dev/main.ts` header comment still says `filter=recurrent&signal=both` defaults to "recurrent
+      diffuse + SVGF antiLag 'auto' specular"; since 6be4f23 it runs both signals recurrent (pass `specularFilter=svgf` for the
+      mix). Comment only — found by apply-decisions, owner package dev page (M7 agent's file)
+- [ ] `OcclusionDenoiser()` now means SVGF with SVGF's default `antiLag: 'auto'` (= registry `occlusion-svgf-auto`; the
+      `occlusion-svgf` entry pins `'off'` since 6be4f23). On the real scene `'off'` is 0.1–0.3 dB better on AO and 0.8 ms
+      cheaper for AO + SO on the RTX bench (4.15 vs 4.95 ms); on the test bed `'auto'` is +0.1 AO / +0.9 dB SO. If occlusion
+      should default to `'off'`, that's a one-line base option in `resolveOcclusion` (A/B per rule 9) — found by
+      apply-decisions, owner Dennis / occlusion
+- [ ] Real-scene pages: `realtime-gi.html`'s AO (`realtimeOcclusion()` with class defaults) switched from recurrent to SVGF
+      `'auto'`, so results/M6-real-scene.md's AO rows labelled "default" describe the old default — found by apply-decisions,
+      owner results / three-temporal (FYI)
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -755,9 +770,10 @@ harness builder runs them and returns images/metrics only.)_
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
 
-**The list lives in one place: [SPEC.md §12](SPEC.md) (short form §0.3)**, ordered by how much each
-item blocks, each with options, evidence and a recommendation. Add new questions there (spec author)
-or here as a one-line pointer to the evidence, and the spec author folds them in. As of SPEC v0.2:
+**Answered 2026-10-25: Dennis decided every SPEC §12 item as recommended** (decisions page q01–q17;
+each decision is recorded at the top of its item in [SPEC.md §12](SPEC.md), short form §0.3; applied in
+64a1123, 255a06a, 6be4f23 and the docs). New questions go to SPEC §12 (spec author) or here as a
+one-line pointer to the evidence. The list as it stood in SPEC v0.2:
 
 1. default filter per signal (diffuse / specular / occlusion; M2/M3 go/no-go; what
    `filter: 'recurrent'` means on the joint class); 2. SVGF `antiLag` default (`'auto'` v2: +0.25 ms);
