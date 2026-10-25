@@ -372,6 +372,24 @@ wide / packed paths), `src/shaders/shadow.ts` (`tr` variants of `shadowTemporalW
 | fifth storage texture or packed rgba32uint history | M8-9 | WebGPU limits (`maxStorageTexturesPerShaderStage`) | **deviation**: the wide path needs 6 (v's f32 copies stay as in v2.2 for bit identity, plus the f16 output written for unfiltered tiles); packed path at 4 (v and τ histories as 8 f16 in rgba32uint, 16-load Catmull-Rom, the output doubles as v's copy and stabilization history): **our design** | | `translucencyPath` |
 | evaluation: `glass` / `glass-moving` / `glass-still`, `shadow_rgb_ref`, tint-region chroma error, opaque regression | M8-10 | dynamic region / boil: SPEC §13, results/M4.md §12 | **our design**. Native `SIGMA_SHADOW_TRANSLUCENCY` not run yet (probe P7) | | results/M8.md |
 
+### Target 1 recovery candidates (T1) — **options, default off** (results/T1-recovery.md)
+
+_Added 2026-10-26 by the target-1 implementer (rule 8: no NRD code, README, release notes, port or the quarantined
+review read; `sources/nrd-review-targets.md` and its clean review read). Primary sources re-read directly: SVGF
+§4.1–4.4 (`svgf/svgf.txt`), RTG II ch. 49 §49.5.3–49.5.4 prose (`shadows-specular/ch49_prose.txt`, no listings),
+`sources/nrd-public-2022-2026.md` (ML25 p.36, ACS25 s.122, LU22 p.181 notes), `sources/nrd-releases.md` only at the
+"what" level relayed by the orchestrator (mips no longer used). Code: `src/recurrent.ts` / `src/shaders/recurrent.ts`
+(`historyFix`, `historyFixRadius`), `src/svgf.ts` / `src/shaders/svgf.ts` (`spatialHistoryWeight`,
+`youngLuminanceWeight`, `youngNormalPower`). Every default path generates byte-identical WGSL._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| recurrent `historyFix: 'spatial'`: young pixels (A < A_fix) rebuilt from this frame's full-resolution accumulated signal, no mip pyramid | §5.8 (D7) alternative | SVGF §4.2 (spatial estimate for < 4 frames after a disocclusion) and §4.3 (edge-avoiding spatial filter guided by depth / normals); RTG2 §49.5.4 prose (discarded history leaves a 1-rpp signal that needs a wide spatial reconstruction for 1–3 frames, depth-guided weights to avoid bleeding); leads only: ACS25 s.122 (extra Poisson pass on disoccluded pixels), the release audit's "mips dropped" (a "what", no how) | **our design**: own value + 16-tap Vogel disk (golden angle) rotated by the blur's animated Bayer angle; weights = smooth `Wt` of the plane distance at the A = 0 geometry tolerance × `Wt` of the normal angle (cos 0.9 scale); radius r0 · 2^(3(s − 1)) px, s = (1 − A/A_fix)·ρ (ρ = roughness for specular, as D7's level choice), r0 = `historyFixRadius` 8 (4–24 measured); no repair under 1.5 px or < 0.5 tap weight; the mips pass and the depth atlas are skipped | | `spatialRepairWgsl`, `historyFixPass(kinds, 'spatial')` |
+| SVGF `spatialHistoryWeight`: young-history spatial estimate weights each neighbour by min(n_q, cap) | §4.3 (S-2) variant | SVGF §4.2 (7×7 bilateral spatial estimate); inverse-variance weighting of n-sample means (textbook) | **our design**; measured null (±0.02 dB) | | `variancePass(kinds, { historyWeight })` |
+| SVGF `youngLuminanceWeight`: luminance edge-stop of young pixels scaled by mix(k, 1, t) | §4.4 (S-3) variant | lead: ML25 p.36 (fresh pixels: constant temporal variance assumption, more spatial samples, faded over 4 frames) | **our design**; measured a loss (specular −0.6 dB post-cut) and no visual change | | `atrousPass(..., { youngLum })` |
+| SVGF `youngNormalPower`: normal edge-stop exponent of young pixels exp2(mix(log2 s, log2 σ_n, t)), t over `varianceRampFrames` | §4.4 (S-3) variant | SVGF §4.4 (σ_n = 128, power form); lead: ML25 p.36 (more spatial support for fresh pixels, faded out) | **our design**: diffuse (power form) only; the specular lobe cutoff is untouched | | `weightsWgsl(kind, i, youngRelax)` |
+| evaluation: ground-truth pixel age (frames of valid history) per pixel, scores per age bucket / per frame after a reset, mid-band error, edge band | SPEC §13 | test bed `metrics.ts` AGE_WGSL (same age definition, on the CPU); compare.mjs boil | **our tool**: `results/data/t1-*.mjs` | | results/data/ |
+
 ## Open provenance items
 
 - Verify the K14m constants against the original Unreal Engine blog post (the fetch was

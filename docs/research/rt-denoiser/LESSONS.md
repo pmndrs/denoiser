@@ -236,6 +236,12 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   overlap in space; a TLAS over them visits many BLASes per ray) and keep per-material meshes for raster only.
   — bistro-sponza, 2026-10-26
 
+- `run-headless.mjs --json` writes pretty JSON (`"ready": true`, with a space): a `grep '"ready":true'` success check
+  fails on every page and a retry loop runs each 1080p page twice. Replays sometimes write all outputs and `run.json`
+  but the runner never returns (idle Chrome): a watchdog that waits for `outputs/<capture>/<name>/run.json` and then kills
+  the runner and its Chrome (`pkill -P <node pid>`) keeps a batch moving. `xargs -I{}` with a long replacement string
+  fails with "command line cannot be assembled": wrap the job in a script and pass short arguments. — t1, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -619,6 +625,24 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   Cranley-Patterson rotation and secondary random stream): their mutual PSNR overstates the floor. Use `&refsalt` /
   `&ref2salt` for independent sets. Specular reference variance fell only ×9 from 256 to 4096 spp (heavy-tailed GGX
   samples), diffuse and shadows ×31–33 (stratification). — e1, 2026-10-25
+
+- **Recovery is two questions, score both:** per pixel age (frames of valid history, the test bed's ground-truth
+  definition; buckets 0..16 and settled) for reveals, and per frame after a reset for cuts. Age buckets on a pan are
+  different screen regions, so a gap to "settled" is part content, not all recovery; on the real scene young pixels
+  even score above settled ones. — t1, 2026-10-26
+- **SVGF's post-reset blotches come from the normal weight, not the luminance weight.** σ_n = 128 stops a young pixel's
+  à-trous footprint within a few pixels on any curved surface, and the 1-spp noise left after the 7×7 pre-filter
+  survives as blotches for ~5 frames. Dropping the luminance weight for young pixels changed nothing visible; a normal
+  exponent ramped from 8–16 to 128 over the variance ramp removed most of them. PSNR, FLIP and a 9×9 low-pass error
+  barely see blotches (the low-pass even penalizes the fix, which loses a little contact darkening); a mid-band error
+  (9×9 minus 33×33 box) sees a little; strips see them. — t1, 2026-10-26
+- **Boil rewards stillness:** a candidate that moves an unusually still baseline toward the reference raises boil
+  (recurrent's mip-fill young pixels boiled at a third of the reference's own boil; the spatial history fix +4…+70 %,
+  still under SVGF). Read boil next to the reference's boil and the default filter's, and say so when rule 9's boil
+  clause is what fails. — t1, 2026-10-26
+- On the real scene A-SVGF's anti-lag pulls n under 4 on many old pixels, so any "young history" option also acts after
+  anti-lag events there (`youngNormalPower` gained +0.2–0.3 dB on settled pixels of `three-*`, nothing on the test bed).
+  — t1, 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

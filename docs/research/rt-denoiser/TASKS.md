@@ -752,6 +752,41 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       first, but the shipped default (SVGF `'auto'`) is the primary baseline; `three-knot-*` captures are documented in
       `examples/three-temporal/CAPTURES.md`; the E-1 link needs E-1's results committed. — found by clean reviewer,
       owner the targets' evaluator
+- [x] (t1, 281a138 8ba4a70 0ffe427 67cca63 35839c5 + docs; results/T1-recovery.md) **target1-recovery** (review target 1:
+      newly visible regions and camera cuts). Baselines frame by frame (shipped SVGF `'auto'`, shadows v2.2 `'change'`,
+      occlusion SVGF; recurrent, FFX, native curves) on `cut` / `pan` / `object` (long `t1-*` windows), the standard set and
+      `three-pan` / `-orbit` / `-knot-orbit`, scored per pixel age and per frame after a reset. Shipped defaults reach their
+      settled band 0–4 frames after a cut; native NRD recovers 3–5 dB lower. **One visible deficiency: SVGF diffuse is
+      blotchy on curved surfaces for ~5 frames after a cut.** Candidates (options, default off, default WGSL and replay
+      outputs byte-identical): SVGF `youngNormalPower` (fixes most blotches on frames 0–2; neutral on the 1080p test bed,
+      +0.22…+0.39 dB and −15…−22 % young boil on the real scene: **meets rule 9**), recurrent `historyFix: 'spatial'`
+      (Dennis's lead; +0.67 / +0.43 dB pooled diffuse / specular over 14 captures, boundary +1.2…+4.6 dB, −1.5 B/px, one
+      dispatch fewer; **fails rule 9's boil clause**), SVGF `spatialHistoryWeight` (null), `youngLuminanceWeight` (loss);
+      shadows' fresh-pixel knobs already at their best. — t1
+- [ ] **Default flip proposal (look change, needs Dennis): SVGF `youngNormalPower: 16`** (results/T1-recovery.md §5.1).
+      Rule-9 A/B: 1080p 7 paths diffuse 38.500 → 38.501 dB pooled, disoccluded +0.02, FLIP ±0, flicker ±0; 14 captures
+      −0.02…+0.32 dB, FLIP ≤ +0.5 %, boil lower everywhere; specular byte-identical; cost within noise (§5.5). Visible
+      effect: young pixels on curved surfaces are smoother on the first frames after a reset or anti-lag event (strip in
+      §4). Before flipping: re-measure the cost on a quiet GPU (§5.5 was contended; normalized it is within noise). If
+      approved: one line in `resolveOptions` (0 → 16), byte checks of the other defaults, docs. — found by t1,
+      owner svgf / Dennis
+- [ ] **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
+      PSNR / FLIP / boundary measure and leaner, but young-pixel boil +4…+70 % (to ≤ SVGF's level, below the reference's
+      own boil) and settled boil +6.6 % on the real scene: rule 9's boil clause fails by the letter; also −0.4…−1.4 dB on
+      the single frame right after a cut at 1080p (better from the next frame). Proposal: keep `'mips'` unless Dennis
+      reads the boil change as acceptable for the recurrent filter (results/T1-recovery.md §5.2). — found by t1, owner
+      recurrent / Dennis
+- [ ] SPEC deviations for the spec author (results/T1-recovery.md): §4.3 / §4.4 gain the options `spatialHistoryWeight`
+      (null), `youngLuminanceWeight` (loss), `youngNormalPower` (proposal, above); §5.8 (D7) gains `historyFix: 'spatial'`
+      + `historyFixRadius` (8 px, halving per frame, no mips / depth atlas); §0.2 / §13 can quote the T1 recovery numbers
+      (frames to band after a cut: SVGF diffuse 4, specular 0, shadows 4; recurrent young pixels 1.5–2 dB under SVGF).
+      — found by t1, owner spec-author
+- [ ] T1 follow-ups: (a) `youngNormalPower` for `OcclusionDenoiser`'s SVGF on ĥ (unmeasured); (b) diffuse-only
+      `varianceRampFrames: 8` (t1-cut: band at frame 2 instead of 4, +0.19 dB frames 0–7; specular loses with it, so per
+      signal) needs the full A/B; (c) the recurrent spatial fix's cut-frame loss at 1080p; (d) a reveal capture (moving
+      panel over a patterned, indirectly lit background, then a still interval) as target 1 suggests; (e)
+      `DiffuseSpecularDenoiser` / `OcclusionDenoiser` resource reports still count 7 recurrent passes with
+      `historyFix: 'spatial'` (6 dispatch). — found by t1, owners svgf / recurrent / testbed
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
