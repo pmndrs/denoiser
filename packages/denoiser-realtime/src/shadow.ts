@@ -35,7 +35,7 @@ import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
   SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
-  TR_HAS_HIT, TR_HAS_T, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type TrVariant,
+  TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type TrVariant,
 } from './shaders/shadow';
 
 export interface ShadowDenoiserOptions {
@@ -195,9 +195,9 @@ export interface ShadowDenoiserOptions {
   /**
    * Translucency: the colour's stabilization weight also follows its own 3x3 range (box-width gate) and
    * clamp distance (anti-lag), not only v's, so sharp coloured edges over uniform v aren't blurred by the
-   * output history. Default true.
+   * output history. 'box' / 'antiLag': only that half. Default true.
    */
-  translucencyOwnGate?: boolean;
+  translucencyOwnGate?: boolean | 'box' | 'antiLag';
   /**
    * Translucency storage path: 'wide' (a separate tau history; needs 6 storage textures per stage), 'packed'
    * (v and tau histories in one rgba32uint, 4 storage textures; v's Catmull-Rom from 16 loads, not
@@ -659,7 +659,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       f[97] = o.translucencyHistory;
       // the translucent hit distance sizes footprints like h does, so it needs a light too
       u[98] = (inputs.translucency ? TR_HAS_T : 0) | (inputs.translucencyHitDistance && light ? TR_HAS_HIT : 0)
-        | (o.translucencyOwnGate ? TR_OWN_GATE : 0);
+        | (o.translucencyOwnGate === true || o.translucencyOwnGate === 'box' ? TR_OWN_GATE : 0)
+        | (o.translucencyOwnGate === true || o.translucencyOwnGate === 'antiLag' ? TR_OWN_ANTILAG : 0);
       f[99] = o.translucencyClampSigma;
       f[100] = o.translucencyClampFloor;
     }

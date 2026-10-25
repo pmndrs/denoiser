@@ -84,7 +84,8 @@ export const SF_SNAP_CHANGE = 256; // ... only where the history sits outside th
 /** ShadowParams.trFlags (translucency variants only) */
 export const TR_HAS_T = 1;        // a translucency texture is bound (else T = 1)
 export const TR_HAS_HIT = 2;      // a translucency hit-distance texture is bound
-export const TR_OWN_GATE = 4;     // stabilize: S also gets its own box-width gate and clamp-distance anti-lag
+export const TR_OWN_GATE = 4;     // stabilize: S also gets its own box-width gate
+export const TR_OWN_ANTILAG = 8;  // stabilize: S also gets its own clamp-distance anti-lag
 
 /** Size of ShadowParams in bytes (the translucency variants read 4 more floats). */
 export const SP_SIZE = 104 * 4;
@@ -148,6 +149,7 @@ function paramsWgsl(tr: boolean): string {
 const TR_HAS_T = ${TR_HAS_T}u;
 const TR_HAS_HIT = ${TR_HAS_HIT}u;
 const TR_OWN_GATE = ${TR_OWN_GATE}u;
+const TR_OWN_ANTILAG = ${TR_OWN_ANTILAG}u;
 fn min3(v: vec3f) -> f32 { return min(v.x, min(v.y, v.z)); }
 fn max3(v: vec3f) -> f32 { return max(v.x, max(v.y, v.z)); }
 `;
@@ -1150,10 +1152,8 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
                    mix(textureLoad(${prevS}, clampPix(b + vec2i(0, 1)), 0).rgb, textureLoad(${prevS}, clampPix(b + vec2i(1, 1)), 0).rgb, f.x), f.y);
       let shc = clamp(sh, sLo, sHi);
       var aS = a;
-      if (trFlag(TR_OWN_GATE)) {
-        aS = max(aS, mix(SP.stabilize, 1.0, saturate((max3(sHi - sLo) - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4))));
-        aS = max(aS, saturate(max3(abs(shc - sh)) * SP.stabilizeAntiLag));
-      }
+      if (trFlag(TR_OWN_GATE)) { aS = max(aS, mix(SP.stabilize, 1.0, saturate((max3(sHi - sLo) - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)))); }
+      if (trFlag(TR_OWN_ANTILAG)) { aS = max(aS, saturate(max3(abs(shc - sh)) * SP.stabilizeAntiLag)); }
       S = shc + aS * (sCur - shc);
     }
   }
