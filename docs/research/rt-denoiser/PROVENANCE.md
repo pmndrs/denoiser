@@ -43,6 +43,20 @@ read RULES, NRD's GitHub release bodies `v2.5.0`…`v4.18.0` (78 releases) and t
 NRD-Sample, fork or port was opened.** Output: [sources/nrd-releases.md](sources/nrd-releases.md)
 (what changed, never how). The auditor writes and reviews none of our passes.
 
+Status of the change auditor (2026-10-25, RULES rule 3c): line/file counts, paths, hashes and
+dates from a `--no-checkout` clone (deleted afterwards). **No file contents, diffs or commit
+messages were read.** Output: [sources/nrd-change-magnitude.md](sources/nrd-change-magnitude.md).
+Writes none of our passes.
+
+**Exposure, public researcher (2026-10-25, rule 7):** while writing
+`sources/nrd-public-2022-2026.md`, a web-search result summary quoted about three sentences of
+NRD's README "History confidence" section (README prose is off limits, RULES §2). The researcher
+did not open the page, and nothing from it is in the report. Not code. Consequence: that
+researcher writes none of our passes, and any pass on history confidence or anti-lag inputs is
+written from public sources by another agent. Mitigation added to LESSONS: avoid search queries
+on NRD anti-lag / confidence that pull README text into summaries. The orchestrator relayed only
+the fact of the exposure, not its content.
+
 ## Rule-7 procedure (if someone reads NRD code by accident)
 
 1. Stop and say so in your report and in TASKS.md ("Found along the way").
