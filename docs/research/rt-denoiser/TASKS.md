@@ -617,6 +617,13 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       stabilization or the radius blend). Refine later: compare v2.1 / v2.2 / FFX side by side on
       the knot and floor penumbrae, judge by eye plus FLIP and boil. Not blocking the phases.
       — orchestrator, owner: unassigned
+- [~] spec-m7-m8 (spec author) **SPEC v0.3**: M7 SH/SG directional variants (replaces §8.5) and M8 translucent shadows
+      (§7.10), §0.1 / §11 / §12 touch-ups, PROVENANCE "spec only, not built" rows.
+- [ ] CAPTURE-FORMAT v1 buffers for M7 / M8 (SPEC v0.3 M7-4, §7.10.4): `diffuse_dir`, `specular_dir` (world ω of the
+      sampled ray), `normal_geom` (smooth normal for the filter; `normal` stays the shading normal), `diffuse_sh_ref`,
+      `specular_sh_ref` (6 ch, mean of the M7-2 payloads); `transmittance` (rgb T of the shadow ray), `translucent_dist`,
+      `shadow_rgb_ref` (mean of v·T). Test-bed scenes `bumpy`, coloured bounce, `glass`, `glass-moving`, `glass-still`
+      (M7-13, M8-10) — found by spec-author, owner capture-io / test-bed owner
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -655,6 +662,17 @@ harness builder runs them and returns images/metrics only.)_
       vs v4.18.0 on `std540-cut` and `std540-pan`, frames 0–12 after each reset/disocclusion, per-frame
       pooled PSNR for diffuse and specular in the disoccluded region. Return the per-frame curves.
       — orchestrator
+- [ ] **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
+      and two standard paths with `diffuse_dir` / `normal_geom`. Run `REBLUR_DIFFUSE_SH` and `RELAX_DIFFUSE_SH` (input packed
+      by native's front end from `diffuse` + `diffuse_dir`). Return (a) the colour-extraction output scored against
+      `diffuse_ref` with `compare.mjs`, (b) native's diffuse resolve with the shading normal (`normal`) scored against
+      `diffuse_ref` on `bumpy`, (c) native's reported memory for the SH vs plain denoiser and the timings. Words/metrics
+      only. — spec-author
+- [ ] **P7: native translucent shadows** (SPEC v0.3 §7.10.4, M8-10). Captures `glass`, `glass-moving`, `glass-still`
+      (CAPTURE-FORMAT v1 `transmittance`, `translucent_dist`). Run `SIGMA_SHADOW_TRANSLUCENCY` (penumbra and translucency
+      packed by native's front end) and `SIGMA_SHADOW` on `visibility` alone. Score the rgb output against
+      `shadow_rgb_ref` (clamp tonemap per channel) and the opaque part against `visibility_ref`, with the dynamic region
+      and boil; timings for both. — spec-author
 
 ## Questions for Dennis
 

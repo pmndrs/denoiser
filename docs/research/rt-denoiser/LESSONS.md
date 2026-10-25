@@ -483,6 +483,18 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   hard edges the same way: the box spans the step and holds nothing back (−5.5 dB on the test bed).
   Gate it to narrow ranges, and scale that threshold with resolution (a penumbra's per-pixel slope
   halves at 2× resolution: the 540p threshold cost 0.45 dB on `light` at 1080p). — moving-shadows, 2026-10-25
+- **Coloured shadows split exactly: E[v·T] = E[v]·E[T | v = 1].** Denoise opaque visibility as before and
+  accumulate the transmittance only over samples that reached the light (like g over occluded samples), then
+  multiply. The product of two plain spatial means is biased wherever opaque and translucent blockers overlap, and
+  this split keeps every tuned scalar rule on v (opaque output bit-identical when T ≡ 1). Multiplying layer
+  transmittances is as order-independent as Tomb Raider's "subtract 1/3 per layer" (both commute) and exact for
+  any colours. — spec-author (SPEC v0.3 §7.10), 2026-10-25
+- **A directional payload should be exact at the filter's normal.** Encoding each diffuse sample as the L1 band
+  of its clamped-cosine lobe, rescaled so it evaluates to L at the normal the ray was sampled around
+  (`a = L/(1+2c)`, `b = 2Lω/(1+2c)`), keeps weights bounded (the textbook cosine-sampled projection has a 1/c weight
+  with infinite variance) and makes SH mode regress against the plain filter: resolved at the guide normal it must
+  match within noise. Reuse the plain luminance (payload evaluated at the guide normal) for every weight so the
+  tuned constants carry over. — spec-author (SPEC v0.3 §8.5), 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

@@ -291,6 +291,56 @@ port opened). Host: `packages/denoiser-realtime/src/occlusion.ts`; results:
 | test-bed AO/SO references: mean of per-sample normalized hit distances | — | **our design** (the curve is nonlinear, so the reference normalizes each sample) | | | `examples/realtime-denoiser/src/scene.ts` `ref_ao`, `ref_so`, `OCC_WGSL` |
 | SO from AO (optional) | O-4 | FB §4.10.2 Listing 26 | not built | yes | |
 
+### M7 SH/SG directional variants — **spec only, not built** (SPEC v0.3 §8.5)
+
+_Added 2026-10-25 by the spec author (RULES §8: no NRD code, README, release notes or port opened;
+read `sources/nrd-provenance.md` §3, `sources/nrd-releases.md`, `sources/nrd-change-magnitude.md`,
+`sources/nrd-public-2022-2026.md`, the SD24 / ACS25 / ID25 primary slides, and Pettineo's SG series
+parts 3–4 on his public blog, which the provenance audit lists as cited by NRD; the blog is a public
+source, rule 2). New keys: **SD24** Kuenlin, Raytracing in Snowdrop, GDC 2024 · **ACS25** Leblanc &
+Conte, AC Shadows, SIGGRAPH 2025 Advances · **ID25** Sousa, idTech8 GI, SIGGRAPH 2025 Advances ·
+**RH01** Ramamoorthi & Hanrahan, "An Efficient Representation for Irradiance Environment Maps",
+SIGGRAPH 2001 (cited by ID25 s.20; band factors are textbook) · **MS03** Malvar & Sullivan, YCoCg,
+2003 · **MJP-SG3/4** Pettineo, SG series parts 3–4 (2016) · **WANG09** Wang et al., "All-Frequency
+Rendering of Dynamic, Spatially-Varying Reflectance", SIGGRAPH Asia 2009 (via MJP-SG4, not read).
+Every row: spec only, not built._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| L1 payload, Y with 4 coefficients, Co / Cg as L0, through the existing filters | M7-1 | SD24 p.30, ACS25 s.57–59 (description only; SD24's printed code has no license and is not used); ID25 s.20 ("each pixel an irradiance probe") | world-space storage, evaluation-ready `a + b·ω` form; `'sh-rgb'` option (12 ch): **our design**. Spec only, not built | | — |
+| SH vs SG as the payload (SG only at resolve time) | M7-1 | linearity argument: **our design**; SG tail vs L1 negativity: MJP-SG3 "Error analysis" | — | | — |
+| per-sample encoding `a = L/(1+2c)`, `b = 2Lω/(1+2c)`, exact at the sampling normal | M7-2 | clamped-cosine L1 band factors ¼ and ½ (RH01) | the renormalization and the resulting estimator: **our design, tune on captures** (vs the textbook projection with a cos floor). Spec only | | — |
+| 8 × f16 in one rgba32uint; no 8-bit histories; 64-bit packing only for input / à-trous (tune) | M7-3 | 64-bit 6 × 8-bit + f16 magnitude packing: SD24 p.30, ACS25 s.57; quantized-vs-reference check: ML25 p.34 | **our design**. Spec only | | — |
+| input forms (encoded / raw + direction), `detailNormal` guide, CAPTURE-FORMAT v1 buffers | M7-4 | evaluate with the full-resolution normal: ACS25 s.59 | **our design**. Spec only | | — |
+| guide luminance = Rec. 709 luminance of the payload at the filter's normal | M7-5 | S1 (luminance-driven weights and moments) | **our design** (keeps every tuned SVGF constant valid). Spec only | | — |
+| all coefficients filtered with the same weights; variance on l only | M7-6/7 | S1, S3 (unchanged passes) | **our design**. Spec only | | — |
+| value-preserving ringing guard on b (k = 1); chroma stored as a ratio to Y at the guide normal | M7-8 | chroma rescaled by the evaluated luma: SD24 p.37 (description) | the guard and the reference value Y_g: **our design, tune k on captures**. Spec only | | — |
+| diffuse resolve; optional sharpening via ambient + one extracted light, renormalized at the guide normal | M7-9 | light direction / intensity from the L1 luma: SD24 p.37 (description); clamped-cosine L1: RH01 | the decomposition and the renormalization: **our design, tune s**. Spec only | | — |
+| specular ratio resolve: NDF as an SG (sharpness 2/α²) warped to the reflection direction (÷ 4\|n·v\|), SG inner product with the extracted SG light; ratio clamp; roughness fade | M7-10 | MJP-SG4 (after WANG09); rough-specular-only SH use: SD24 p.55, ACS25 s.65; "specular-compatible SG resolve": nrd-releases v4.1.0 (behaviour only) | the ratio form (payload sets only the detail/guide ratio), λ_l = 8, ρ_max = 4, fade below r = 0.2: **our design, tune on captures**. Spec only | | — |
+| resolve helpers, API (`payload`, `resolve`, `sh` / `direction` inputs) | M7-11/12 | — | **our design**; no NVIDIA names (rule 6). Spec only | | — |
+| recurrent SH needs (buffers, luminance-ratio clamps) | §8.5.6 | L1 YCoCg through a recurrent-blur denoiser ships in SD24 / ACS25 | **our design** (not specified in detail) | | — |
+| evaluation: `bumpy` / coloured-bounce scenes, two references, detail band, ringing fraction; native after colour extraction | M7-13 | native colour-extraction comparison: nrd-provenance §3.4; PLAN §6 | **our design**. Spec only | | — |
+
+### M8 translucent shadows — **spec only, not built** (SPEC v0.3 §7.10)
+
+_Added 2026-10-25 by the spec author (as above). Sources: TR19 slides 47–53 (primary,
+`shadows-specular/tombraider2019.txt`), RTG1-25 §25.2.1 pp. 444–445 (primary, `rtg1.txt`). Rows
+citing only `sources/shadows-specular.md` would need the second reviewer; these cite the primary
+slides and pages directly, read by the spec author. Every row: spec only, not built._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| renderer contract: keep tracing through translucent layers, accumulate per-layer transmittance, stop on opaque / miss / full absorption | M8-1 | RTG1-25 §25.2.1 pp. 444–445 (thin film, albedo absorption, TIR-corrected Schlick); TR19 slides 47–51 (any-hit, order non-deterministic, layer cap 3) | **multiplicative** RGB transmittance (commutes like TR19's subtraction, exact for any colours), colour-aware early out `max T < 0.01` → opaque, nearest-translucent distance by `min`: **our design**. Contract only | | — |
+| denoise opaque v as today and τ = E[T \| v = 1]; output v̂·τ̂ | M8-2 | identity E[vT] = P(v=1)·E[T\|v=1]; conditional accumulation like g over occluded samples (SPEC §7.2 v0.1) | **our design** (no public source says how coloured shadows are filtered: shadows-specular.md G5). Spec only | | — |
+| one footprint; translucent samples feed g from the nearest translucent hit; nearest blocker wins | M8-3 | M12 ("sharpest occluder wins", via SPEC §7.3 `mergeMin`); RTG1-25 (translucent shadows through the opaque filter) | ε_τ = 0.01: **our design, tune on captures**. Spec only | | — |
+| τ temporal: bilinear reprojection, per-channel 5×5 clamp over lit taps (window 0.4σ + 0.05), restart gain 64, cap N_τ = 7 | M8-4 | SPEC SH-4 / v2.1 clamp (ours, measured for v) | applying v's measured window and restart to τ, N_τ = 7: **our design, tune on captures**. Spec only | | — |
+| τ tile bits; τ-only tiles in the indirect list | M8-5 | TR19 slide 72, H18 §4.1 (tile skip) | **our design**. Spec only | | — |
+| visibility-weighted spatial τ (ratio of filtered v·τ to filtered v) | M8-6 | ratio-estimator reasoning: H18 (SPEC §7.9) | **our design**. Spec only | | — |
+| stabilization of (S rgb, v) with v's blend weight, per-channel 3×3 clamp | M8-7 | RTG2 §49.5.7 prose (via the v2.2 rows above) | **our design**. Spec only | | — |
+| API: `ShadowInputs.translucency?`, `translucencyHitDistance?`, `translucency: true`, rgba16float output | M8-8 | interface shape of native's translucency variant (separate translucency input, one combined output): nrd-provenance §3.3–3.4 (names only) | **our design**; no NVIDIA names. Spec only | | — |
+| fifth storage texture or packed rgba32uint history | M8-9 | WebGPU limits (`maxStorageTexturesPerShaderStage`) | **our design**. Spec only | | — |
+| evaluation: `glass` / `glass-moving` / `glass-still`, `shadow_rgb_ref`, tint-region chroma error, opaque regression, native `SIGMA_SHADOW_TRANSLUCENCY` | M8-10 | dynamic region / boil: SPEC §13, results/M4.md §12 | **our design**. Spec only | | — |
+
 ## Open provenance items
 
 - Verify the K14m constants against the original Unreal Engine blog post (the fetch was
