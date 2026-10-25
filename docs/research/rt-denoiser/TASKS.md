@@ -544,8 +544,27 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Native NRD replay of `three-orbit` / `three-pan` (Windows harness; specular is not demodulated, AO reference is
       the extra `ao_ref` buffer, light is the equal-area sphere of a rectangular panel: examples/three-temporal/CAPTURES.md)
       — found by real-scene-motion, owner harness builder
-- [ ] M6 docs page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
-      `pmndrs.github.io/denoiser/docs/guides/`): not written in the groundwork — found by m6, owner unassigned
+- [x] (m6-docs, `docs/site/guides/realtime-denoisers.mdx`, nav 27.5 after the FFX page; listed in `docs/README.md`) M6 docs
+      page for `denoiser/realtime` + the `denoiser/three` realtime nodes (PLAN §7 M6; the guides live under
+      `pmndrs.github.io/denoiser/docs/guides/`). Marked experimental, documents today's class defaults; every snippet
+      type-checked against the built packages; MDX compiles (mdx-js 3 + GFM; the pmndrs docs image was not run, Docker
+      was down). Examples referenced as local only (`deployed: false` unchanged) — found by m6, done by m6-docs
+- [ ] Docs page upkeep (`docs/site/guides/realtime-denoisers.mdx`): when Dennis decides SPEC §12 items 1 / 2 / 5 (default
+      filter per signal, `antiLag` default, `uniformSnap`), update the "today's default" rows, the occlusion default note
+      and the cost table; when the native replay of the test-bed / three.js captures lands, fill "Against NVIDIA NRD"
+      (comparison context only, RULES §6); when the realtime pages deploy, switch their links to live URLs and add them
+      to `docs/site/examples/index.mdx` — found by m6-docs, owner docs
+- [ ] API (awkward to document): `HitDistanceNormalizer` has no default curve. Its params buffer starts zeroed, so every
+      hit normalizes to ĥ = 1 until `setCurve()` is called; default it to the denoiser's (a 1, b 0.05, far ∞) in the
+      constructor. Its public `encode()` also takes the internal `PassTimer` and a `'geo'` depth mode that only the
+      package can produce: mark it `@internal` — found by m6-docs, owner `packages/denoiser-realtime`
+- [ ] API (awkward to document): `antiLag` means three things: SVGF `'off' | 'auto' | 'gradient'`, recurrent a boolean,
+      `ShadowDenoiser` a number (a gain, default 64). Rename the boolean / numeric ones before the API leaves experimental
+      (e.g. `historyAntiLag`, `antiLagGain`) — found by m6-docs, owner spec-author (SPEC §12 "API items") / Dennis
+- [ ] API: `realtimeOcclusion()` returns `TwoOutputNodeObject` for a single signal too, so `.specular` type-checks on an
+      AO-only node but is no output (only the active signal's getter is defined; what three's node proxy returns for it is
+      untested). Narrow the return type by
+      `signal` (overloads) — found by m6-docs, owner `packages/denoiser-three`
 - [ ] three-temporal realtime pages: per-pass ms on the light realtime-shadows page read 2–3× the test bed (slow GPU clock);
       the same ShadowDenoiser reads 0.59 ms at 1080p on the busier GI page (test bed 0.55). For cost tables use the
       split view (same clock for both) or a busier page — found by m6, owner any agent (FYI)

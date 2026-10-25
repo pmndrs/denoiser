@@ -1,0 +1,583 @@
+---
+title: Real-time denoisers (experimental)
+description: denoiser/realtime, per-effect temporal denoisers for 1-spp ray-traced diffuse and specular lighting, shadows and occlusion in WebGPU. Inputs and conventions, the svgf and recurrent filters, measured quality, cost and memory, and the three.js TSL nodes.
+nav: 27.5
+---
+
+`denoiser/realtime` is a set of per-effect real-time denoisers for WebGPU, written in
+WGSL. Each one takes **one ray-traced signal at 1 sample per pixel** (diffuse lighting,
+specular lighting, shadow visibility, or ambient/specular occlusion) and turns it into
+a clean, stable signal every frame, using motion vectors and history. They implement
+the same [`TemporalDenoiser`](./realtime-temporal-denoising#the-api) API and frame
+contract as the FidelityFX denoisers, and take the same guides and camera.
+
+They are written from published papers and talks (SVGF, A-SVGF, the recurrent-blur
+descriptions in *Ray Tracing Gems II*, penumbra-width filtering, and others). Every
+pass cites its public source in the shader header and in
+[PROVENANCE.md](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/PROVENANCE.md).
+
+> [!WARNING]
+> **Experimental.** The API, the option names and especially **the defaults may change**.
+> The default filter per signal and the anti-lag default are still open decisions. This
+> page documents the classes' current defaults. Every number below was measured on our
+> own analytic test bed and one three.js scene, on an Apple M5 Pro. The defaults were
+> tuned on the same scenes, so treat the numbers as provisional.
+
+## Where it fits
+
+| entry | API | what it denoises |
+|---|---|---|
+| `denoiser` | `Denoiser`: one image per call, async, no history (OIDN) | a whole path-traced frame, for stills and progressive refinement |
+| `denoiser/ffx` | `TemporalDenoiser`: per frame, synchronous, with history | the AMD FidelityFX shadow and reflection denoisers (see [Real-time (temporal) denoising](./realtime-temporal-denoising)) |
+| `denoiser/realtime` | `TemporalDenoiser`, same as above | **ours**: diffuse, specular, diffuse + specular, shadows, AO / SO. It also re-exports `FfxShadowDenoiser` and `FfxReflectionDenoiser`, so it can be your one real-time import (`denoiser/ffx` keeps working) |
+
+```ts
+import {
+  DiffuseDenoiser, SpecularDenoiser, DiffuseSpecularDenoiser,
+  ShadowDenoiser, OcclusionDenoiser, HitDistanceNormalizer,
+  FfxShadowDenoiser, FfxReflectionDenoiser, // re-exported from denoiser/ffx
+} from 'denoiser/realtime';
+```
+
+Use it in the same place as FFX: a raster (or hybrid) renderer that traces one or two
+effects at 1 ray per pixel. The difference from FFX is coverage and quality. FFX has
+a shadow and a reflection denoiser. `denoiser/realtime` adds diffuse GI and occlusion,
+keeps fractional shadow visibility, and on our scenes scores well above FFX
+([How it compares](#how-it-compares)). For a fully path-traced frame that converges
+while the camera rests, use `Denoiser` (OIDN) instead.
+
+Only core WebGPU is required (default limits; at most four storage textures per stage).
+`timestamp-query` fills `gpuTimings` when the device has it. No runtime dependencies.
+
+## The classes at a glance
+
+Classes are named by what they denoise. The algorithm is an option, `filter`.
+
+| class | denoises | signal inputs | output | filter (default) |
+|---|---|---|---|---|
+| `DiffuseDenoiser` | diffuse indirect light (GI) | `radiance` (demodulated), `hitDistance` (optional) | rgba16float, demodulated | `'svgf'` / `'recurrent'` (`'svgf'`) |
+| `SpecularDenoiser` | specular indirect light (reflections) | `radiance` (demodulated), `hitDistance`; needs `guides.roughness` | rgba16float, demodulated | `'svgf'` / `'recurrent'` (`'svgf'`) |
+| `DiffuseSpecularDenoiser` | both, behind one shared guide prepass | `{ diffuse, specular }`; needs `guides.roughness` | `{ diffuse, specular }` from `dispatchBoth()` | per signal (`'svgf'`) |
+| `ShadowDenoiser` | 1-ray shadow visibility, penumbra-aware | `visibility`, `hitDistance` (optional), `light` (optional) | r32float, visibility in `.r` | one filter |
+| `OcclusionDenoiser` | AO (diffuse rays) and/or SO (specular rays) | `hitDistance` | normalized hit distance ĥ in `.r` | `'svgf'` / `'recurrent'` (**`'recurrent'`**) |
+| `HitDistanceNormalizer` | not a denoiser: turns hit distance into a noisy AO image | `hitDistance`, `viewZ` | rgba16float gray | n/a |
+
+All of them follow the [frame contract](./realtime-temporal-denoising#frame-contract):
+`configure()` before the first dispatch and on resize (drops history), `dispatch()`
+after the frame's inputs are submitted (it encodes and submits synchronously, no
+readback), `resetHistory()` on camera cuts, `dispose()` never destroys the device.
+
+> [!IMPORTANT]
+> **Outputs are owned by the denoiser and valid until the next `dispatch()`,
+> `configure()` or `dispose()`.** Several classes rotate between internal textures
+> (the shadow denoiser alternates two, the recurrent filter rotates its buffers), so
+> don't keep a reference across frames: sample or copy the texture in the same frame.
+> The three.js nodes copy each result into their own stable texture for you.
+
+## The renderer contract
+
+Every class takes the same `FrameGuides` and `FrameCamera` as FFX
+([Guides and camera](./realtime-temporal-denoising#guides-and-camera)). The conventions,
+and what the denoisers assume about your signal:
+
+**Guides and camera**
+
+- **Motion**: NDC delta, **current minus previous**, +y up. This is three.js' `velocity`
+  node.
+- **Projection**: the **unjittered** projection matrix. Pass sub-pixel jitter
+  separately in `camera.jitter` (pixels). Matrices are column-major (three's
+  `Matrix4.elements`).
+- **Depth**: any hardware depth format, or r32float device depth, linearized with the
+  projection (`camera.reversedDepth` for reversed-Z). Or pass **`guides.viewZ`**:
+  linear view-space z in three.js view space, **negative in front of the camera**, sky
+  at `-far`. With `viewZ` the denoisers skip linearizing depth, which is exact and the
+  only option when your depth buffer isn't the projection's own.
+- **`guides.motionZ`** (optional): 2.5D motion, `viewZprev - viewZ` in `.r`, for objects
+  that move in depth. Without it the previous depth comes from the camera transform,
+  which is exact for static geometry; moving objects may then lose history at their
+  edges (no artifact, just a fresher, noisier pixel).
+- **Normals**: world-space unit normals in [-1, 1].
+- **Roughness**: **perceptual** roughness in [0, 1] (GGX α = r²). Required for specular
+  and specular occlusion.
+- **Sky**: normal = 0, depth at the far plane or `viewZ = -far`. Those pixels are skipped
+  and output 0.
+
+**Sampling**
+
+- **Blue noise, animated per frame.** Draw each pixel's random numbers from a
+  spatiotemporal blue-noise mask: animate a scalar with the golden-ratio sequence, and
+  2-D samples (a point on an area light, a cosine direction) with the R2 sequence
+  (Roberts 2018). Equal golden-ratio steps on both dimensions put a pixel's samples
+  over time on a line. The shadow denoiser's temporal clamp relies on blue noise. On
+  the three.js scene, white noise cost our shadows 1.2–1.5 dB overall and 2.7–3.4 dB
+  in the penumbrae ([M6 real scene](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M6-real-scene.md)).
+- **Unjittered shadow-ray origins.** If you jitter the camera (TAA, FSR3), build shadow
+  ray origins from unjittered positions. A jittered depth moves every ray origin each
+  frame, which shows up as shadow flicker on large flat receivers.
+- **One sample per pixel, every pixel.** The denoisers assume both lobes (diffuse and
+  specular) are traced at every pixel. A hit distance of 0 always means a miss.
+
+**Demodulation**
+
+The radiance denoisers filter **demodulated** lighting: the signal with the surface's
+own colour divided out, so texture detail doesn't get blurred into the lighting.
+
+- **Diffuse**: `radiance = L_diffuse / max(albedo, 1e-3)` per channel.
+- **Specular**: `radiance = L_specular / max(E, 1e-3)` per channel, where `E(f0, r, NdotV)`
+  is the split-sum pre-integrated specular term (Karis 2013), in the analytic
+  approximation from Karis 2014, "Physically Based Shading on Mobile" (f90 = 1):
+
+```wgsl
+// r = perceptual roughness, NdotV = clamp(dot(N, V), 1e-4, 1), V toward the camera
+fn envBRDF(f0: vec3f, r: f32, NdotV: f32) -> vec3f {
+  let c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
+  let c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
+  let t = r * c0 + c1;
+  let a004 = min(t.x * t.x, exp2(-9.28 * NdotV)) * t.x + t.y;
+  let A = -1.04 * a004 + t.z;
+  let B = 1.04 * a004 + t.w;
+  return f0 * A + B;
+}
+```
+
+Outputs stay demodulated. Multiply back yourself (diffuse × albedo, specular × `E`), or
+set `remodulate: true` and the last pass does it: diffuse multiplies by
+`inputs.demodulation`, falling back to `guides.albedo`, and specular by
+`inputs.demodulation` (pass the `E` texture there).
+
+**Hit distance**
+
+- World units, measured from the primary hit (the camera segment excluded), in `.r`
+  (r16float or r32float). **0 means a miss** (the ray escaped).
+- Specular: the length of the reflected ray. It drives reflection reprojection.
+- Diffuse: optional. The `'recurrent'` filter uses it to clamp its blur radius near
+  contact and to output an AO estimate in alpha. `'svgf'` ignores it.
+- Shadows: the distance to the occluder, 0 when unoccluded. With `light` it sizes the
+  penumbra-aware kernel.
+- Occlusion: the hit distance of the AO (diffuse) or SO (specular) ray.
+
+Keep radiance finite: one NaN spreads across a whole filter footprint. The three.js
+nodes sanitize NaN, negative and overflowing values by default.
+
+## Filters: `'svgf'` or `'recurrent'`
+
+The radiance and occlusion classes take a `filter` option:
+
+- **`'svgf'`** (default): spatiotemporal variance-guided filtering (Schied et al. 2017):
+  temporal accumulation, a variance estimate, and five edge-avoiding à-trous passes
+  steered by that variance. `antiLag` adds the A-SVGF temporal-gradient anti-lag
+  (Schied et al. 2018), which shortens history where the lighting changed:
+  - `'off'` (current default): plain SVGF.
+  - `'auto'`: gradients estimated from the signal itself. No renderer work. Recovers from
+    a light switching on in about 3 frames instead of about 8.
+  - `'gradient'`: A-SVGF proper. Your renderer re-shades one sample per 3×3 stratum with
+    last frame's random numbers and passes `inputs.gradient`
+    (`ceil(W/3) × ceil(H/3)`, rgba16float/rgba32float: r = last frame's luminance, g = this
+    frame's, b greater than 0 = valid). Experimental.
+- **`'recurrent'`**: a recurrent blur pipeline (pre-blur, temporal accumulation with
+  history repair, blur, post-blur, then a short output stabilization), designed from
+  the public descriptions of this filter family. It needs less memory. Its anti-lag is
+  built in (`antiLag: true`).
+
+### Which to pick
+
+Test bed, 1920×1080, 7 stress paths × 96 frames (orbit, pan, light change, thin
+geometry, glossy floor, camera cut, moving object), pooled PSNR against 256-spp
+references; GPU time is the test-bed bench median for diffuse + specular together:
+
+| `DiffuseSpecularDenoiser` options | diffuse PSNR | specular PSNR | GPU ms (both) | memory |
+|---|---|---|---|---|
+| `{}` (SVGF, `antiLag: 'off'`, today's default) | 38.88 dB | 33.46 dB | 4.00 | 132 B/px (274 MB) |
+| **`{ antiLag: 'auto' }`** (A-SVGF) | **39.12** | **35.04** | 4.23 | 140 B/px (290 MB) |
+| `{ filter: 'recurrent', specular: { filter: 'recurrent' } }` | 38.26 | 34.10 | **3.99** | **105.5 B/px (219 MB)** |
+| `{ filter: 'recurrent' }` (recurrent diffuse + A-SVGF specular) | 38.26 | 35.04 | 4.79 | ≈ 138 B/px |
+
+An honest reading: **SVGF / A-SVGF lead on our scenes.** A-SVGF `'auto'` is best on
+both signals, and recurrent loses to it on 6 of 7 paths. On the three.js scene with a
+moving camera the ranking holds: SVGF and `'auto'` tie on diffuse (39.9–40.4 dB) with
+recurrent 0.7–1.1 dB behind. The recurrent filter is the **lean** option: about a fifth
+less memory at the same cost, and the least flicker on static views. It is not faster.
+
+- **Pick `antiLag: 'auto'`** for quality, especially with moving lights or specular.
+  It is the recommended default and may become it.
+- **Pick `filter: 'recurrent'` for both signals** when memory matters more than
+  ~1 dB. Pass `specular: { filter: 'recurrent' }` as well: `{ filter: 'recurrent' }`
+  alone currently means recurrent diffuse with A-SVGF specular, which costs more than
+  either and is not better than A-SVGF for both.
+- Plain SVGF (`'off'`) is the cheapest SVGF, and noticeably weaker on specular.
+
+Sources: [REMEASURE-2026-10-25](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/REMEASURE-2026-10-25.md),
+[M1](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M1.md),
+[M2-M3](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M2-M3.md),
+[M6 real scene](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M6-real-scene.md).
+
+## Diffuse and specular
+
+```ts
+import { DiffuseSpecularDenoiser } from 'denoiser/realtime';
+
+const gi = new DiffuseSpecularDenoiser(device, { filter: 'svgf', antiLag: 'auto' });
+gi.configure({ width, height });
+
+// every frame, after the frame's inputs are submitted:
+if (cameraCut) gi.resetHistory();
+const { diffuse, specular } = gi.dispatchBoth(
+  {
+    diffuse: { radiance: diffuseDemod, hitDistance: diffuseHit },   // hitDistance optional for diffuse
+    specular: { radiance: specularDemod, hitDistance: specularHit },
+  },
+  { depth, normal, motion, roughness },                            // + viewZ, motionZ (optional)
+  { view, projection, prevView, prevProjection, near, far },
+);
+// diffuse, specular: rgba16float, still demodulated, valid until the next dispatch
+```
+
+`DiffuseSpecularDenoiser` runs both signals in the same dispatches (one thread does both)
+behind one shared guide prepass, which is cheaper than two denoisers. `dispatch()`
+returns the diffuse output so the class still conforms to `TemporalDenoiser`; use
+`dispatchBoth()`, or the `outputs` getter after `dispatch()`, for both. Options at the top
+level apply to both signals; `diffuse: { ... }` and `specular: { ... }` override per
+signal (and may switch that signal's filter).
+
+For one signal, or to run them on different schedules, use the single classes:
+
+```ts
+import { DiffuseDenoiser, SpecularDenoiser } from 'denoiser/realtime';
+
+const dif = new DiffuseDenoiser(device);                          // filter 'svgf', antiLag 'off'
+const spec = new SpecularDenoiser(device, { antiLag: 'auto' });
+dif.configure({ width, height });
+spec.configure({ width, height });
+
+const d = dif.dispatch({ radiance: diffuseDemod }, { depth, normal, motion }, camera);
+const s = spec.dispatch({ radiance: specularDemod, hitDistance: specularHit }, { depth, normal, motion, roughness }, camera);
+```
+
+To get radiance back instead of demodulated values:
+
+```ts
+const gi = new DiffuseSpecularDenoiser(device, { antiLag: 'auto', remodulate: true });
+const out = gi.dispatchBoth(
+  {
+    diffuse: { radiance: diffuseDemod },                                   // × guides.albedo
+    specular: { radiance: specularDemod, hitDistance: specularHit, demodulation: specularE },
+  },
+  { depth, normal, motion, roughness, albedo },
+  camera,
+);
+```
+
+Notes:
+
+- `SpecularDenoiser` and `DiffuseSpecularDenoiser` throw without `guides.roughness`.
+- Specular reprojection follows the surface, with a history length capped by roughness,
+  view angle and parallax. The recurrent filter also reprojects the reflected image
+  (virtual motion), using the hit distance.
+- With `filter: 'recurrent'`, the diffuse output's alpha is the denoised normalized hit
+  distance ĥ, an AO estimate. It is free, but 2–3 dB below the dedicated
+  `OcclusionDenoiser`.
+- Main SVGF options (defaults): `antiLag` (`'off'`), `temporalAlpha` (0.2; 0.1 with
+  anti-lag), `maxHistory` (64), `atrousIterations` (5), `kernel` (`'3x3'` or `'5x5'`),
+  `historyFilter` (`'bilinear'` or `'catmull-rom'`), `remodulate` (false), `timestamps`
+  (true). Main recurrent options: `preBlurRadius` and `blurRadius` (pixels at 1080p),
+  `maxAccumulatedFrames` (31), `antiLag` (true), `stabilizationFrames` (7),
+  `blurTaps` (8). The full lists, with what each one measured, are in
+  [the package README](https://github.com/pmndrs/denoiser/blob/main/packages/denoiser-realtime/README.md)
+  and the TypeScript docs of `SvgfOptions` / `RecurrentOptions`.
+
+## Shadows
+
+`ShadowDenoiser` denoises 1-ray shadow visibility toward one light. It keeps fractional
+visibility (it never thresholds), sizes its spatial kernel per pixel from the penumbra
+width (estimated from the occluder distance and the light size, after Mehta et al. 2012)
+blended with a noise estimate, and runs only on tiles that contain a penumbra. A short
+stabilization history on its output removes the frame-to-frame "boil" of wide, soft
+penumbrae.
+
+```ts
+import { ShadowDenoiser } from 'denoiser/realtime';
+
+const shadows = new ShadowDenoiser(device);
+shadows.configure({ width, height });
+
+// every frame:
+if (cameraCut) shadows.resetHistory();
+const mask = shadows.dispatch(
+  {
+    visibility,                       // [0, 1], 1 = lit, one ray per pixel (r8unorm / r16float / r32float)
+    hitDistance: occluderDistance,    // world units to the occluder, 0 = unoccluded (optional)
+    light: { type: 'sphere', position: [0, 3, 0], radius: 0.25 },
+    // or { type: 'directional', direction: [0.3, 0.9, 0.2], angularRadius: 0.0047 }
+  },
+  { depth, normal, motion },
+  { view, projection, prevView, prevProjection, near, far },
+);
+// mask: r32float, denoised visibility in .r, valid until the next dispatch (two textures alternate)
+```
+
+- **`light`** is the light the visibility was traced toward: a sphere (world position
+  and radius; 0 = point light) or a directional light (unit vector **toward** the light,
+  angular radius in radians; the sun is about 0.0047). It may change every frame. The
+  `light` constructor option sets a default for inputs without one.
+- Without `hitDistance` or `light`, the kernel size comes from the noise estimate alone.
+  It still works, with softer contact shadows.
+- **One light per instance.** For several shadowed lights, run one denoiser per light.
+- Visibility can be a ray-traced sample or any other 1-sample estimate in [0, 1].
+- Main options (defaults): `stabilize` (0.25; 0 turns the stabilization pass off and
+  saves 8 B/px), `clampGeometry` (true; false is ~0.1 ms cheaper and ~1 dB worse),
+  `maxHistory` (15), `uniformSnap` (true; `'change'` is a candidate default),
+  `maxRadius` (48 px at 1080p), `timestamps` (true). Every option is documented on
+  `ShadowDenoiserOptions`.
+
+Cost at 1080p: **0.55–0.72 ms** over the 7 test-bed paths (FFX shadows: 0.48–0.61 ms on
+the same bench), 48 B/px, about 100 MB. See
+[M4 §12](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M4.md).
+
+## Occlusion
+
+`OcclusionDenoiser` denoises ambient occlusion (AO, from the diffuse ray) and specular
+occlusion (SO, from the specular ray) from the **hit distance** of those rays. It
+filters the normalized hit distance
+
+ĥ = h / (h + a + b · viewDepth), miss → 1
+
+so the output in `.r` is 1 in the open and falls toward 0 at contact. `a` is
+`hitDistanceScale` (1 world unit) and `b` is `hitDistanceViewScale` (0.05 per unit of view
+depth; 0 gives a pure world-space AO radius).
+
+```ts
+import { OcclusionDenoiser } from 'denoiser/realtime';
+
+const ao = new OcclusionDenoiser(device, { filter: 'svgf' });     // default filter: 'recurrent'
+ao.configure({ width, height });
+const aoTex = ao.dispatch({ hitDistance: diffuseHit }, { depth, normal, motion }, camera);
+
+// AO and SO in shared dispatches (SO needs roughness)
+const both = new OcclusionDenoiser(device, { filter: 'svgf', signal: 'both' });
+both.configure({ width, height });
+const { diffuse: aoOut, specular: soOut } = both.dispatchBoth(
+  { diffuse: { hitDistance: diffuseHit }, specular: { hitDistance: specularHit } },
+  { depth, normal, motion, roughness },
+  camera,
+);
+```
+
+- `signal`: `'diffuse'` (AO, default), `'specular'` (SO, needs `guides.roughness`) or
+  `'both'` (use `dispatchBoth()`).
+- Output: ĥ in `.r`. With `'recurrent'` it is r32float, with `'svgf'` rgba16float gray.
+- **The default filter here is `'recurrent'`**, unlike the radiance classes, though SVGF
+  measures better (below). This is one of the open default decisions; pass `filter` explicitly.
+
+| `OcclusionDenoiser` | AO PSNR | SO PSNR | GPU ms AO / SO / both | memory AO / both |
+|---|---|---|---|---|
+| `'recurrent'` (default) | 38.02 dB | 37.37 dB | **1.32 / 1.32 / 2.27** | **57.5 / 73.5 B/px** |
+| `'svgf'` | 38.93 | 38.76 | 1.37 / 1.92 / 2.54 | 84 / 148 B/px |
+| `'svgf'`, `antiLag: 'auto'` | **39.03** | **39.68** | 1.67 / 1.61 / 2.75 | 88 / 156 B/px |
+
+Test bed, 1080p, 7 paths, pooled PSNR on ĥ, fastest-clock GPU time (medians run 15–60 %
+higher). SVGF wins every path on both signals. Sources:
+[M5](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M5.md),
+[REMEASURE](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/REMEASURE-2026-10-25.md).
+
+### `HitDistanceNormalizer`
+
+The normalization step on its own: hit distance in, a noisy AO / SO image
+(ĥ, ĥ, ĥ, 1) out. Useful to show the raw input next to the denoised one, or to feed a
+filter that doesn't normalize by itself.
+
+```ts
+import { HitDistanceNormalizer } from 'denoiser/realtime';
+
+const norm = new HitDistanceNormalizer(device);       // depth from a viewZ texture
+norm.configure(width, height);
+norm.setCurve(1, 0.05, far);                           // a, b, far: match the denoiser's curve
+const noisyAO = norm.run(diffuseHit, viewZ);           // rgba16float, submitted immediately
+```
+
+Call `setCurve()` before the first `run()`: the curve has no default yet. `run()`
+submits its own command buffer.
+
+## Cost and memory at 1080p
+
+GPU time per frame on an Apple M5 Pro (Chrome, timestamp queries), internal memory
+including outputs. Different benches differ by a few percent, so compare rows within
+one table above when it matters.
+
+| denoiser | GPU ms | memory |
+|---|---|---|
+| `DiffuseDenoiser`, SVGF | 2.18 | 76 B/px (158 MB) |
+| `DiffuseDenoiser`, recurrent | 2.38 | 73.5 B/px (152 MB) |
+| `SpecularDenoiser`, SVGF | ≈ 2.7 | 76 B/px (158 MB) |
+| `SpecularDenoiser`, recurrent | 2.79 | |
+| `DiffuseSpecularDenoiser`, SVGF / `'auto'` / recurrent | 4.00 / 4.23 / 3.99 | 132 / 140 / 105.5 B/px |
+| `ShadowDenoiser` | 0.55–0.72 | 48 B/px + 16 B per 8×8 tile (≈ 100 MB) |
+| `OcclusionDenoiser` AO, recurrent / SVGF | 1.32 / 1.37 | 57.5 / 84 B/px (119 / 174 MB) |
+| for reference: `FfxShadowDenoiser` / `FfxReflectionDenoiser` | 0.49 / 1.66 | |
+
+Anti-lag `'auto'` adds 4 B/px per signal. The passes are not subgroup-optimized yet.
+
+## three.js and TSL
+
+`denoiser/three` wraps each class as a TSL node, the same way as
+[`ffxShadows` and `ffxReflections`](./three-and-tsl#real-time-ffxshadows-and-ffxreflections).
+The nodes take the same guide options (`camera`, `depth`, `normal`, `velocity`,
+`normalSpace`, `normalEncoding`, `resolutionScale`, `node`), plus optional `albedo`,
+`viewZ` and `motionZ`. They convert three's conventions (view-space or packed normals,
+hardware depth, `velocity`), render signals that aren't textures yet into textures, and
+sanitize radiance by default. **The filter stays a class option** in `denoiser: { ... }`;
+the nodes never choose a filter or a default of their own.
+
+| node | class | value |
+|---|---|---|
+| `realtimeShadows(visibility, options)` | `ShadowDenoiser` | visibility in `.r` |
+| `realtimeDiffuse(radiance, options)` | `DiffuseDenoiser` | rgb (+ ĥ in `.a` with `'recurrent'` and a hit distance) |
+| `realtimeSpecular(radiance, options)` | `SpecularDenoiser` | rgb |
+| `realtimeDiffuseSpecular({ diffuse, specular }, options)` | `DiffuseSpecularDenoiser` | diffuse; `.diffuse` / `.specular` nodes |
+| `realtimeOcclusion(hitDistance, options)` | `OcclusionDenoiser` | ĥ in `.r`; `.diffuse` / `.specular` with `signal: 'both'` |
+
+The shared setup (the same MRT as the FFX nodes):
+
+```ts
+import { pass, mrt, output, vec4, normalView, materialRoughness, packNormalToRGB, velocity } from 'three/tsl';
+import {
+  realtimeShadows, realtimeDiffuse, realtimeSpecular, realtimeDiffuseSpecular, realtimeOcclusion,
+} from 'denoiser/three';
+
+const scenePass = pass(scene, camera);
+scenePass.setMRT(mrt({
+  output,
+  normal: vec4(packNormalToRGB(normalView), materialRoughness),  // packed view normal + roughness
+  velocity,
+}));
+const nTex = scenePass.getTextureNode('normal');
+const guides = {
+  camera,
+  depth: scenePass.getTextureNode('depth'),
+  velocity: scenePass.getTextureNode('velocity'),
+  normal: nTex,
+  normalSpace: 'view' as const,
+  normalEncoding: 'packed' as const,
+};
+```
+
+**Shadows.** `light` can be a value or a function read every frame (lights move):
+
+```ts
+// shadowRay: your 1-ray visibility (1 = lit); shadowRayDistance: occluder distance, 0 = unoccluded
+const shadow = realtimeShadows(shadowRay, {
+  ...guides,
+  hitDistance: shadowRayDistance,
+  light: () => ({ type: 'sphere', position: [lightPos.x, lightPos.y, lightPos.z], radius: 0.25 }),
+});
+// shadow.r in the composite
+```
+
+**Diffuse.** Pass demodulated radiance; the hit distance is optional:
+
+```ts
+const dif = realtimeDiffuse(diffuseRay, { ...guides, hitDistance: diffuseRayDistance });
+// albedo.mul(dif.rgb) in the composite
+```
+
+**Specular.** The hit distance defaults to `radiance.a`, which is where three's `ssr()`
+node stores its ray length:
+
+```ts
+const spec = realtimeSpecular(ssrNode, { ...guides, roughness: nTex.a, denoiser: { antiLag: 'auto' } });
+// spec.rgb in the composite
+```
+
+**Diffuse and specular together** (one shared prepass, two outputs):
+
+```ts
+const gi = realtimeDiffuseSpecular(
+  { diffuse: { radiance: diffuseRay, hitDistance: diffuseRayDistance }, specular: { radiance: ssrNode } },
+  { ...guides, roughness: nTex.a, denoiser: { antiLag: 'auto' } },
+);
+const lit = albedo.mul(gi.diffuse.rgb).add(gi.specular.rgb);
+```
+
+**Occlusion** (AO only, or AO and SO with `signal: 'both'`):
+
+```ts
+const ao = realtimeOcclusion(diffuseRayDistance, guides);   // ao.r
+const occ = realtimeOcclusion(
+  { diffuse: diffuseRayDistance, specular: ssrNode.a },
+  { ...guides, roughness: nTex.a, denoiser: { filter: 'svgf', signal: 'both' } },
+);
+// occ.diffuse.r (AO), occ.specular.r (SO)
+```
+
+The nodes behave like the FFX nodes: call `.resetHistory()` at cuts, set
+`node.enabled = false` to skip the denoiser (history is dropped), read
+`node.outputTexture` for a stable three texture, and `node.denoiser?.gpuTimings` for
+per-pass times. They only advance inside `renderer.setAnimationLoop`
+([three.js & TSL](./three-and-tsl#real-time-ffxshadows-and-ffxreflections)).
+
+## How it compares
+
+### Against FidelityFX (measured)
+
+**Shadows.** Test bed, 1080p, 7 paths, pooled:
+
+| | PSNR | penumbra | FLIP | flicker | GPU ms |
+|---|---|---|---|---|---|
+| `FfxShadowDenoiser` | 31.20 dB | 23.50 dB | 0.038 | 0.0053 | 0.48–0.61 |
+| **`ShadowDenoiser`** | **38.22 dB** | **29.16 dB** | **0.013** | **0.0024** | 0.55–0.72 |
+
+On the three.js scene (static camera, 4096-ray reference, 960×540) ours scores 31.7 /
+27.4 dB (all receivers / penumbra) against FFX's 28.5 / 22.2, with half the FLIP error,
+and FFX drifts dark as its history grows. With a moving camera (pooled, orbit / pan),
+the previous shadow version scored 30.0 / 30.3 dB against FFX's 26.3 / 27.9. FFX is a binary one-ray denoiser (it thresholds visibility at
+0.5) and blurs its own history, which makes it very stable but soft and biased. Ours
+used to boil in wide, soft penumbrae; since the stabilization pass its frame-to-frame
+noise there is at FFX's level (0.0013 vs 0.0011) while staying about 8 dB more accurate.
+One case where FFX still leads: temporal stability at hard, moving shadow edges.
+
+**Reflections.** On demodulated, traced specular, `SpecularDenoiser` (SVGF) beats
+`FfxReflectionDenoiser` by 12–14 dB, and A-SVGF `'auto'` by more. FFX's firefly
+suppression loses 12–29 % of the energy on our paths. On three's SSR in the real scene
+the gap is 6–7 dB (45.3 / 47.6 dB for `'auto'` against 39.1 / 40.9). FFX reflections is
+cheaper: 1.66 ms against about 2.7 ms.
+
+Sources: [M4](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M4.md),
+[M1](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M1.md),
+[M6 real scene](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/M6-real-scene.md),
+[E-2](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/E2-oidn-baseline.md).
+
+### Against OIDN
+
+Run on a single frame, OIDN 2 (the `denoiser` entry) costs 205–239 ms per signal at
+1080p with the large weights, about 100× more than these filters, and flickers more
+because it has no history. With history, our filters match or beat its quality on
+every signal except one: on the real scene's shadows OIDN scores +0.6–0.8 dB higher
+overall but has a worse penumbra and FLIP
+([E-2](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/E2-oidn-baseline.md)).
+
+### Against NVIDIA NRD
+
+These denoisers cover the same ground as NVIDIA's NRD (ReBLUR / ReLAX for diffuse and
+specular, SIGMA for shadows), but they are an independent, clean-room implementation:
+no NRD code was used. **A native NRD comparison is in progress.** We run native NRD as a
+black box on the same captures and score its outputs with the same metrics. So far
+only synthetic test captures have been replayed natively. Results on the test-bed and
+three.js captures will be added here when they exist.
+
+## Examples
+
+Two example pages run these nodes in the three.js scene of the
+[ray-traced shadows demo](https://pmndrs.github.io/denoiser/three-temporal/shadows.html).
+They are **local only** for now (not deployed): run `yarn examples` from the repository
+root and open them from the hub, or run `yarn workspace three-temporal dev` and open
+the paths below.
+
+- **`three-temporal/realtime-shadows.html`**: the furnished room with a 1-ray
+  area-light shadow, split screen with a draggable divider: `ffxShadows()` on the left,
+  `realtimeShadows()` on the right, plus noisy and converged-reference views.
+- **`three-temporal/realtime-gi.html`**: one-bounce diffuse GI, SSR specular and AO,
+  denoised by `realtimeDiffuseSpecular()`, `realtimeOcclusion()` and `realtimeShadows()`,
+  against the raw signals and `ffxReflections()`.
+
+Source: [`examples/three-temporal/src`](https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src)
+(`realtime-shadows.ts`, `realtime-gi.ts`). The analytic test bed behind most numbers on
+this page is [`examples/realtime-denoiser`](https://github.com/pmndrs/denoiser/tree/main/examples/realtime-denoiser).

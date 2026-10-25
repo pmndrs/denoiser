@@ -168,6 +168,15 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   in the script instead. Probe pages that switch the realtime-shadows view to `ours`/`ffx` mid-session
   hung once; the split view (`view: 'split'`) captures both sides in one page. — moving-shadows, 2026-10-25
 
+- User-facing docs are the MDX pages in `docs/site/` (frontmatter `title` / `description` / `nav`; the sidebar sorts
+  by `nav` numerically, so 27.5 slots a page between 27 and 28 without renumbering). They are built only in CI by the
+  pmndrs docs Docker image (`.github/workflows/pages.yml`); `tools/build-site.mjs` builds the demo site, not the docs.
+  Without Docker, compile-check a page with `@mdx-js/mdx` 3 + `remark-gfm` + `remark-frontmatter` installed in the
+  scratchpad. A bare `{` or `<` in prose breaks MDX: keep them in code spans. Snippets: a scratch `.ts` in
+  `examples/three-temporal/src/` plus a tsconfig extending that example's (`include` the scratch file) type-checks
+  against `denoiser/realtime` and `denoiser/three` through the built dist, so check that dist is newer than the last
+  src commit first. — m6-docs, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
