@@ -204,6 +204,21 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   (diff of the standard build vs the original module = the bit-identity proof before any GPU run).
   — testbed-v1, 2026-10-25
 
+- Test-bed floor-only pages (`&ref2spp=…`, E-1) need `&denoiser=` (empty): without it every registered denoiser
+  runs on every signal; at 1080p with five signals the tab ran out of memory, Chrome's page died and the runner
+  hung (or Node exited with "unsettled top-level await" when the websocket closed). Same symptom when a Chrome is
+  killed externally. A page that is `ready` while its runner still waits can be read directly over CDP
+  (`Runtime.evaluate JSON.stringify(window.__rt)` on the page's DevTools port). — e1, 2026-10-25
+- Pinning only `packages/` + `tools/rt-capture/src` is not enough for a long batch: other agents commit to the test
+  bed itself, and the worktree's new test bed imported a registry export the pinned snapshot lacked
+  (`does not provide an export named 'V1_BUFFERS'`, pages hang at frame 0, only the Vite log says why). Snapshot
+  `examples/realtime-denoiser` + `examples/_shared` too, symlink `node_modules` into the snapshot root, and point the
+  scratch Vite config's `root` there. — e1, 2026-10-25
+- A zsh waiter `while pgrep -f "<pattern>"` matches its own `zsh -c` command line when the pattern is in it, and never
+  ends. Wait on a log line count or a PID instead. — e1, 2026-10-25
+- One test-bed page failed once on frame 0 with "Binding size (32) … smaller than the minimum binding size (48)" on the
+  score bind group (no code change; the same query passed on rerun). Rerun before debugging. — e1, 2026-10-25
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -320,6 +335,12 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A per-pixel 6-float payload doesn't fit one texture or `readTextures` (1–4 channels): keep two rgba32float halves
   on the GPU, read both and interleave on the CPU (`CaptureWriter` `{ parts: [...] }`), and upload as two textures
   in replay (`name`, `name#4`). The refs' second half needs its own accumulation buffer (`acc2`). — testbed-v1, 2026-10-25
+
+- A CPU-based "is the GPU quiet?" check misses GPU-bound pages (high-spp reference renders burn GPU at ~0 % CPU):
+  a bench that waited on Chrome CPU still read 25 ms medians. Wait on the *processes* instead (no other agent's
+  `node … run-headless` / `run-realtime` for 15 s), and drop any round whose medians jump. — m7-sh, 2026-10-25
+- Test-bed URL keys are first-occurrence wins and `bumpy.sh`-style wrappers that prepend `preset=full&` silently
+  override a later `preset=fast` (LESSONS on `URLSearchParams.get`): put per-job overrides first. — m7-sh, 2026-10-25
 
 ## Conventions
 
@@ -571,6 +592,16 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Parameter sweeps on captures through compare.mjs take minutes per capture × variant under load; the live test bed
   scores many variants of one id in one page (`denoiser=id,id@sh.x=1,id@sh.x=2`) sharing references in ~20 s per
   path. Sweep live, then confirm the picks (and boil) on replays. — m8-translucency, 2026-10-25
+
+- Reference noise is an additive term, and it is not small (E-1, results/E1-high-reference.md): against 256-spp
+  references MSE = true MSE + σ²_256 held to ±5 % for every arm, so rankings are safe, but gaps shrink 2.5–3.6× on
+  diffuse and AO (recurrent vs A-SVGF diffuse −0.75 → −2.12 dB at 4096 spp), 1.6–2× on specular, ~1.1× on shadows and
+  SO. The 256-spp ceilings are diffuse 41.7, specular 36.9, AO 42.2, SO / shadows 49 dB. Quote decision gaps from
+  high-spp references, or subtract σ²_256 (from two independent references) in MSE. — e1, 2026-10-25
+- Two references of the same estimator at different spp but the same seed salt are correlated (shared per-pixel
+  Cranley-Patterson rotation and secondary random stream): their mutual PSNR overstates the floor. Use `&refsalt` /
+  `&ref2salt` for independent sets. Specular reference variance fell only ×9 from 256 to 4096 spp (heavy-tailed GGX
+  samples), diffuse and shadows ×31–33 (stratification). — e1, 2026-10-25
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
