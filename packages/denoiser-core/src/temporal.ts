@@ -62,6 +62,13 @@ export interface FrameGuides {
    * geometry).
    */
   motionZ?: GPUTexture;
+  /**
+   * Optional detail (normal-mapped shading) normal, world space, same encoding as
+   * `normal`. For directional payloads (`payload: 'sh'`): pass the smooth normal as
+   * `normal` (the filter's weights) and the normal the rays were sampled around here;
+   * the payload is resolved at it.
+   */
+  detailNormal?: GPUTexture;
 }
 
 export interface TemporalConfig {
@@ -134,6 +141,10 @@ export interface SpecularInputs {
   radiance: GPUTexture;
   /** Ray hit distance (r16float, 0 = miss). Drives reprojection of reflections. */
   hitDistance: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
 }
 
 /** Diffuse indirect (GI) / ambient occlusion: 1 sample per pixel. */
@@ -141,6 +152,10 @@ export interface DiffuseInputs {
   /** Noisy irradiance (linear HDR, rgba16float) or AO in r. */
   radiance: GPUTexture;
   hitDistance?: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
 }
 
 /**
