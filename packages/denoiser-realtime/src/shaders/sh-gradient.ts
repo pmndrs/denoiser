@@ -54,6 +54,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   ${I.map((i) => `var sL${i} = 0.0; var sL2${i} = 0.0;`).join(' ')}
   var cnt = 0.0;
   var zAny = 0.0; var pAny = p0;
+  // one view direction per stratum (its centre's pixel ray), for the specular dominant direction
+  let vq = ${spec ? 'viewDirAt(clampPix(p0 + vec2i(1, 1)), max(geoTap(geoCur, clampPix(p0 + vec2i(1, 1))).z, 1e-3))' : 'vec3f(0.0, 0.0, 1.0)'};
   ${taps.map(([x, y]) => /* wgsl */ `
   {
     let q = p0 + vec2i(${x}, ${y});
@@ -64,7 +66,6 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let w = select(0.0, 1.0, ok);
     cnt += w;
     if (ok && (zAny == 0.0 || ${x === 1 && y === 1 ? 'true' : 'false'})) { zAny = z; pAny = qc; }
-    let vq = ${spec ? 'viewDirAt(qc, max(z, 1e-6))' : 'vec3f(0.0, 0.0, 1.0)'};
     ${I.map((i) => `{ let l = shLum(loadCur${i}(qc, vq, gq.rough), shDir${i}(gq.n, vq, gq.rough)) * w; sL${i} += l; sL2${i} += l * l; }`).join('\n    ')}
   }`).join('')}
   if (cnt <= 0.0) {
@@ -100,7 +101,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       g0 = vec4f(gi.y - gi.x, max(gi.x, gi.y), 0.0, 1.0);
     }` : /* wgsl */ `
     if (hasHist) {
-      let ev = shDir${i}(g.n, ${spec ? 'viewDirAt(pAny, g.z)' : 'vec3f(0.0, 0.0, 1.0)'}, g.rough);
+      let ev = shDir${i}(g.n, vq, g.rough);
       var mh = 0.0;
       ${hist4.map((yy) => hist4.map((xx) => `mh += shLum(shUnpack(textureLoad(accumPrev${i}, clampPix(hb + vec2i(${xx - 1}, ${yy - 1})), 0)), ev) * hw[${xx}].x * hw[${yy}].y;`).join('\n      ')).join('\n      ')}
       mh /= 9.0;
