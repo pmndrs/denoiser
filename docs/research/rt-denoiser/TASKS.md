@@ -699,6 +699,9 @@ harness builder runs them and returns images/metrics only.)_
       vs v4.18.0 on `std540-cut` and `std540-pan`, frames 0–12 after each reset/disocclusion, per-frame
       pooled PSNR for diffuse and specular in the disoccluded region. Return the per-frame curves.
       — orchestrator
+- **v1 captures have landed (2026-10-25, testbed-v1, c0e3876…208b40a):** P6 and P7 can run. Write them with
+  `node examples/realtime-denoiser/run-headless.mjs --serve --set=v1` (`v1-bumpy`, `v1-bounce`, `v1-glass`,
+  `v1-glass-moving`, `v1-glass-still`; 960×540, 8.63 GB, ~2 min); format in CAPTURE-FORMAT.md §v1. — orchestrator
 - [ ] **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
       and two standard paths with `diffuse_dir` / `normal_geom`. Run `REBLUR_DIFFUSE_SH` and `RELAX_DIFFUSE_SH` (input packed
       by native's front end from `diffuse` + `diffuse_dir`). Return (a) the colour-extraction output scored against
