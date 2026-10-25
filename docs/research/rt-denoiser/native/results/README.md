@@ -1,5 +1,7 @@
 # Native NRD results (black box)
 
+**Round 2 (handoff: ours at HEAD, knot captures, shadows dynamic / boil, SIGMA harness checks): [ROUND2.md](ROUND2.md).**
+
 **Phases 4–5 (ours vs native on the standard set and the real scene, same-GPU cost, P2, P3, jitter): [PHASE4-5.md](PHASE4-5.md).** The rest of this page is the phase 1–3 smoke test.
 
 _NRD v4.18.0 (`e06852b`), default settings, RTX 3060 Laptop, driver 592.00, D3D12 headless,

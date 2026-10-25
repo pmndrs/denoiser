@@ -1,8 +1,8 @@
 diff --git a/examples/three-temporal/run-realtime.mjs b/examples/three-temporal/run-realtime.mjs
-index d5ca043..ffe19f8 100644
+index c80a5ae..ccb63ad 100644
 --- a/examples/three-temporal/run-realtime.mjs
 +++ b/examples/three-temporal/run-realtime.mjs
-@@ -26,8 +26,9 @@ import fs from 'node:fs';
+@@ -28,8 +28,9 @@ import fs from 'node:fs';
  import os from 'node:os';
  import path from 'node:path';
  import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ index d5ca043..ffe19f8 100644
  const args = process.argv.slice(2);
  const opt = (k, d) => { const a = args.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
  const flag = (k) => args.includes(`--${k}`);
-@@ -73,13 +74,11 @@ function cdpClient(ws, onEvent) {
+@@ -75,13 +76,11 @@ function cdpClient(ws, onEvent) {
  
  async function openPage(url) {
    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'rt-headless-m6-'));
@@ -30,7 +30,7 @@ index d5ca043..ffe19f8 100644
    if (!port) throw new Error('Chrome did not start');
    let tab;
    for (let i = 0; i < 60 && !tab; i++) {
-@@ -97,7 +96,12 @@ async function openPage(url) {
+@@ -99,7 +98,12 @@ async function openPage(url) {
    });
    await cdp.send('Runtime.enable');
    await cdp.send('Log.enable');

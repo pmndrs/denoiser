@@ -102,7 +102,19 @@
     19.023,
     18.997,
     19.013
-   ]
+   ],
+   "dynamicPixelsPerFrame": 5975,
+   "psnrDynamicPooled": 7.50885827484076,
+   "psnrStaticPooled": 19.727580292169243,
+   "psnrStaticPenumbraPooled": 8.482192847935268,
+   "flickerDynamic": 0.4260066239344177,
+   "tpsnrDynamic": 4.087640541239022,
+   "flickerStatic": 0.02247585163156934,
+   "tpsnrStatic": 16.663384914644645,
+   "boilDynamic": 0.4561618204278012,
+   "boilStaticPenumbra": 0.3860254779759605,
+   "refBoilDynamic": 0.06121405561155757,
+   "refBoilStaticPenumbra": 0.031449616075302424
   }
  },
  "results": [
@@ -141,9 +153,9 @@
     27.822,
     28.155
    ],
-   "medianGpuMs": 17.867700000000003,
-   "medianWallMs": 35.8,
-   "commit": "7a8b980",
+   "medianGpuMs": 1.8432,
+   "medianWallMs": 90.6,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -181,9 +193,9 @@
     26.154,
     26.012
    ],
-   "medianGpuMs": 17.867700000000003,
-   "medianWallMs": 35.8,
-   "commit": "7a8b980",
+   "medianGpuMs": 1.8432,
+   "medianWallMs": 90.6,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -221,9 +233,19 @@
     27.67,
     27.595
    ],
-   "medianGpuMs": 17.867700000000003,
-   "medianWallMs": 35.8,
-   "commit": "7a8b980",
+   "dynamicPixelsPerFrame": 5975,
+   "psnrDynamicPooled": 16.71070420145607,
+   "psnrStaticPooled": 26.318706046566163,
+   "psnrStaticPenumbraPooled": 15.921707258038587,
+   "flickerDynamic": 0.08432221336697263,
+   "tpsnrDynamic": 16.796010880280548,
+   "flickerStatic": 0.00663474266556836,
+   "tpsnrStatic": 27.157586442867377,
+   "boilDynamic": 0.07508062751696395,
+   "boilStaticPenumbra": 0.07444851470579265,
+   "medianGpuMs": 1.8432,
+   "medianWallMs": 90.6,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -261,9 +283,9 @@
     18.451,
     18.415
    ],
-   "medianGpuMs": 80.4628,
-   "medianWallMs": 97.6,
-   "commit": "7a8b980",
+   "medianGpuMs": 173.5281,
+   "medianWallMs": 233.5,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -301,9 +323,19 @@
     28.947,
     28.612
    ],
-   "medianGpuMs": 129.1551,
-   "medianWallMs": 318.5,
-   "commit": "7a8b980",
+   "dynamicPixelsPerFrame": 5975,
+   "psnrDynamicPooled": 18.899610697095408,
+   "psnrStaticPooled": 32.2475809025164,
+   "psnrStaticPenumbraPooled": 24.65715841981803,
+   "flickerDynamic": 0.052587778268639224,
+   "tpsnrDynamic": 21.042215263393153,
+   "flickerStatic": 0.002966892104163656,
+   "tpsnrStatic": 37.23382482923232,
+   "boilDynamic": 0.058173159798588066,
+   "boilStaticPenumbra": 0.03371803453380254,
+   "medianGpuMs": 4.5312,
+   "medianWallMs": 31.5,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -341,8 +373,8 @@
     35.002,
     35.084
    ],
-   "medianGpuMs": 1.14278,
-   "medianWallMs": 1.2479,
+   "medianGpuMs": 25.1044,
+   "medianWallMs": 30.6813,
    "commit": "NRD v4.18.0 (e06852bd545973cb224eb28820b891205cfc1624), NRI v190, integration v23",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
@@ -381,8 +413,8 @@
     28.499,
     28.385
    ],
-   "medianGpuMs": 1.14278,
-   "medianWallMs": 1.2479,
+   "medianGpuMs": 25.1044,
+   "medianWallMs": 30.6813,
    "commit": "NRD v4.18.0 (e06852bd545973cb224eb28820b891205cfc1624), NRI v190, integration v23",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
@@ -421,8 +453,8 @@
     36.744,
     36.856
    ],
-   "medianGpuMs": 1.43565,
-   "medianWallMs": 1.5776,
+   "medianGpuMs": 42.5185,
+   "medianWallMs": 44.3366,
    "commit": "NRD v4.18.0 (e06852bd545973cb224eb28820b891205cfc1624), NRI v190, integration v23",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
@@ -461,8 +493,8 @@
     29.449,
     29.456
    ],
-   "medianGpuMs": 1.43565,
-   "medianWallMs": 1.5776,
+   "medianGpuMs": 42.5185,
+   "medianWallMs": 44.3366,
    "commit": "NRD v4.18.0 (e06852bd545973cb224eb28820b891205cfc1624), NRI v190, integration v23",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
@@ -470,18 +502,18 @@
    "denoiser": "nrd-sigma",
    "signal": "visibility",
    "frames": 16,
-   "psnr": 22.83984036898656,
-   "psnrSettled": 22.90277949410813,
-   "psnrLast": 22.97626090093557,
-   "psnrPenumbra": 12.375953487705019,
-   "psnrPooled": 22.83987195961677,
-   "psnrSettledPooled": 22.902640337964787,
-   "psnrPenumbraPooled": 12.377474671009615,
-   "psnrCapped": 22.83984036898656,
-   "psnrSettledCapped": 22.90277949410813,
-   "psnrPenumbraCapped": 12.375953487705019,
-   "flicker": 0.0165614771335922,
-   "bias": 0.005102525628682415,
+   "psnr": 22.83985289904402,
+   "psnrSettled": 22.902816879050196,
+   "psnrLast": 22.976325527692467,
+   "psnrPenumbra": 12.375952540652923,
+   "psnrPooled": 22.839884198431296,
+   "psnrSettledPooled": 22.902677515713115,
+   "psnrPenumbraPooled": 12.377473404361151,
+   "psnrCapped": 22.83985289904402,
+   "psnrSettledCapped": 22.902816879050196,
+   "psnrPenumbraCapped": 12.375952540652923,
+   "flicker": 0.01656130142143687,
+   "bias": 0.005104757132374186,
    "nonFinite": 0,
    "perFramePsnr": [
     22.677,
@@ -501,8 +533,18 @@
     22.944,
     22.976
    ],
-   "medianGpuMs": 0.254976,
-   "medianWallMs": 0.3581,
+   "dynamicPixelsPerFrame": 5975,
+   "psnrDynamicPooled": 11.817356510356767,
+   "psnrStaticPooled": 23.69221253256424,
+   "psnrStaticPenumbraPooled": 12.500016657431342,
+   "flickerDynamic": 0.18236979881167725,
+   "tpsnrDynamic": 8.37661399437357,
+   "flickerStatic": 0.009678609011465394,
+   "tpsnrStatic": 20.84418660276089,
+   "boilDynamic": 0.2848072545665496,
+   "boilStaticPenumbra": 0.238714674950078,
+   "medianGpuMs": 9.28563,
+   "medianWallMs": 17.1418,
    "commit": "NRD v4.18.0 (e06852bd545973cb224eb28820b891205cfc1624), NRI v190, integration v23",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
@@ -541,9 +583,9 @@
     37.453,
     37.563
    ],
-   "medianGpuMs": 784.8253,
-   "medianWallMs": 850.2,
-   "commit": "7a8b980",
+   "medianGpuMs": 348.3709,
+   "medianWallMs": 367.7,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -581,9 +623,9 @@
     30.887,
     30.959
    ],
-   "medianGpuMs": 784.8253,
-   "medianWallMs": 850.2,
-   "commit": "7a8b980",
+   "medianGpuMs": 348.3709,
+   "medianWallMs": 367.7,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -621,9 +663,9 @@
     37.453,
     37.563
    ],
-   "medianGpuMs": 176.2089,
-   "medianWallMs": 202.9,
-   "commit": "7a8b980",
+   "medianGpuMs": 290.2999,
+   "medianWallMs": 299.1,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -661,49 +703,59 @@
     32.629,
     32.678
    ],
-   "medianGpuMs": 176.2089,
-   "medianWallMs": 202.9,
-   "commit": "7a8b980",
+   "medianGpuMs": 290.2999,
+   "medianWallMs": 299.1,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
    "denoiser": "shadows",
    "signal": "visibility",
    "frames": 16,
-   "psnr": 34.98852245197372,
-   "psnrSettled": 35.40105871288541,
-   "psnrLast": 35.43164362282228,
-   "psnrPenumbra": 25.064634439500246,
-   "psnrPooled": 34.941840655849944,
-   "psnrSettledPooled": 35.39822755096963,
-   "psnrPenumbraPooled": 25.010284377779385,
-   "psnrCapped": 34.98852245197372,
-   "psnrSettledCapped": 35.40105871288541,
-   "psnrPenumbraCapped": 25.064634439500246,
-   "flicker": 0.004147370899557284,
-   "bias": 0.008145047486217562,
+   "psnr": 35.04864517910902,
+   "psnrSettled": 35.43697025853075,
+   "psnrLast": 35.4634083375476,
+   "psnrPenumbra": 25.163342070940164,
+   "psnrPooled": 35.00212410950466,
+   "psnrSettledPooled": 35.434188169945514,
+   "psnrPenumbraPooled": 25.108135512354735,
+   "psnrCapped": 35.04864517910902,
+   "psnrSettledCapped": 35.43697025853075,
+   "psnrPenumbraCapped": 25.163342070940164,
+   "flicker": 0.003899801012964352,
+   "bias": 0.00824062194272259,
    "nonFinite": 0,
    "perFramePsnr": [
     33.029,
-    34.109,
-    34.453,
-    34.73,
-    34.64,
-    35.117,
-    35.359,
-    35.17,
-    35.347,
-    35.627,
-    35.232,
-    35.321,
-    35.413,
-    35.646,
-    35.19,
-    35.432
+    34.227,
+    34.573,
+    34.816,
+    34.762,
+    35.217,
+    35.44,
+    35.218,
+    35.384,
+    35.66,
+    35.245,
+    35.354,
+    35.453,
+    35.685,
+    35.251,
+    35.463
    ],
-   "medianGpuMs": 113.153,
-   "medianWallMs": 124.3,
-   "commit": "7a8b980",
+   "dynamicPixelsPerFrame": 5975,
+   "psnrDynamicPooled": 20.632214771054546,
+   "psnrStaticPooled": 37.24178221083402,
+   "psnrStaticPenumbraPooled": 26.86744291349289,
+   "flickerDynamic": 0.04591295162886006,
+   "tpsnrDynamic": 21.422203362616216,
+   "flickerStatic": 0.001913202091175447,
+   "tpsnrStatic": 39.03428432030507,
+   "boilDynamic": 0.05953323392556128,
+   "boilStaticPenumbra": 0.03489956260995686,
+   "medianGpuMs": 49.919,
+   "medianWallMs": 126.3,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -741,9 +793,9 @@
     39.021,
     39.104
    ],
-   "medianGpuMs": 468.5732,
-   "medianWallMs": 662.5,
-   "commit": "7a8b980",
+   "medianGpuMs": 29.8476,
+   "medianWallMs": 39.7,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -781,9 +833,9 @@
     31.707,
     31.701
    ],
-   "medianGpuMs": 468.5732,
-   "medianWallMs": 662.5,
-   "commit": "7a8b980",
+   "medianGpuMs": 29.8476,
+   "medianWallMs": 39.7,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -821,9 +873,9 @@
     39.264,
     39.397
    ],
-   "medianGpuMs": 625.8565,
-   "medianWallMs": 667.2,
-   "commit": "7a8b980",
+   "medianGpuMs": 341.8276,
+   "medianWallMs": 496.9,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   },
   {
@@ -861,9 +913,9 @@
     32.629,
     32.678
    ],
-   "medianGpuMs": 625.8565,
-   "medianWallMs": 667.2,
-   "commit": "7a8b980",
+   "medianGpuMs": 341.8276,
+   "medianWallMs": 496.9,
+   "commit": "d7d3422",
    "gpu": "NVIDIA GeForce RTX 3060 Laptop GPU"
   }
  ]
