@@ -799,7 +799,7 @@ harness builder runs them and returns images/metrics only.)_
       (`accumulate`, reprojected) gets 31.7 / 26.4 / 26.4; without reprojection
       (`accumulate-static`) 25.7 / 18.1 / 13.9. Return both tables and a specular strip
       (`preview.mjs --strip specular`). — from capture-io
-- [ ] **P2: is native specular low because of input conventions?** On `synthetic-static` /
+- [x] (answered 0242a35, native/results/PHASE4-5.md: **no**; no convention variant closes the gap) **P2: is native specular low because of input conventions?** On `synthetic-static` /
       `synthetic-plane`, native specular scores 24.6–25.3 dB vs ours 28.7–29.4 (results/M1.md §7),
       while diffuse is on par. Sensitivity runs, specular only, REBLUR and RELAX, scored with
       `compare.mjs`: (a) as now; (b) `specular_hitt` scaled ×0.1 and ×10 before packing; (c)
@@ -809,19 +809,19 @@ harness builder runs them and returns images/metrics only.)_
       the range of normalized hit distance the helper produced in (a). Words/metrics only.
       — orchestrator
 
-- [ ] **P3: native occlusion's hit-distance curve, as data.** Capture: a synthetic plane (`gen-synthetic.mjs`,
+- [x] (answered 0242a35, PHASE4-5.md: table of native's normalized curve vs viewZ, h, roughness) **P3: native occlusion's hit-distance curve, as data.** Capture: a synthetic plane (`gen-synthetic.mjs`,
       `synthetic-static`-like) with constant `diffuse_hitt` = h per capture, h ∈ {0.1, 0.3, 1, 3, 10, 30, 0 (miss)},
       at two camera distances (viewZ ≈ −2 and −20). Run `REBLUR_DIFFUSE_OCCLUSION` with default hit-distance
       parameters, 32 frames; return the converged output value per (h, viewZ), and the same for
       `REBLUR_SPECULAR_OCCLUSION` at roughness 0.3 and 0.8. Numbers only. With that table the test bed can render
       references on native's curve (scene.ts `occNorm`) and compare `occlusion-*` against native fairly. — occlusion
-- [ ] **P4: SIGMA across versions on a moving occluder** (change audit rank 1; `sources/nrd-change-magnitude.md`).
+- [x] (skipped by the harness builder, ROUND2.md: current SIGMA on the knot captures answers the moving-shadow question; old versions add little) **P4: SIGMA across versions on a moving occluder** (change audit rank 1; `sources/nrd-change-magnitude.md`).
       Build NRD v4.9.4, v4.11.0 and v4.18.0 (outside the repo, as for e06852b). Run `SIGMA_SHADOW` on
       `three-knot-static`, `three-knot-orbit` and test-bed `std540-object` / `std540-light`. Score with
       `compare.mjs`, including the dynamic / static region fields and `boil`. Return the per-version
       table and a frame strip of the knot shadow. Also run our `shadows` (v2.2) and `ffx-shadows`
       on the same GPU. — orchestrator
-- [ ] **P5: ReBLUR history-fix timing** (change audit rank 2). `REBLUR_DIFFUSE_SPECULAR` v3.3.1 vs v3.4.0
+- [x] (skipped, ROUND2.md scope note) **P5: ReBLUR history-fix timing** (change audit rank 2). `REBLUR_DIFFUSE_SPECULAR` v3.3.1 vs v3.4.0
       vs v4.18.0 on `std540-cut` and `std540-pan`, frames 0–12 after each reset/disocclusion, per-frame
       pooled PSNR for diffuse and specular in the disoccluded region. Return the per-frame curves.
       — orchestrator
@@ -839,6 +839,11 @@ harness builder runs them and returns images/metrics only.)_
       packed by native's front end) and `SIGMA_SHADOW` on `visibility` alone. Score the rgb output against
       `shadow_rgb_ref` (clamp tonemap per channel) and the opaque part against `visibility_ref`, with the dynamic region
       and boil; timings for both. — spec-author
+- [ ] **Native round 3 (order set by the orchestrator, 2026-10-26):** (1) REBLUR hit-distance normalization
+      sweep on diffuse, standard set + real scene, before trusting REBLUR's real-scene rows (ROUND2 item 1);
+      (2) cost re-run at HEAD with clocks locked: `svgf-auto`, `shadows` (v2.2), occlusion, plus SVGF
+      `youngNormalPower=16` vs default (T1 candidate awaiting a quiet-GPU cost check); (3) P6 / P7 after
+      rewriting `--set=v1`. Jitter units: confirmed (pixel units, PHASE4-5.md). — orchestrator
 
 ## Questions for Dennis
 
