@@ -589,8 +589,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `deployed: false` (local `yarn examples` only) and in the three-temporal Vite build; flip `deployed` + add a shot when
       `denoiser/realtime` should show on the site — found by m6, owner spec-author (fold into SPEC §12) / Dennis
 
-- [~] (e1) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
+- [x] (e1, results/E1-high-reference.md; test bed d256615) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
+- [ ] Fold E-1 into SPEC §0.2 / §12 items 1–2: quote the 4096-spp gaps (recurrent vs A-SVGF `auto` diffuse −2.51 dB on 5
+      paths, AO −2.33 on 7, specular −1.91; `antiLag: 'auto'` vs `'off'` diffuse +0.93, specular +2.81) next to the 256-spp
+      ones, and the 256-spp ceilings (diffuse 41.7, specular 36.9 dB) in §13. No recommendation flips. results/E1-high-reference.md
+      — found by e1, owner spec-author
+- [ ] E-1 leftovers: diffuse / specular on `thin` and `cut` at 4096 spp (both pages lost the GPU device under another agent's
+      2048-spp captures; rerun on a quiet GPU, ~10 min each), and 4096-spp floors on those paths — found by e1, owner eval agent
 - [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
 - [x] (moving-shadows, d02613d e573a04 033a869 + docs commit; results/M4.md §12) **moving-shadows**: the rotating knot's shadow

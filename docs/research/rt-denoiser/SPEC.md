@@ -2562,6 +2562,7 @@ signals). The best filters score 38–39 dB, close to that cap. So:
 - **High-reference subset (E-1).** Two or three test-bed paths are re-scored against 2048–4096-spp
   references for the top filters, to measure the true gaps. When a ranking or a decision rests on a
   gap of a few tenths of a dB, cite the high-reference number.
+  _E-1 result ([results/E1-high-reference.md](results/E1-high-reference.md)): no ranking changes, but gaps at 4096 spp are 2.5–3.6× wider on diffuse / AO and ~2× on specular (recurrent vs A-SVGF `auto`: diffuse −0.95 → −2.51 dB, AO −1.01 → −2.33; `'auto'` vs `'off'` diffuse +0.27 → +0.93), so §0.2 / §12 items 1–2 understate their gaps; shadows and SO barely move. 256-spp ceilings: diffuse 41.7, specular 36.9, AO 42.2, SO / shadows 49 dB._
 - Where it's cheap, report the reference's own noise floor (e.g. PSNR between two independent
   references of the same frame) next to the scores.
 
