@@ -1,7 +1,8 @@
 # Third-party scene models (research use)
 
 Test scenes for the real-time denoiser pages (`?scene=sponza|bistro`, see `../CAPTURES.md` "Bistro and Sponza").
-They are stored with Git LFS and are not part of any published package or the deployed examples site.
+They are stored with Git LFS, skipped by default clones (`.lfsconfig`), and are not part of any published package or
+the deployed examples site. Fetch them with `git lfs pull --include "examples/three-temporal/scene-assets/**" --exclude ""`.
 
 ## Sponza (`sponza/Sponza.gltf`, `sponza/Sponza.bin`)
 

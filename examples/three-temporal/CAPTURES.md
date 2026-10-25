@@ -124,8 +124,8 @@ Two real asset scenes on the same realtime pages, so defaults are judged on more
 (SPEC §12 item 7). Results: [results/scenes-bistro-sponza.md](../../docs/research/rt-denoiser/results/scenes-bistro-sponza.md).
 
 **The models are in this repository under Git LFS** (Dennis, 2026-10-26): `scene-assets/` (licences and attribution in
-`scene-assets/NOTICE.md`). Run `git lfs pull --include "examples/three-temporal/scene-assets/**"` if the files are LFS
-pointers. The dev server serves them (`scene-assets-plugin.ts`, endpoint `/__scene-assets/*`) from `$RT_SCENE_ASSETS`, else
+`scene-assets/NOTICE.md`). Clones skip them by default (`.lfsconfig` `fetchexclude`); fetch them with
+`git lfs pull --include "examples/three-temporal/scene-assets/**" --exclude ""`. The dev server serves them (`scene-assets-plugin.ts`, endpoint `/__scene-assets/*`) from `$RT_SCENE_ASSETS`, else
 `scene-assets/`. Layout: `sponza/Sponza.gltf` + `sponza/Sponza.bin`, `bistro/bistro-uncompressed.glb`. CI does not fetch them.
 
 | model | source | licence | used as |
