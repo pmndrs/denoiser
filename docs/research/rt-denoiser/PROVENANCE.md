@@ -291,7 +291,7 @@ port opened). Host: `packages/denoiser-realtime/src/occlusion.ts`; results:
 | test-bed AO/SO references: mean of per-sample normalized hit distances | — | **our design** (the curve is nonlinear, so the reference normalizes each sample) | | | `examples/realtime-denoiser/src/scene.ts` `ref_ao`, `ref_so`, `OCC_WGSL` |
 | SO from AO (optional) | O-4 | FB §4.10.2 Listing 26 | not built | yes | |
 
-### M7 SH/SG directional variants — **spec only, not built** (SPEC v0.3 §8.5)
+### M7 SH/SG directional variants — **built (SVGF family), provisional** (SPEC v0.3 §8.5; results/M7.md)
 
 _Added 2026-10-25 by the spec author (RULES §8: no NRD code, README, release notes or port opened;
 read `sources/nrd-provenance.md` §3, `sources/nrd-releases.md`, `sources/nrd-change-magnitude.md`,
@@ -305,19 +305,26 @@ SIGGRAPH 2001 (cited by ID25 s.20; band factors are textbook) · **MS03** Malvar
 Rendering of Dynamic, Spatially-Varying Reflectance", SIGGRAPH Asia 2009 (via MJP-SG4, not read).
 Every row: spec only, not built._
 
+_Built 2026-10-25 by the m7-sh implementer (RULES §8 implementer: no NRD code, README, release notes or
+port opened; read SPEC §8.5, this table and `sources/nrd-public-2022-2026.md`; none of SD24's printed
+code was used). Code: `src/shaders/sh.ts` (payload, encoding, resolves), `src/shaders/svgf-sh.ts` (SVGF
+passes in SH mode), `src/shaders/sh-gradient.ts` (anti-lag gradient samples), `src/svgf.ts` (`payload`,
+`resolve`, options), `src/sh.ts` (`ShResolver`), `packages/denoiser-three/src/temporal/realtime.ts`
+(`realtimeDiffuse` SH mode). Deviations from the spec are in the rows and in TASKS (spec-author items)._
+
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| L1 payload, Y with 4 coefficients, Co / Cg as L0, through the existing filters | M7-1 | SD24 p.30, ACS25 s.57–59 (description only; SD24's printed code has no license and is not used); ID25 s.20 ("each pixel an irradiance probe") | world-space storage, evaluation-ready `a + b·ω` form; `'sh-rgb'` option (12 ch): **our design**. Spec only, not built | | — |
-| SH vs SG as the payload (SG only at resolve time) | M7-1 | linearity argument: **our design**; SG tail vs L1 negativity: MJP-SG3 "Error analysis" | — | | — |
-| per-sample encoding `a = L/(1+2c)`, `b = 2Lω/(1+2c)`, exact at the sampling normal | M7-2 | clamped-cosine L1 band factors ¼ and ½ (RH01) | the renormalization and the resulting estimator: **our design, tune on captures** (vs the textbook projection with a cos floor). Spec only | | — |
-| 8 × f16 in one rgba32uint; no 8-bit histories; 64-bit packing only for input / à-trous (tune) | M7-3 | 64-bit 6 × 8-bit + f16 magnitude packing: SD24 p.30, ACS25 s.57; quantized-vs-reference check: ML25 p.34 | **our design**. Spec only | | — |
-| input forms (encoded / raw + direction), `detailNormal` guide, CAPTURE-FORMAT v1 buffers | M7-4 | evaluate with the full-resolution normal: ACS25 s.59 | **our design**. Spec only | | — |
-| guide luminance = Rec. 709 luminance of the payload at the filter's normal | M7-5 | S1 (luminance-driven weights and moments) | **our design** (keeps every tuned SVGF constant valid). Spec only | | — |
-| all coefficients filtered with the same weights; variance on l only | M7-6/7 | S1, S3 (unchanged passes) | **our design**. Spec only | | — |
-| value-preserving ringing guard on b (k = 1); chroma stored as a ratio to Y at the guide normal | M7-8 | chroma rescaled by the evaluated luma: SD24 p.37 (description) | the guard and the reference value Y_g: **our design, tune k on captures**. Spec only | | — |
-| diffuse resolve; optional sharpening via ambient + one extracted light, renormalized at the guide normal | M7-9 | light direction / intensity from the L1 luma: SD24 p.37 (description); clamped-cosine L1: RH01 | the decomposition and the renormalization: **our design, tune s**. Spec only | | — |
-| specular ratio resolve: NDF as an SG (sharpness 2/α²) warped to the reflection direction (÷ 4\|n·v\|), SG inner product with the extracted SG light; ratio clamp; roughness fade | M7-10 | MJP-SG4 (after WANG09); rough-specular-only SH use: SD24 p.55, ACS25 s.65; "specular-compatible SG resolve": nrd-releases v4.1.0 (behaviour only) | the ratio form (payload sets only the detail/guide ratio), λ_l = 8, ρ_max = 4, fade below r = 0.2: **our design, tune on captures**. Spec only | | — |
-| resolve helpers, API (`payload`, `resolve`, `sh` / `direction` inputs) | M7-11/12 | — | **our design**; no NVIDIA names (rule 6). Spec only | | — |
+| L1 payload, Y with 4 coefficients, Co / Cg as L0, through the existing filters | M7-1 | SD24 p.30, ACS25 s.57–59 (description only; SD24's printed code has no license and is not used); ID25 s.20 ("each pixel an irradiance probe") | world-space storage, evaluation-ready `a + b·ω` form; `'sh-rgb'` option (12 ch): **our design**. Built | | `src/shaders/sh.ts` `SH_CORE_WGSL` (struct `SH`, YCoCg, `shLum`); `'sh-rgb'` not built |
+| SH vs SG as the payload (SG only at resolve time) | M7-1 | linearity argument: **our design**; SG tail vs L1 negativity: MJP-SG3 "Error analysis" | — | | SH payload; SG only in `shResolveSpecular` |
+| per-sample encoding `a = L/(1+2c)`, `b = 2Lω/(1+2c)`, exact at the sampling normal | M7-2 | clamped-cosine L1 band factors ¼ and ½ (RH01) | the renormalization and the resulting estimator: **our design, tune on captures** (vs the textbook projection with a cos floor). Built; the textbook variant (`shEncoding: 'textbook'`) lost 7.7 dB on the dev page | | `src/shaders/sh.ts` `shEncodeWgsl` |
+| 8 × f16 in one rgba32uint; no 8-bit histories; 64-bit packing only for input / à-trous (tune) | M7-3 | 64-bit 6 × 8-bit + f16 magnitude packing: SD24 p.30, ACS25 s.57; quantized-vs-reference check: ML25 p.34 | **our design**. Built (f16 everywhere; 64-bit packing not built) | | `src/shaders/sh.ts` `shPack`/`shUnpack`, `src/svgf.ts` `configure` |
+| input forms (encoded / raw + direction), `detailNormal` guide, CAPTURE-FORMAT v1 buffers | M7-4 | evaluate with the full-resolution normal: ACS25 s.59 | **our design**. Built (raw form encodes in the temporal and gradient passes; `detailNormal` falls back to `guides.normal`) | | `src/shaders/svgf-sh.ts` `shLoaderWgsl`; core `FrameGuides.detailNormal`, `DiffuseInputs`/`SpecularInputs` `.direction`/`.sh` |
+| guide luminance = Rec. 709 luminance of the payload at the filter's normal | M7-5 | S1 (luminance-driven weights and moments) | **our design** (keeps every tuned SVGF constant valid). Built; specular evaluates at the guide normal's dominant direction (M7-10) | | `src/shaders/sh.ts` `shLum`, `src/shaders/svgf-sh.ts` `shDirWgsl` |
+| all coefficients filtered with the same weights; variance on l only | M7-6/7 | S1, S3 (unchanged passes) | **our design**. Built | | `src/shaders/svgf-sh.ts` `temporalPassSh`, `variancePassSh`, `atrousPassSh`; `src/shaders/sh-gradient.ts` |
+| value-preserving ringing guard on b (k = 1); chroma stored as a ratio to Y at the guide normal | M7-8 | chroma rescaled by the evaluated luma: SD24 p.37 (description) | the guard and the reference value Y_g: **our design, tune k on captures**. Built (k = 1 inert on the dev page; 0.5: −0.4 dB) | | `src/shaders/sh.ts` `shOutputPayload` |
+| diffuse resolve; optional sharpening via ambient + one extracted light, renormalized at the guide normal | M7-9 | light direction / intensity from the L1 luma: SD24 p.37 (description); clamped-cosine L1: RH01 | the decomposition and the renormalization: **our design, tune s**. Built | | `src/shaders/sh.ts` `shResolveDiffuse`, `src/sh.ts` `ShResolver`, fused in `atrousPassSh` |
+| specular ratio resolve: NDF as an SG (sharpness 2/α²) warped to the reflection direction (÷ 4\|n·v\|), SG inner product with the extracted SG light; ratio clamp; roughness fade | M7-10 | MJP-SG4 (after WANG09); rough-specular-only SH use: SD24 p.55, ACS25 s.65; "specular-compatible SG resolve": nrd-releases v4.1.0 (behaviour only) | the ratio form (payload sets only the detail/guide ratio), λ_l = 8, ρ_max = 4, fade below r = 0.2: **our design, tune on captures**. Built, plus an `'l1'` ratio (the payload at the two dominant directions, our design). Both lose to no ratio on the dev page (results/M7.md) | | `src/shaders/sh.ts` `shResolveSpecular`, `shSpecResponse`, `shSgInner` |
+| resolve helpers, API (`payload`, `resolve`, `sh` / `direction` inputs) | M7-11/12 | — | **our design**; no NVIDIA names (rule 6). Built | | `src/svgf.ts`, `src/denoisers.ts`, `src/sh.ts`, `SH_RESOLVE_WGSL`, three.js `realtimeDiffuse` |
 | recurrent SH needs (buffers, luminance-ratio clamps) | §8.5.6 | L1 YCoCg through a recurrent-blur denoiser ships in SD24 / ACS25 | **our design** (not specified in detail) | | — |
 | evaluation: `bumpy` / coloured-bounce scenes, two references, detail band, ringing fraction; native after colour extraction | M7-13 | native colour-extraction comparison: nrd-provenance §3.4; PLAN §6 | **our design**. Spec only | | — |
 
