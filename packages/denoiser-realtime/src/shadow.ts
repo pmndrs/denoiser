@@ -189,6 +189,9 @@ export interface ShadowDenoiserOptions {
   translucencyEpsilon?: number;
   /** Translucency: sample cap n_tau of the conditional transmittance history. Default 7 (as maxScaleHistory). */
   translucencyHistory?: number;
+  /** Translucency: tau's neighbourhood clamp window, per channel (as clampSigma / clampFloor for v). Defaults: clampSigma, clampFloor. */
+  translucencyClampSigma?: number;
+  translucencyClampFloor?: number;
   /**
    * Translucency: the colour's stabilization weight also follows its own 3x3 range (box-width gate) and
    * clamp distance (anti-lag), not only v's, so sharp coloured edges over uniform v aren't blurred by the
@@ -256,6 +259,8 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     translucency: o.translucency ?? false,
     translucencyEpsilon: o.translucencyEpsilon ?? 0.01,
     translucencyHistory: o.translucencyHistory ?? 7,
+    translucencyClampSigma: o.translucencyClampSigma ?? o.clampSigma ?? 0.4,
+    translucencyClampFloor: o.translucencyClampFloor ?? o.clampFloor ?? 0.05,
     translucencyOwnGate: o.translucencyOwnGate ?? true,
     translucencyPath: o.translucencyPath ?? 'auto',
     timestamps: o.timestamps ?? true,
@@ -655,6 +660,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       // the translucent hit distance sizes footprints like h does, so it needs a light too
       u[98] = (inputs.translucency ? TR_HAS_T : 0) | (inputs.translucencyHitDistance && light ? TR_HAS_HIT : 0)
         | (o.translucencyOwnGate ? TR_OWN_GATE : 0);
+      f[99] = o.translucencyClampSigma;
+      f[100] = o.translucencyClampFloor;
     }
     this.device.queue.writeBuffer(this.params, 0, f);
   }

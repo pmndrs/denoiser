@@ -87,7 +87,7 @@ export const TR_HAS_HIT = 2;      // a translucency hit-distance texture is boun
 export const TR_OWN_GATE = 4;     // stabilize: S also gets its own box-width gate and clamp-distance anti-lag
 
 /** Size of ShadowParams in bytes (the translucency variants read 4 more floats). */
-export const SP_SIZE = 100 * 4;
+export const SP_SIZE = 104 * 4;
 
 /**
  * Translucency pipeline variant (SPEC v0.3 §7.10, M8): `packed` = the 4-storage-texture path (v's and
@@ -98,7 +98,8 @@ export const SP_SIZE = 100 * 4;
  */
 export interface TrVariant { packed: boolean; compose?: boolean }
 
-const PARAMS_TR_FIELDS = /* wgsl */ `  trEps: f32, trMaxN: f32, trFlags: u32, q4: f32,
+const PARAMS_TR_FIELDS = /* wgsl */ `  trEps: f32, trMaxN: f32, trFlags: u32, trClampSigma: f32,
+  trClampFloor: f32, q5: f32, q6: f32, q7: f32,
 `;
 
 const PARAMS_WGSL = /* wgsl */ `
@@ -574,7 +575,7 @@ ${tbG.join('\n')}
         }
         var tC = tH;
         if (tn >= SP.clampMinTaps) {
-          let winT = SP.clampSigma * sgT * sqrt(25.0 / tn) + SP.clampFloor;
+          let winT = SP.trClampSigma * sgT * sqrt(25.0 / tn) + SP.trClampFloor;
           tC = clamp(tH, muT - winT, muT + winT);
           // every lit tap sees the same T (clear, or one uniform layer): take it exactly (v's uniform
           // snap, SH-4); otherwise the f16 history's rounding drifts tau below 1 where nothing is in the way
