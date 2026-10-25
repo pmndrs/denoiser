@@ -175,6 +175,9 @@ animated per frame. FFX shadows is the baseline.
 
 ## 5. Test bed and evaluation (our side)
 
+_How results are judged (references, reference-noise ceiling, OIDN as a baseline, two scoring
+scenes): [SPEC.md §13](SPEC.md)._
+
 Extend `examples/ffx-denoiser` (the analytic WGSL tracer that already renders 1-spp
 signals, per-frame many-spp references, scripted camera paths with a cut, and computes
 PSNR/flicker/bias headlessly) rather than start over:

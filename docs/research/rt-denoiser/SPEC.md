@@ -55,6 +55,8 @@ the implementers' "Found along the way" reports. "Test bed" = `examples/realtime
 demodulated values (scalars: clamped to [0, 1]). "Dev page" = the package's synthetic scene
 (direct point lights, exact truth + injected noise). All ms are Apple M5 Pro, 1080p.
 
+**Evaluation method:** §13 (what the references are, the reference-noise ceiling, OIDN as a baseline not a reference).
+
 **Metric (v0.2).** Denoisers are ranked on **pooled PSNR**: 10·log10(1 / mean squared error
 over every frame and scored pixel) (CAPTURE-FORMAT "Metrics for replay outputs"; M1 §11, M4 §9).
 The old headline, the mean of per-frame dB, let near-empty frames score up to 120 dB (shadows on
@@ -1808,3 +1810,51 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 Lower priority, kept from v0.1: **pre-blur strength** (recurrent diffuse 25 px, +0.10 dB over
 15; the bias is permanent near contacts, limited by D1b). It matters only if item 1 keeps
 recurrent as a default; look at contact GI on captures first.
+
+## 13. Evaluation method (v0.2, added 2026-10-25)
+
+What every quality number in this spec is measured against, and why.
+
+**Ground truth is a converged render of the same estimator, never another denoiser.** Each
+test-bed frame is rendered a second time with many samples (256 spp, stratified 16×16, same
+estimator as the 1-spp input), so the specular reference is the converged version of exactly the
+specular signal being denoised. The real three.js scene does the same per frozen camera pose
+(1024 rays for visibility, 2048 for diffuse and AO, 4096 for the static shadow shots). Denoisers
+are never scored against each other: "recurrent vs SVGF" means two scores against the same
+reference. Noise-injection mode (test bed `noise=inject`, the package dev page) has exact truth
+and is used for math checks only, because injected noise is easier than traced noise.
+
+**Reference noise sets a ceiling.** A finite-sample reference carries its own variance σ²_ref,
+uncorrelated with any denoiser's output, so every measured MSE is the true MSE + σ²_ref. That
+keeps rankings but compresses gaps, and it caps meaningful PSNR (at 256 spp, around 40 dB on our
+signals). The best filters score 38–39 dB, close to that cap. So:
+
+- **High-reference subset (E-1).** Two or three test-bed paths are re-scored against 2048–4096-spp
+  references for the top filters, to measure the true gaps. When a ranking or a decision rests on a
+  gap of a few tenths of a dB, cite the high-reference number.
+- Where it's cheap, report the reference's own noise floor (e.g. PSNR between two independent
+  references of the same frame) next to the scores.
+
+**Baselines vs references.** A strong offline denoiser is a *baseline* scored against the same
+reference, never the reference itself: its output is an estimate with its own bias and
+over-smoothing, so scoring against it would measure resemblance to it, not error.
+
+- **OIDN baseline (E-2).** OIDN 2 (the `denoiser` package's single-image `Denoiser`), run once
+  per frame on the same 1-spp demodulated signal, with albedo and normal as auxiliary inputs where
+  the signal allows, scored per signal with the same metrics. It is the "heavy neural, no history"
+  point: expected to lead on single-frame PSNR, lose on flicker, and cost far more than the
+  real-time budget. It also gives the comparison point for OIDN 3's real-time model, which joins
+  `denoiser/realtime` later (PLAN §1).
+- **Native NRD (PLAN §6)** is the main comparison: same captures, same references, same metrics
+  (`compare.mjs`), same GPU for cost.
+- FFX shadows / reflections and plain accumulation remain the in-repo baselines.
+
+**Metrics.** Pooled PSNR ranks (header note; CAPTURE-FORMAT "Metrics for replay outputs"), with
+the per-frame mean and the 60 dB-capped mean kept for continuity. FLIP (perceptual), flicker and
+temporal PSNR (stability), bias and energy (darkening and brightening), and region breakdowns
+(penumbra, disoccluded, after-cut, roughness bins, contact) are reported next to it. A filter that
+wins pooled PSNR but loses FLIP or flicker is a judgement call, not a win.
+
+**Scenes.** The analytic test bed is where defaults were tuned, so it can't be the only judge. The
+real three.js scene's moving-camera captures (`three-orbit`, `three-pan`) are the second scoring
+scene (§12 item 7). A default stands only if both scenes, and later the native replay, agree.
