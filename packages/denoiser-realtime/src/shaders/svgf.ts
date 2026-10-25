@@ -68,24 +68,27 @@ fn finite3(c: vec3f) -> vec3f {
 `;
 
 /** Per-signal edge-stopping functions, suffixed with the signal index. */
-export function weightsWgsl(kind: SignalKind, i: number): string {
+export function weightsWgsl(kind: SignalKind, i: number, youngRelax = false): string {
   const P = `P${i}`;
+  // youngRelax (target 1 candidate youngNormalPower): the power form's exponent is a per-centre private
+  const sN = youngRelax ? `sigmaNEff${i}` : `${P}.sigmaN`;
+  const decl = youngRelax ? `var<private> sigmaNEff${i}: f32 = 128.0;\n` : '';
   const normal = kind === 'diffuse'
     ? /* wgsl */ `
-fn setCenter${i}(g: Geo) { }
-fn wNormal${i}(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), ${P}.sigmaN); }`
+${decl}fn setCenter${i}(g: Geo) { }
+fn wNormal${i}(g: Geo, gq: Geo) -> f32 { return pow(max(0.0, dot(g.n, gq.n)), ${sN}); }`
     : /* wgsl */ `
 // Specular normal edge-stop: cutoff at the GGX lobe half-angle theta_L + 1 deg,
 // linear in the angle; per tap the angle ratio is sqrt((1 - cos)/(1 - cos0)),
 // = theta/theta0 to second order (no acos per tap). Or SVGF's power form.
 var<private> cosLimit${i}: f32 = 0.0;
-fn setCenter${i}(g: Geo) {
+${decl}fn setCenter${i}(g: Geo) {
   let a = g.rough * g.rough;
   cosLimit${i} = cos(atan(a * sqrt(${P}.lobeFraction / (1.0 - ${P}.lobeFraction))) + 0.0174533);
 }
 fn wNormal${i}(g: Geo, gq: Geo) -> f32 {
   let d = dot(g.n, gq.n);
-  if ((${P}.flags & P_SPEC_NORMAL_POWER) != 0u) { return pow(max(0.0, d), ${P}.sigmaN); }
+  if ((${P}.flags & P_SPEC_NORMAL_POWER) != 0u) { return pow(max(0.0, d), ${sN}); }
   return clamp(1.0 - sqrt(max(0.0, 1.0 - d) / max(1.0 - cosLimit${i}, 1e-7)), 0.0, 1.0);
 }
 // RTG ch. 32 eq. 14-15: f_w(a, b, x) = 1 - smoothstep(a, b, x)
@@ -295,7 +298,16 @@ ${kinds.map((_, i) => perSignal(i)).join('\n')}
 
 // ---- variance estimation --------------------------------------------------------
 
-export function variancePass(kinds: SignalKind[]): PassDef {
+/**
+ * Options of the variance pass. `historyWeight[i]` (target 1 candidate `spatialHistoryWeight`, our design;
+ * results/T1-recovery.md): in the young-history spatial estimate, weight each neighbour also by its own
+ * history length n_q, capped at bitcast<f32>(Params.pad0) (inverse-variance weighting of neighbours that
+ * average n_q samples), so a young pixel next to valid history takes its colour and moments mostly from
+ * there. Compiled in only when on (default path unchanged).
+ */
+export interface VarianceVariant { historyWeight?: boolean[] }
+
+export function variancePass(kinds: SignalKind[], vv: VarianceVariant = {}): PassDef {
   const b = baseBindings(kinds);
   kinds.forEach((_, i) => {
     b.add(`accumCur${i}`, 'texture_2d<f32>', 'f');
@@ -342,9 +354,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       let off = vec2f(f32(dx), f32(dy));
       let ring = max(abs(dx), abs(dy));
       ${I.map((i) => /* wgsl */ `
-      if (ring <= rad${i}) {
+      if (ring <= rad${i}) {${vv.historyWeight?.[i] ? `
+        let aq${i} = textureLoad(accumCur${i}, q, 0);
+        let w = wGeo${i}(g, gq, off) * min(aq${i}.a, bitcast<f32>(P${i}.pad0));
+        sc${i} += aq${i}.rgb * w;` : `
         let w = wGeo${i}(g, gq, off);
-        sc${i} += textureLoad(accumCur${i}, q, 0).rgb * w;
+        sc${i} += textureLoad(accumCur${i}, q, 0).rgb * w;`}
         sm${i} += textureLoad(momentsCur${i}, q, 0).rg * w;
         sw${i} += w;
       }`).join('')}
@@ -376,6 +391,14 @@ export interface AtrousVariant {
   last: boolean;
   /** 3x3 box (A-SVGF) instead of the 5x5 B3 spline. */
   box: boolean;
+  /**
+   * Per signal (target 1 candidates `youngLuminanceWeight` / `youngNormalPower`, our design;
+   * results/T1-recovery.md): relax the edge-stopping of young pixels. t = (n - 1) / (rampFrames - 1) clamped,
+   * n the centre's history length; the luminance exponent is scaled by mix(k, 1, t), k = bitcast<f32>(pad1);
+   * the normal power form's exponent is exp2(mix(log2 s, log2 sigmaN, t)), s = bitcast<f32>(pad2) when > 0.
+   * Compiled in only when on (default path unchanged).
+   */
+  youngLum?: boolean[];
 }
 
 export const B3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
@@ -411,7 +434,7 @@ export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
       if (gq.z > 0.0) {
         ${I.map((i) => /* wgsl */ `{
           let s = ${sample(i)};
-          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc${i}) / lumDenom${i});
+          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc${i}) ${v.youngLum?.[i] ? `* lumK${i} ` : ''}/ lumDenom${i});
           sumC${i} += s.rgb * w;
           sumV${i} += s.a * s.a * w * w;
           sumW${i} += w;
@@ -422,7 +445,7 @@ export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
   const code = /* wgsl */ `
 ${header(b)}
 struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
-${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
+${kinds.map((k, i) => weightsWgsl(k, i, !!v.youngLum?.[i])).join('\n')}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -443,7 +466,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : `textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0)`};`).join('\n  ')}
   let gVar${i} = (${inner.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * s${i}_${k}.a * s${i}_${k}.a`).join(' + ')}) / 16.0;
   let lc${i} = luma(c${i}.rgb);
-  let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;
+  let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;${v.youngLum?.[i] ? `
+  let tY${i} = clamp((textureLoad(accumCur${i}, p, 0).a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
+  let lumK${i} = mix(bitcast<f32>(P${i}.pad1), 1.0, tY${i});
+  let sY${i} = bitcast<f32>(P${i}.pad2);
+  sigmaNEff${i} = select(P${i}.sigmaN, exp2(mix(log2(max(sY${i}, 1e-3)), log2(P${i}.sigmaN), tY${i})), sY${i} > 0.0);` : ''}
   let hc${i} = ${f32s(h(0, 0))};
   var sumC${i} = c${i}.rgb * hc${i};
   var sumV${i} = c${i}.a * c${i}.a * hc${i} * hc${i};

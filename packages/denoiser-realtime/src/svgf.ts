@@ -74,6 +74,27 @@ export interface SvgfOptions {
    */
   spatialVarianceRadius?: number;
   /**
+   * Target 1 candidate (results/T1-recovery.md; our design, default 0 = off): in the young-history spatial
+   * estimate (history < varianceRampFrames), weight each neighbour also by its own history length, capped at
+   * this many frames, so pixels next to valid history (narrow disocclusions) borrow mostly from it. Resets
+   * (every pixel at n = 1) are unaffected. Off = today's estimate, bit-identical.
+   */
+  spatialHistoryWeight?: number;
+  /**
+   * Target 1 candidate (results/T1-recovery.md; our design, default 1 = off): luminance edge-stopping strength
+   * for young pixels in the a-trous passes, ramping linearly to 1 over varianceRampFrames frames of history.
+   * 0 = no luminance weight on a pixel's first frame. 1 = today's filter, bit-identical.
+   */
+  youngLuminanceWeight?: number;
+  /**
+   * Target 1 candidate (results/T1-recovery.md; our design, default 0 = off): exponent of the normal
+   * edge-stopping weight (the power form: diffuse, or specularNormalWeight 'power') for a pixel's first frame,
+   * ramping geometrically to sigmaNormal over varianceRampFrames frames. A low value (e.g. 8-16) lets young
+   * pixels on curved surfaces average over the full a-trous footprint (with 128 a sphere stops it within a few
+   * pixels), while creases (n.n' <= 0) still stop. Aims at the post-reset blotches. 0 = today's, bit-identical.
+   */
+  youngNormalPower?: number;
+  /**
    * A-SVGF anti-lag (gradient-driven alpha). 'auto' estimates the temporal
    * gradient from the signal itself; 'gradient' uses renderer-supplied gradient
    * samples (`inputs.gradient`, see README). Default 'auto' (v2; Dennis, SPEC §12 item 2, 2026-10-25);
@@ -203,6 +224,9 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     varianceRampFrames: o.varianceRampFrames ?? 4,
     spatialVarianceBoost: o.spatialVarianceBoost ?? 3,
     spatialVarianceRadius: o.spatialVarianceRadius === undefined ? -1 : Math.max(0, Math.round(o.spatialVarianceRadius)),
+    spatialHistoryWeight: Math.max(0, o.spatialHistoryWeight ?? 0),
+    youngLuminanceWeight: Math.max(0, o.youngLuminanceWeight ?? 1),
+    youngNormalPower: Math.max(0, o.youngNormalPower ?? 0),
     antiLag,
     antiLagNoiseFloor: o.antiLagNoiseFloor ?? -1,
     antiLagVersion,
@@ -345,11 +369,13 @@ export class SvgfPipeline {
       }
     } else {
       make('temporal', temporalPass(kinds));
-      make('variance', variancePass(kinds));
+      const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
+      make('variance', hw.some(Boolean) ? variancePass(kinds, { historyWeight: hw }) : variancePass(kinds));
+      const yl = signals.map((s) => s.opts.youngLuminanceWeight !== 1 || s.opts.youngNormalPower > 0);
       for (const writeHist of [false, true]) {
         for (const last of [false, true]) {
           if (writeHist && !o.feedback) continue;
-          make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, { writeHist, last, box }));
+          make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, yl.some(Boolean) ? { writeHist, last, box, youngLum: yl } : { writeHist, last, box }));
         }
       }
     }
@@ -423,6 +449,8 @@ export class SvgfPipeline {
       | (this.opts.kernel === '3x3' ? P_KERNEL_BOX3 : 0) | (o.luminanceVariance === 'mean' ? P_VAR_OF_MEAN : 0)
       | (o.specularNormalWeight === 'power' ? P_SPEC_NORMAL_POWER : 0);
     i32[16] = o.antiLagRadius; i32[17] = GRADIENT_DOWNSAMPLE; i32[18] = this.gw; i32[19] = this.gh;
+    f[21] = o.spatialHistoryWeight;   // Params.pad0 (bitcast in the variance pass when spatialHistoryWeight > 0)
+    if (o.youngLuminanceWeight !== 1 || o.youngNormalPower > 0) { f[22] = o.youngLuminanceWeight; f[23] = o.youngNormalPower; }   // pad1, pad2 (a-trous)
     i32[20] = o.spatialVarianceRadius >= 0 ? o.spatialVarianceRadius
       : this.opts.antiLag !== 'off' && this.opts.antiLagVersion !== 1 && s.kind === 'specular' ? 1 : 3;
     if (this.sh) {

@@ -864,12 +864,12 @@ fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id)
 // R4 per-signal body, occlusion kinds (ĥ only): (a) mip repair as radiance, no
 // anti-firefly, (c) the fast-history window on ĥ itself (O-2: ĥ detector only); the slow
 // ĥ is clamped into it when occClamp > 0 (our design, as the radiance luminance clamp).
-const histFixOcc = (i: number, kind: RecurrentKind, sl: number) => /* wgsl */ `
+const histFixOcc = (i: number, kind: RecurrentKind, sl: number, repair = `mipRepair${i}(p, g.z, a, ${isSpecKind(kind) ? 'g.rough' : '1.0'})`) => /* wgsl */ `
   {
     var c = textureLoad(acc${i}, p, 0).r;
     var a = A[${sl}];
     if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
-      let m = mipRepair${i}(p, g.z, a, ${isSpecKind(kind) ? 'g.rough' : '1.0'});
+      let m = ${repair};
       if (m >= 0.0) { c = m; }
     }
     if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
@@ -887,24 +887,10 @@ const histFixOcc = (i: number, kind: RecurrentKind, sl: number) => /* wgsl */ `
     textureStore(outFix${i}, p, vec4f(c));
   }`;
 
-export function historyFixPass(kinds: RecurrentKind[]): PassDef {
-  const b = base(kinds);
-  b.add('fastCur', 'texture_2d<f32>', 'f');
-  b.add('mipZ', 'texture_2d<f32>', 'f');
-  b.add('dataRW', 'texture_storage_2d<r32uint, read_write>', 'rw-r32uint');
-  kinds.forEach((k, i) => {
-    b.add(`acc${i}`, 'texture_2d<f32>', 'f');
-    b.add(`mip${i}`, 'texture_2d<f32>', 'f');
-    b.add(`outFix${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
-  });
+/** D7 mip repair functions (the default history fix). */
+function mipRepairWgsl(kinds: RecurrentKind[]): string {
   const I = kinds.map((_, i) => i);
-  const slot = (i: number) => slotOf(kinds[i]);
-  const nb: [number, number][] = [];
-  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
-  const code = /* wgsl */ `
-${head(b, ATLAS)}
-
-// D7 mip repair: start level L = floor(3 (1 - A/A_fix) rho + 0.5) (GTC20 s.35),
+  return /* wgsl */ `// D7 mip repair: start level L = floor(3 (1 - A/A_fix) rho + 0.5) (GTC20 s.35),
 // 3x3 tent at level L with viewZ-only weights (RTG2 p.829), finer level if the
 // normalized weight sum is below the threshold. Returns (value, 1) or (_, 0).
 ${I.map((i) => /* wgsl */ `
@@ -938,7 +924,77 @@ fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> ${VT(kinds[i])} {
   }
   return ${BIG(kinds[i], '-1.0')};
 }`).join('\n')}
+`;
+}
 
+/**
+ * 'spatial' history fix (target 1 candidate; our design): rebuild a young pixel from its own accumulated
+ * value plus 16 disk taps of this frame's accumulated signal (no mips), rotated per pixel and frame
+ * (blurRotation), weighted by the plane distance at the A = 0 geometry tolerance (relative to view
+ * distance, the blur's test) and the normal (cos > 0.9, the same smooth Wt falloff). Radius
+ * r0 · 2^(3 (s - 1)) px with s = (1 - A / A_fix) · rho: at A = 0 the footprint of the mips' level-3
+ * tent (±12 px), halving per frame like the mip level does (RTG2 p.829: full reconstruction for
+ * 1-3 frames). No repair below a 1.5 px radius or with < 0.5 tap weight. r0 = historyFixRadius (RParams.pad7).
+ */
+function spatialRepairWgsl(kinds: RecurrentKind[]): string {
+  return kinds.map((k, i) => /* wgsl */ `
+fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} {
+  let s = clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho;
+  let R = P${i}.pad7 * exp2(3.0 * (s - 1.0));
+  if (s <= 0.0 || R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let rot = blurRotation(p);
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};
+  ${FIX_DISK.map(([x, y]) => `{
+    let o = rot * vec2f(${x.toFixed(6)}, ${y.toFixed(6)}) * R;
+    let qq = vec2i(floor(vec2f(p) + 0.5 + o));
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let v = ${LD(k, `acc${i}`, 'q')};
+    let xg = planeDist(pl, q, gq.z) / P${i}.geoTolLo;
+    let xn = sqrt(max(0.0, 1.0 - dot(g.n, gq.n)) / 0.1);
+    let w = select(0.0, Wt(xg) * Wt(xn), inside(qq) && gq.z > 0.0 && any(qq != p));
+    sumW += w;
+    sumC += v * w;
+  }`).join('\n  ')}
+  if (sumW < 0.5) { return ${BIG(k, '-1.0')}; }
+  return (${LD(k, `acc${i}`, 'p')} + sumC) / (1.0 + sumW);
+}`).join('\n');
+}
+
+/**
+ * History-fix repair of young pixels (A < A_fix): 'mips' (SPEC D7, the default) or 'spatial' (target 1
+ * candidate, results/T1-recovery.md; our design from SVGF sec. 4.2-4.3 and RTG II sec. 49.5.4 prose: the
+ * young pixel is rebuilt from a depth / normal guided full-resolution neighbourhood of this frame's
+ * accumulated signal, no mip pyramid).
+ */
+export type HistoryFixMode = 'mips' | 'spatial';
+
+/** Taps of the 'spatial' history fix: a 16-point Vogel disk (golden angle, radii sqrt((k + 0.5) / 16)). */
+export const FIX_DISK = Array.from({ length: 16 }, (_, k) => {
+  const r = Math.sqrt((k + 0.5) / 16), t = k * 2.399963229728653;
+  return [r * Math.cos(t), r * Math.sin(t)] as [number, number];
+});
+
+export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips'): PassDef {
+  const spatial = mode === 'spatial';
+  const b = base(kinds);
+  b.add('fastCur', 'texture_2d<f32>', 'f');
+  if (!spatial) b.add('mipZ', 'texture_2d<f32>', 'f');
+  b.add('dataRW', 'texture_storage_2d<r32uint, read_write>', 'rw-r32uint');
+  kinds.forEach((k, i) => {
+    b.add(`acc${i}`, 'texture_2d<f32>', 'f');
+    if (!spatial) b.add(`mip${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outFix${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+  });
+  const I = kinds.map((_, i) => i);
+  const slot = (i: number) => slotOf(kinds[i]);
+  const nb: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
+  const code = /* wgsl */ `
+${head(b, ATLAS)}
+
+${spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
   { name: 'f', type: 'vec4f', load: (q) => `textureLoad(fastCur, ${q}, 0)` },
@@ -988,13 +1044,13 @@ fn main(${TILE_MAIN}) {
   let fMean = fSum / nValid;
   // window from the spread of the fast history; optionally its standard error (our variant)
   let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0))) / mix(1.0, sqrt(nValid), P0.lagStdErr);
-  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i)) : /* wgsl */ `
+  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i), ...(spatial ? [`spatialRepair${i}(p, g, pl, a, ${isSpecKind(kinds[i]) ? 'g.rough' : '1.0'})`] : [])) : /* wgsl */ `
   {
     var c = textureLoad(acc${i}, p, 0);
     var a = A[${slot(i)}];
     // (a) mip repair where history is young (replaces rgb and ĥ)
     if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
-      let m = mipRepair${i}(p, g.z, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'});
+      let m = ${spatial ? `spatialRepair${i}(p, g, pl, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})` : `mipRepair${i}(p, g.z, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})`};
       if (m.a >= 0.0) { c = m; }
     }
     // (b) anti-firefly: centre luminance <= k * second-largest of >= 4 valid neighbours

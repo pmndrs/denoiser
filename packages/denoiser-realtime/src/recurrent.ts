@@ -53,6 +53,16 @@ export interface RecurrentOptions {
   historyFixDepthTolerance?: number;
   /** History-fix minimum normalized weight sum before falling to a finer level (SPEC D7). Default 0.25. */
   historyFixMinWeight?: number;
+  /**
+   * How the history fix rebuilds young pixels (A < historyFixFrames). 'mips' (default, SPEC D7): a 3-level
+   * mip pyramid of the accumulated signal, bilaterally upsampled by view depth. 'spatial' (target 1
+   * candidate, results/T1-recovery.md): no mips; 16 disk taps of the full-resolution accumulated signal,
+   * weighted by plane distance and normal, radius historyFixRadius at A = 0 halving per frame.
+   * Structural (pipelines differ).
+   */
+  historyFix?: 'mips' | 'spatial';
+  /** 'spatial' history fix: tap radius in pixels at A = 0 (not scaled with resolution, like the mips). Default 12. */
+  historyFixRadius?: number;
   /** Anti-firefly: centre luminance ≤ k × second-largest neighbour (SPEC D9); 0 disables. Default 1.5. */
   fireflyThreshold?: number;
   /**
@@ -170,6 +180,8 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixFrames: o.historyFixFrames ?? 3,
     historyFixDepthTolerance: o.historyFixDepthTolerance ?? 0.02,
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
+    historyFix: o.historyFix ?? 'mips',
+    historyFixRadius: o.historyFixRadius ?? 12,
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,
@@ -238,7 +250,9 @@ function flagsOf(o: ResolvedRecurrent, hasHit: boolean) {
 
 /** Options that change the pass structure (signals in one pipeline must agree). */
 export function recurrentStructuralKey(o: ResolvedRecurrent) {
-  return ['recurrent', o.remodulate, o.skeleton].join('|');
+  const k: (string | boolean)[] = ['recurrent', o.remodulate, o.skeleton];
+  if (o.historyFix !== 'mips') k.push(o.historyFix);
+  return k.join('|');
 }
 
 /** Per-signal tap counts are compiled in (each signal of a joint pipeline keeps its own). */
@@ -267,6 +281,8 @@ export class RecurrentPipeline {
 
   /** Occlusion-only pipeline (kinds `ao` / `so`): no pre-blur pass, temporal reads the raw hit distance. */
   private occ: boolean;
+  /** historyFix 'spatial': no mips pass, no depth atlas. */
+  private spatialFix = false;
 
   constructor(private device: GPUDevice, signals: { kind: RecurrentKind; opts: ResolvedRecurrent }[], private label: string) {
     const d = device;
@@ -287,8 +303,9 @@ export class RecurrentPipeline {
     const T = (k: 'preBlurTaps' | 'blurTaps' | 'postBlurTaps') => signals.map((s) => taps(s.opts, k, s.kind));
     if (!this.occ) make('pre_blur', preBlurPass(kinds, T('preBlurTaps')));
     make('temporal', temporalPass(kinds));
-    make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton
-    make('history_fix', historyFixPass(kinds));
+    this.spatialFix = this.opts.historyFix === 'spatial';
+    if (!this.spatialFix) make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton
+    make('history_fix', historyFixPass(kinds, this.opts.historyFix));
     make('blur', blurPass(kinds, false, T('blurTaps')));
     make('post_blur', blurPass(kinds, true, T('postBlurTaps')));
     make('stabilize', stabilizePass(kinds, this.opts.remodulate));
@@ -311,7 +328,7 @@ export class RecurrentPipeline {
     this.mipZ?.destroy();
     this.fast = [0, 1].map((i) => tex(`fast ${i}`, 'rgba16float'));
     this.data = [0, 1].map((i) => tex(`data ${i}`, 'r32uint'));
-    this.mipZ = tex('depth mips', 'r32float', Math.ceil(width / 2) + Math.ceil(width / 4), Math.ceil(height / 2));
+    this.mipZ = this.spatialFix ? undefined : tex('depth mips', 'r32float', Math.ceil(width / 2) + Math.ceil(width / 4), Math.ceil(height / 2));
     this.rot = [0, 1, 2, 3];
     this.cur = 0;
   }
@@ -341,6 +358,7 @@ export class RecurrentPipeline {
     f[39] = o.specularMinRadiusScale;
     f[40] = t.virtCurv; f[41] = t.virtWiden; f[42] = t.detRough; f[43] = t.specCentre;
     f[44] = t.elong; f[45] = t.occClamp;
+    f[46] = o.historyFixRadius;   // RParams.pad7: 'spatial' history-fix radius (unused by 'mips')
     this.hitFlags.delete(s);
     this.device.queue.writeBuffer(s.params, 0, f);
   }
@@ -416,9 +434,13 @@ export class RecurrentPipeline {
     // occlusion: temporal normalizes the raw hit distance itself (ĥ is never pre-blurred, GTC20 s.60)
     run('temporal', per((sg, f) => ({ pre: this.occ ? f.hitDistance! : sg.buf[r], histPrev: sg.buf[p], outAcc: sg.buf[s] }),
       { fastPrev: this.fast[c ^ 1], dataPrev: this.data[c ^ 1], outFast: this.fast[c], outData: this.data[c] }));
-    run('mips', per((sg) => ({ acc: sg.buf[s], outMip: sg.buf[p] }), { outMipZ: this.mipZ! }), Math.ceil(W / 16), Math.ceil(H / 16));
-    run('history_fix', per((sg) => ({ acc: sg.buf[s], mip: sg.buf[p], outFix: sg.buf[r] }),
-      { fastCur: this.fast[c], mipZ: this.mipZ!, dataRW: this.data[c] }));
+    if (this.spatialFix) {
+      run('history_fix', per((sg) => ({ acc: sg.buf[s], outFix: sg.buf[r] }), { fastCur: this.fast[c], dataRW: this.data[c] }));
+    } else {
+      run('mips', per((sg) => ({ acc: sg.buf[s], outMip: sg.buf[p] }), { outMipZ: this.mipZ! }), Math.ceil(W / 16), Math.ceil(H / 16));
+      run('history_fix', per((sg) => ({ acc: sg.buf[s], mip: sg.buf[p], outFix: sg.buf[r] }),
+        { fastCur: this.fast[c], mipZ: this.mipZ!, dataRW: this.data[c] }));
+    }
     run('blur', per((sg) => ({ src: sg.buf[r], outBlur: sg.buf[p] }), { dataTex: this.data[c] }));
     run('post_blur', per((sg) => ({ src: sg.buf[p], acc: sg.buf[s], outBlur: sg.buf[r] }), { dataTex: this.data[c] }));
     run('stabilize', per((sg, f) => ({
