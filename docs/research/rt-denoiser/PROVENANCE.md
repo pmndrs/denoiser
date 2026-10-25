@@ -328,25 +328,27 @@ passes in SH mode), `src/shaders/sh-gradient.ts` (anti-lag gradient samples), `s
 | recurrent SH needs (buffers, luminance-ratio clamps) | §8.5.6 | L1 YCoCg through a recurrent-blur denoiser ships in SD24 / ACS25 | **our design** (not specified in detail) | | — |
 | evaluation: `bumpy` / coloured-bounce scenes, two references, detail band, ringing fraction; native after colour extraction | M7-13 | native colour-extraction comparison: nrd-provenance §3.4; PLAN §6 | **our design**. Spec only | | — |
 
-### M8 translucent shadows — **spec only, not built** (SPEC v0.3 §7.10)
+### M8 translucent shadows — **built, provisional** (SPEC v0.3 §7.10; results/M8.md)
 
-_Added 2026-10-25 by the spec author (as above). Sources: TR19 slides 47–53 (primary,
-`shadows-specular/tombraider2019.txt`), RTG1-25 §25.2.1 pp. 444–445 (primary, `rtg1.txt`). Rows
-citing only `sources/shadows-specular.md` would need the second reviewer; these cite the primary
-slides and pages directly, read by the spec author. Every row: spec only, not built._
+_Added 2026-10-25 by the spec author; marked built 2026-10-25 by the M8 implementer (rule 8: no NRD code,
+README, release notes or port read; not the public researcher). Sources: TR19 slides 47–53 (primary,
+`shadows-specular/tombraider2019.txt`), RTG1-25 §25.2.1 pp. 444–445 (primary, `rtg1.txt`), both re-read
+directly by the implementer. Code: `packages/denoiser-realtime/src/shadow.ts` (option `translucency`,
+wide / packed paths), `src/shaders/shadow.ts` (`tr` variants of `shadowTemporalWgsl`,
+`shadowSpatialWgsl`, `shadowTilesWgsl`; `shadowStabilizeTrWgsl`)._
 
 | item | SPEC | source | our deviation | 2nd review | code |
 |---|---|---|---|---|---|
-| renderer contract: keep tracing through translucent layers, accumulate per-layer transmittance, stop on opaque / miss / full absorption | M8-1 | RTG1-25 §25.2.1 pp. 444–445 (thin film, albedo absorption, TIR-corrected Schlick); TR19 slides 47–51 (any-hit, order non-deterministic, layer cap 3) | **multiplicative** RGB transmittance (commutes like TR19's subtraction, exact for any colours), colour-aware early out `max T < 0.01` → opaque, nearest-translucent distance by `min`: **our design**. Contract only | | — |
-| denoise opaque v as today and τ = E[T \| v = 1]; output v̂·τ̂ | M8-2 | identity E[vT] = P(v=1)·E[T\|v=1]; conditional accumulation like g over occluded samples (SPEC §7.2 v0.1) | **our design** (no public source says how coloured shadows are filtered: shadows-specular.md G5). Spec only | | — |
-| one footprint; translucent samples feed g from the nearest translucent hit; nearest blocker wins | M8-3 | M12 ("sharpest occluder wins", via SPEC §7.3 `mergeMin`); RTG1-25 (translucent shadows through the opaque filter) | ε_τ = 0.01: **our design, tune on captures**. Spec only | | — |
-| τ temporal: bilinear reprojection, per-channel 5×5 clamp over lit taps (window 0.4σ + 0.05), restart gain 64, cap N_τ = 7 | M8-4 | SPEC SH-4 / v2.1 clamp (ours, measured for v) | applying v's measured window and restart to τ, N_τ = 7: **our design, tune on captures**. Spec only | | — |
-| τ tile bits; τ-only tiles in the indirect list | M8-5 | TR19 slide 72, H18 §4.1 (tile skip) | **our design**. Spec only | | — |
-| visibility-weighted spatial τ (ratio of filtered v·τ to filtered v) | M8-6 | ratio-estimator reasoning: H18 (SPEC §7.9) | **our design**. Spec only | | — |
-| stabilization of (S rgb, v) with v's blend weight, per-channel 3×3 clamp | M8-7 | RTG2 §49.5.7 prose (via the v2.2 rows above) | **our design**. Spec only | | — |
-| API: `ShadowInputs.translucency?`, `translucencyHitDistance?`, `translucency: true`, rgba16float output | M8-8 | interface shape of native's translucency variant (separate translucency input, one combined output): nrd-provenance §3.3–3.4 (names only) | **our design**; no NVIDIA names. Spec only | | — |
-| fifth storage texture or packed rgba32uint history | M8-9 | WebGPU limits (`maxStorageTexturesPerShaderStage`) | **our design**. Spec only | | — |
-| evaluation: `glass` / `glass-moving` / `glass-still`, `shadow_rgb_ref`, tint-region chroma error, opaque regression, native `SIGMA_SHADOW_TRANSLUCENCY` | M8-10 | dynamic region / boil: SPEC §13, results/M4.md §12 | **our design**. Spec only | | — |
+| renderer contract: keep tracing through translucent layers, accumulate per-layer transmittance, stop on opaque / miss / full absorption | M8-1 | RTG1-25 §25.2.1 pp. 444–445 (thin film, albedo absorption, TIR-corrected Schlick); TR19 slides 47–51 (any-hit, order non-deterministic, layer cap 3) | **multiplicative** RGB transmittance (commutes like TR19's subtraction, exact for any colours), colour-aware early out `max T < 0.01` → opaque, nearest-translucent distance by `min`: **our design**. Contract only (the test bed implements it) | | `ShadowInputs.translucency`, `translucencyHitDistance` (denoiser-core) |
+| denoise opaque v as today and τ = E[T \| v = 1]; output v̂·τ̂ | M8-2 | identity E[vT] = P(v=1)·E[T\|v=1]; conditional accumulation like g over occluded samples (SPEC §7.2 v0.1) | **our design** (no public source says how coloured shadows are filtered: shadows-specular.md G5). Built: v bit-identical to v2.2 with T ≡ 1 (results/M8.md §1) | | temporal `tr` block |
+| one footprint; translucent samples feed g from the nearest translucent hit; nearest blocker wins | M8-3 | M12 ("sharpest occluder wins", via SPEC §7.3 `mergeMin`); RTG1-25 (translucent shadows through the opaque filter) | ε_τ = 0.01 (measured flat 0.002–0.05); built as specified, plus the H18 noise estimate E taken on v·mean(T) so coloured edges without h_τ get the noise-sized radius: **our design** | | temporal (gS from `trHitTex`, `sE`) |
+| τ temporal: reprojection, per-channel 5×5 clamp over lit taps (window 0.4σ + 0.05), restart gain 64, cap N_τ = 7 | M8-4 | SPEC SH-4 / v2.1 clamp (ours, measured for v) | built as specified, plus **uniform snap** for τ (all lit taps agree → τ_c = their value; v's SH-4 snap) and update forms exact for a uniform history (f16 stores truncate on the M5 Pro and drifted τ below 1): **our design**. N_τ 3 / 7 / 15 and window 0.2–0.8σ / 0.02–0.1 measured (results/M8.md §3) | | temporal `tr` block |
+| τ tile bits; τ-only tiles in the indirect list | M8-5 | TR19 slide 72, H18 §4.1 (tile skip) | bits: lit sample attenuated / clear / τ differs from raw T; per-tile mode (activeTile bit 2): **our design** | | `shadowTilesWgsl(true)` |
+| visibility-weighted spatial τ (ratio of filtered v·τ to filtered v) | M8-6 | ratio-estimator reasoning: H18 (SPEC §7.9) | built as specified (fused multiply-adds so v's sum compiles as before: bit identity): **our design** | | `shadowSpatialWgsl(..., tr)` |
+| stabilization of (S rgb, v) with v's blend weight, per-channel 3×3 clamp | M8-7 | RTG2 §49.5.7 prose (via the v2.2 rows above) | **deviation**: S's weight = max(v's, S's own box-width gate, S's own clamp-distance anti-lag) (`translucencyOwnGate`, measured +0.18 dB on glass-moving); tau-only tiles pass v through; v-only tiles S = v̂·τ: **our design** | | `shadowStabilizeTrWgsl` |
+| API: `ShadowInputs.translucency?`, `translucencyHitDistance?`, `translucency: true`, rgba16float output | M8-8 | interface shape of native's translucency variant (separate translucency input, one combined output): nrd-provenance §3.3–3.4 (names only) | **our design**; no NVIDIA names. `realtimeShadows({ translucency })` in denoiser/three (`.visibility` = alpha) | | shadow.ts, denoiser-three realtime.ts |
+| fifth storage texture or packed rgba32uint history | M8-9 | WebGPU limits (`maxStorageTexturesPerShaderStage`) | **deviation**: the wide path needs 6 (v's f32 copies stay as in v2.2 for bit identity, plus the f16 output written for unfiltered tiles); packed path at 4 (v and τ histories as 8 f16 in rgba32uint, 16-load Catmull-Rom, the output doubles as v's copy and stabilization history): **our design** | | `translucencyPath` |
+| evaluation: `glass` / `glass-moving` / `glass-still`, `shadow_rgb_ref`, tint-region chroma error, opaque regression | M8-10 | dynamic region / boil: SPEC §13, results/M4.md §12 | **our design**. Native `SIGMA_SHADOW_TRANSLUCENCY` not run yet (probe P7) | | results/M8.md |
 
 ## Open provenance items
 
