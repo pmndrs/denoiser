@@ -219,6 +219,23 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - One test-bed page failed once on frame 0 with "Binding size (32) … smaller than the minimum binding size (48)" on the
   score bind group (no code change; the same query passed on rerun). Rerun before debugging. — e1, 2026-10-25
 
+- **The Mac sleeps overnight, and long headless jobs freeze with it.** With nobody at the machine it sits in sleep
+  with ~1-minute dark wakes every ~17 min (`pmset -g log`: "Entering Sleep state due to 'Dark Wake Thermal
+  Emergency'"), so a batch runs at ~6 % speed and looks hung: frames 15+ min apart while the page's own
+  `performance.now()` per frame reads 50 s (it doesn't count sleep), CDP calls and even `node` one-liners stall for
+  minutes, and after a wake Chrome may have reloaded the page (`performance.getEntriesByType('navigation')[0].type ===
+  'reload'`) or lost the WebGPU device, leaving the runner waiting forever. `caffeinate -i` alone did not stop it;
+  `caffeinate -s -i -m -w <batch pid>` (system sleep on AC) did. Check `pmset -g log | awk '$4=="Sleep"' | tail`
+  before blaming GPU contention. — bistro-sponza, 2026-10-26
+- Vite with `server.hmr: false` still connects its client (`[vite] connected.` in the page console); editing a non-module
+  file under the root (`.md`, a Node script) did not reload pages in a test, so HMR-off is still the right setting.
+  — bistro-sponza, 2026-10-26
+- Third-party scenes in the BVH: `BVHComputeData` builds CENTER-split, 10-triangle-leaf BVHs by default; prebuilding
+  `geometry.boundsTree = new MeshBVH(geometry, { strategy: SAH, targetLeafSize: 4 })` made rays 2.8× faster on Sponza
+  (Bistro's 2.8 M triangles: 0.7 → 8 s build). Merge all static meshes into ONE geometry for the BVH (material groups
+  overlap in space; a TLAS over them visits many BLASes per ray) and keep per-material meshes for raster only.
+  — bistro-sponza, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
