@@ -787,6 +787,34 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       panel over a patterned, indirectly lit background, then a still interval) as target 1 suggests; (e)
       `DiffuseSpecularDenoiser` / `OcclusionDenoiser` resource reports still count 7 recurrent passes with
       `historyFix: 'spatial'` (6 dispatch). — found by t1, owners svgf / recurrent / testbed
+- [x] (bistro-sponza; commits ab3f4d7, f96caa0, 1303313 + results) **Bistro and Sponza as scoring scenes** (SPEC §12
+      item 7): `realtime-gi.html?scene=sponza|bistro` (models loaded by path from outside git, `$RT_SCENE_ASSETS`, default
+      `../vsm/bench/public/assets`; Sponza = Cryengine Limited License, Bistro = CC BY 4.0, never committed), sun + local
+      light, 6 scripted paths and captures (`sponza-orbit|pan|move`, `bistro-orbit|pan|move`, 48 f, 960×540, 3.28 GB
+      each, validated; `run-realtime.mjs capture --set=<name> --chunk=8`); replayed at ab3f4d7 with the corner and the
+      test bed's std540 captures on the same snapshot. Rankings agree on every signal (diffuse `svgf-auto` > `svgf` >
+      `recurrent`, specular `svgf-auto` > `svgf` > `recurrent` > FFX, shadows ours > FFX +3.3…4.6 dB, AO SVGF > recurrent,
+      −4…5 dB here). results/scenes-bistro-sponza.md, examples/three-temporal/CAPTURES.md "Bistro and Sponza" — orchestrator brief
+- [ ] Shadows under a small moving local light (`bistro-move`: sphere r 0.12 m moving 7 cm/frame, mostly hard shadows):
+      raw 1-ray input 24.42 dB pooled / FLIP 0.017 beats `shadows` 22.69 / 0.050 and `ffx-shadows` 19.65 / 0.109; ours
+      already loses at frame 0 (spatial blur of near-hard edges) and trails the moving edges (bias +0.058). Penumbra
+      and dynamic region are fine (13.7 vs 8.1, 13.3 vs 9.8). Repro: `mode=replay&capture=bistro-move&denoiser=shadows`
+      (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner shadows
+- [ ] SVGF / A-SVGF temporal noise on heavy-tailed GI: diffuse boil 1.7× (Sponza) / 2.3× (Bistro) the reference's own,
+      AO 1.9× / 2.7×, where the corner and the test bed stay below the floor; recurrent is calm but −0.6…1.1 dB diffuse,
+      −4…5 dB AO. Candidate for an option (rule 9), scored with `score-captures.mjs` boil on `sponza-*` / `bistro-*`
+      (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner svgf
+- [ ] Shadows: static-penumbra boil 8–23 % above FFX's under the wide sun penumbrae of Sponza / Bistro (ours still
+      +3…5 dB penumbra PSNR); the corner and test bed show ours level or lower. Look at it with any boil work on
+      shadows (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner shadows
+- [ ] Native NRD replay of the Bistro / Sponza captures (Windows harness): `sponza-orbit|pan|move`,
+      `bistro-orbit|pan|move` (copy from the M5 Pro's `tools/rt-capture/captures/`, 19.7 GB; or regenerate with
+      CAPTURES.md "Bistro and Sponza", which needs the two models placed by hand). Notes for the harness: `lights[0]` is
+      the shadow light, **`directional`** (direction toward the light, angularRadius 0.02) on all but `bistro-move`,
+      where it is a `sphere` that **moves every frame** (use `frames[i].lights`); `sponza-move` has object motion
+      (`static: false`); specular is SSR, not demodulated (`demodulation.specular: "none"`); AO reference is the extra
+      `ao_ref` (ĥ = h/(h + 1 + 0.05·(−viewz))). Score with `compare.mjs` + `score-captures.mjs` like ours — found by
+      bistro-sponza, owner harness builder
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

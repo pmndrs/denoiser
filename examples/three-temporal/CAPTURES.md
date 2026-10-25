@@ -117,3 +117,91 @@ node tools/rt-capture/compare.mjs three-pan        # the standard table (no AO, 
 ```
 
 Occlusion entries replay with `&signals=ao` (`so` has no reference here).
+
+## Bistro and Sponza (third-party scenes, `?scene=sponza|bistro`)
+
+Two real asset scenes on the same realtime pages, so defaults are judged on more than the corner and the test bed
+(SPEC §12 item 7). Results: [results/scenes-bistro-sponza.md](../../docs/research/rt-denoiser/results/scenes-bistro-sponza.md).
+
+**The models are not in this repository and must never be committed.** The dev server serves them from a folder
+outside git (`scene-assets-plugin.ts`, endpoint `/__scene-assets/*`): `$RT_SCENE_ASSETS`, else
+`../vsm/bench/public/assets` next to the repo (Dennis's VSM checkout, where `npm run assets` fetches Sponza and Bistro
+is placed by hand). Layout: `sponza/Sponza.gltf` + `sponza/Sponza.bin`, `bistro/bistro-uncompressed.glb`.
+
+| model | source | licence | used as |
+|---|---|---|---|
+| Sponza | Khronos glTF-Sample-Assets `Models/Sponza` (Crytek Sponza; Frank Meinl after Marko Dabrovic, corrected by Morgan McGuire) | **Cryengine Limited License Agreement** (model files; README / metadata CC-BY-4.0), © 2016 Crytek | geometry only: 262,267 triangles, 25 materials, flat colours by material index, the floor material glossy (roughness 0.18) |
+| Bistro (exterior) | Amazon Lumberyard Bistro, NVIDIA ORCA; glTF conversion by Cody Bennett (Blender glTF export) | **CC BY 4.0**, © 2017 Amazon Lumberyard: "Amazon Lumberyard Bistro, Open Research Content Archive (ORCA), Amazon Lumberyard, 2017, http://developer.nvidia.com/orca/amazon-lumberyard-bistro" | modified: geometry only (textures, UVs, tangents dropped), flat colours and roughness from material-name keywords (wet pavement 0.12, glass 0.08), the one BLEND material (a decal) removed, MASK foliage solid: 2,827,910 triangles, 1,532 primitives |
+
+(VSM's NOTICE has the full attributions. The brief's guesses "Crytek Sponza CC BY 3.0" don't apply to this copy: the
+Khronos Sponza is under the Cryengine agreement, which is one more reason never to redistribute it.)
+
+Loading (`src/realtime/assets.ts`, a minimal glTF reader: node transforms baked to world space, one merged mesh per
+material for raster, one merged geometry of everything static for the BVH) takes ~0.3 s for Bistro's 201 MB GLB on the
+M5 Pro; the SAH BVH (`three-mesh-bvh` `MeshBVH`, 4-triangle leaves, prebuilt and handed to `BVHComputeData`) takes ~1.5 s
+for Sponza and ~8 s for Bistro. Bistro fits the headless tab without culling (`&cull=x0,y0,z0,x1,y1,z1` keeps a box if
+it ever has to: culling to the north street and junction kept 74 % of the triangles and did not speed the rays up).
+
+```sh
+# 1. three-temporal dev server (any free port; it serves the capture endpoints and /__scene-assets/)
+RT_SCENE_ASSETS=/path/to/assets node node_modules/vite/bin/vite.js examples/three-temporal --port 5410 --strictPort --host 127.0.0.1
+#    live: http://127.0.0.1:5410/realtime-gi.html?scene=sponza  (or bistro; &path=<name> plays a scripted path;
+#    realtime-shadows.html?scene=... forwards to realtime-gi.html with the shadow view)
+# 2. write + validate (48 frames each, 8-frame chunks, one page load per chunk, resumable)
+cd examples/three-temporal
+node run-realtime.mjs capture --port=5410 --set=sponza-orbit --refShadow=1024 --refDiffuse=2048 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+node run-realtime.mjs capture --port=5410 --set=sponza-pan   --refShadow=1024 --refDiffuse=2048 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+node run-realtime.mjs capture --port=5410 --set=sponza-move  --refShadow=1024 --refDiffuse=2048 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+node run-realtime.mjs capture --port=5410 --set=bistro-orbit --refShadow=1024 --refDiffuse=1024 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+node run-realtime.mjs capture --port=5410 --set=bistro-pan   --refShadow=1024 --refDiffuse=1024 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+node run-realtime.mjs capture --port=5410 --set=bistro-move  --refShadow=1024 --refDiffuse=1024 --refSpec=256 --chunk=8 --stepTimeout=3600000 --timeout=20000000
+# 3. replay every scene denoiser on the pinned test bed and score (see "Replaying and scoring")
+BASE=http://127.0.0.1:5411/ node examples/three-temporal/replay-captures.mjs --preset=scenes --no-score
+node examples/three-temporal/score-captures.mjs sponza-orbit sponza-pan sponza-move bistro-orbit bistro-pan bistro-move --json scenes.json
+for c in sponza-orbit sponza-pan sponza-move bistro-orbit bistro-pan bistro-move; do node tools/rt-capture/compare.mjs $c --quiet; done
+```
+
+| capture | path (`src/realtime/scenes.ts`) | frames | shadow light | why |
+|---|---|---|---|---|
+| `sponza-orbit` | `sponza-orbit` 0–47 | 48 | sun | interior arc in the nave around its centre, dollying in (~4–7 px/frame): sun strip on the floor, columns, arches, curtains |
+| `sponza-pan` | `sponza-pan` 0–47 | 48 | sun | 8 frames of drift down the nave, then 6 cm/frame slide + 2°/frame yaw toward the south arcade: disocclusion behind the columns every frame |
+| `sponza-move` | `sponza-move` 0–47 | 48 | sun | **moving occluder**: static camera on the sunlit nave floor; a torus knot (R 0.45 m) swings 1.6 m along X and spins in the sun shaft; its pixels carry object motion (`static: false`), its shadow sweeps static receivers |
+| `bistro-orbit` | `bistro-orbit` 0–47 | 48 | sun | street orbit: walking 5 cm/frame down the north street keeping one point in view; façade shadow edges on the street and walls, bollards, signs |
+| `bistro-pan` | `bistro-pan` 0–47 | 48 | sun | 8 frames of drift at the junction, then 4–6 cm/frame slide + 2.2°/frame yaw across the café terrace (chairs, tables: thin geometry) |
+| `bistro-move` | `bistro-move` 0–47 | 48 | local | **moving light**: static camera in the north street; the shadow light is a lantern (sphere, r 0.12 m) moving 7 cm/frame along the street (per-frame `lights`), so every shadow it casts moves over static receivers; the sun stays in the bounce |
+
+960×540, 33 floats per pixel as the corner captures (68.4 MB per frame, **3.28 GB per capture, 19.7 GB for the six**).
+Wall time on the M5 Pro with other agents' GPU jobs running: Sponza ~26 min, Bistro ~36–40 min per capture (wrap the
+batch in `caffeinate -s -i -w <pid>`: an idle Mac sleeps between dark wakes and the batch crawls, LESSONS).
+All six pass `validate.mjs` (motion reprojection ≤ 0.003 px on the five static-scene captures, the knot's pixels carry
+object motion on `sponza-move`; history consistency 95.5–100 %).
+Frame 0 of each is a reset; chunks join without resets (each chunk's first frame takes its motion from the previous
+path frame, and its reference seeds start at path frame × 4000).
+
+### How these frames differ from the corner's
+
+- Lights (`src/realtime/scenes.ts`): a **sun** (directional, angular radius 0.02 rad, 4.3× the real sun so penumbrae
+  are a few to tens of pixels wide) and one **local sphere light** (Sponza: a warm lamp in the south aisle, r 0.15 m;
+  Bistro: a street lantern, r 0.12 m). Sponza's sun is high over the nave (62°, the sky reaches the floor only through
+  the roof opening); Bistro's comes down the north street at 45° (late afternoon, warm). `lights[0]` is the path's
+  shadow light (`directional` with `direction` toward the light and `angularRadius`, or `sphere`); the other light is
+  `lights[1]` (informational). Every frame carries its `lights` (they move on `bistro-move`).
+- `visibility`: 1 ray to a blue-noise point on the shadow light (sun: uniform over its disk of directions; sphere:
+  uniform over its disk facing the receiver). Reference: 2×2 stratified white-noise rays per frame × 256 frames (1024).
+- `diffuse`: 1 cosine ray; a miss sees the sky (a gradient with a sun glow, × 0.6 Sponza / 0.5 Bistro); a hit returns
+  sun + local light bounced off a grey 0.5 surface, the **sun with one hard shadow ray at the hit point**, the local
+  light unshadowed there (`&bounceLocalShadow=1` adds its ray; ~25 % more reference time, not used). One bounce, no
+  sky light at the hit. This GI is "what was feasible": the sun shadow ray keeps the bounce from leaking sunlight
+  through Sponza's roof and Bistro's façades, which is what makes these signals heavy-tailed (Sponza's noisy diffuse
+  peaks at ~5 against a mean of 0.21). Reference: **2048 rays on Sponza, 1024 on Bistro** (4 per frame; Bistro's rays
+  cost ~2.4× Sponza's: 2048 would have been ~80 s per frame, over 3 h for the three captures), AO (`ao_ref`) from the
+  same rays.
+- Reference rays per rendered frame are kept small (4 diffuse, 2×2 visibility; the corner uses 16 and 4×4): with 16 +
+  16 per frame one frame was ~0.5 s of GPU work here, and under other agents' GPU load the capture page lost its device
+  or was reloaded every few poses. Chunks of 8 frames per page load (`--chunk=8`, retried by a watchdog) are the second
+  guard.
+- `specular`: three's stochastic SSR (maxDistance 12 / 20 m, thickness 0.15 / 0.25), reference = 256 SSR frames lit by
+  the converged references, exactly as on the corner (same caveat: SSR's own expectation, not demodulated).
+- While a pose is held for its references the 1-ray signals (already read back) skip their rays, ~20 % of a frame.
+- Missing as on the corner: jitter, `so_ref`, a demodulated / traced specular. New: textures are dropped, so the
+  `albedo` guide is flat per material.
