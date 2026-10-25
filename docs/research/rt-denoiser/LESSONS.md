@@ -558,6 +558,20 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   match within noise. Reuse the plain luminance (payload evaluated at the guide normal) for every weight so the
   tuned constants carry over. — spec-author (SPEC v0.3 §8.5), 2026-10-25
 
+- **Bit-identical after adding code to a shader: watch fused multiply-adds.** Adding a τ sum `tsum += (w * v) * τ` next to
+  v's `sum += w * v` made ~0.7 % of v's pixels differ by up to 24 ULP: the shared product `w * v` is computed once (CSE),
+  so v's sum no longer compiles to an fma. Writing the new sums with explicit `fma(w, v, ...)` (no standalone `w * v`)
+  restored byte identity on every capture. Check with a replay byte compare (outputs `*.f32`), not only per-frame PSNR
+  (which agreed to 0.0001 dB on all but one frame). — m8-translucency, 2026-10-25
+- **rgba16float storage writes truncate (round toward zero) on the M5 Pro / Metal.** A history near 1 that is
+  re-stored every frame drifts down by ~1 f16 ulp per store (τ fell to 1 − 2⁻¹¹ where nothing was in the way, and the
+  approximate division `(n·x + x)/(n + 1)` doesn't return x exactly either). Use update forms that are exact when
+  inputs agree (`h0 + Σ w (h_k − h0) / Σ w`, `x + a·(y − x)`), or snap uniform neighbourhoods. The same truncation
+  applies to the opaque shadow history (TASKS). — m8-translucency, 2026-10-25
+- Parameter sweeps on captures through compare.mjs take minutes per capture × variant under load; the live test bed
+  scores many variants of one id in one page (`denoiser=id,id@sh.x=1,id@sh.x=2`) sharing references in ~20 s per
+  path. Sweep live, then confirm the picks (and boil) on replays. — m8-translucency, 2026-10-25
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._
