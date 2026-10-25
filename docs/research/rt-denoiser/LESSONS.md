@@ -524,3 +524,16 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - `batch` loops in a zsh script: `jobs -r` is empty in a non-interactive script, so a
   "max 4 jobs" throttle built on it starts everything at once (7 × 1080p pages + other
   agents' jobs: 40+ min instead of 5). Use `printf '%s\n' $paths | xargs -P 4 …`. — svgf-antilag, 2026-10-25
+
+- A Vite middleware that calls `next()` for a missing file under its own prefix gets Vite's SPA fallback: `index.html`
+  with **200**. A `fetch(HEAD)` "does this weight file exist?" probe then says yes and the loader dies on "Invalid or
+  corrupted weights blob". Answer 404 yourself. — e2, 2026-10-25
+- OIDN 2 on our 1-spp signals (E2-oidn-baseline): demodulated diffuse / specular want **albedo = 1 + normal** (clean-aux
+  `*_calb_cnrm` weights; OIDN takes a normal only with an albedo). Color only is −1.4…−1.8 dB, and the real albedo −2.7 dB
+  diffuse (it describes texture edges the demodulated signal doesn't have). Scalars (visibility, ĥ) go through the
+  **HDR** weights as grey color. The LDR weights brightened dark regions (shadows 19 vs 30 dB). — e2, 2026-10-25
+- Async / offline denoisers in the replay: implement `ReplayDenoiser.dispatchAsync` and register them from
+  `tools/rt-capture/src/main.ts` (the replay page), not `denoisers.ts`. Then the test bed, which imports the registry
+  and runs it synchronously, never loads them. — e2, 2026-10-25
+- `pkill -f <waiter script>` also kills the copy of that waiter a running batch script is blocked on. The batch then runs
+  its next page at once, unquieted. Kill your own extra instance by PID. — e2, 2026-10-25

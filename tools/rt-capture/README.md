@@ -33,6 +33,7 @@ Chrome path, `CHROME_FLAGS=` adds flags).
 | `src/writer.ts` | `CaptureWriter`: GPU textures → f32 → dev server (for the test bed's exporter) |
 | `src/replay.ts` | `replay()`, `CaptureTextures`, `loadManifest()`: run any denoiser over a capture; 50 ms GPU warm-up before each timed dispatch (`warmMs`, `&warm=`; without it an idle GPU clocks down and timestamps read 4-9x high) |
 | `src/denoisers.ts` | **the project's one denoiser registry** (the test bed runs it too): `passthrough`, `accumulate`, `accumulate-static`, `accumulate-32`, `accumulate-8`, `ffx-shadows`, `ffx-reflections`, `svgf`, `svgf-auto`, `svgf-diffuse`, `svgf-specular`; `registerDenoiser()`, `perSignal()`, `svgfOptions()` |
+| `src/oidn-entries.ts` | **offline** entries `oidn` (quality `high`) and `oidn-default` (the Denoiser's default `fast`): OIDN 2 single-frame baseline (SPEC §13, E-2) on diffuse / specular / visibility / ao. Async, so they implement `ReplayDenoiser.dispatchAsync` and are registered by the replay page only (`src/main.ts`), not the test bed. Settings `oidn.quality`, `oidn.precision`, `oidn.aux=one\|albedo\|none`, `oidn.scalar=hdr\|ldr`, `oidn.ae=0`; the model each signal ran lands in run.json `denoiserInfo` |
 | `src/accumulate.ts` | reference accumulation (our analogue of native `REFERENCE`) |
 | `src/accumulate-ema.ts` | capped accumulation with the 2.5D depth test (the test bed's baseline, `accumulate-32` / `-8`) |
 | `src/gpu-readback.ts` | `readTextures()`: any float/depth texture → packed f32 |
@@ -47,3 +48,13 @@ Using it from another app (as `examples/realtime-denoiser` does): add
 `CaptureWriter.writeFrame({ ..., extra })` adds per-frame manifest keys (the test bed writes
 `pathFrame`, per-frame `lights` and the moving `object`); v0 readers ignore them, and
 `ReplayFrame.meta` hands the frame entry (with extras) to denoisers.
+
+**Offline (async) denoisers.** A `ReplayDenoiser` may implement `dispatchAsync(frame): Promise<outputs>`;
+`replay()` then awaits it instead of calling `dispatch()` before the readback (entries with it set
+`offline: true`, which also defaults the GPU warm-up to 0, and make `dispatch()` throw, since the
+test bed's live loop is synchronous). Synchronous entries are untouched (byte-identical outputs).
+An optional `info()` adds `denoiserInfo` to run.json.
+
+**Dev-server environment** (`vite.config.ts`): `RT_REALTIME_SRC=<dir>` pins denoiser/realtime to a frozen
+`src/` copy (as the test bed's config), `RT_NO_HMR=1` turns HMR off for long headless batches, and
+`/tzas/*` serves the OIDN weights from `packages/denoiser/tzas`.

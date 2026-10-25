@@ -5,11 +5,15 @@
 // ?mode=rewrite&capture=<name>[&as=<new name>]: uploads the capture to GPU textures and
 // writes it back through CaptureWriter (default <name>-rewrite): a writer/readback self-test
 // (compare the two folders byte for byte).
-import { DENOISERS } from './denoisers';
+import { DENOISERS, registerDenoiser } from './denoisers';
+import { registerOidnDenoisers } from './oidn-entries';
 import { CaptureTextures, loadManifest } from './replay';
 import { replayFromQuery } from './run';
 import { CaptureWriter } from './writer';
 import { CaptureClient } from './format';
+
+// Offline (async, replay-only) entries: OIDN 2 single-frame baseline (src/oidn-entries.ts).
+registerOidnDenoisers(registerDenoiser);
 
 type State = { ready: boolean; error?: string; results?: unknown; frame?: number };
 const out: State = { ready: false };

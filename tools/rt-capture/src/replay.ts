@@ -47,6 +47,15 @@ export interface ReplayDenoiser {
   readonly signals: readonly SignalName[];
   /** Dispatch one frame; returns one output texture per signal (rgb or .r). */
   dispatch(frame: ReplayFrame): Partial<Record<SignalName, GPUTexture>>;
+  /**
+   * Offline per-frame denoisers (e.g. OIDN: async, one image per call, no history): when
+   * present, replay() awaits this INSTEAD of dispatch() before the readback. Denoisers that
+   * have it are replay-only (the test bed's live loop calls dispatch(), which they make throw).
+   * Synchronous TemporalDenoisers leave it undefined, so their path is unchanged.
+   */
+  dispatchAsync?(frame: ReplayFrame): Promise<Partial<Record<SignalName, GPUTexture>>>;
+  /** Extra facts for run.json (`denoiserInfo`), read after the last frame (e.g. which model ran). */
+  info?(): Record<string, unknown>;
   resetHistory(): void;
   /** Per-pass GPU ms of the last measured frame, keyed `<signal>/<pass>` or `<pass>`. */
   gpuTimings?(): Map<string, number>;
@@ -60,6 +69,8 @@ export interface DenoiserEntry {
   /** Signals it can denoise (the replay intersects this with what the capture has). */
   signals: readonly SignalName[];
   version?: string;
+  /** Replay-only offline denoiser (its ReplayDenoiser implements dispatchAsync); the GPU warm-up defaults to 0. */
+  offline?: boolean;
   create(device: GPUDevice, ctx: { width: number; height: number; signals: SignalName[]; settings: Record<string, string> }): ReplayDenoiser;
 }
 
@@ -226,12 +237,13 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
   const frames = manifest.frames.slice(0, opts.maxFrames ?? manifest.frames.length);
 
   const caps = new CaptureTextures(device, manifest, opts.capture, client);
-  const warmMs = opts.warmMs ?? 50;
+  const warmMs = opts.warmMs ?? (opts.denoiser.offline ? 0 : 50);
   const warmer = warmMs > 0 ? new GpuWarmer(device) : undefined;
   const den = opts.denoiser.create(device, { width, height, signals, settings });
   if (write) await client.rm(outDir);
   const timings: TimingRow[] = [];
   const uploads: Promise<void>[] = [];
+  let denoiserInfo: Record<string, unknown> | undefined;
   try {
     for (const f of frames) {
       await caps.load(f.index);
@@ -240,7 +252,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
       await device.queue.onSubmittedWorkDone();
       await warmer?.run(warmMs);
       const t0 = performance.now();
-      const out = den.dispatch(frame);
+      const out = den.dispatchAsync ? await den.dispatchAsync(frame) : den.dispatch(frame);
       await device.queue.onSubmittedWorkDone();
       timings.push({ frame: f.index, pass: 'wall', ms: performance.now() - t0 });
       await nextTask(); // let timestamp-query maps land
@@ -253,6 +265,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
       await opts.onFrame?.(f.index, out, frame);
     }
     await Promise.all(uploads);
+    denoiserInfo = den.info?.();
   } finally {
     den.dispose();
     caps.dispose();
@@ -269,6 +282,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
     version: opts.denoiser.version ?? null,
     commit: info.commit, dirty: info.dirty,
     settings,
+    ...(denoiserInfo ? { denoiserInfo } : {}),
     warmMs,
     signals,
     frames: frames.length,

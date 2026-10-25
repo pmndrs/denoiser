@@ -556,8 +556,15 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 
 - [~] (e1) **E-1 high-reference re-score** (SPEC §13): re-score the top filters on 2–3 test-bed paths
       against 2048–4096-spp references, plus the reference noise floor. — orchestrator, owner: eval agent
-- [ ] **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
+- [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
+- [ ] OIDN LDR route on 1-spp scalars brightens dark regions (E2-oidn-baseline "Inputs": shadows 19.3 vs 30.3 dB via
+      HDR weights on std540-orbit, AO no better than noisy; an umbra at 0.11 came out 0.77). Check `Denoiser.denoiseTextures({ hdr: false })`
+      on a float binary-dither image against native `oidnDenoise` (LDR, srgb on/off): LDR network behaviour, or the
+      package's LDR texture path (float inputs skip the sRGB transfer upstream applies to linear LDR)? The E-2 adapter
+      routes scalars through the HDR weights meanwhile — found by e2, owner: OIDN package (`packages/denoiser-core`)
+- [ ] OIDN 3 real-time model (PLAN §1): when it lands in `denoiser/realtime`, register it in `tools/rt-capture` beside
+      `oidn` and score it on the E-2 captures/table (bar: A-SVGF with history, flicker ≤ ~0.004–0.006) — found by e2, owner unassigned
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
