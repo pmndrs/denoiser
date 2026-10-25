@@ -409,6 +409,48 @@ Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spat
 images only through a stand-in (the test bed's sphere light handed over as a directional light,
 M4.md §10.7). Provisional: tuned and scored on the same scene.
 
+### Coloured shadows: `translucency: true` (provisional, SPEC v0.3 §7.10 / M8)
+
+Shadows through glass, stained glass or tinted plastic. The renderer keeps tracing the shadow ray through
+translucent layers, multiplies their transmittances (order doesn't matter) and reports the nearest layer's
+distance; a ray stopped by something opaque keeps visibility 0. The denoiser filters the **opaque** visibility v
+exactly as above and, separately, a conditional transmittance τ = E[T | v = 1] accumulated only over samples
+that reached the light; the output is their product, so overlapping opaque and coloured penumbrae stay right.
+
+```ts
+const shadows = new ShadowDenoiser(device, { translucency: true });   // structural
+const out = shadows.dispatch(
+  {
+    visibility, hitDistance, light,
+    translucency,             // rgb transmittance T of the ray (1 where it crossed no layer; ignored where visibility = 0)
+    translucencyHitDistance,  // optional: distance to the nearest translucent layer, 0 = none (sizes coloured penumbrae)
+  },
+  guides, camera,
+);
+// out: rgba16float (coloured shadow rgb = what multiplies the light, opaque visibility in alpha)
+```
+
+- With T ≡ 1 (or no `translucency` texture) the opaque part is the opaque denoiser's output bit for bit (r32float
+  internally; the f16 output rounds it).
+- Options: `translucencyEpsilon` [0.01], `translucencyHistory` [7], `translucencyClampSigma` / `translucencyClampFloor`
+  [= clampSigma / clampFloor], `translucencyOwnGate` ['antiLag'], `translucencyPath` ['auto': 'wide' with ≥ 6 storage
+  textures per stage, else 'packed' (4)].
+- Memory 80 B/px (wide) / 88 (packed), 166 / 182 MB at 1080p. `realtimeShadows(v, { translucency: T, translucencyHitDistance })`
+  in `denoiser/three` returns the coloured shadow in `.rgb`, `.visibility` = alpha (`examples/three-temporal/realtime-glass.html`).
+
+Test bed (1080p, 96 frames, rgb vs a 256-spp reference of v·T, pooled PSNR / chroma error in tinted pixels / FLIP;
+`docs/research/rt-denoiser/results/M8.md`):
+
+| | glass (orbit) | glass-moving (panel slides) | glass-still |
+|---|---|---|---|
+| **`translucency: true`** | **38.83** / **0.0017** / **0.0078** | **34.21** / **0.0061** / **0.0185** | **40.61** / **0.0018** / 0.0068 |
+| `ShadowDenoiser` on v·lum(T) (grey) | 28.42 / 0.065 / 0.028 | 26.25 / 0.067 / 0.044 | 26.51 / 0.068 / 0.037 |
+| accumulate-32 | 31.10 / 0.003 / 0.018 | 20.04 / 0.036 / 0.079 | 36.42 / 0.004 / **0.0057** |
+
+GPU 0.97–0.99 ms on the glass paths and +0.12 … 0.17 ms over the opaque denoiser elsewhere (1080p, M5 Pro, solo
+bench; the temporal pass is most of it). Known: static coloured penumbrae boil a little more than the grey scalar
+(τ's own noise at the colour edges); native NRD's translucency mode not compared yet.
+
 ## Directional payload: `payload: 'sh'` (provisional, SPEC v0.3 §8.5 / M7)
 
 A plain denoised value is right for the normal the filter used and nothing else. With
