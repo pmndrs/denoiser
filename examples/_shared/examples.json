@@ -105,6 +105,12 @@
       "tags": ["real-time (ours)", "real-time FFX", "three.js"], "deployed": false
     },
     {
+      "id": "three-temporal-realtime-glass", "section": "realtime", "href": "three-temporal/realtime-glass.html",
+      "title": "Realtime coloured shadows through glass (experimental)",
+      "description": "A stained-glass panel between the light and the floor, 1 ray per pixel, split-screen: realtimeShadows() on grey visibility (times the glass's luminance) against realtimeShadows() with translucency, which keeps the colour. ?moving=1 slides the panel.",
+      "tags": ["real-time (ours)", "three.js"], "deployed": false
+    },
+    {
       "id": "three-temporal", "section": "realtime", "href": "three-temporal/",
       "title": "three.js SSR: FidelityFX vs recurrentDenoise",
       "description": "three's SSR denoise example with the ffxReflections() TSL node swapped in, split-screen against three's own denoiser.",

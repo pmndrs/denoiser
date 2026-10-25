@@ -5,14 +5,16 @@
 // Query: mode=eval|bench  signal=diffuse|specular|both  w,h (1920x1080)
 //   frames (120)  path=orbit|static|pan  cut=N (camera cut + resetHistory)
 //   switch=N (a light turns on at frame N)  noise=1  ff=0.001 (firefly rate)
-//   noHistory=1 (reset every frame: spatial only)  antiLag=off|auto|gradient
+//   noHistory=1 (reset every frame: spatial only)  antiLag=off|auto|gradient (page default 'off';
+//   the package default is 'auto')
 //   kernel=5x5|3x3  iters=5  feedback=0|1  history=catmull-rom|bilinear
 //   alpha=  motionZ=0|1  viewZ=0|1  view=out|noisy|ref|err  gain=  stopAt=N
 //   filter=svgf|recurrent  r.<option>=number|bool (recurrent options, e.g. r.blurRadius=20)
 //   t.<tune>=number (recurrent weight tolerances)  skeleton=1 (recurrent: trivial kernels)
 //   hit=0 (no hit distance inputs)  still=1 (lights don't move)
 //   specularFilter=svgf|recurrent (signal=both with filter=recurrent: specular's filter;
-//   default recurrent diffuse + SVGF antiLag 'auto' specular)
+//   default both signals recurrent, as DiffuseSpecularDenoiser({ filter: 'recurrent' }) since 6be4f23;
+//   svgf = recurrent diffuse + SVGF specular with this page's SVGF options, e.g. &antiLag=auto)
 //   SH (M7, diffuse): payload=sh  resolve=none|fused  sharpen=0..1  guard=k  enc=normal-exact|textbook
 //   bumps=deg (detail-normal bumps on floor + wall; the reference is the irradiance at the
 //   detail normal)  dirs=1 (directional diffuse samples; on with payload=sh or bumps)

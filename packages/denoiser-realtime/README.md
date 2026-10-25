@@ -329,8 +329,8 @@ plain SVGF leads (33.42 / 33.55 dB orbit / pan), `'auto'` 33.10 / 33.47, recurre
 ## Shadows (provisional)
 
 `ShadowDenoiser` (`TemporalDenoiser<ShadowInputs>`, registry id `shadows`): a penumbra-aware
-denoiser for 1-ray (or few-ray) shadow visibility, built against SPEC v0.1 §7 (not reviewed
-yet: **provisional**). Fractional visibility is kept end to end (never thresholded), the
+denoiser for 1-ray (or few-ray) shadow visibility, described as built in SPEC v0.5 §7
+(**provisional**: tuned and scored on the test bed and the three.js scene). Fractional visibility is kept end to end (never thresholded), the
 history accumulates raw visibility only (no spatial output fed back), and the spatial kernel
 is sized per pixel from the penumbra width (Mehta et al. 2012, from the occluder distance and
 the light size) blended with a noise estimate (Heitz et al. 2018). A short stabilization history of
@@ -374,7 +374,7 @@ const out = shadows.dispatch(
   [16 px @1080p], `geometryTolerance` [0.02], `normalAngle` [30°], `normalWeight` [true],
   `pass1Phase` [0.382], `spatialPasses` [2], `tileSkip` [true], `anisotropy` [false],
   `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` takes `true` (snap
-  wherever the 5×5 samples agree: best FLIP), `'change'` (default: only after a change) or `false` (+0.18 dB pooled). Every one is documented in `src/shadow.ts`; M4.md has
+  wherever the 5×5 samples agree: best FLIP), `'change'` (default: only after a change) or `false` (+0.18 dB pooled on v2). Every one is documented in `src/shadow.ts`; M4.md has
   the measurements behind them.
 
 | pass | threads | reads → writes |
@@ -386,8 +386,8 @@ const out = shadows.dispatch(
 | `stabilize` | indirect, penumbra tiles | out + last frame's final output → final output: reprojected, clamped to the 3×3 range of this frame's output, blended 0.25; only where that range is narrow (wide penumbrae); anti-lag on the clamp distance (v2.2) |
 
 With `stabilize` on (default) the temporal pass writes its unfiltered copy into the final output pair
-and the spatial passes run final → T → out. Memory: **48 B/px** (40 without `stabilize`) + 16 B per 8×8
-tile (100 MB at 1080p). Core WebGPU only (≤ 4 storage textures per pass).
+and the spatial passes run final → T → out. Memory: **48 B/px** (40 without `stabilize`) + 20 B per 8×8
+tile (99.5 MB at 1080p). Core WebGPU only (≤ 4 storage textures per pass).
 
 ### Results (provisional; tables in `docs/research/rt-denoiser/results/M4.md`)
 
@@ -410,11 +410,12 @@ staying 8 dB more accurate; on the test bed flicker −11 % and temporal PSNR +0
 `light` −0.19 dB (a little lag after light changes). The stabilization pass costs 0.03–0.05 ms (`stabilize: 0`
 turns it off: v2.1's cost, 40 B/px; v2.1 read 0.52–0.66 ms on the same bench). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
 from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
-normal-tested clamp), so 5 of 7 paths are over the 0.6 ms target (`clampGeometry: false` returns
-to v2's cost and gives up ~1 dB pooled; SPEC §12). GPU
+normal-tested clamp; `clampGeometry: false` returns to v2's cost and gives up ~1 dB pooled). v2.2's
+0.55–0.72 ms are within the ~0.75 ms target (SPEC §12, decided 2026-10-25). The table ran
+`uniformSnap: true`; the default is `'change'` since then (on v2: +0.12 dB pooled, FLIP +2 %). GPU
 ms are the fastest of 4 solo runs (Apple M5 Pro, Chrome; the GPU has two clock states, ×1.3–1.8).
-Per pass on `thin`, the penumbra-heaviest view: temporal 0.33, tiles 0.005, spatial 0.13 + 0.12 ms.
-`youngMean: 0` saves ~0.025 ms (−0.07 dB). Directional lights: the code path is exercised on
+Per pass on `thin`, the penumbra-heaviest view: temporal 0.42, tiles 0.005, spatial 0.12 + 0.11,
+stabilize 0.05 ms. `youngMean: 0` saves ~0.025 ms (−0.07 dB, measured on v2). Directional lights: the code path is exercised on
 images only through a stand-in (the test bed's sphere light handed over as a directional light,
 M4.md §10.7). Provisional: tuned and scored on the same scene.
 
