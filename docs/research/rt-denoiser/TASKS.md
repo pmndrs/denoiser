@@ -662,9 +662,12 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] Specular SH payload for c = D_s·ω < 0: the test bed's `specular_sh_ref` keeps β = 2 there (exact and bounded,
       CAPTURE-FORMAT v1); SPEC M7-2 only defines c ≥ 0. If the denoiser's encode-on-load does something else for c < 0,
       align one of the two (only matters for comparing against `specular_sh_ref`). — found by testbed-v1, owner m7-sh / spec-author
-- [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
-      (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
-      T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
+- [x] m8-translucency (7ba1871, 354e46c … 76c707c, 6491f81, 895dccb, a71881a; results/M8.md) **M8 steps 2, 3, 5**:
+      `ShadowDenoiser({ translucency: true })` (wide path 6 storage textures / 80 B/px, packed 4 / 88 B/px), `realtimeShadows({ translucency })`,
+      registry `shadows-translucent`, page `three-temporal/realtime-glass.html`. Gate: T ≡ 1 → v byte-identical to v2.2 on 7 paths +
+      11 captures, rgb = f16-truncated v. Glass 1080p pooled 38.83 / 34.21 / 40.61 (glass / moving / still) vs grey baseline
+      28.42 / 26.25 / 26.51, accumulate-32 31.10 / 20.04 / 36.42; chroma err 0.002–0.006 vs 0.065. Cost 0.97–0.99 ms on glass,
+      +0.12 … 0.17 ms elsewhere (over the SPEC estimate) — owner m8-translucency
 - [~] m7-sh (implementer, 2026-10-25) **M7 steps 2–5**: SVGF `payload: 'sh'` (24f2e4a: encode-on-load, ShResolver,
       `SH_RESOLVE_WGSL`, fused resolve, anti-lag via an SH gradient pass; plain WGSL byte-identical), the three.js resolve
       node, tuning, specular SG ratio resolve; gate = 7-path regression within 0.05 dB; `bumpy` vs both references
@@ -691,6 +694,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] `examples/three-temporal/realtime-glass.html` (M8 step 5, a71881a) is not in `examples/_shared/examples.json` (listing
       policy, SPEC §12 item 9) and has no captures yet (a `glass` capture set with per-pose references would let
       compare.mjs score it like the knot) — found by m8-translucency, owner orchestrator / three-temporal
+- [ ] M8 temporal-pass cost (results/M8.md §6): +0.11 ms full screen with no transmittance (τ history taps + store, output
+      store), +0.04 for the raw T tile, +0.22 in tiles with glass (per-channel 5×5 stats + normal tile). Levers: skip the τ history
+      taps where last frame's tile flags say τ ≡ 1 (dilated for motion), τ stats only for pixels with lit attenuated taps, a
+      cheaper τ history format; target ≤ 0.9 ms on the glass paths (M5 Pro guide) — found by m8-translucency, owner shadows
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
