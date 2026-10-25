@@ -568,6 +568,15 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [x] release audit → sources/nrd-releases.md (release auditor, rule 3b)
 - [x] public research 2022–2026 → sources/nrd-public-2022-2026.md
 - [x] change-magnitude audit → sources/nrd-change-magnitude.md (change auditor, rule 3c)
+- [ ] Shadows anti-lag v3 candidates from public sources (`sources/nrd-public-2022-2026.md`): shorten
+      history in proportion to how far it sits outside the clamp box, never to zero (MegaLights
+      SIGGRAPH 2025 p.35); Philippi et al. EGSR 2023 noise-vs-bias blend weight (CC BY); AMD GI-1.0
+      asymmetric darken-fast / brighten-slow. Measure against v2.2 on knot captures + `light`/`object`
+      with the dynamic-region and boil metrics. Implementer must not be the public researcher
+      (PROVENANCE rule-7 note). — orchestrator, owner: unassigned
+- [ ] SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
+      variance is high (MegaLights); à-trous access reordering (Dolp et al. I3D 2024, full text not
+      yet obtained). — orchestrator, owner: unassigned
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
