@@ -21,7 +21,7 @@ been compared with native NRD on real captures yet; that's the main gap.
 |---|---|---|---|---|
 | diffuse | A-SVGF `auto` 39.12 dB | SVGF 38.88 · recurrent 38.26 | accumulate 28.7 | joint diff+spec: SVGF 4.00 · `auto` 4.23 · recurrent 3.99 ms (target 4) |
 | specular | A-SVGF `auto` 35.04 dB | recurrent 34.10 · SVGF 33.46 | FFX reflections 21.0 (loses 24 % energy) | (joint, above) |
-| shadows | `ShadowDenoiser` 37.11 dB, penumbra 28.57, FLIP 0.018 | — | FFX 31.20 / 23.50 / 0.038 | 0.48–0.59 ms (target 0.6) |
+| shadows | `ShadowDenoiser` v2.1 38.12 dB, penumbra 29.05, FLIP 0.013 | v2 37.11 / 28.57 / 0.018 (0.48–0.59 ms) | FFX 31.20 / 23.50 / 0.038 | v2.1 0.58–0.69 ms (target 0.6; 5 of 7 paths over) |
 | AO / SO | A-SVGF `auto` 39.03 / 39.68 dB | SVGF 38.93 / 38.76 · recurrent 38.02 / 37.37 | accumulate 27.3 / 26.5 | AO+SO 3.10 / 2.89 / 2.62 ms |
 
 Sources: [results/REMEASURE-2026-10-25.md](results/REMEASURE-2026-10-25.md),
@@ -29,9 +29,14 @@ Sources: [results/REMEASURE-2026-10-25.md](results/REMEASURE-2026-10-25.md),
 [M6 real scene](results/M6-real-scene.md). Memory: SVGF ≈ 132–140 B/px, recurrent 105.5,
 shadows 40 (target ≤ 100 for diffuse+specular).
 
-**Real scene (three.js shadows page, static camera, 4096-ray reference):** ours beats FFX on
-every view, e.g. 31.7 / 27.4 dB vs 28.5 / 22.2 (all receivers / penumbra) with FLIP halved. FFX
-drifts dark as its history grows. Ours needs blue-noise sampling for its full margin.
+**Real scene (three.js corner scene, the second scoring scene):** static camera vs a 4096-ray
+reference: shadows ours 31.7 / 27.4 dB vs FFX 28.5 / 22.2 (all receivers / penumbra), FLIP
+halved; FFX drifts dark as its history grows; ours needs blue noise for its full margin. Moving
+camera (captures `three-orbit` / `three-pan` with per-pose references, pooled PSNR orbit / pan):
+shadows ours 30.0 / 30.3 vs FFX 26.3 / 27.9 (v2; v2.1 adds ~+0.8); diffuse SVGF ≈ `auto` 39.9–40.4,
+recurrent 0.7–1.1 dB behind; AO SVGF ≈ +1 dB over recurrent. **The test-bed rankings hold**,
+except specular on three's SSR input, where plain SVGF beats recurrent (`auto` stays first).
+See [M6 real scene](results/M6-real-scene.md) and `examples/three-temporal/CAPTURES.md`.
 
 **Native NRD so far (RTX 3060 Laptop, synthetic captures only):** the harness reads our format
 correctly (REFERENCE matches to 0.03 dB). Cost at 1080p: REBLUR 5.6 ms, RELAX 6.7, SIGMA 1.1. On
@@ -77,8 +82,14 @@ Native specular looks low, probably from a convention mismatch (probe P2).
 - Captures (≈ 11 GB) and replay outputs (≈ 12 GB) are in `tools/rt-capture/` (gitignored);
   delete them if you need the space.
 
-## Still running when this was written
+## Late additions (after this summary was first written)
 
-- Shadows: frame 2 after a reset scores below frame 1 (found on the real scene); fix in progress.
-- Real scene with a moving camera and per-pose references (and captures, if feasible), to make it
-  the second scoring scene (SPEC §12 item 7).
+- **Shadows v2.1** (M4 §11): fixed the frame-2 dip after a reset (the fresh-pixel mean switched off
+  at A = 1, and the 5×5 clamp mixed surfaces). A normal-tested clamp window raised the 7-path
+  numbers to 38.12 / 29.05 / FLIP 0.013 and leads FFX from frame 0 on reset replays, but costs
+  ~+0.1 ms (5 of 7 paths over 0.6 ms). `clampGeometry: false` returns to v2's cost for ~−1 dB.
+  A new SPEC §12 call; SPEC §7 still describes v2 (TASKS item for the spec author).
+- **Real scene, moving camera:** done, see above. Both real-scene captures replay through the
+  registry, so the Windows harness can run native NRD on them too (4.9 GB, ~12 min to write).
+
+No agents are running.
