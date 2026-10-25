@@ -900,7 +900,9 @@ harness builder runs them and returns images/metrics only.)_
       sweep on diffuse, standard set + real scene, before trusting REBLUR's real-scene rows (ROUND2 item 1);
       (2) cost re-run at HEAD with clocks locked: `svgf-auto`, `shadows` (v2.2), occlusion, plus SVGF
       `youngNormalPower=16` vs default (T1 candidate awaiting a quiet-GPU cost check); (3) P6 / P7 after
-      rewriting `--set=v1`. Jitter units: confirmed (pixel units, PHASE4-5.md). — orchestrator
+      rewriting `--set=v1`. Jitter units: confirmed (pixel units, PHASE4-5.md). (4) after those: native replay of the six Bistro / Sponza captures
+      (models now in git LFS, 1a3dc42; copy the 19.7 GB of captures over the NAS or regenerate them per CAPTURES.md
+      "Bistro and Sponza"; `lights[0]` is directional on sun captures and a per-frame moving sphere on `bistro-move`). — orchestrator
 
 ## Questions for Dennis
 
