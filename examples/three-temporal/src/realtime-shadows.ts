@@ -33,6 +33,8 @@ import {
 } from './realtime/scene';
 import { PATH_FRAMES, pathName, scenePose } from './realtime/path';
 
+// ?scene=sponza|bistro: the third-party scenes live on realtime-gi.html (src/realtime-scenes.ts), shadow view
+if (new URLSearchParams(location.search).get('scene')?.match(/^(sponza|bistro)$/)) location.replace(`realtime-gi.html${location.search}&signal=shadow`);
 mountShell({ id: 'three-temporal-realtime-shadows' });
 
 const q = new URLSearchParams(location.search);

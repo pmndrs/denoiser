@@ -747,4 +747,7 @@ async function main() {
   log(`ready - three r${THREE.REVISION}, ${W}x${H}${manual ? ' (manual stepping)' : ''}; BVH: ${tris.toLocaleString()} triangles`);
 }
 
-main().catch((e) => { log(`ERROR: ${(e as Error).stack ?? e}`); console.error(e); (window as unknown as { __error?: string }).__error = String(e); });
+// ?scene=sponza|bistro: the third-party scenes (src/realtime-scenes.ts, CAPTURES.md "Bistro and Sponza"); the corner otherwise
+const sceneQ = q.get('scene');
+(sceneQ && sceneQ !== 'corner' ? import('./realtime-scenes').then((m) => m.main(log)) : main())
+  .catch((e) => { log(`ERROR: ${(e as Error).stack ?? e}`); console.error(e); (window as unknown as { __error?: string }).__error = String(e); });
