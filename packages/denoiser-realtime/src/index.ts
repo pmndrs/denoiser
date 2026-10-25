@@ -19,3 +19,5 @@ export {
   OcclusionDenoiser, HitDistanceNormalizer, type OcclusionDenoiserOptions, type OcclusionRecurrentOptions,
   type OcclusionSvgfOptions, type OcclusionInputs, type OcclusionBothInputs, type OcclusionOutputs,
 } from './occlusion';
+export { ShResolver, type ShResolverOptions } from './sh';
+export { SH_RESOLVE_WGSL } from './shaders/sh';

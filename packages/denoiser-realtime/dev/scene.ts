@@ -20,8 +20,9 @@ export const SCENE_OUTPUTS: [string, GPUTextureFormat][][] = [
   [['Depth', 'r32float'], ['ViewZ', 'r32float'], ['Normal', 'rgba16float'], ['Motion', 'rgba16float']],
   [['Mat', 'rgba16float'], ['Diff', 'rgba16float'], ['DiffRef', 'rgba32float'], ['Spec', 'rgba16float']],
   [['SpecRef', 'rgba32float'], ['Grad', 'rgba32float'], ['DiffHit', 'r32float'], ['SpecHit', 'r32float']],
+  [['DiffDir', 'rgba16float'], ['DetailN', 'rgba16float']],
 ];
-const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad', 'DiffHit', 'SpecHit'];
+const ALL = ['Depth', 'ViewZ', 'Normal', 'Motion', 'Mat', 'Diff', 'DiffRef', 'Spec', 'SpecRef', 'Grad', 'DiffHit', 'SpecHit', 'DiffDir', 'DetailN'];
 
 // The scene writes 10 outputs; the default limit is 4 storage textures per
 // stage, so it runs as 3 dispatches of the same code with different store stubs.
@@ -42,8 +43,8 @@ struct SP {
   view: mat4x4f,
   camPos: vec3f, frame: f32,
   dims: vec2f, prevFrame: f32, noise: f32,
-  fireflyRate: f32, switchFrame: f32, seed: u32, flags: u32,  // flags: 1 = gradient output, 2 = lights don't move
-  near: f32, far: f32, pad0: f32, pad1: f32,
+  fireflyRate: f32, switchFrame: f32, seed: u32, flags: u32,  // flags: 1 = gradient output, 2 = lights don't move, 4 = directional diffuse samples (SH tests)
+  near: f32, far: f32, bumpAmp: f32, pad1: f32,               // bumpAmp: detail-normal bump slope (tan of the max tilt) on floor + wall
 }
 @group(0) @binding(0) var<uniform> S: SP;
 ${outputDecls(part)}
@@ -222,6 +223,74 @@ fn noiseFactor(p: vec2u, salt: u32, s: f32) -> f32 {
   return x * ff / (1.0 + amp * S.fireflyRate);
 }
 
+// Detail normal (SH tests): procedural bumps on the floor and the back wall, two
+// octaves of sin(ku) sin(kv) height; slope scaled by S.bumpAmp. Smooth elsewhere.
+fn detailNormal(id: i32, x: vec3f, n: vec3f) -> vec3f {
+  if (S.bumpAmp <= 0.0 || id > 1) { return n; }
+  var u = x.x; var v = x.z; var T = vec3f(1.0, 0.0, 0.0); var B = vec3f(0.0, 0.0, 1.0);
+  if (id == 1) { v = x.y; B = vec3f(0.0, 1.0, 0.0); }
+  let k1 = 15.7; let k2 = 41.0;   // periods 0.4 and ~0.15 world units
+  let gu = cos(k1 * u) * sin(k1 * v) + 0.5 * cos(k2 * u + 1.3) * sin(k2 * v + 0.7);
+  let gv = sin(k1 * u) * cos(k1 * v) + 0.5 * sin(k2 * u + 1.3) * cos(k2 * v + 0.7);
+  return normalize(n - S.bumpAmp * 0.67 * (gu * T + gv * B));
+}
+
+fn skyCols() -> array<vec3f, 2> { return array<vec3f, 2>(vec3f(0.12, 0.1, 0.08), vec3f(0.3, 0.4, 0.55)); }
+
+// One directional 1-sample estimate of irradiance(x, ns, frame) (SH tests): pick a light
+// (next-event estimate toward it) or the sky (a cosine-distributed direction; the sky
+// is the L1 field L(w) = (c0 + c1)/(2 pi) + 3 (c1 - c0) w.y / (4 pi), so its cosine
+// estimate pi L(w) has expectation exactly sky(ns)), with probabilities half by
+// luminance, half uniform; times the sphere AO at ns (as irradiance()). Unbiased for
+// irradiance(x, ns) exactly; returns (value, direction).
+fn dirSample(x: vec3f, ns: vec3f, frame: f32, up: vec2u) -> array<vec3f, 2> {
+  let o = x + ns * 1e-3;
+  var c: array<vec3f, 4>;
+  var dirs: array<vec3f, 4>;
+  for (var i = 0; i < 3; i++) {
+    let lp = lightPos(i, frame) - x;
+    let d2 = dot(lp, lp);
+    let d = sqrt(d2);
+    let l = lp / d;
+    dirs[i] = l;
+    c[i] = vec3f(0.0);
+    let ndl = dot(ns, l);
+    let col = lightCol(i, frame);
+    if (ndl > 0.0 && dot(col, col) > 0.0 && !occluded(o, l, d, frame)) { c[i] = col * ndl * 8.0 / (4.0 + d2); }
+  }
+  var ao = 1.0;
+  for (var i = 0; i < 4; i++) {
+    let cs = sphereC(i, frame);
+    let v = cs.xyz - x;
+    let d2 = dot(v, v);
+    ao *= 1.0 - clamp(dot(ns, v / sqrt(d2)) * cs.w * cs.w / d2, 0.0, 1.0);
+  }
+  let sk = skyCols();
+  c[3] = mix(sk[0], sk[1], 0.5 + 0.5 * ns.y) * ao;
+  let wl = vec3f(0.2126, 0.7152, 0.0722);
+  var tot = 0.0;
+  for (var i = 0; i < 4; i++) { tot += dot(c[i], wl); }
+  var pk: array<f32, 4>;
+  for (var i = 0; i < 4; i++) { pk[i] = select(0.25, 0.5 * dot(c[i], wl) / tot + 0.125, tot > 0.0); }
+  let u0 = rnd(up, 51u);
+  var k = 3;
+  var acc = 0.0;
+  for (var i = 0; i < 3; i++) { acc += pk[i]; if (u0 < acc) { k = i; break; } }
+  if (k < 3) { return array<vec3f, 2>(c[k] / pk[k], dirs[k]); }
+  // sky: cosine-distributed direction around ns
+  let u1 = rnd(up, 53u);
+  let u2 = rnd(up, 57u);
+  let s = select(-1.0, 1.0, ns.z >= 0.0);
+  let ca = -1.0 / (s + ns.z);
+  let tb = vec3f(1.0 + s * ns.x * ns.x * ca, s * ns.x * ns.y * ca, -s * ns.x);
+  let bb = vec3f(ns.x * ns.y * ca, s + ns.y * ns.y * ca, -ns.y);
+  let rr = sqrt(u1);
+  let ph = 6.2831853 * u2;
+  let w = normalize(tb * (rr * cos(ph)) + bb * (rr * sin(ph)) + ns * sqrt(max(0.0, 1.0 - u1)));
+  let xs = (0.5 * (sk[0] + sk[1]) + 0.75 * (sk[1] - sk[0]) * w.y) * ao;
+  return array<vec3f, 2>(xs / pk[3], w);
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
@@ -246,6 +315,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     stSpecRef(p, vec4f(0.0));
     stDiffHit(p, vec4f(0.0));
     stSpecHit(p, vec4f(0.0));
+    stDiffDir(p, vec4f(0.0));
+    stDetailN(p, vec4f(0.0));
     return;
   }
   let x = o + d * h.t;
@@ -264,10 +335,19 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let m = material(h.id, x);
   stMat(p, m);
   let up = vec2u(gid.xy);
-  let e = irradiance(x, h.n, S.frame);
+  let ndet = detailNormal(h.id, x, h.n);
+  stDetailN(p, vec4f(ndet, 0.0));
+  let e = irradiance(x, ndet, S.frame);
   let nd = noiseFactor(up, 0u, 1.0);
   stDiffRef(p, vec4f(e, 1.0));
-  stDiff(p, vec4f(e * nd, 1.0));
+  if ((S.flags & 4u) != 0u) {
+    let ds = dirSample(x, ndet, S.frame, up);
+    stDiff(p, vec4f(ds[0] * nd, 1.0));
+    stDiffDir(p, vec4f(ds[1], 0.0));
+  } else {
+    stDiff(p, vec4f(e * nd, 1.0));
+    stDiffDir(p, vec4f(0.0));
+  }
   let r = reflect(d, h.n);
   let sr = specularEnv(r, m.a);
   stSpecRef(p, vec4f(sr, 1.0));
@@ -297,7 +377,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let s = up / 3u;
     let pick = vec2u(u32(rnd(s, 101u) * 3.0), u32(rnd(s, 202u) * 3.0));
     if (all(up % 3u == min(pick, vec2u(2u)))) {
-      let ePrev = irradiance(x, h.n, S.prevFrame);
+      let ePrev = irradiance(x, ndet, S.prevFrame);
       let w = vec3f(0.2126, 0.7152, 0.0722);
       stGrad(vec2i(s), vec4f(dot(ePrev * nd, w), dot(e * nd, w), 1.0, 0.0));
     }

@@ -13,8 +13,12 @@
 //   hit=0 (no hit distance inputs)  still=1 (lights don't move)
 //   specularFilter=svgf|recurrent (signal=both with filter=recurrent: specular's filter;
 //   default recurrent diffuse + SVGF antiLag 'auto' specular)
+//   SH (M7, diffuse): payload=sh  resolve=none|fused  sharpen=0..1  guard=k  enc=normal-exact|textbook
+//   bumps=deg (detail-normal bumps on floor + wall; the reference is the irradiance at the
+//   detail normal)  dirs=1 (directional diffuse samples; on with payload=sh or bumps)
+//   guideNormal=geom|detail (the filter's guides.normal; SH always filters with geom)
 import {
-  DiffuseDenoiser, DiffuseSpecularDenoiser, SpecularDenoiser,
+  DiffuseDenoiser, DiffuseSpecularDenoiser, ShResolver, SpecularDenoiser,
   type FrameCamera, type FrameGuides, type RecurrentOptions, type SpecularSvgfOptions, type SvgfOptions,
 } from '@pmndrs/denoiser-realtime';
 import { BLIT_WGSL, METRICS_WGSL } from './metrics';
@@ -129,7 +133,16 @@ async function main() {
     ...(q.has('alpha') ? { temporalAlpha: num('alpha', 0.2) } : {}),
     ...(q.has('maxHistory') ? { maxHistory: num('maxHistory', 32) } : {}),
     ...(q.has('noiseFloor') ? { antiLagNoiseFloor: num('noiseFloor', 2) } : {}),
+    ...(q.get('payload') === 'sh' ? { payload: 'sh' as const } : {}),
+    ...(q.has('resolve') ? { resolve: q.get('resolve') as 'none' | 'fused' } : {}),
+    ...(q.has('sharpen') ? { shSharpen: num('sharpen', 0) } : {}),
+    ...(q.has('guard') ? { shGuard: num('guard', 1) } : {}),
+    ...(q.has('enc') ? { shEncoding: q.get('enc') as 'normal-exact' | 'textbook' } : {}),
   };
+  const shMode = q.get('payload') === 'sh';
+  const bumps = num('bumps', 0);
+  const dirs = q.get('dirs') === '0' ? false : shMode || bumps > 0 || q.get('dirs') === '1';
+  const guideDetail = q.get('guideNormal') === 'detail' && !shMode;
   // recurrent filter: options from r.<name> / t.<tune> query keys
   const filter = q.get('filter') ?? 'svgf';
   const rec: RecurrentOptions & Record<string, unknown> = { filter: 'recurrent', tune: {} };
@@ -201,8 +214,11 @@ async function main() {
   } else if (signal === 'diffuse') single = new DiffuseDenoiser(device, dOpts);
   else single = new SpecularDenoiser(device, dOpts);
   (both ?? single)!.configure({ width: W, height: H });
+  // SH with resolve 'none': resolve at the detail normal for metrics / display
+  const resolver = shMode && (q.get('resolve') ?? 'none') === 'none' ? new ShResolver(device, { sharpen: num('sharpen', 0) }) : undefined;
   const guides: FrameGuides = {
-    depth: tex.Depth, normal: tex.Normal, motion: tex.Motion,
+    depth: tex.Depth, normal: guideDetail ? tex.DetailN : tex.Normal, motion: tex.Motion,
+    ...(shMode ? { detailNormal: tex.DetailN } : {}),
     ...(q.get('remod') === '1' ? { albedo: tex.Mat } : {}),
     ...(useViewZ ? { viewZ: tex.ViewZ } : {}),
     ...(useMotionZ ? { motionZ } : {}),
@@ -260,7 +276,8 @@ async function main() {
     sp.set(cur.eye, 64); sp[67] = f;
     sp[68] = W; sp[69] = H; sp[70] = Math.max(0, f - 1); sp[71] = num('noise', 1);
     sp[72] = num('ff', 0.001); sp[73] = switchFrame; su[74] = f + 1; su[75] = (antiLag === 'gradient' ? 1 : 0) | (q.get('still') === '1' ? 2 : 0);
-    sp[76] = 0.1; sp[77] = 100;
+    sp[76] = 0.1; sp[77] = 100; sp[78] = Math.tan((bumps * Math.PI) / 180);
+    if (dirs) su[75] |= 4;
     device.queue.writeBuffer(sceneParams, 0, sp);
     const enc = device.createCommandEncoder();
     if (antiLag === 'gradient') {   // strata without a gradient sample (sky) read as invalid
@@ -288,7 +305,10 @@ async function main() {
         specular: { radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad },
       }, guides, camera);
     } else if (single instanceof DiffuseDenoiser) {
-      lastOut = { diffuse: single.dispatch({ radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}) }, guides, camera) } as Record<Sig, GPUTexture>;
+      lastOut = { diffuse: single.dispatch({
+        radiance: tex.Diff, gradient: grad, ...(useHit ? { hitDistance: tex.DiffHit } : {}), ...(shMode ? { direction: tex.DiffDir } : {}),
+      }, guides, camera) } as Record<Sig, GPUTexture>;
+      if (resolver) lastOut.diffuse = resolver.resolve(lastOut.diffuse, tex.DetailN, tex.Normal);
     } else {
       lastOut = { specular: single!.dispatch({ radiance: tex.Spec, hitDistance: tex.SpecHit, gradient: grad }, guides, camera) } as Record<Sig, GPUTexture>;
     }
