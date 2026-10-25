@@ -631,6 +631,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [~] m8-translucency (implementer, 2026-10-25) **M8 steps 2–3 (+5)**: `ShadowDenoiser({ translucency: true })` per SPEC §7.10
       (τ = E[T | v = 1], (v̂·τ̂, v̂) rgba16float, tile bits, visibility-weighted spatial, stabilization, storage-limit path); gate:
       T ≡ 1 bit-identical to v2.2; measure on `glass` / `glass-moving` / `glass-still` → results/M8.md — owner m8-translucency
+- [~] m7-sh (implementer, 2026-10-25) **M7 steps 2–5**: SVGF `payload: 'sh'` (24f2e4a: encode-on-load, ShResolver,
+      `SH_RESOLVE_WGSL`, fused resolve, anti-lag via an SH gradient pass; plain WGSL byte-identical), the three.js resolve
+      node, tuning, specular SG ratio resolve; gate = 7-path regression within 0.05 dB; `bumpy` vs both references
+      → results/M7.md — owner m7-sh
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
