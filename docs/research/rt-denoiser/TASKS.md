@@ -46,7 +46,12 @@ to it before you finish._
    keeps today's behavior, with a bit-identical check of the default path. It becomes a default only
    after an A/B on the test bed's 7 paths **and** the real-scene captures (and native where it
    applies) shows no regression beyond: −0.1 dB pooled PSNR, +5 % FLIP, +5 % boil / flicker in any
-   region (static, dynamic, penumbra, disoccluded), +10 % cost. For diffuse, specular and AO, also
+   region (static, dynamic, penumbra, disoccluded), +10 % cost. **Boil (Dennis q20 (a), 2026-10-26):** a boil
+   increase counts as a regression only if the result ends above both the clean (4096-spp) reference's own boil and the
+   shipped default's boil in that region; flicker (which compares against the reference's change) is unchanged. Boil
+   as Dennis sees it: shadows or detail changing shape and texture frame by frame in an unnatural way (undulating,
+   rippling) during an orbit or under a moving object, not the legitimate change of moving content, so prefer
+   motion-compensated boil on orbit / moving-occluder sequences. For diffuse, specular and AO, also
    score the A/B against 4096-spp references on `orbit` / `light` / `glossy` (E-1 setup:
    `&refspp=4096&ref2spp=256&ref2salt=0`, results/E1-high-reference.md): the 256-spp references cap
    those signals at 37–42 dB and shrink gaps 2–3×, so a close call there is decided at 4096 spp
@@ -786,7 +791,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (Dennis's lead; +0.67 / +0.43 dB pooled diffuse / specular over 14 captures, boundary +1.2…+4.6 dB, −1.5 B/px, one
       dispatch fewer; **fails rule 9's boil clause**), SVGF `spatialHistoryWeight` (null), `youngLuminanceWeight` (loss);
       shadows' fresh-pixel knobs already at their best. — t1
-- [ ] **Default flip proposal (look change, needs Dennis): SVGF `youngNormalPower: 16`** (results/T1-recovery.md §5.1).
+- [ ] **Default flip, APPROVED by Dennis q18 (a) 2026-10-26, pending only the Windows locked-clock cost check (≤ +10 %; native round 3 step 2): SVGF `youngNormalPower: 16`** (keep the option and document both values: Dennis "we can add the option to change it still with notes to both paths"). Was: Default flip proposal (look change, needs Dennis): SVGF `youngNormalPower: 16` (results/T1-recovery.md §5.1).
       Rule-9 A/B: 1080p 7 paths diffuse 38.500 → 38.501 dB pooled, disoccluded +0.02, FLIP ±0, flicker ±0; 14 captures
       −0.02…+0.32 dB, FLIP ≤ +0.5 %, boil lower everywhere; specular byte-identical; cost within noise (§5.5). Visible
       effect: young pixels on curved surfaces are smoother on the first frames after a reset or anti-lag event (strip in
