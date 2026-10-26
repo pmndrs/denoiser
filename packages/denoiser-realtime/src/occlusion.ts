@@ -87,7 +87,7 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
   // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default).
   // antiLag inherits SVGF's default 'auto': 'off' was tried as the occlusion default and reverted
   // (results/OCCLUSION-ANTILAG.md: AO contact -0.6 dB, AO flicker +15 %, SO -0.9 dB for -0.2 / -0.8 ms)
-  const base = { sigmaLuminance: 1.5, atrousIterations: 3, youngNormalPower: 0, ...svgf, remodulate: false }; // youngNormalPower: unmeasured on occlusion (TASKS T1 follow-ups)
+  const base = { sigmaLuminance: 1.5, atrousIterations: 3, youngNormalPower: 0, outputAliasing: false, ...svgf, remodulate: false }; // youngNormalPower: unmeasured on occlusion (TASKS T1 follow-ups)
   const perSignal = signals.map((k) => resolveOptions(k === 'specular' && svgf.temporalAlpha === undefined ? { ...base, temporalAlpha: 0.3 } : base));
   return { filter, signals, o: perSignal[0], perSignal, hitDistanceScale, hitDistanceViewScale };
 }

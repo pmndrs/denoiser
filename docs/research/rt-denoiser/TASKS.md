@@ -1106,7 +1106,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       140 → 124 B/px joint `'auto'`; SPEC's "132 → 124" counts one signal; young flags +0.06 B/px), §12 item 4 (c) status and
       item 20 (q26 now fits). Native round 4 should re-time `svgf-auto` (ratio was 1.18× at 4.40-equivalent cost). — found by
       svgf-cost, owner spec author / harness
-- [ ] **Config proposal (orchestrator): `outputAliasing: true` as the SVGF default** (radiance payload; results/SVGF-COST.md §4–5).
+- [x] (orchestrator, applied 2026-10-27; byte checks on std540-orbit: svgf-auto and occlusion-svgf-auto identical before/after; the SH payload keeps false (can't alias), OcclusionDenoiser pins false (not verified there); denoiser/three copies every output into its own texture, so the changing texture object is safe; run-realtime gi checks pass) **Config proposal (orchestrator): `outputAliasing: true` as the SVGF default** (radiance payload; results/SVGF-COST.md §4–5).
       Dennis decided SPEC §12 item 4 (c) "if it measures clean": byte-identical outputs, cost ±0, −16 B/px joint (140 → 124).
       The only behaviour change: the returned texture is one of the à-trous ping-pong textures (the same object every frame
       for 5 iterations), overwritten early in the next dispatch instead of at its end; the API already says outputs are

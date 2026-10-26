@@ -150,7 +150,9 @@ export interface SvgfOptions {
    * SPEC §12 item 4 (c) / §10.2: the last à-trous iteration writes into the ping-pong texture it would otherwise hand
    * on, and that texture is the output (no separate output texture: -8 B/px per signal). Same values; the output is
    * valid until the next dispatch / configure / dispose, as documented for every output (the recurrent filter's
-   * already lives in its rotating buffers). Default false. Payload 'radiance' only. Structural.
+   * already lives in its rotating buffers). Default true for payload 'radiance' since results/SVGF-COST.md (Dennis, SPEC
+   * §12 item 4 (c): adopt if it measures clean: byte-identical output, same cost); 'sh' can't alias. OcclusionDenoiser
+   * keeps false. Structural.
    */
   outputAliasing?: boolean;
   /**
@@ -329,7 +331,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     antiLagGain: Math.max(0, o.antiLagGain ?? 1),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
-    outputAliasing: o.outputAliasing ?? false,
+    outputAliasing: o.outputAliasing ?? o.payload !== 'sh', // default since SVGF-COST (Dennis §12 item 4 (c): "if it measures clean")
     payload: o.payload ?? 'radiance',
     resolve: o.resolve ?? 'auto',
     shSpecularRatio: o.shSpecularRatio ?? 'sg',
