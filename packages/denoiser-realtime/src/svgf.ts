@@ -19,7 +19,7 @@ import { SH_PACK_NEAREST, SH_PACK_TRUNCATE, type ShEncoding } from './shaders/sh
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, temporalPass, variancePass, type SignalKind,
+  PARAMS_SIZE, temporalPass, variancePass, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -195,6 +195,28 @@ export interface SpecularSvgfOptions extends SvgfOptions, SpecularShOptions {
   specularNormalWeight?: 'lobe' | 'power';
   /** Scales the roughness-dependent kernel radius (RTG ch. 32 eq. 15); 0 disables it. Default 1. */
   radiusScale?: number;
+  /**
+   * Which point the specular history follows (review target 2, results/REFLECTION-MOTION.md; candidate, our
+   * design from public sources): 'surface' (default, today's behaviour, bit-identical) reprojects with the surface's
+   * motion; 'virtual' fetches the history where the reflected image was, X + v h F_dom / (1 + 2 kappa h) (hit
+   * distance from `inputs.hitDistance`, its 3x3 mean; curvature kappa from neighbouring normals; Stachowiak 2015,
+   * SPEC R-9), and falls back to the surface history where that footprint fails the plane test or the image is
+   * real (past a concave mirror's focus); 'dual' takes both and blends them by their luminance distance to this
+   * frame's 3x3 input mean (Eto et al. 2023 §2.4.2 after Stachowiak 2018), faded out between roughness 0.1 and 0.2.
+   * Needs `inputs.hitDistance` (0 = miss).
+   */
+  reflectionReprojection?: ReflectionReprojection;
+  /**
+   * Reflected-world disocclusion test (review target 2 candidate, our design): drop specular history taps whose
+   * stored hit distance (this frame's 3x3 mean of `inputs.hitDistance`, misses = far) differs from this frame's by
+   * more than (0.1 + 0.4 r) of the larger plus max(this frame's 3x3 spread of hit distances, half the tap's stored
+   * spread): the reflection analogue of the depth test, tolerant where the reflected depth itself is unstable (edges,
+   * grazing floors, glossy lobes whose 9 samples happen to cluster). The virtual candidate of
+   * `reflectionReprojection` always has it; this switches it on for the surface history too (trails of moving
+   * reflected objects, reflector motion). Default false (bit-identical). Needs `inputs.hitDistance`; +8 B/px (the
+   * specular moments become rgba32float: hit distance and spread in .b / .a).
+   */
+  reflectionHitTest?: boolean;
 }
 
 export type ResolvedOptions = Omit<Required<Omit<SpecularSvgfOptions, 'filter'>>, 'resolve'> & {
@@ -250,8 +272,13 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     lobeFraction: o.lobeFraction ?? 0.75,
     radiusScale: o.radiusScale ?? 1,
     specularNormalWeight: o.specularNormalWeight ?? 'lobe',
+    reflectionReprojection: o.reflectionReprojection ?? 'surface',
+    reflectionHitTest: o.reflectionHitTest ?? false,
   };
 }
+
+/** The specular reflection-tracking variant of the temporal pass is on (reflectionReprojection / reflectionHitTest). */
+export const reflVariant = (kind: SignalKind, o: ResolvedOptions) => kind === 'specular' && (o.reflectionReprojection !== 'surface' || o.reflectionHitTest);
 
 /** Effective SH resolve of a signal: the option, else 'none' for diffuse and 'fused' for specular (SPEC M7-11). */
 export function shResolveOf(kind: SignalKind, o: ResolvedOptions): ShResolve {
@@ -261,6 +288,8 @@ export function shResolveOf(kind: SignalKind, o: ResolvedOptions): ShResolve {
 /** Per-frame inputs of one signal. */
 export interface SignalFrame {
   radiance: GPUTexture;
+  /** Ray hit distance (world units, 0 = miss); read by `reflectionReprojection` 'virtual' / 'dual' only. */
+  hitDistance?: GPUTexture;
   /** Factor the radiance was divided by (for `remodulate`). */
   demodulation?: GPUTexture;
   /** Renderer gradient samples for antiLag 'gradient' (rgba32float/rgba16float at ceil(W/3) x ceil(H/3)). */
@@ -354,6 +383,7 @@ export class SvgfPipeline {
     const box = o.kernel === '3x3';
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
+      if (signals.some((s) => reflVariant(s.kind, s.opts))) throw new Error(`${label}: reflectionReprojection / reflectionHitTest need payload 'radiance'`);
       for (const s of signals) {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
       }
@@ -368,7 +398,9 @@ export class SvgfPipeline {
         }
       }
     } else {
-      make('temporal', temporalPass(kinds));
+      const rr = signals.map((s) => (s.kind === 'specular' ? s.opts.reflectionReprojection : 'surface'));
+      const ht = signals.map((s) => s.kind === 'specular' && s.opts.reflectionHitTest);
+      make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht }) : temporalPass(kinds));
       const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
       make('variance', hw.some(Boolean) ? variancePass(kinds, { historyWeight: hw }) : variancePass(kinds));
       const yl = signals.map((s) => s.opts.youngLuminanceWeight !== 1 || s.opts.youngNormalPower > 0);
@@ -416,7 +448,9 @@ export class SvgfPipeline {
       // SH: 8 x f16 in one rgba32uint (SPEC M7-3); the output is the payload unless fused
       const cf: GPUTextureFormat = this.sh ? 'rgba32uint' : 'rgba16float';
       s.accum = [tex('accum0', cf), tex('accum1', cf)];
-      s.moments = [tex('moments0', 'rg32float'), tex('moments1', 'rg32float')];
+      // reflectionReprojection: the moments also carry the frame's hit distance (.b) for the virtual tap test
+      const mf: GPUTextureFormat = reflVariant(s.kind, s.opts) && !this.sh ? 'rgba32float' : 'rg32float';
+      s.moments = [tex('moments0', mf), tex('moments1', mf)];
       if (this.opts.feedback) s.hist = tex('history', cf);
       const pf: GPUTextureFormat = this.sh && this.opts.shPingPacking === 'u8' ? 'rg32uint' : cf;
       s.ping = [tex('ping', pf), tex('pong', pf)];
@@ -495,6 +529,10 @@ export class SvgfPipeline {
     const gx = Math.ceil(W / 8), gy = Math.ceil(H / 8);
     const name = (n: string) => prefix + n;
     const c = this.cur;
+    const needHit = (s: SignalState, f: SignalFrame) => {
+      if (!f.hitDistance) throw new Error(`${s.label}: reflectionReprojection / reflectionHitTest need inputs.hitDistance`);
+      return f.hitDistance;
+    };
     const shared: Record<string, Res> = {
       F: gp.frame, geoCur: gp.geoCur, geoPrev: gp.geoPrev, geoGrad: gp.geoGrad,
       motionTex: motion, motionZTex: motionZ ?? gp.dummy, smp: gp.sampler,
@@ -547,6 +585,7 @@ export class SvgfPipeline {
     runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({
       input: f.radiance, colorHist: o.feedback ? s.hist! : s.accum[c ^ 1],
       momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
+      ...(reflVariant(s.kind, s.opts) ? { hit: needHit(s, f) } : {}),
     }))), gx, gy);
     runPass(enc, timer, name('variance'), this.pipes.variance, this.group('variance', per((s) => ({
       accumCur: s.accum[c], momentsCur: s.moments[c], outPing: s.ping[0],

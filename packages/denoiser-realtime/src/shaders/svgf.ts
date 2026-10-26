@@ -166,7 +166,131 @@ export function antilagWgsl(i: number): string {
 }`;
 }
 
-export function temporalPass(kinds: SignalKind[]): PassDef {
+/**
+ * Reflection reprojection of a specular signal's history (option `reflectionReprojection`, review target 2,
+ * docs/research/rt-denoiser/results/REFLECTION-MOTION.md). 'virtual': fetch the history where the reflected image was
+ * (X + v d_v F_dom, d_v = h / (1 + 2 kappa h)): Stachowiak 2015 (SIGGRAPH Advances, "Stochastic Screen-Space
+ * Reflections": reproject reflections with the depth of the reflected objects, not the surface's), curvature from the
+ * neighbouring normals and F_dom as SPEC R-9 / R-2; the surface history where the virtual footprint fails (our design).
+ * 'dual': both candidates, weighted by how far each one's luminance is from this frame's 3x3 input mean (Eto et al.
+ * 2023, SIGGRAPH Asia Tech. Comm., §2.4.2, after Stachowiak 2018: two reprojection points, blended by brightness
+ * difference to the current colour). Compiled in only when on (default path unchanged).
+ */
+export type ReflectionReprojection = 'surface' | 'virtual' | 'dual';
+/**
+ * Per signal: `reflection` = reprojection mode; `hitTest` = also drop surface-history taps whose stored hit distance
+ * disagrees with this frame's (option `reflectionHitTest`; the virtual candidate always has the test). Our design:
+ * a reflected-world disocclusion test, the reflection analogue of SVGF's depth test (S1 sec. 4.1).
+ */
+export interface TemporalVariant { reflection?: ReflectionReprojection[]; hitTest?: boolean[] }
+
+/** WGSL shared by every signal with a reflection reprojection variant (needs F, geoCur, geoPrev, REPROJECT_WGSL). */
+const VIRTUAL_WGSL = /* wgsl */ `
+// previous-frame uv of a world point (affine inversion of prevProjInv at the point's view depth; any projection
+// the unprojectZ() pair handles); (-1, -1) behind the previous camera
+fn prevUVOfWorld(w: vec3f) -> vec2f {
+  let pv = (F.prevView * vec4f(w, 1.0)).xyz;
+  if (!(pv.z < -1e-5)) { return vec2f(-1.0); }
+  let a = unprojectZ(F.prevProjInv, vec2f(0.0), pv.z);
+  let bx = unprojectZ(F.prevProjInv, vec2f(1.0, 0.0), pv.z) - a;
+  let by = unprojectZ(F.prevProjInv, vec2f(0.0, 1.0), pv.z) - a;
+  let d = pv - a;
+  let det = bx.x * by.y - by.x * bx.y;
+  if (abs(det) < 1e-20) { return vec2f(-1.0); }
+  let ndc = vec2f(d.x * by.y - by.x * d.y, bx.x * d.y - d.x * bx.y) / det;
+  return vec2f(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+}
+// the shared reprojection's footprint tests at another previous uv (the virtual image's), against the surface's
+// expected previous position: on a flat reflector the previous texels there lie on the same plane (SPEC R-10)
+fn reprojectAtUV(prevUV: vec2f, g: Geo, expPrev: vec3f, planeTol: f32, normalTol: f32) -> Reproj {
+  var r: Reproj;
+  r.prevUV = prevUV;
+  r.expPrev = expPrev;
+  let pp = prevUV * F.dims - 0.5;
+  r.base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  let bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  var valid = vec4f(0.0);
+  if (tapValid(r.base, g, expPrev, planeTol, normalTol)) { valid.x = 1.0; }
+  if (tapValid(r.base + vec2i(1, 0), g, expPrev, planeTol, normalTol)) { valid.y = 1.0; }
+  if (tapValid(r.base + vec2i(0, 1), g, expPrev, planeTol, normalTol)) { valid.z = 1.0; }
+  if (tapValid(r.base + vec2i(1, 1), g, expPrev, planeTol, normalTol)) { valid.w = 1.0; }
+  r.w = bil * valid;
+  r.bil = bil;
+  r.valid = valid;
+  r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  r.allValid = all(valid > vec4f(0.5));
+  return r;
+}
+fn worldAt(q: vec2i, z: f32) -> vec3f { return (F.viewInv * vec4f(unprojectZ(F.projInv, ndcOf(uvOf(q)), -z), 1.0)).xyz; }
+fn geoWorld(p: vec2i, g: Geo) -> vec3f { return worldAt(p, g.z); }
+// mean curvature along the 4 axis neighbours on the same surface: dot(n_q - n, X_q - X) / |X_q - X|^2 (convex > 0)
+fn surfaceCurvature(p: vec2i, g: Geo, X: vec3f) -> f32 {
+  var s = 0.0;
+  var c = 0.0;
+  for (var k = 0; k < 4; k++) {
+    let q = p + select(select(vec2i(0, 1), vec2i(0, -1), k == 2), select(vec2i(1, 0), vec2i(-1, 0), k == 0), k < 2);
+    if (!inside(q)) { continue; }
+    let gq = geoTap(geoCur, q);
+    if (gq.z <= 0.0 || abs(gq.z - g.z) > 0.05 * g.z || dot(gq.n, g.n) < 0.5) { continue; }
+    let dX = worldAt(q, gq.z) - X;
+    s += dot(gq.n - g.n, dX) / max(dot(dX, dX), 1e-12);
+    c += 1.0;
+  }
+  return s / max(c, 1.0);
+}
+`;
+
+/**
+ * per-signal virtual uv (xy; (-1, -1) = none) and this frame's 3x3 mean hit distance (z; hits only, mostly misses =
+ * F.far), SPEC R-9 distance with curvature
+ */
+function virtualUvWgsl(i: number): string {
+  return /* wgsl */ `
+fn virtualUV${i}(p: vec2i, g: Geo, X: vec3f) -> vec4f {
+  var hs = 0.0;
+  var nh = 0.0;
+  var nv = 0.0;
+  var lo = 1e30;
+  var hi = 0.0;
+  for (var dy = -1; dy <= 1; dy++) {
+    for (var dx = -1; dx <= 1; dx++) {
+      let q = p + vec2i(dx, dy);
+      if (!inside(q)) { continue; }
+      let gq = geoTap(geoCur, q);
+      if (gq.z <= 0.0 || abs(gq.z - g.z) > 0.05 * g.z) { continue; }
+      nv += 1.0;
+      let h = textureLoad(hit${i}, q, 0).r;
+      let ok = h > 0.0 && h < 1e30;
+      if (ok) { hs += h; nh += 1.0; }
+      let hq = select(F.far, h, ok);
+      lo = min(lo, hq);
+      hi = max(hi, hq);
+    }
+  }
+  let h = select(F.far, hs / max(nh, 1.0), 2.0 * nh >= nv);
+  // the hit-distance test's tolerance: (0.1 + 0.4 r) of the larger distance plus max(this frame's 3x3 spread, half the
+  // tap's stored spread): a reflected edge, a grazing floor or a glossy lobe makes the per-frame 3x3 mean itself
+  // unstable there; this frame's spread alone rejected static glossy pixels whenever their 9 samples clustered
+  // (test bed light path, mirror bin -0.5 dB); the full stored spread kept trail pixels at a moving object's old edge
+  let spread = max(hi - lo, 0.0);
+  let k = surfaceCurvature(p, g, X);
+  let den = 1.0 + 2.0 * k * h;
+  // past a concave mirror's focal point the image is real (inverted, in front): no virtual candidate there
+  if (den < 0.05) { return vec4f(-1.0, -1.0, h, spread); }
+  let a = g.rough * g.rough;
+  let fdom = (1.0 - a) * (sqrt(1.0 - a) + a);
+  let uv = prevUVOfWorld(X + normalize(X - F.camPos) * (h / den * fdom));
+  return vec4f(select(vec2f(-1.0), uv, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0))), h, spread);
+}`;
+}
+
+export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): PassDef {
+  const refl = (i: number) => (kinds[i] === 'specular' ? tv.reflection?.[i] ?? 'surface' : 'surface');
+  const hitT = (i: number) => kinds[i] === 'specular' && !!tv.hitTest?.[i];
+  /** this signal runs the reflection variant body (reads the hit distance, rgba32float moments) */
+  const rv = (i: number) => refl(i) !== 'surface' || hitT(i);
+  const anyVirt = kinds.some((_, i) => rv(i));
   const b = new Bindings();
   b.uniform('F', 'Frame');
   kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
@@ -181,8 +305,151 @@ export function temporalPass(kinds: SignalKind[]): PassDef {
     b.add(`momentsPrev${i}`, 'texture_2d<f32>', 'f');
     b.add(`grad${i}`, 'texture_2d<f32>', 'f');
     b.add(`outAccum${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
-    b.add(`outMoments${i}`, 'texture_storage_2d<rg32float, write>', 'rg32float');
+    // reflection variant: moments carry this frame's hit distance and its 3x3 spread in .b / .a (rgba32float) for the tap test
+    if (rv(i)) b.add(`outMoments${i}`, 'texture_storage_2d<rgba32float, write>', 'rgba32float');
+    else b.add(`outMoments${i}`, 'texture_storage_2d<rg32float, write>', 'rg32float');
+    if (rv(i)) b.add(`hit${i}`, 'texture_2d<f32>', 'f');
   });
+  // reflection reprojection variant of one signal (TemporalVariant): surface candidate as today (incl. the
+  // 3x3 fallback and the R-8 cap), virtual candidate at virtualUV, then 'virtual' takes the virtual one where
+  // its footprint is valid and 'dual' blends both by luminance distance to this frame's 3x3 input mean
+  const perSignalVirt = (i: number, mode: ReflectionReprojection, hitTest: boolean) => {
+    const P = `P${i}`;
+    // surface taps: optional hit-distance agreement (same tolerance as the virtual taps)
+    const hitOk = (m: string) => (hitTest ? `abs(${m}.b - hitCur) <= (0.1 + 0.4 * g.rough) * max(${m}.b, hitCur) + max(vv.w, 0.5 * ${m}.a)` : 'true');
+    return /* wgsl */ `
+  {
+    let cur = finite3(max(textureLoad(input${i}, p, 0).rgb, vec3f(0.0)));
+    let l = luma(cur);
+    let mCur = vec2f(l, l * l);
+    var n = 1.0;
+    var col = cur;
+    var mom = mCur;
+    let vv = virtualUV${i}(p, g, geoWorld(p, g));
+    let hitCur = vv.z;
+    if (!reset) {
+      var hist = vec3f(0.0);
+      var mHist = vec2f(0.0);
+      var nPrev = 0.0;
+      var sumW = 0.0;
+      if (r.sumW > 0.01) {
+        for (var k = 0; k < 4; k++) {
+          let w = r.w[k];
+          if (w <= 0.0) { continue; }
+          let q = r.base + TAP_OFFS[k];
+          let m4 = textureLoad(momentsPrev${i}, q, 0);
+          if (!(${hitOk('m4')})) { continue; }
+          let c4 = textureLoad(colorHist${i}, q, 0);
+          hist += c4.rgb * w;
+          nPrev += c4.a * w;
+          mHist += m4.rg * w;
+          sumW += w;
+        }
+        if (sumW > 0.0) { hist /= sumW; }
+      } else if (fbMask != 0u) {
+        for (var k = 0u; k < 9u; k++) {
+          if ((fbMask & (1u << k)) == 0u) { continue; }
+          let q = fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1);
+          let m4 = textureLoad(momentsPrev${i}, q, 0);
+          if (!(${hitOk('m4')})) { continue; }
+          let c4 = textureLoad(colorHist${i}, q, 0);
+          hist += c4.rgb;
+          nPrev += c4.a;
+          mHist += m4.rg;
+          sumW += 1.0;
+        }
+        if (sumW > 0.0) { hist /= sumW; }
+      }
+      let cap = historyCap${i}(g, r.world, r.expPrev);
+      var nS = 0.0;
+      if (sumW > 0.0) {
+        nPrev /= sumW;
+        mHist /= sumW;
+        nS = min(nPrev + 1.0, cap);
+      }
+      // virtual candidate: footprint taps on the same surface plane whose stored hit distance agrees with this
+      // frame's (a reflected-world disocclusion, e.g. sky uncovered behind a reflected object, fails it)
+      var histV = vec3f(0.0);
+      var mV = vec2f(0.0);
+      var nV = 0.0;
+      var okV = false;
+      if (${mode === 'surface' ? 'false' : 'vv.x >= 0.0'}) {
+        let rv = reprojectAtUV(vv.xy, g, r.expPrev, P0.planeTol, P0.normalTol);
+        var sw = 0.0;
+        for (var k = 0; k < 4; k++) {
+          var w = rv.w[k];
+          if (w <= 0.0) { continue; }
+          let q = rv.base + TAP_OFFS[k];
+          let m4 = textureLoad(momentsPrev${i}, q, 0);
+          if (abs(m4.b - vv.z) > (0.1 + 0.4 * g.rough) * max(m4.b, vv.z) + max(vv.w, 0.5 * m4.a)) { continue; }
+          let c4 = textureLoad(colorHist${i}, q, 0);
+          histV += c4.rgb * w;
+          nV += c4.a * w;
+          mV += m4.rg * w;
+          sw += w;
+        }
+        if (sw > 0.01) {
+          okV = true;
+          histV /= sw;
+          mV /= sw;
+          nV = min(nV / sw + 1.0, cap);
+        }
+      }
+      ${mode !== 'dual' ? /* wgsl */ `
+      if (okV) {
+        hist = histV;
+        mHist = mV;
+        n = nV;
+      } else if (sumW > 0.0) {
+        n = nS;
+      }` : /* wgsl */ `
+      if (okV && sumW > 0.0) {
+        // brightness distance of each candidate to this frame's 3x3 input mean, in units of its spread
+        var s1 = 0.0;
+        var s2 = 0.0;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            let lq = luma(finite3(max(textureLoad(input${i}, clampPix(p + vec2i(dx, dy)), 0).rgb, vec3f(0.0))));
+            s1 += lq;
+            s2 += lq * lq;
+          }
+        }
+        let mu = s1 / 9.0;
+        let sd = sqrt(max(s2 / 9.0 - mu * mu, 0.0)) + 0.05 * mu + 1e-4;
+        let dS = (luma(hist) - mu) / sd;
+        let dV = (luma(histV) - mu) / sd;
+        let wS = 1.0 / (1.0 + dS * dS);
+        let wV = 1.0 / (1.0 + dV * dV);
+        // glossy and rough surfaces: the noisy 3x3 mean cannot tell the candidates apart, and a blend of two
+        // histories blurs (measured: rm-cam-plane-r20..r50 and the r 0.9 floor lost up to 5 dB): fade out by r 0.2
+        let t = wV / (wS + wV) * (1.0 - smoothstep(0.1, 0.2, g.rough));
+        hist = mix(hist, histV, t);
+        mHist = mix(mHist, mV, t);
+        n = mix(nS, nV, t);
+      } else if (okV) {
+        hist = histV;
+        mHist = mV;
+        n = nV;
+      } else if (sumW > 0.0) {
+        n = nS;
+      }`}
+      if (sumW > 0.0 || okV) {
+        var a = max(${P}.alpha, 1.0 / n);
+        var am = max(${P}.momentsAlpha, 1.0 / n);
+        if ((${P}.flags & P_ANTILAG) != 0u) {
+          let lam = antilagLambda${i}(p);
+          a = mix(a, 1.0, lam);
+          am = mix(am, 1.0, lam);
+          n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
+        }
+        col = mix(finite3(hist), cur, a);
+        mom = mix(mHist, mCur, am);
+      }
+    }
+    textureStore(outAccum${i}, p, vec4f(col, n));
+    textureStore(outMoments${i}, p, vec4f(mom, hitCur, vv.w));
+  }`;
+  };
   const perSignal = (i: number) => {
     const P = `P${i}`;
     return /* wgsl */ `
@@ -261,7 +528,7 @@ ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
 ${REPROJECT_WGSL}
-${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}
+${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i) : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -290,7 +557,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       }
     }
   }
-${kinds.map((_, i) => perSignal(i)).join('\n')}
+${kinds.map((_, i) => (rv(i) ? perSignalVirt(i, refl(i), hitT(i)) : perSignal(i))).join('\n')}
 }
 `;
   return { code, entries: b.entries };

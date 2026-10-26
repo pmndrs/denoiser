@@ -163,7 +163,7 @@ const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance'
   'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
   'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale',
   'spatialVarianceRadius', 'spatialHistoryWeight', 'youngLuminanceWeight', 'youngNormalPower'] as const;
-const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight'] as const;
+const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight', 'reflectionReprojection'] as const;
 
 /** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
 export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOptions = {}): SpecularSvgfOptions {
@@ -171,6 +171,7 @@ export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOp
   for (const k of SVGF_NUM) if (st[k] !== undefined) o[k] = Number(st[k]);
   for (const k of SVGF_STR) if (st[k] !== undefined) o[k] = st[k];
   if (st.feedback !== undefined) o.feedback = !['0', 'false', 'off'].includes(st.feedback);
+  if (st.reflectionHitTest !== undefined) o.reflectionHitTest = !['0', 'false', 'off'].includes(st.reflectionHitTest);
   return o as SpecularSvgfOptions;
 }
 
