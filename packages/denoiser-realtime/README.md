@@ -107,7 +107,8 @@ specular with anti-lag v2], `luminanceVariance`
 `youngNormalPower` [16 for the radiance payload since 2026-10-26 (Dennis q18 (a)); 0 for `payload: 'sh'` and
 `OcclusionDenoiser`: the normal edge-stop exponent of a pixel's first frame, ramping to `sigmaNormal` over
 `varianceRampFrames`; removes the blotches on curved surfaces in the first frames after a reset, +5 % cost on the RTX
-bench; 0 = the previous behaviour; SPEC §4.4], `spatialHistoryWeight` [0; measured null], `youngLuminanceWeight`
+bench; 0 = the previous behaviour; SPEC §4.4; payload 'sh' honours an explicit value since review target 5 (before, it
+was ignored there; results/T5-normal-detail.md)], `spatialHistoryWeight` [0; measured null], `youngLuminanceWeight`
 [1 = off; measured a loss], `f16Rounding` ['store' | 'nearest': round to nearest before every f16 store, since Metal
 truncates; `'nearest'` proposed as the default, SPEC §3.8 / §12 item 19],
 `antiLagChroma` [false; true: `'auto'` also detects colour changes (YCoCg chroma gradients through the same
@@ -540,7 +541,11 @@ const rgb = gi.dispatch(
 - **Options.** `shSharpen` (0.75, diffuse resolve: blend toward ambient + one extracted light; SPEC said 0),
   `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
   `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (2), `shMaxRatio` (4), `shFadeRoughness` (0.2);
-  `shPingPacking` ('f16' | 'u8').
+  `shPingPacking` ('f16' | 'u8'); `shDetailNormalPower` (0 = off; review target 5: an extra spatial weight
+  max(0, n_d·n_d')^p on the detail normals, so payloads sampled around similar hemispheres are averaged together: p 16
+  is +0.8…+2.9 dB and FLIP −8…−19 % on normal-mapped diffuse, more bump contrast, but more residual shimmer on still
+  views; results/T5-normal-detail.md) and `shDetailNormalStride` (1: apply it only in à-trous iterations with at least
+  this stride; measured worse).
   `payload` is structural; `filter: 'recurrent'` with `payload: 'sh'` throws (not built);
   `historyFilter: 'catmull-rom'` is ignored in SH mode (the history is unfilterable; bilinear).
 - **three.js:** `realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })`

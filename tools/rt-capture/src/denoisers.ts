@@ -393,7 +393,7 @@ registerDenoiser({
 registerOcclusionDenoisers({ register: registerDenoiser, perSignal, recurrentOptions, svgfOptions });
 
 // ---- CAPTURE-FORMAT v1 signals (sh-diffuse, sh-specular, shadow-rgb): src/v1-entries.ts -------------
-registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, shadowOptions, shadowLightOf });
+registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, recurrentOptions, shadowOptions, shadowLightOf });
 
 // ---- M7: SVGF with the SH payload (owner m7-sh) ----------------------------------------------
 function shOptions(st: Record<string, string>, defaults: SpecularSvgfOptions): SpecularSvgfOptions {
@@ -405,6 +405,8 @@ function shOptions(st: Record<string, string>, defaults: SpecularSvgfOptions): S
   if (st['m7.lightSharp'] !== undefined) o.shLightSharpness = Number(st['m7.lightSharp']);
   if (st['m7.maxRatio'] !== undefined) o.shMaxRatio = Number(st['m7.maxRatio']);
   if (st['m7.fadeR'] !== undefined) o.shFadeRoughness = Number(st['m7.fadeR']);
+  if (st['m7.detailPow'] !== undefined) o.shDetailNormalPower = Number(st['m7.detailPow']);   // review target 5
+  if (st['m7.detailStride'] !== undefined) o.shDetailNormalStride = Number(st['m7.detailStride']);
   if (st['m7.truncate'] !== undefined) (o as { shPackTruncate?: boolean }).shPackTruncate = st['m7.truncate'] === '1';
   return o;
 }

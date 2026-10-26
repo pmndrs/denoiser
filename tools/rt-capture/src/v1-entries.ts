@@ -16,13 +16,17 @@
 //                      filter normal = the shading (detail) normal, i.e. today's svgf-diffuse / svgf-specular
 //   svgf-plain-smooth  the same with the filter normal = normal_geom (bump shading averaged away)
 //                      (both take the svgf URL settings, e.g. antiLag=auto)
+//   svgf-plain-default plain SVGF with the package defaults (the shipped A-SVGF: antiLag 'auto', youngNormalPower 16),
+//                      filter normal = the shading normal (review target 5, results/T5-normal-detail.md)
+//   recurrent-plain    the recurrent filter (package defaults, recurrent URL settings r. / d. / s. / t.) on the plain
+//                      sample, filter normal = the shading normal; recurrent-plain-smooth with normal_geom
 //   shadows-lumt       M8-10 baseline: ShadowDenoiser (sh.<option> settings) on v·lum709(T) as a scalar,
 //                      output (s, s, s): right luminance, no colour
 //   ffx-shadows-lumt   FfxShadowDenoiser likewise
 import type { TemporalDenoiser } from '../../../packages/denoiser-core/src/temporal';
 import { FfxShadowDenoiser } from '../../../packages/denoiser-ffx/src/index';
 import { DiffuseDenoiser, ShadowDenoiser, SpecularDenoiser } from '../../../packages/denoiser-realtime/src/index';
-import type { ShadowDenoiserOptions, ShadowLight, SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
+import type { RecurrentOptions, ShadowDenoiserOptions, ShadowLight, SpecularSvgfOptions } from '../../../packages/denoiser-realtime/src/index';
 import type { CaptureLight, SignalName, V1SignalName } from './format';
 import { shGuides, type DenoiserEntry, type ReplayDenoiser, type ReplayFrame } from './replay';
 
@@ -32,6 +36,7 @@ interface Helpers {
   register(e: DenoiserEntry): void;
   get(id: string): DenoiserEntry | undefined;
   svgfOptions(st: Record<string, string>, defaults?: SpecularSvgfOptions): SpecularSvgfOptions;
+  recurrentOptions(st: Record<string, string>, signal?: 'diffuse' | 'specular'): RecurrentOptions;
   shadowOptions(st: Record<string, string>): ShadowDenoiserOptions;
   shadowLightOf(lights: readonly CaptureLight[] | undefined): ShadowLight | undefined;
 }
@@ -69,12 +74,18 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   dispose() { this.out?.destroy(); }
 }
 
+/** Plain-sample filter of one sh-* signal (SVGF with the pinned M7 options by default). */
+type MakePlain = (device: GPUDevice, s: string, settings: Record<string, string>) => TemporalDenoiser<object>;
+const svgfPinned = (h: Helpers): MakePlain => (device, s, settings) => {
+  const opts = h.svgfOptions(settings, { antiLag: 'off', youngNormalPower: 0 }); // pinned: package defaults are 'auto' and youngNormalPower 16
+  return s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts);
+};
+
 /** One TemporalDenoiser per sh-* signal, fed the plain sample; `smooth` swaps the filter normal to normal_geom. */
-function plainSh(h: Helpers, smooth: boolean): DenoiserEntry['create'] {
+function plainSh(h: Helpers, smooth: boolean, make: MakePlain = svgfPinned(h)): DenoiserEntry['create'] {
   return (device, { width, height, signals, settings }) => {
-    const opts = h.svgfOptions(settings, { antiLag: 'off', youngNormalPower: 0 }); // pinned: package defaults are 'auto' and youngNormalPower 16
     const dens = new Map(signals.map((s) => {
-      const d: TemporalDenoiser<object> = s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts);
+      const d = make(device, s, settings);
       d.configure({ width, height });
       return [s, d] as const;
     }));
@@ -137,6 +148,24 @@ export function registerV1Denoisers(h: Helpers): void {
   h.register({
     id: 'svgf-plain-smooth', description: 'M7 contender: plain SVGF on the plain sample, filter normal = normal_geom', signals: ['sh-diffuse', 'sh-specular'],
     create: plainSh(h, true),
+  });
+  // review target 5 (results/T5-normal-detail.md): the shipped plain default and the recurrent filter on the same samples
+  h.register({
+    id: 'svgf-plain-default', description: 'T5: plain SVGF with the package defaults (A-SVGF, youngNormalPower 16), filter normal = shading normal', signals: ['sh-diffuse', 'sh-specular'],
+    create: plainSh(h, false, (device, s, st) => {
+      const opts = h.svgfOptions(st);
+      return s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts);
+    }),
+  });
+  const rec: MakePlain = (device, s, st) => (s === 'sh-diffuse'
+    ? new DiffuseDenoiser(device, h.recurrentOptions(st, 'diffuse')) : new SpecularDenoiser(device, h.recurrentOptions(st, 'specular')));
+  h.register({
+    id: 'recurrent-plain', description: 'T5: recurrent filter (package defaults) on the plain sample, filter normal = shading normal', signals: ['sh-diffuse', 'sh-specular'],
+    create: plainSh(h, false, rec),
+  });
+  h.register({
+    id: 'recurrent-plain-smooth', description: 'T5: recurrent filter on the plain sample, filter normal = normal_geom', signals: ['sh-diffuse', 'sh-specular'],
+    create: plainSh(h, true, rec),
   });
   h.register({
     id: 'shadows-lumt', description: 'M8 baseline: ShadowDenoiser on v·lum(T) as a scalar, output grey (s, s, s)', signals: ['shadow-rgb'],

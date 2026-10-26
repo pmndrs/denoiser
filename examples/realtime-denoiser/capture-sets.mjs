@@ -47,6 +47,16 @@ export const CAPTURE_SETS = {
     ...['lc-step', 'lc-hue', 'lc-fade', 'lc-jump'].map((p) => ({ name: p.replace('lc-', 'lc540-'), path: p, start: 0, frames: 96, w: 960, h: 540 })),
     { name: 'lc540-emitter', path: 'lc-emitter', start: 0, frames: 96, w: 960, h: 540, signals: 'diffuse,specular', refspp: 4096 },
   ],
+  // Normal detail (review target 5, results/T5-normal-detail.md; paths src/paths-detail.ts, detail build): sh-diffuse +
+  // sh-specular with 4096-spp references, 960x540. Orbit: bumpy's slow orbit with the M7 detail normals, a smooth control
+  // and two held-out patterns, plus `bounce`; light: a broad emitter sweeping over the same surfaces (frames 16..47), then
+  // a hold. 103.7 MB / frame, 64 / 80 frames: 58 GB.
+  t5: [
+    ...['dt-bumpy', 'dt-smooth', 'dt-grooves', 'dt-fine', 'bounce'].map((p) => (
+      { name: `t5-${p.replace('dt-', '')}`, path: p, start: 0, frames: 64, w: 960, h: 540, signals: 'sh-diffuse,sh-specular', refspp: 4096 })),
+    ...['dt-light', 'dt-light-smooth', 'dt-light-grooves'].map((p) => (
+      { name: `t5-${p.replace('dt-', '')}`, path: p, start: 0, frames: 80, w: 960, h: 540, signals: 'sh-diffuse,sh-specular', refspp: 4096 })),
+  ],
   // T0.7 round trip (small): orbit + cut across its reset
   roundtrip: [
     { name: 'rt-orbit', path: 'orbit', start: 0, frames: 24, w: 960, h: 540 },

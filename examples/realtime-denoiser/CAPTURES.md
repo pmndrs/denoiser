@@ -209,3 +209,19 @@ and from frame 64 on. `hard` = sphere light r 4 cm ~1.6–2.6 m above the occlud
 ```sh
 node run-headless.mjs --serve --set=shadow-motion     # ~1 min per capture, validated
 ```
+
+## Normal detail (`--set=t5`, review target 5)
+
+8 captures `t5-*` (results/T5-normal-detail.md, paths in `src/paths-detail.ts`), sh-diffuse + sh-specular with
+**4096-spp references**, 960×540 (103.7 MB/frame, 58 GB for the set; ~3 s per frame to write). The `detail` scene build is
+the `bumpy` build plus a selectable detail-normal pattern (`bump`: 0 M7 domes / ripples, 1 none = smooth control,
+2 held-out grooves, 3 held-out fine cells) and an emissive sphere that only the diffuse / specular rays see (no shadow,
+no motion vectors). `t5-bumpy` / `-smooth` / `-grooves` / `-fine` follow `bumpy`'s slow orbit (64 frames), `t5-bounce`
+the `bounce` dolly; `t5-light` / `-light-smooth` / `-light-grooves` hold `bumpy`'s frame-48 view while the emitter holds
+(0–15), sweeps across the floor (16–47) and holds (48–79). `dt-bumpy` is byte-identical to `bumpy`. Scored with
+`docs/research/rt-denoiser/results/data/t5-normal-detail/score.mjs` (the smooth controls take the region mask of their
+bumpy twin: `--mask-from`).
+
+```sh
+node run-headless.mjs --serve --set=t5     # ~30 min, validated
+```

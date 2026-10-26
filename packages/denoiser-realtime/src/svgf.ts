@@ -96,7 +96,8 @@ export interface SvgfOptions {
    * pixels), while creases (n.n' <= 0) still stop. Removes the post-reset blotches. Default 16 for the radiance
    * payload (Dennis q18 (a), 2026-10-26: rule 9 passed at 256 and 4096 spp, +0.31 ms native-GPU cost at 1080p);
    * 0 = the previous behaviour (sigmaNormal from the first frame), still the default for payload 'sh' and for
-   * OcclusionDenoiser (unmeasured there).
+   * OcclusionDenoiser (unmeasured there). Payload 'sh' honours an explicit value since review target 5
+   * (results/T5-normal-detail.md); before, it was ignored there.
    */
   youngNormalPower?: number;
   /**
@@ -162,6 +163,19 @@ export interface SvgfOptions {
    * and returns rgba16float rgb (remodulated if asked).
    */
   resolve?: 'none' | 'fused';
+  /**
+   * SH (review target 5, results/T5-normal-detail.md; our design): exponent p of an extra spatial weight
+   * max(0, n_d . n_d')^p on the DETAIL normals (`guides.detailNormal`) in the variance and a-trous passes, so a pixel's
+   * payload is averaged mostly with payloads sampled around similar hemispheres (the L1 extrapolation of a payload
+   * to a far-off normal is what flattens the bumps). 0 (default) = off, today's filter (WGSL unchanged).
+   */
+  shDetailNormalPower?: number;
+  /**
+   * SH, with shDetailNormalPower (review target 5): the detail-normal weight applies only in a-trous iterations whose
+   * stride is at least this many pixels (1, default: every iteration and the young-history variance estimate; 4: the
+   * wide iterations only, where the footprint spans whole bumps).
+   */
+  shDetailNormalStride?: number;
   /** SH: per-sample encoding (SPEC M7-2). Default 'normal-exact' (exact at the sampling normal); 'textbook' is the cosine-sampled projection with a 0.1 cosine floor. Structural. */
   shEncoding?: ShEncoding;
   /** SH: ringing guard k on |b| relative to Y at the guide normal (SPEC M7-8). Default 1. */
@@ -308,6 +322,8 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shFadeRoughness: o.shFadeRoughness ?? 0.2,
     shEncoding: o.shEncoding ?? 'normal-exact',
     shGuard: o.shGuard ?? 1,
+    shDetailNormalPower: Math.max(0, o.shDetailNormalPower ?? 0),
+    shDetailNormalStride: Math.max(1, o.shDetailNormalStride ?? 1),
     shSharpen: o.shSharpen ?? 0.75,
     shPackTruncate: o.shPackTruncate ?? false,
     f16Rounding: o.f16Rounding ?? 'store',
@@ -448,12 +464,15 @@ export class SvgfPipeline {
       }
       // temporal and gradient_create are built per input form on first use (encode)
       const p64 = o.shPingPacking === 'u8';
-      make('variance', variancePassSh(kinds, p64));
+      // review target 5 variants (compiled in only when on)
+      const yn = signals.map((s) => s.opts.youngNormalPower > 0), dn = signals.map((s) => s.opts.shDetailNormalPower > 0);
+      const xv = yn.some(Boolean) || dn.some(Boolean) ? { ...(yn.some(Boolean) ? { youngN: yn } : {}), ...(dn.some(Boolean) ? { detail: dn } : {}) } : undefined;
+      make('variance', dn.some(Boolean) ? variancePassSh(kinds, p64, { detail: dn }) : variancePassSh(kinds, p64));
       const res = signals.map((s) => shResolveOf(s.kind, s.opts));
       for (const writeHist of [false, true]) {
         for (const last of [false, true]) {
           if (writeHist && !o.feedback) continue;
-          make(`atrous_${+writeHist}${+last}`, atrousPassSh(kinds, { writeHist, last, box }, res, p64));
+          make(`atrous_${+writeHist}${+last}`, xv ? atrousPassSh(kinds, { writeHist, last, box }, res, p64, xv) : atrousPassSh(kinds, { writeHist, last, box }, res, p64));
         }
       }
     } else {
@@ -562,6 +581,8 @@ export class SvgfPipeline {
     if (this.sh) {
       f[P_SH_OFFSET] = o.shGuard; f[P_SH_OFFSET + 1] = o.shSharpen;
       f[P_SH_OFFSET + 3] = o.shSpecularRatio === 'l1' ? 0 : Math.max(o.shLightSharpness, 1e-3); f[P_SH_OFFSET + 4] = o.shMaxRatio; f[P_SH_OFFSET + 5] = o.shFadeRoughness;
+      // review target 5: youngNormalPower (Params.shPad) and shDetailNormalPower (shDetailPow), read only by the variants
+      f[P_SH_OFFSET + 6] = o.youngNormalPower; f[P_SH_OFFSET + 7] = o.shDetailNormalPower; f[P_SH_OFFSET + 8] = o.shDetailNormalStride;
     }
     this.device.queue.writeBuffer(s.params, 0, f);
   }

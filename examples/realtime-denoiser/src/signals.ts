@@ -257,6 +257,11 @@ export class SceneSignals {
       const g = cur.glass ?? { pos: [0, -100, 0], angle: 0 }, pg = prev.glass ?? g;
       f.set(g.pos, 104); f[107] = g.angle; f.set(pg.pos, 108); f[111] = pg.angle;
     }
+    if (this.scene === 'detail') {
+      // detail build (paths-detail.ts, review target 5): moving emitter (radius 0 = none) and the detail-normal pattern
+      const dt = cur.detail ?? { emitPos: [0, -100, 0], emitRadius: 0, emitRadiance: [0, 0, 0], bump: 0 };
+      f.set(dt.emitPos, 104); f[107] = dt.emitRadius; f.set(dt.emitRadiance, 108); u[111] = dt.bump;
+    }
     if (this.scene === 'reflect') {
       // reflect build (paths-reflect.ts): reflector pose (+ previous), kind / roughness / size, markers
       const r = cur.reflect, pr = prev.reflect ?? r;
@@ -300,7 +305,7 @@ export class SceneSignals {
         d.queue.submit([e.finish()]);
       }
     }
-    this.frameMeta = { index, reset: opts.reset, camera: cam, light: cur.light, obj: cur.obj, ...(cur.glass ? { glass: cur.glass } : {}) };
+    this.frameMeta = { index, reset: opts.reset, camera: cam, light: cur.light, obj: cur.obj, ...(cur.glass ? { glass: cur.glass } : {}), ...(cur.detail ? { detail: cur.detail } : {}) };
     return cam;
   }
 

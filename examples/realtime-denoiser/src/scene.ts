@@ -100,7 +100,7 @@
 import { bnWgsl } from './bluenoise';
 
 /** Scene builds (sceneWgsl): which geometry and which signal variants are compiled in. */
-export type SceneKind = 'standard' | 'bumpy' | 'glass' | 'reflect';
+export type SceneKind = 'standard' | 'bumpy' | 'glass' | 'reflect' | 'detail';
 
 /** SPEC F-3 curve constants used for the test bed's ao / so signals (the denoisers' defaults). */
 export const OCC_A = 1.0;
@@ -209,7 +209,9 @@ const REFLECT_TRACE_WGSL = /* wgsl */ `  if (rd.y < 0.0) {
 
 /** The scene module for one build. 'standard' compiles the original entries unchanged. */
 export function sceneWgsl(kind: SceneKind = 'standard'): string {
-  const B = kind === 'bumpy', G = kind === 'glass', R = kind === 'reflect';
+  const B = kind === 'bumpy' || kind === 'detail', G = kind === 'glass', R = kind === 'reflect';
+  /** detail build (review target 5): the bumpy build + a selectable detail-normal pattern and a moving emitter */
+  const D = kind === 'detail';
   /** builds with a separate geometric normal (bumpy; reflect: the normal-mapped mirror) */
   const NG = B || R;
   /** the normal shadow rays use: the geometric one in the bumpy / reflect builds */
@@ -227,7 +229,9 @@ struct U {
   lightRadiance: vec3f, far: f32,
   objPos: vec3f, objRadius: f32,
   objPrevPos: vec3f, refSalt: u32, // refSalt: reference seed salt (0 = the standard references; E-1)
-${G ? `  glassPos: vec3f, glassAngle: f32,
+${D ? `  emitPos: vec3f, emitRadius: f32,
+  emitRadiance: vec3f, bumpKind: u32,
+` : ''}${G ? `  glassPos: vec3f, glassAngle: f32,
   glassPrevPos: vec3f, glassPrevAngle: f32,
 ` : ''}${R ? `  reflPos: vec3f, reflAngle: f32,
   reflPrevPos: vec3f, reflPrevAngle: f32,
@@ -594,7 +598,13 @@ ${B ? `  if (h.id == EMIT_ID) { return EMIT_RADIANCE; }
 fn incoming(p: vec3f, n: vec3f, dir: vec3f, xi: vec2f) -> vec4f {
   let o = p + n * 1e-3;
   let h = trace(o, dir, 1e4);
-  if (h.t < 0.0) { return vec4f(sky(dir), 0.0); }
+${D ? `  // detail build: an emissive sphere seen only by the secondary (diffuse / specular) rays: a broad light that moves
+  // over the normal-mapped surfaces without being visible, casting shadow-signal shadows or needing motion vectors
+  if (u.emitRadius > 0.0) {
+    let te = sphereT(o, dir, vec4f(u.emitPos, u.emitRadius));
+    if (te > 0.0 && (h.t < 0.0 || te < h.t)) { return vec4f(u.emitRadiance, te); }
+  }
+` : ''}  if (h.t < 0.0) { return vec4f(sky(dir), 0.0); }
   return vec4f(hitRadiance(o + dir * h.t, h, xi), h.t);
 }
 
@@ -654,9 +664,42 @@ ${NG ? `  if (dot(L, g_ng) <= 0.0) { return vec4f(0.0); }
   return vec4f(li.rgb * w, li.w);
 }
 
-${B ? `// ---- bumpy build: analytic detail normals (geometry stays flat)
+${D ? `// ---- detail build (review target 5): held-out detail-normal patterns, never seen by the M7 tuning
+// (u.bumpKind 2 = grooves, 3 = fine cells; on the floor (x, z) and the rippled wall's front (x, y))
+fn heldOutNormal(p: vec3f, h: Hit) -> vec3f {
+  var uv = vec2f(0.0);
+  var isFloor = false;
+  if (h.id == 1u) { uv = p.xz; isFloor = true; }
+  else if (h.id == RIPPLE_ID && h.n.z > 0.5) { uv = p.xy; }
+  else { return h.n; }
+  var g = vec2f(0.0);
+  if (u.bumpKind == 2u) {
+    // grooves: height A sin(k (uv . d)), period 0.22 m along 35 deg, max tilt 12..32 deg varying slowly
+    let d = vec2f(cos(radians(35.0)), sin(radians(35.0)));
+    let k = 2.0 * PI / 0.22;
+    let A = tan(radians(mix(12.0, 32.0, 0.5 + 0.5 * sin(uv.x * 0.7 - uv.y * 0.3)))) / k;
+    g = A * k * cos(k * dot(uv, d)) * d;
+  } else {
+    // fine cells: domes of radius 3..5.5 cm in a 12 cm grid, jittered centres, max tilt 15..40 deg per cell
+    let cell = floor(uv / 0.12);
+    let hs = fract(sin(vec3f(dot(cell, vec2f(127.1, 311.7)), dot(cell, vec2f(269.5, 183.3)), dot(cell, vec2f(419.2, 371.9)))) * 43758.5453);
+    let c = (cell + 0.5 + (hs.xy - 0.5) * 0.1) * 0.12;
+    let R = mix(0.03, 0.055, hs.z);
+    let q = uv - c;
+    let r2 = dot(q, q) / (R * R);
+    if (r2 >= 1.0) { return h.n; }
+    let H = tan(radians(mix(15.0, 40.0, hs.x))) * R / 1.5396;
+    g = -4.0 * H * (1.0 - r2) * q / (R * R);
+  }
+  if (isFloor) { return normalize(vec3f(-g.x, 1.0, -g.y)); }
+  return normalize(vec3f(-g.x, -g.y, 1.0));
+}
+
+` : ''}${B ? `// ---- bumpy build: analytic detail normals (geometry stays flat)
 fn bumpNormal(p: vec3f, h: Hit) -> vec3f {
-  if (h.id == 1u) {
+${D ? `  if (u.bumpKind == 1u) { return h.n; }   // smooth control
+  if (u.bumpKind >= 2u) { return heldOutNormal(p, h); }
+` : ''}  if (h.id == 1u) {
     // floor: domes of radius R in a 0.5 m grid, height H (1 - r^2/R^2)^2, max tilt 10..40 deg along x
     let q = (fract(p.xz / 0.5) - 0.5) * 0.5;
     let R = 0.17;
