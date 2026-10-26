@@ -277,6 +277,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A GPU-lock waiter polling every 30 s lost the lock to faster pollers for 40+ minutes several times; 5 s polling of a
   `mkdir` is harmless. — t1b, 2026-10-26
 
+- macOS `xargs -I{}` refuses commands longer than 255 bytes after substitution ("command line cannot be assembled,
+  too long") and the whole batch silently does nothing: long test-bed queries need `xargs -n 1 <runner script>` (query
+  as `$1`) or a plain loop. Also, replay/eval settings take the LAST occurrence of a key (unlike `URLSearchParams.get`
+  for the test bed's own keys): a wrapper that appends `&sh.light=directional` overrides a variant's `sh.light=sphere`.
+  — shadows, 2026-10-26
+- A replay batch that dies mid-way leaves output folders with a few frames; count frames per output folder before
+  scoring (`ls <dir> | grep -c frame`), the scorers happily read what's there. — shadows, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -744,6 +752,27 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - **Static-camera references have zero boil** (fixed per-pixel seeds), so on static-camera windows (reveal holds) the
   q20 (a) boil clause reduces to "not above the default's boil". Moving-camera windows need the 4096-spp reference's own
   boil as the floor. — t1b, 2026-10-26
+
+- **Separate the motions before blaming one.** On identical scenes with one mover each (camera / light / occluder) and
+  a frozen control of the same view (results/SHADOWS-MOTION.md), boil was the same frozen and moving (so not a motion
+  bug), trailing appeared only with light / occluder motion under hard light, and blur was present in the no-history
+  control (spatial). A frozen control that shares the last frames' pose and samples also shows how long a history
+  takes to recover after motion stops. — shadows, 2026-10-26
+- **Test-bed references are frozen per pose**: on static pixels the 256-spp reference is identical from frame to frame,
+  so its boil is 0 there and any output change is boil; reference-noise controls need two reference sets (E-1).
+  — shadows, 2026-10-26
+- **A no-history control (history reset every frame) is cheap and telling**: under a hard light moving ~1 px/frame the
+  spatial filter alone beat the full shadow denoiser (29.2 vs 27.7 dB); and temporal accumulation alone beat it by
+  4 dB on a frozen hard-light view. Run both before tuning either half. — shadows, 2026-10-26
+- An analytic term in a denoiser needs the renderer's exact geometry: `terminatorAnalytic` gained +1 dB on sun
+  captures with the sphere light's per-pixel direction and lost 0.7 dB with the registry's directional stand-in
+  (direction from the world origin, 0.4 θ off). Filtering never noticed the stand-in's error. — shadows, 2026-10-26
+- Gating a cap by the quantity it caps against does nothing when that quantity is the wrong one: `noiseCap`'s boil came
+  from pixels whose occluder radius is underestimated (3×3-tile minimum next to contacts), so gating it to "narrow
+  occluder radius" changed no pixel that mattered. — shadows, 2026-10-26
+- Per-pixel neighbourhood loops in the temporal pass are expensive on the M5 Pro: a 25 × 4 float isolation test cost
+  +0.07…0.15 ms at 1080p (+10…20 %). Binary 1-ray windows fit in 25 bits; the same test with shifts and masks, run
+  only where E > 0, cost +0.01…0.03 ms with byte-identical outputs. — shadows, 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

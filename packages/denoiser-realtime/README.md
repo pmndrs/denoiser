@@ -391,7 +391,11 @@ const out = shadows.dispatch(
   `uniformSnap` ['change'], `snapHardPx` [2] ('change' also snaps uniform windows where the own penumbra is under 2 px:
   crisp hard edges on a moving camera), `backfacePass` [true] (surfaces with the whole light below their horizon keep
   their input: stay black), `noiseCap` [0] / `noiseCapSettled` [false] (cap the H18 noise radius at k × the
-  occluder-sized radius: sharper near-hard shadows, but more boil in wide penumbrae), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
+  occluder-sized radius: sharper near-hard shadows, but more boil in wide penumbrae), `stepTest` [false] (no noise-sized
+  kernel where the raw 5×5 is a clean step: crisper hard edges and contacts, wide penumbrae unchanged), `edgeBox` [false]
+  (hard edges: history clamped to the 3×3 raw min / max, no trailing behind moving hard shadows), `terminatorAnalytic`
+  [false] (occluder-free terminators get the analytic above-horizon fraction of the light instead of a 16 px kernel;
+  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
   `youngFrames` [8], `youngTaper` [0.25], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`

@@ -886,7 +886,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       AO 1.9× / 2.7×, where the corner and the test bed stay below the floor; recurrent is calm but −0.6…1.1 dB diffuse,
       −4…5 dB AO. Candidate for an option (rule 9), scored with `score-captures.mjs` boil on `sponza-*` / `bistro-*`
       (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner svgf
-- [ ] (shadows, measured in results/SHADOWS-LOOK.md: v22 +8…23 % over FFX at +3.7…5.2 dB static-penumbra PSNR, v2.1 was +18…32 %; `bfsh2` adds 1–3 %, `noiseCap` 5–18 %; not fixed, `rotationStep: 0` untested on the sun captures) Shadows: static-penumbra boil 8–23 % above FFX's under the wide sun penumbrae of Sponza / Bistro (ours still
+- [ ] (shadows, results/SHADOWS-MOTION.md: `rotationStep: 0` measured: static-penumbra boil −6 % on the 11 real captures (sponza-move −10 %, bistro-move −14 %, knot −22 %), motion-compensated boil −13 %, ±0.02 dB; part of the proposed flip below) (shadows, measured in results/SHADOWS-LOOK.md: v22 +8…23 % over FFX at +3.7…5.2 dB static-penumbra PSNR, v2.1 was +18…32 %; `bfsh2` adds 1–3 %, `noiseCap` 5–18 %; not fixed, `rotationStep: 0` untested on the sun captures) Shadows: static-penumbra boil 8–23 % above FFX's under the wide sun penumbrae of Sponza / Bistro (ours still
       +3…5 dB penumbra PSNR); the corner and test bed show ours level or lower. Look at it with any boil work on
       shadows (results/scenes-bistro-sponza.md) — found by bistro-sponza, owner shadows
 - [ ] Native NRD replay of the Bistro / Sponza captures (Windows harness): `sponza-orbit|pan|move`,
@@ -929,16 +929,49 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       +3…17 %, real-scene static-penumbra boil +9 %, 1080p tPSNR −0.15. Sharper hard edges vs calmer wide penumbrae
       (results/SHADOWS-LOOK.md "Verdict"; image `results/img/shadows-look-bistro-move-bollard.png`) — found by shadows,
       owner Dennis
-- [ ] Shadows under hard local lights, frame 0 / fresh pixels: `bistro-move` frame 0 is 23.4 dB vs the raw 25.0 with every
+- [ ] (shadows, results/SHADOWS-MOTION.md: the raw-5×5 hard-edge test landed as option `stepTest`; `bistro-move` frame 0 23.44 → 23.85, + `terminatorAnalytic` 24.08, still below the raw 25.05; the test bed's hard light (2–3 px penumbrae) shows no frame-0 loss at all; what is left is the 1-px floor on sub-pixel penumbrae) Shadows under hard local lights, frame 0 / fresh pixels: `bistro-move` frame 0 is 23.4 dB vs the raw 25.0 with every
       kept variant (fresh pixels keep the noise radius; capping them cost the reset windows 1.5–4.8 dB at frame 0, the
       occluder radius there is one sample and the 3×3-tile minimum). `minRadius: 0.5` + `mergeMin: false` win the 960×540
       replays (+2.3 dB `bistro-move`) but lose 0.16 dB at 1080p (`thin` −0.57). Candidate: a hard-edge test from the raw
       5×5 (a step with agreeing sides, not noise) instead of E or the tile minimum — found by shadows, owner shadows
-- [ ] compare.mjs: an edge-sharpness column (mean |∇out| / |∇ref| where |∇ref| > 0.1; results/SHADOWS-LOOK.md) —
+- [x] (shadows, 9c00359: `edgeSharpness` in compare.mjs, reproduces 0.595 / 0.680 within 0.01; per region in `tools/rt-capture/shadow-regions.mjs`) compare.mjs: an edge-sharpness column (mean |∇out| / |∇ref| where |∇ref| > 0.1; results/SHADOWS-LOOK.md) —
       boil and PSNR barely see the `'change'` veil, sharpness does (0.680 vs 0.595) — found by shadows, owner results
 - [x] (shadows, flip commit) `packages/denoiser-realtime/README.md` shadows options: `snapHardPx`, `backfacePass`, `noiseCap`,
       `noiseCapSettled` (1a2861a; after Dennis's call on the flip) — found by shadows, owner README
 
+- [x] (shadows, 45d3ac6 test bed + registry, 9c00359 metrics, cc8f1e7 q21 flip, 39a3da1 + c3d8248 options, docs commit; results/SHADOWS-MOTION.md) **Audit review target 4: shadows in motion.**
+      Inventory; 8 motion-separation captures `sm-{hard,sun}-{camera,light,object,frozen}` (move / hold / reverse / hold,
+      frozen control = same view); no-history control `sh.noHistory`; region scorer (hard edge, penumbra, contact,
+      changing / static, motion-compensated boil, sharpness, trailing). Cause table: boil is the same frozen and moving
+      (kernel rotation, anti-lag restarts); the "ripple" behind a moving hard occluder was trailing, fixed by the q21 flip,
+      the rest by `edgeBox`; blur is spatial and present before history (H18 radius at clean steps, terminator kernel,
+      contacts below raw). Options `stepTest`, `edgeBox`, `terminatorAnalytic` (default off, byte-identical) — owner shadows
+- [ ] **Proposed default flip (Dennis approves, changes the look): shadows `stepTest: true` + `edgeBox: true` + `rotationStep: 0`.**
+      Passes rule 9 against the new defaults (results/SHADOWS-MOTION.md "Rule 9 A/B"): 1080p 7 paths 38.56 vs 38.49 dB, worst
+      path −0.00, FLIP / flicker equal, tPSNR +0.08; 11 real captures 29.29 vs 28.86 (every capture +0.28…+0.53), FLIP −3 %,
+      motion-compensated boil −15 % (edges −16 %, contacts −19 %); std540 35.68 vs 35.66, worst −0.05, boil ±0; cost +2 / +5 %
+      (`orbit` / `thin`), memory equal. On the new captures: moving hard occluder changing region 10.0 → 12.0 dB, lag 0.6 → 0;
+      hard-light edges 21.8 → 23.2 dB, contacts +2.0. Look: crisper hard edges and contacts, calmer edges, the kernel
+      rotation no longer animates. Caveat: contact boil +7 % on std540-orbit (not a rule-9 region) — found by shadows, owner
+      Dennis → shadows (`resolveShadowOptions`, README, SPEC §7.4 / §7.5)
+- [ ] **Question for Dennis: shadows `terminatorAnalytic: true`** (occluder-free terminators get the analytic
+      above-horizon fraction of the light, H18 Eq. 4 / 12): 1080p +1.47 dB, FLIP −24 %, flicker −25 %, every path +0.87…+2.67;
+      real +0.63 (knot +1.5, Bistro +0.02…+0.25), FLIP −4 %; sun +0.9…1.1 with an exact light direction; no cost. Fails the
+      boil clause on one region of one capture (`bistro-move` dynamic +8 %, above reference and shipped), and it trusts the
+      renderer's horizon rule and light direction exactly (with the test bed's directional stand-in, whose direction is off by
+      up to 0.4 θ, the sun captures lose 0.6–0.8 dB) — found by shadows, owner Dennis
+- [ ] Shadows: contacts under a hard light stay below the raw input (results/SHADOWS-MOTION.md: 17.9 dB with `stepTest` vs raw
+      21.9, temporal-only 29.5): the 1-px floor and the 3×3-tile minimum next to the contact; `minRadius: 0.5` lost 0.16 dB at
+      1080p before (SHADOWS-LOOK). Also on a moving hard light the no-history control beats the full denoiser (29.2 vs 27.7):
+      history costs more than it gains where hard edges move ~1 px/frame — found by shadows, owner shadows
+- [ ] Shadows: quality after a light stops (results/SHADOWS-MOTION.md hold check): 15 frames after a moving sun returns, 2.7 dB
+      below the frozen control at the same frames (hard light 1.0 dB); camera / occluder paths recover fully. Anti-lag
+      restarts leave short histories; measure the anti-lag v3 candidates (below) on `sm-sun-light` / `sm-hard-light` holds —
+      found by shadows, owner shadows
+- [ ] Test bed: the `sh.light=directional` stand-in hands over the direction from the world origin; the test bed renders a
+      sphere light, so per-pixel directions differ (up to 0.03 rad on `sm-sun-*`, distance 100). Filtering doesn't notice,
+      analytic terms do (`terminatorAnalytic`). A true directional light in the test bed (the open sun item above) would
+      remove the caveat — found by shadows, owner `examples/realtime-denoiser`
 - [x] reflection-motion (5053015 test bed, 409be4f + 222bec2 options, docs commit) **Review target 2 / target D (c): isolated reflection-motion tests.**
       Reflect build + 16 `rm-*` paths (plane / convex / concave / rippled mirrors, grazing; camera-, reflected-object- and
       reflector-only motion, stop / hold, cut, roughness sweep), an independent CPU oracle of the markers' mirror images
@@ -1095,6 +1128,9 @@ The entries that used to be here (joint default for `filter: 'recurrent'` — re
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
 
+- **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
+  changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
+  horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md.
 - ~~**Shadows look (2026-10-26, shadows):**~~ (answered 2026-10-26: flip approved, q21 (a), landed; `noiseCap` stays an option, q22 (b)) approve the default flip `backfacePass: true` + `snapHardPx: 2` (passes rule 9,
   changes the look), and decide on `noiseCap` (sharper hard shadows, fails the boil clause). Both items under "Found
   along the way"; evidence results/SHADOWS-LOOK.md.

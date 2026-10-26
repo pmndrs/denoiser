@@ -196,3 +196,16 @@ per-pose references, 960×540): `three-orbit` (40 frames) and `three-pan` (32 fr
 `examples/three-temporal/replay-captures.mjs`. Recipe, contents and what's missing (specular is SSR,
 not demodulated; AO reference in an extra `ao_ref` buffer):
 [examples/three-temporal/CAPTURES.md](../three-temporal/CAPTURES.md).
+
+## Shadow motion separation (`--set=shadow-motion`)
+
+8 captures `sm-{hard,sun}-{camera,light,object,frozen}` (paths of the same names, `src/paths.ts`), 80 frames, 960×540,
+shadows only (35.6 MiB/frame, ~2.8 GB each): one mover per path (camera orbit, light, a sphere resting on the floor)
+or nothing, with move 1–24 / hold 25–40 / reverse 41–64 / hold 65–79; every path equals its frozen control at frame 0
+and from frame 64 on. `hard` = sphere light r 4 cm ~1.6–2.6 m above the occluders; `sun` = sphere r 8 at distance 100
+(0.08 rad), replayed with `sh.light=directional` or, for exact directions, `sh.light=sphere`. Scored with
+`tools/rt-capture/shadow-regions.mjs`; results/SHADOWS-MOTION.md.
+
+```sh
+node run-headless.mjs --serve --set=shadow-motion     # ~1 min per capture, validated
+```
