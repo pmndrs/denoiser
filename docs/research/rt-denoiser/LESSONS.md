@@ -1090,3 +1090,27 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - Results docs quote resource sizes in their own words; check them against the allocation. T3 wrote "+4 B/px per signal
   at 1/9 resolution" for `antiLagChroma`, while `src/svgf.ts` allocates two rg32uint per signal at ⌈W/3⌉ × ⌈H/3⌉
   (≈ 1.8 B/px). The SPEC quotes the allocation and the mismatch goes to TASKS. — spec-author, 2026-10-26
+
+## SVGF cost (2026-10-27)
+
+- **Workgroup-shared tiles for strided à-trous taps: contiguous, not interleaved.** Mapping a workgroup to an 8×8 grid of
+  pixels `stride` apart (so all 3×3 taps fall on one 10×10 grid) is 1.8–3× *slower* than the plain pass at stride ≥ 4 on
+  the M5 Pro: every tile texel is its own cache line. A contiguous (8 + 2·stride)² tile per 8×8 workgroup wins up to
+  stride 4 (2.25 / 4 loads per pixel instead of 9 at stride 2 / 4); at 8 it loads as many texels as the taps. And store
+  the rgba16float colours packed (2 × `pack2x16float`, exact) in workgroup memory: half the bytes measured faster than
+  vec4f (occupancy). — svgf-cost, 2026-10-27
+- **Byte-identity trap when moving a decode into a tile:** with the roughness decoded once into workgroup memory
+  (`f32(byte) / 255`), 30–60 specular values per frame moved by one f16 ulp; decoded inline at each tap, fast math is
+  free to fold `a/255 − b/255` in the roughness weight. Store the raw byte and decode at use, exactly as the untiled code
+  does: then every capture compared byte for byte. Check a tiling change on the specular signal, not only diffuse. —
+  svgf-cost, 2026-10-27
+- **A young-pixel option compiled where it can't act still costs:** `youngNormalPower` built its variant for the specular
+  signal too (whose lobe cutoff never reads the exponent), plus a per-tap `* 1.0` luminance factor: 0.2 of its 0.28 ms.
+  Gate an option's code on whether the signal's path can use it, then byte-check. — svgf-cost, 2026-10-27
+- **The variance pass's young-history loop is ALU-bound:** a 14×14 shared tile (loaded only by workgroups with a young
+  pixel) cut its loads ~10× but saved only 0.04 of the loop's 0.25 ms. Measure a pass's loop by forcing it off
+  (`spatialVarianceRadius=0`, timing only) before tiling it. — svgf-cost, 2026-10-27
+- **Right after a desktop video call ends, the M5 Pro stays slow for ~5 minutes** (every configuration +5 … +40 %, run medians up
+  to 2× apart) with no `Video Wake Lock` or camera activity left for the quiet check to see. Start a clean set with a few
+  throwaway rounds, or cut the first ~5 minutes after the call by timestamp, and look at the per-round table before
+  summarizing: the clean rounds afterwards agreed within 1.5 %. — svgf-cost, 2026-10-27

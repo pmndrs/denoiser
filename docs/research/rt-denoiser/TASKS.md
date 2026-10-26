@@ -567,7 +567,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       is described as "for stabilization", but no pass reads the `m·c_v` bits since the R7 virtual
       candidate was removed (SPEC v0.2 §5.11–5.12). Behaviour matches SPEC; comments only — found by
       spec-author, owner `packages/denoiser-realtime`
-- [ ] (Dennis picked SPEC §12 item 4 (a), plus (c) "if it measures clean": so this is now an open, optional task; land it as an option and A/B it per rule 9) SVGF output aliasing: let the last à-trous iteration
+- [x] (svgf-cost, cffb00e: built as option `outputAliasing`, default false; byte-identical outputs on 5 captures, cost ±0 (3.81 vs 3.81 ms), −8 B/px per signal = joint A-SVGF 140 → 124; flip proposed below; results/SVGF-COST.md) (Dennis picked SPEC §12 item 4 (a), plus (c) "if it measures clean": so this is now an open, optional task; land it as an option and A/B it per rule 9) SVGF output aliasing: let the last à-trous iteration
       write into the ping-pong target instead of a separate `out` texture (−8 B/px per signal, 132 →
       124; output valid until the next dispatch, as recurrent's already is). Untested proposal; check
       that nothing reads the ping buffer after the last iteration — found by spec-author, owner
@@ -696,7 +696,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       asymmetric darken-fast / brighten-slow. Measure against v2.2 on knot captures + `light`/`object`
       with the dynamic-region and boil metrics. Implementer must not be the public researcher
       (PROVENANCE rule-7 note). — orchestrator, owner: unassigned
-- [ ] SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
+- [~] (svgf-cost, cffb00e: the cost goal is met another way, A-SVGF joint 4.31 → 3.81 ms byte-identically (results/SVGF-COST.md);
+      neither lever below built: the MegaLights pass changes output and pipeline shape, Dolp et al.'s full text is still not
+      obtained; our contiguous-tile result is the access-order lever measured (interleaved strided tiles were 1.8–3× slower at
+      stride ≥ 4)) SVGF cost levers from public sources: single rotated sparse spatial pass only where relative
       variance is high (MegaLights); à-trous access reordering (Dolp et al. I3D 2024, full text not
       yet obtained). — orchestrator, owner: unassigned
 - [x] (shadows, 1a2861a, results/SHADOWS-LOOK.md: not the stabilization: `uniformSnap: 'change'` (default since 255a06a, never measured with v2.2) leaves a grey veil next to fine shadow detail on moving cameras, Bistro edge sharpness 0.680 → 0.595, −0.68 dB; `stabilize: 0` changes sharpness ±0.002; fix `snapHardPx: 2` + `backfacePass`, flip proposed below) **Shadows v2.2 look** (Dennis, 2026-10-25, live `realtime-shadows.html`): no more boiling, but
@@ -1090,6 +1093,30 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       state is the 4 B/px). SPEC v0.7 §4.6 / §10.2 quote the allocation and point here; the T3 line needs a check or a
       correction note. — found by spec-author, owner results (T3) / svgf
 
+- [x] (svgf-cost, cffb00e + docs; [results/SVGF-COST.md](results/SVGF-COST.md)) **SVGF cost: shipped A-SVGF joint default back under
+      the 4 ms guide** (brief: it sat at 4.40 = the guide's edge after `youngNormalPower: 16`). Same-session clean bench (M5 Pro,
+      1080p `orbit`, 13 runs): **4.31 → 3.81 ms** (−11.7 %), all byte-identical (11 captures): young-pixel variant only where it
+      can act (−0.18), à-trous workgroup tiles at strides 1/2/4 (−0.23), tiled young-history variance loop (−0.035), shared
+      depth weight (−0.03), per-tile young flags (−0.03). `youngNormalPower: 16` now costs +0.06 (was +0.28); q26 on top 3.97;
+      SVGF `'off'` 3.80 → 3.37; occlusion A-SVGF 2.84 → 2.67. `outputAliasing` option built (item above). Interleaved tiles,
+      stride-8 tiles, f32 tile storage measured and dropped (§3).
+- [ ] **SPEC fold-in of results/SVGF-COST.md** (spec author): §4.4 / §4.5 (`youngNormalPower` cost +0.06 ms on the M5 Pro now; the
+      young variant is compiled for the power-form normal weight only), §0.2 / §0.3 / §10.3 (A-SVGF joint 3.81, `'off'` 3.37,
+      occlusion A-SVGF 2.67, + q26 3.97; same-session baselines 4.31 / 3.80 / 2.84 / 4.49), §10.2 (`outputAliasing` built:
+      140 → 124 B/px joint `'auto'`; SPEC's "132 → 124" counts one signal; young flags +0.06 B/px), §12 item 4 (c) status and
+      item 20 (q26 now fits). Native round 4 should re-time `svgf-auto` (ratio was 1.18× at 4.40-equivalent cost). — found by
+      svgf-cost, owner spec author / harness
+- [ ] **Config proposal (orchestrator): `outputAliasing: true` as the SVGF default** (radiance payload; results/SVGF-COST.md §4–5).
+      Dennis decided SPEC §12 item 4 (c) "if it measures clean": byte-identical outputs, cost ±0, −16 B/px joint (140 → 124).
+      The only behaviour change: the returned texture is one of the à-trous ping-pong textures (the same object every frame
+      for 5 iterations), overwritten early in the next dispatch instead of at its end; the API already says outputs are
+      valid until the next dispatch, and recurrent's work this way. One-line flip in `resolveOptions` + README; check
+      consumers that keep last frame's output across a dispatch (none in the test bed / replay). — found by svgf-cost, owner
+      orchestrator → `packages/denoiser-realtime`
+- [ ] SVGF SH payload (`svgf-sh.ts`, payload 'sh') has the same à-trous structure (16 B/px f16 ping-pong + a detail normal):
+      the contiguous workgroup tiles and the shared depth weight should carry over byte-identically (packed colours are already
+      u32 there). Not done (the SH payload is not a shipped default). — found by svgf-cost, owner `packages/denoiser-realtime`
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -1250,7 +1277,7 @@ harness builder runs them and returns images/metrics only.)_
       (3) constant-light pixels boil +25…38 % during an event (λ leaks through the reconstruction); (4) shadows switch at
       once. Options (default off, byte-identical default WGSL + replays): `antiLagChroma` (passes rule 9, proposed below)
       and `antiLagGain` (per signal; specular +0.41 dB under camera motion but fails boil on still views)._
-- [ ] **Proposal for Dennis: SVGF `antiLagChroma: true`** (results/T3-light-changes.md §6.5; decisions page q26; SPEC v0.7 §12 item 20, §4.6; M5 Pro joint +0.15 ms → 4.55, RM26). Fixes the lingering tint
+- [ ] **Proposal for Dennis: SVGF `antiLagChroma: true`** (results/T3-light-changes.md §6.5; decisions page q26; SPEC v0.7 §12 item 20, §4.6; M5 Pro joint +0.15 ms → 4.55, RM26; **since cffb00e: 3.81 → 3.97 ms, under the 4 ms guide**, results/SVGF-COST.md §2). Fixes the lingering tint
       after a light colour change (lc-hue 21 → 8 frames diffuse, 17 → 4 specular; transition window +3.8 / +3.3 dB, FLIP
       −22 / −32 %); level everywhere else (1080p 7 paths +0.002 / +0.009 dB, FLIP ±0.0 / −0.2 %, flicker equal; 4096 spp
       −0.001 / +0.009; 11 real captures +0.000 / +0.001, boil ≤ +1.1 % in every region); +0.06…0.11 ms per signal

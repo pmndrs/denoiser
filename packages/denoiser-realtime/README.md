@@ -187,6 +187,9 @@ contended; feedback costs one extra history write):
 | test bed (orbit, solo bench, median, 2026-10-25): joint `'off'` | 0.15 | 0.59 | 0.76 | 2.35 | — | **3.99 ms** |
 | test bed: joint `'auto'` v1 | 0.15 | 0.63 | 1.10 | 2.32 | 0.57 + 0.63 + 0.07 | **5.61 ms** |
 | test bed: joint `'auto'` v2 | 0.15 | 0.61 | 0.51 | 2.33 | 0.28 + 0.14 + 0.07 | **4.24 ms** |
+| test bed, 2026-10-27 (median of 13 runs): joint `'auto'` default before the SVGF-cost work (`youngNormalPower: 16`) | 0.15 | 0.60 | 0.48 | 2.58 | 0.28 + 0.15 + 0.07 | **4.31 ms** |
+| test bed, 2026-10-27: joint `'auto'` default, workgroup tiles etc. (results/SVGF-COST.md; byte-identical) | 0.15 | 0.60 | 0.45 | 2.11 | 0.28 + 0.15 + 0.07 | **3.81 ms** |
+| test bed, 2026-10-27: joint `'off'`, same code | 0.15 | 0.58 | 0.56 | 2.06 | — | **3.37 ms** |
 
 `kernel: '5x5'` costs 0.7–1.0 ms per à-trous iteration (4.7 ms total for
 diffuse); `atrousIterations: 4` saves one iteration. `DiffuseSpecularDenoiser`

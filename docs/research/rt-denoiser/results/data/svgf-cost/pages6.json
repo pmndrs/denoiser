@@ -1,0 +1,17 @@
+[
+ ["A base: A-SVGF default (HEAD)", 5351, "diffuse", "j-svgf-auto", ""],
+ ["A base: ynp 0", 5351, "diffuse", "j-svgf-auto", "youngNormalPower=0"],
+ ["B young flags only", 5361, "diffuse", "j-svgf-auto", ""],
+ ["C tiles 1,2,4 packed", 5364, "diffuse", "j-svgf-auto", ""],
+ ["D + variance tile", 5368, "diffuse", "j-svgf-auto", ""],
+ ["E + shared depth", 5369, "diffuse", "j-svgf-auto", ""],
+ ["G + young tile flags (new default)", 5371, "diffuse", "j-svgf-auto", ""],
+ ["G new: ynp 0", 5371, "diffuse", "j-svgf-auto", "youngNormalPower=0"],
+ ["G new: outputAliasing", 5371, "diffuse", "j-svgf-auto", "outputAliasing=1"],
+ ["G new: + q26 antiLagChroma", 5371, "diffuse", "j-svgf-auto", "antiLagChroma=true"],
+ ["A base: + q26 antiLagChroma", 5351, "diffuse", "j-svgf-auto", "antiLagChroma=true"],
+ ["A base: SVGF off (registry svgf)", 5351, "diffuse", "j-svgf", ""],
+ ["G new: SVGF off (registry svgf)", 5371, "diffuse", "j-svgf", ""],
+ ["A base: occlusion A-SVGF", 5351, "ao", "j-occlusion-svgf-auto", ""],
+ ["G new: occlusion A-SVGF", 5371, "ao", "j-occlusion-svgf-auto", ""]
+]

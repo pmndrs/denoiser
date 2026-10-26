@@ -1,0 +1,156 @@
+[
+ [
+  "A base: A-SVGF default (HEAD)",
+  5351,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "A base: ynp 0",
+  5351,
+  "diffuse",
+  "j-svgf-auto",
+  "youngNormalPower=0"
+ ],
+ [
+  "B young flags only",
+  5361,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "C tiles 1,2 decoded",
+  5362,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "C tiles 1,2,4 decoded",
+  5363,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "C tiles 1,2,4 packed",
+  5364,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "C tiles 1-8 raw",
+  5366,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "D + variance tile",
+  5368,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "E + shared depth (new default)",
+  5369,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "E new: ynp 0",
+  5369,
+  "diffuse",
+  "j-svgf-auto",
+  "youngNormalPower=0"
+ ],
+ [
+  "E new: outputAliasing",
+  5369,
+  "diffuse",
+  "j-svgf-auto",
+  "outputAliasing=1"
+ ],
+ [
+  "E new: + q26 antiLagChroma",
+  5369,
+  "diffuse",
+  "j-svgf-auto",
+  "antiLagChroma=true"
+ ],
+ [
+  "A base: + q26 antiLagChroma",
+  5351,
+  "diffuse",
+  "j-svgf-auto",
+  "antiLagChroma=true"
+ ],
+ [
+  "A base: SVGF off (registry svgf)",
+  5351,
+  "diffuse",
+  "j-svgf",
+  ""
+ ],
+ [
+  "E new: SVGF off (registry svgf)",
+  5369,
+  "diffuse",
+  "j-svgf",
+  ""
+ ],
+ [
+  "A base: occlusion A-SVGF",
+  5351,
+  "ao",
+  "j-occlusion-svgf-auto",
+  ""
+ ],
+ [
+  "E new: occlusion A-SVGF",
+  5369,
+  "ao",
+  "j-occlusion-svgf-auto",
+  ""
+ ],
+ [
+  "E new default",
+  5369,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "F timing hack: no history load (tY = 1)",
+  5370,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "G + young tile flags",
+  5371,
+  "diffuse",
+  "j-svgf-auto",
+  ""
+ ],
+ [
+  "G + young tile flags, ynp 0",
+  5371,
+  "diffuse",
+  "j-svgf-auto",
+  "youngNormalPower=0"
+ ],
+ [
+  "G + young tile flags: occlusion A-SVGF",
+  5371,
+  "ao",
+  "j-occlusion-svgf-auto",
+  ""
+ ]
+]
