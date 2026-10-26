@@ -147,6 +147,13 @@ export interface SvgfOptions {
   /** Per-pass GPU timestamps into `gpuTimings` when supported. Default true. */
   timestamps?: boolean;
   /**
+   * SPEC §12 item 4 (c) / §10.2: the last à-trous iteration writes into the ping-pong texture it would otherwise hand
+   * on, and that texture is the output (no separate output texture: -8 B/px per signal). Same values; the output is
+   * valid until the next dispatch / configure / dispose, as documented for every output (the recurrent filter's
+   * already lives in its rotating buffers). Default false. Payload 'radiance' only. Structural.
+   */
+  outputAliasing?: boolean;
+  /**
    * What is filtered (SPEC v0.3 §8.5, M7). 'radiance' (default): one rgb value per pixel.
    * 'sh': a directional payload, L1 SH of the luma + chroma (YCoCg, 6 channels in one
    * rgba32uint), filtered with the smooth `guides.normal` and resolved afterwards at
@@ -279,6 +286,15 @@ export type ResolvedOptions = Omit<Required<Omit<SpecularSvgfOptions, 'filter'>>
   resolve: 'none' | 'fused' | 'auto';
 };
 
+/**
+ * Largest a-trous stride with a workgroup-shared tile (AtrousVariant.tile; results/SVGF-COST.md): (8 + 2 stride)^2
+ * texels fit the 16 KB default workgroup storage up to stride 4 (9.2 KB joint); at 8 the tile would load as many
+ * texels as the taps do.
+ */
+const ATROUS_TILE_MAX_STRIDE = 4;
+/** Tile stride of a-trous iteration `it` (0: no tile). */
+const atrousTile = (o: ResolvedOptions, it: number) => (o.kernel === '3x3' && 1 << it <= ATROUS_TILE_MAX_STRIDE ? 1 << it : 0);
+
 export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
   if (o.filter && o.filter !== 'svgf') throw new Error(`denoiser-realtime: unknown filter '${o.filter}'`);
   const antiLag = o.antiLag ?? 'auto';
@@ -313,6 +329,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     antiLagGain: Math.max(0, o.antiLagGain ?? 1),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
+    outputAliasing: o.outputAliasing ?? false,
     payload: o.payload ?? 'radiance',
     resolve: o.resolve ?? 'auto',
     shSpecularRatio: o.shSpecularRatio ?? 'sg',
@@ -386,7 +403,7 @@ class SignalState {
   destroyTargets() {
     for (const t of [...this.accum, ...this.moments, ...this.ping, ...this.grad]) t.destroy();
     this.hist?.destroy();
-    this.out?.destroy();
+    if (!this.ping.includes(this.out!)) this.out?.destroy();   // outputAliasing: out is a ping-pong texture
     this.accum = []; this.moments = []; this.ping = []; this.grad = [];
     this.hist = this.out = undefined;
   }
@@ -399,6 +416,7 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
   if (o.historyFallback !== '3x3') k.push(`fb-${o.historyFallback}`);
   if (o.antiLagChroma) k.push('alc');
+  if (o.outputAliasing) k.push('alias');
   if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
   return k.join('|');
 }
@@ -425,6 +443,9 @@ export class SvgfPipeline {
   private make: (name: string, def: PassDef) => void;
   private kinds: SignalKind[];
   private sh: boolean;
+  /** Per-8x8-tile young flags (variance pass -> young a-trous variants), r32uint at 1/8 resolution. */
+  private youngTiles = false;
+  private youngTex?: GPUTexture;
   /** review target 3 'auto' anti-lag variant (antiLagChroma / antiLagGain), undefined at the defaults */
   private gradVariant?: GradientVariant;
 
@@ -453,6 +474,7 @@ export class SvgfPipeline {
     this.gradVariant = o.antiLagChroma || signals.some((s) => s.opts.antiLagGain !== 1)
       ? { chroma: o.antiLagChroma, gain: signals.map((s) => s.opts.antiLagGain) } : undefined;
     if (this.gradVariant && this.sh) throw new Error(`${label}: antiLagChroma / antiLagGain need payload 'radiance'`);
+    if (o.outputAliasing && this.sh) throw new Error(`${label}: outputAliasing needs payload 'radiance'`);
     const box = o.kernel === '3x3';
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
@@ -482,13 +504,22 @@ export class SvgfPipeline {
       make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht, ...fb })
         : Object.keys(fb).length ? temporalPass(kinds, fb) : temporalPass(kinds));
       const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
-      make('variance', hw.some(Boolean) ? variancePass(kinds, { historyWeight: hw }) : variancePass(kinds));
-      const yl = signals.map((s) => s.opts.youngLuminanceWeight !== 1 || s.opts.youngNormalPower > 0);
-      for (const writeHist of [false, true]) {
-        for (const last of [false, true]) {
-          if (writeHist && !o.feedback) continue;
-          make(`atrous_${+writeHist}${+last}`, atrousPass(kinds, yl.some(Boolean) ? { writeHist, last, box, youngLum: yl } : { writeHist, last, box }));
-        }
+      // young-pixel variants only where they can change the result (the specular lobe cutoff ignores youngNormalPower)
+      const yl = signals.map((s) => s.opts.youngLuminanceWeight !== 1);
+      const yn = signals.map((s) => s.opts.youngNormalPower > 0 && (s.kind === 'diffuse' || s.opts.specularNormalWeight === 'power'));
+      const yf = signals.map((_, i) => yl[i] || yn[i]);
+      // the tiled variance pass flags 8x8 tiles holding a young pixel; the a-trous variants skip the history load elsewhere
+      this.youngTiles = !hw.some(Boolean) && yf.some(Boolean);
+      make('variance', hw.some(Boolean) ? variancePass(kinds, { historyWeight: hw })
+        : variancePass(kinds, { tile: true, ...(this.youngTiles ? { youngFlag: yf } : {}) }));
+      const av = { ...(yl.some(Boolean) ? { youngLum: yl } : {}), ...(yn.some(Boolean) ? { youngNormal: yn } : {}),
+        ...(this.youngTiles ? { youngTile: true } : {}),
+        // joint: one depth weight per tap when the signals share sigmaDepth (results/SVGF-COST.md)
+        ...(signals.length > 1 && signals.every((s) => s.opts.sigmaDepth === signals[0].opts.sigmaDepth) ? { sharedDepth: true } : {}) };
+      for (let it = 0; it < o.atrousIterations; it++) {
+        const writeHist = it === 0 && o.feedback, last = it === o.atrousIterations - 1, t = atrousTile(o, it);
+        const key = `atrous_${+writeHist}${+last}${t ? `t${t}` : ''}`;
+        if (!this.pipes[key]) make(key, atrousPass(kinds, { writeHist, last, box, ...av, ...(t ? { tile: t } : {}) }));
       }
     }
     if (o.antiLag !== 'off' && !this.sh) {
@@ -528,6 +559,10 @@ export class SvgfPipeline {
     const d = this.device;
     this.gw = Math.ceil(width / GRADIENT_DOWNSAMPLE);
     this.gh = Math.ceil(height / GRADIENT_DOWNSAMPLE);
+    this.youngTex?.destroy();
+    this.youngTex = this.youngTiles ? d.createTexture({
+      label: `${this.label} young tiles`, size: [Math.ceil(width / 8), Math.ceil(height / 8)], format: 'r32uint', usage: storageTex(),
+    }) : undefined;
     for (const s of this.sigs) {
       s.destroyTargets();
       const tex = (name: string, format: GPUTextureFormat, w = width, h = height, extra = 0) => d.createTexture({
@@ -541,8 +576,14 @@ export class SvgfPipeline {
       s.moments = [tex('moments0', mf), tex('moments1', mf)];
       if (this.opts.feedback) s.hist = tex('history', cf);
       const pf: GPUTextureFormat = this.sh && this.opts.shPingPacking === 'u8' ? 'rg32uint' : cf;
-      s.ping = [tex('ping', pf), tex('pong', pf)];
-      s.out = tex('output', this.sh && shResolveOf(s.kind, s.opts) !== 'fused' ? 'rgba32uint' : 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
+      if (this.opts.outputAliasing) {
+        // the last of K iterations writes ping[K % 2] (iteration it reads ping[it % 2])
+        s.ping = [tex('ping', pf, width, height, GPUTextureUsage.COPY_SRC), tex('pong', pf, width, height, GPUTextureUsage.COPY_SRC)];
+        s.out = s.ping[this.opts.atrousIterations % 2];
+      } else {
+        s.ping = [tex('ping', pf), tex('pong', pf)];
+        s.out = tex('output', this.sh && shResolveOf(s.kind, s.opts) !== 'fused' ? 'rgba32uint' : 'rgba16float', width, height, GPUTextureUsage.COPY_SRC);
+      }
       if (this.opts.antiLag !== 'off') {
         // v1: (g0, g1) rgba32float ping-pong; v2: one packed rgba32uint ping-pong
         s.grad = this.opts.antiLagVersion === 1
@@ -629,6 +670,7 @@ export class SvgfPipeline {
       F: gp.frame, geoCur: gp.geoCur, geoPrev: gp.geoPrev, geoGrad: gp.geoGrad,
       motionTex: motion, motionZTex: motionZ ?? gp.dummy, smp: gp.sampler,
     };
+    if (this.youngTex) Object.assign(shared, { youngOut: this.youngTex, youngTile: this.youngTex });
     const per = (fn: (s: SignalState, f: SignalFrame, i: number) => Record<string, Res>) => {
       const r: Record<string, Res> = { ...shared };
       this.sigs.forEach((s, i) => {
@@ -690,7 +732,8 @@ export class SvgfPipeline {
     for (let it = 0; it < K; it++) {
       const last = it === K - 1;
       const writeHist = it === 0 && o.feedback;
-      const key = `atrous_${+writeHist}${+last}`;
+      const t = atrousTile(o, it);
+      const key = `atrous_${+writeHist}${+last}${t ? `t${t}` : ''}`;
       const res = per((s, f) => ({
         src: s.ping[src], accumCur: s.accum[c], demod: f.demodulation ?? gp.dummy,
         dst: last ? s.out! : s.ping[src ^ 1], ...(writeHist ? { hist: s.hist! } : {}),
@@ -781,5 +824,6 @@ export class SvgfPipeline {
   dispose() {
     for (const s of this.sigs) { s.destroyTargets(); s.params.destroy(); }
     for (const b of this.iterParams) b.destroy();
+    this.youngTex?.destroy();
   }
 }

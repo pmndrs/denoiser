@@ -184,6 +184,7 @@ export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOp
   if (st.feedback !== undefined) o.feedback = !['0', 'false', 'off'].includes(st.feedback);
   if (st.reflectionHitTest !== undefined) o.reflectionHitTest = !['0', 'false', 'off'].includes(st.reflectionHitTest);
   if (st.antiLagChroma !== undefined) o.antiLagChroma = !['0', 'false', 'off'].includes(st.antiLagChroma);
+  if (st.outputAliasing !== undefined) o.outputAliasing = !['0', 'false', 'off'].includes(st.outputAliasing);
   return o as SpecularSvgfOptions;
 }
 

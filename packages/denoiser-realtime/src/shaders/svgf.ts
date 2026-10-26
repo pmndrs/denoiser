@@ -112,6 +112,10 @@ ${normal}
 fn wGeo${i}(g: Geo, gq: Geo, off: vec2f) -> f32 {
   return wDepth${i}(g, gq, off) * wNormal${i}(g, gq)${kind === 'specular' ? ` * wSpec${i}(g, gq, length(off))` : ''};
 }
+// wGeo with the depth weight given (signals that share sigmaZ compute it once per tap)
+fn wGeoZ${i}(g: Geo, gq: Geo, off: vec2f, wz: f32) -> f32 {
+  return wz * wNormal${i}(g, gq)${kind === 'specular' ? ` * wSpec${i}(g, gq, length(off))` : ''};
+}
 `;
 }
 
@@ -595,7 +599,20 @@ ${kinds.map((_, i) => (rv(i) ? perSignalVirt(i, refl(i), hitT(i)) : perSignal(i)
  * average n_q samples), so a young pixel next to valid history takes its colour and moments mostly from
  * there. Compiled in only when on (default path unchanged).
  */
-export interface VarianceVariant { historyWeight?: boolean[] }
+export interface VarianceVariant {
+  historyWeight?: boolean[];
+  /**
+   * Workgroup-shared tile for the young-history spatial estimate (results/SVGF-COST.md): the workgroup's largest
+   * radius R (0-3) is found with a workgroup max; when R > 0 the (8 + 2R)^2 neighbourhood is loaded and decoded
+   * once into workgroup memory and the loop reads it from there. Same arithmetic per pixel. Not with historyWeight.
+   */
+  tile?: boolean;
+  /**
+   * With `tile`: per 8x8 workgroup, write 1 to `youngOut` if any of its pixels has history t < 1 in a signal flagged
+   * here (the young-pixel a-trous variants read it to skip the history-length load on settled tiles).
+   */
+  youngFlag?: boolean[];
+}
 
 export function variancePass(kinds: SignalKind[], vv: VarianceVariant = {}): PassDef {
   const b = baseBindings(kinds);
@@ -605,10 +622,79 @@ export function variancePass(kinds: SignalKind[], vv: VarianceVariant = {}): Pas
     b.add(`outPing${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
   });
   const I = kinds.map((_, i) => i);
-  const code = /* wgsl */ `
-${header(b)}
-${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
-
+  const tile = !!vv.tile;
+  if (tile && vv.historyWeight?.some(Boolean)) throw new Error('variancePass: tile does not support historyWeight');
+  const yf = tile && !!vv.youngFlag?.some(Boolean);
+  if (yf) b.add('youngOut', 'texture_storage_2d<r32uint, write>', 'r32uint');
+  const anySpec = kinds.includes('specular');
+  // 14 x 14 = the 8 x 8 pixels plus the largest radius (3) on each side; texel (x, y) of the window at origin p0 - 3
+  const tileWgsl = !tile ? '' : /* wgsl */ `
+var<workgroup> vZ: array<f32, 196>;
+var<workgroup> vN: array<vec3f, 196>;
+${anySpec ? 'var<workgroup> vR: array<u32, 196>;   // roughness byte, decoded at use as geoTap does' : ''}
+${I.map((i) => `var<workgroup> vA${i}: array<vec2u, 196>;   // accum rgb, 2 x pack2x16float (exact for rgba16float)
+var<workgroup> vM${i}: array<vec2f, 196>;`).join('\n')}
+var<workgroup> vMaxR: atomic<u32>;${yf ? `
+var<workgroup> vYoung: atomic<u32>;` : ''}
+var<workgroup> vR0: u32;
+fn tileGeo(k: i32) -> Geo {
+  var g: Geo;
+  g.z = vZ[k];
+  g.n = vN[k];
+  g.rough = ${anySpec ? 'f32(vR[k]) / 255.0' : '0.0'};
+  g.grad = vec2f(0.0);
+  return g;
+}`;
+  const centre = (pp: string) => I.map((i) => /* wgsl */ `
+  setCenter${i}(g);
+  let a${i} = textureLoad(accumCur${i}, ${pp}, 0);
+  let m${i} = textureLoad(momentsCur${i}, ${pp}, 0).rg;
+  var varT${i} = max(0.0, m${i}.y - m${i}.x * m${i}.x);
+  // Optional (our variant): variance of the accumulated mean.
+  if ((P${i}.flags & P_VAR_OF_MEAN) != 0u) { varT${i} *= max(P${i}.alpha / (2.0 - P${i}.alpha), 1.0 / max(a${i}.a, 1.0)); }
+  let t${i} = clamp((a${i}.a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
+  let rad${i} = min(select(select(2, 3, a${i}.a < 2.0), 0, t${i} >= 1.0), P${i}.varRadius);
+  var sc${i} = a${i}.rgb;
+  var sm${i} = m${i};
+  var sw${i} = 1.0;`).join('');
+  const prologue = tile ? /* wgsl */ `
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(workgroup_id) wid: vec3u, @builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32) {
+  let p = vec2i(gid.xy);
+  let ok = inside(p);
+  let g = geoCenter(clampPix(p));
+  ${centre('clampPix(p)')}
+  let r = select(0, max(${I.map((i) => `rad${i}`).join(', ')}${kinds.length === 1 ? ', 0' : ''}), ok && g.z > 0.0);
+  atomicMax(&vMaxR, u32(r));${yf ? `
+  if (ok && g.z > 0.0 && (${I.filter((i) => vv.youngFlag?.[i]).map((i) => `t${i} < 1.0`).join(' || ')})) { atomicOr(&vYoung, 1u); }` : ''}
+  workgroupBarrier();
+  if (li == 0u) {
+    vR0 = atomicLoad(&vMaxR);${yf ? `
+    textureStore(youngOut, vec2i(wid.xy), vec4u(atomicLoad(&vYoung)));` : ''}
+  }
+  let R = i32(workgroupUniformLoad(&vR0));
+  if (R > 0) {
+    let side = 8 + 2 * R;
+    let origin = vec2i(wid.xy) * 8 - R;
+    for (var k = i32(li); k < side * side; k += 64) {
+      let l = vec2i(k % side, k / side);
+      let q = clampPix(origin + l);
+      let t = (l.y + 3 - R) * 14 + l.x + 3 - R;
+      let gq = geoTap(geoCur, q);
+      vZ[t] = gq.z;
+      vN[t] = gq.n;${anySpec ? `
+      vR[t] = textureLoad(geoCur, q, 0).y >> 24u;` : ''}
+      ${I.map((i) => `{ let a = textureLoad(accumCur${i}, q, 0); vA${i}[t] = vec2u(pack2x16float(a.rg), pack2x16float(vec2f(a.b, 0.0))); }
+      vM${i}[t] = textureLoad(momentsCur${i}, q, 0).rg;`).join('\n      ')}
+    }
+    workgroupBarrier();
+  }
+  if (!ok) { return; }
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outPing${i}, p, vec4f(0.0));`).join(' ')}
+    return;
+  }
+  let c0i = i32(lid.y + 3u) * 14 + i32(lid.x + 3u);` : /* wgsl */ `
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
@@ -618,28 +704,24 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     ${I.map((i) => `textureStore(outPing${i}, p, vec4f(0.0));`).join(' ')}
     return;
   }
-  ${I.map((i) => /* wgsl */ `
-  setCenter${i}(g);
-  let a${i} = textureLoad(accumCur${i}, p, 0);
-  let m${i} = textureLoad(momentsCur${i}, p, 0).rg;
-  var varT${i} = max(0.0, m${i}.y - m${i}.x * m${i}.x);
-  // Optional (our variant): variance of the accumulated mean.
-  if ((P${i}.flags & P_VAR_OF_MEAN) != 0u) { varT${i} *= max(P${i}.alpha / (2.0 - P${i}.alpha), 1.0 / max(a${i}.a, 1.0)); }
-  let t${i} = clamp((a${i}.a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
-  let rad${i} = min(select(select(2, 3, a${i}.a < 2.0), 0, t${i} >= 1.0), P${i}.varRadius);
-  var sc${i} = a${i}.rgb;
-  var sm${i} = m${i};
-  var sw${i} = 1.0;`).join('')}
+  ${centre('p')}
+  let r = max(${I.map((i) => `rad${i}`).join(', ')}${kinds.length === 1 ? ', 0' : ''});`;
+  const code = /* wgsl */ `
+${header(b)}
+${kinds.map((k, i) => weightsWgsl(k, i)).join('\n')}
+${tileWgsl}
+${prologue}
   // Young history: bilateral spatial estimate of color and moments (SVGF sec.
   // 4.2: 7x7; A-SVGF code: 5x5 once n > 1), blended in smoothly. One loop for
   // all signals, each masked to its own radius.
-  let r = max(${I.map((i) => `rad${i}`).join(', ')}${kinds.length === 1 ? ', 0' : ''});
   for (var dy = -r; dy <= r; dy++) {
     for (var dx = -r; dx <= r; dx++) {
       if (dx == 0 && dy == 0) { continue; }
       let q = p + vec2i(dx, dy);
-      if (!inside(q)) { continue; }
-      let gq = geoTap(geoCur, q);
+      if (!inside(q)) { continue; }${tile ? `
+      let tq = c0i + dy * 14 + dx;
+      let gq = tileGeo(tq);` : `
+      let gq = geoTap(geoCur, q);`}
       if (gq.z <= 0.0) { continue; }
       let off = vec2f(f32(dx), f32(dy));
       let ring = max(abs(dx), abs(dy));
@@ -647,10 +729,14 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       if (ring <= rad${i}) {${vv.historyWeight?.[i] ? `
         let aq${i} = textureLoad(accumCur${i}, q, 0);
         let w = wGeo${i}(g, gq, off) * min(aq${i}.a, bitcast<f32>(P${i}.pad0));
-        sc${i} += aq${i}.rgb * w;` : `
+        sc${i} += aq${i}.rgb * w;` : tile ? `
         let w = wGeo${i}(g, gq, off);
-        sc${i} += textureLoad(accumCur${i}, q, 0).rgb * w;`}
-        sm${i} += textureLoad(momentsCur${i}, q, 0).rg * w;
+        let aq = vA${i}[tq];
+        sc${i} += vec3f(unpack2x16float(aq.x), unpack2x16float(aq.y).x) * w;
+        sm${i} += vM${i}[tq] * w;` : `
+        let w = wGeo${i}(g, gq, off);
+        sc${i} += textureLoad(accumCur${i}, q, 0).rgb * w;`}${tile ? '' : `
+        sm${i} += textureLoad(momentsCur${i}, q, 0).rg * w;`}
         sw${i} += w;
       }`).join('')}
     }
@@ -682,13 +768,27 @@ export interface AtrousVariant {
   /** 3x3 box (A-SVGF) instead of the 5x5 B3 spline. */
   box: boolean;
   /**
-   * Per signal (target 1 candidates `youngLuminanceWeight` / `youngNormalPower`, our design;
-   * results/T1-recovery.md): relax the edge-stopping of young pixels. t = (n - 1) / (rampFrames - 1) clamped,
-   * n the centre's history length; the luminance exponent is scaled by mix(k, 1, t), k = bitcast<f32>(pad1);
-   * the normal power form's exponent is exp2(mix(log2 s, log2 sigmaN, t)), s = bitcast<f32>(pad2) when > 0.
-   * Compiled in only when on (default path unchanged).
+   * Per signal (target 1 candidate `youngLuminanceWeight`, our design; results/T1-recovery.md): relax the
+   * luminance edge-stop of young pixels. t = (n - 1) / (rampFrames - 1) clamped, n the centre's history length;
+   * the luminance exponent is scaled by mix(k, 1, t), k = bitcast<f32>(pad1). Compiled in only when on.
    */
   youngLum?: boolean[];
+  /**
+   * Per signal (`youngNormalPower`, same t): the normal power form's exponent is exp2(mix(log2 s, log2 sigmaN, t)),
+   * s = bitcast<f32>(pad2) when > 0. Compiled in only where the power form can run (diffuse, or specular with
+   * `specularNormalWeight: 'power'`); the specular lobe cutoff never reads it.
+   */
+  youngNormal?: boolean[];
+  /** The young variants read the history length only in 8x8 tiles that the variance pass flagged (`youngTile`). */
+  youngTile?: boolean;
+  /**
+   * Workgroup-shared tile for this stride (box kernel only; results/SVGF-COST.md): the 8x8 workgroup loads and
+   * decodes the (8 + 2 stride)^2 texels its 3x3 taps touch once into workgroup memory and reads the taps from there.
+   * Same arithmetic per pixel. 0 / undefined: every tap loads from the textures. The pass must run at this stride.
+   */
+  tile?: number;
+  /** The signals share sigmaZ: compute the depth weight once per tap (signal 0's) for all of them. */
+  sharedDepth?: boolean;
 }
 
 export const B3 = [0.0625, 0.25, 0.375, 0.25, 0.0625];
@@ -705,6 +805,16 @@ export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
     if (v.writeHist) b.add(`hist${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
   });
   const I = kinds.map((_, i) => i);
+  const sd = !!v.sharedDepth && kinds.length > 1;
+  const ts = v.tile ?? 0;   // tile stride
+  const tile = ts > 0;
+  if (tile && !v.box) throw new Error('atrousPass: tile needs the 3x3 box kernel');
+  const TW = 8 + 2 * ts, TN = TW * TW;   // tile side and texel count
+  const yL = (i: number) => !!v.youngLum?.[i];
+  const yN = (i: number) => !!v.youngNormal?.[i];
+  const young = (i: number) => yL(i) || yN(i);
+  const yTile = !!v.youngTile && I.some(young);
+  if (yTile) b.add('youngTile', 'texture_2d<u32>', 'i');
   const inner: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) inner.push([x, y]);
   const outer: [number, number][] = [];
@@ -714,17 +824,20 @@ export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
     ? `textureStore(dst${i}, p, vec4f(${c} * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & P_REMODULATE) != 0u), 1.0));`
     : `textureStore(dst${i}, p, vec4f(${c}, ${sd}));`;
   const hist = (i: number, c: string) => v.writeHist ? `textureStore(hist${i}, p, vec4f(${c}, textureLoad(accumCur${i}, p, 0).a));` : '';
+  // tile index of the tap at (x, y) (in units of the stride) relative to the centre texel ci
+  const ti = (x: number, y: number) => (x === 0 && y === 0 ? 'ci' : `ci + ${(y * TW + x) * ts}`);
   // one tap: geometry once, then per signal
   const tap = (x: number, y: number, sample: (i: number) => string) => /* wgsl */ `
   {
     let off = vec2i(${x}, ${y}) * I.stride;
     let q = p + off;
     if (inside(q)) {
-      let gq = geoTap(geoCur, q);
-      if (gq.z > 0.0) {
+      let gq = ${tile ? `tileGeo(${ti(x, y)})` : 'geoTap(geoCur, q)'};
+      if (gq.z > 0.0) {${sd ? `
+        let wz = wDepth0(g, gq, vec2f(off));` : ''}
         ${I.map((i) => /* wgsl */ `{
           let s = ${sample(i)};
-          let w = ${f32s(h(x, y))} * wGeo${i}(g, gq, vec2f(off)) * exp(-abs(luma(s.rgb) - lc${i}) ${v.youngLum?.[i] ? `* lumK${i} ` : ''}/ lumDenom${i});
+          let w = ${f32s(h(x, y))} * ${sd ? `wGeoZ${i}(g, gq, vec2f(off), wz)` : `wGeo${i}(g, gq, vec2f(off))`} * exp(-abs(luma(s.rgb) - lc${i}) ${yL(i) ? `* lumK${i} ` : ''}/ lumDenom${i});
           sumC${i} += s.rgb * w;
           sumV${i} += s.a * s.a * w * w;
           sumW${i} += w;
@@ -732,33 +845,80 @@ export function atrousPass(kinds: SignalKind[], v: AtrousVariant): PassDef {
       }
     }
   }`;
-  const code = /* wgsl */ `
-${header(b)}
-struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
-${kinds.map((k, i) => weightsWgsl(k, i, !!v.youngLum?.[i])).join('\n')}
-
+  const anySpec = kinds.includes('specular');
+  // Tile storage: f32 depth, decoded normal, the roughness byte (decoded at use as geoTap does, so the arithmetic
+  // matches the untiled pass bit for bit) and each colour as 2 x pack2x16float (exact for the rgba16float ping-pong;
+  // half the bytes of vec4f, which measured faster than f32 colours: results/SVGF-COST.md).
+  const tileWgsl = !tile ? '' : /* wgsl */ `
+// (8 + 2 stride)^2 tap tile: the 8x8 pixels of this workgroup plus a border of one stride, loaded once.
+var<workgroup> tZ: array<f32, ${TN}>;
+var<workgroup> tN: array<vec3f, ${TN}>;
+${anySpec ? `var<workgroup> tR: array<u32, ${TN}>;` : ''}
+${I.map((i) => `var<workgroup> tC${i}: array<vec2u, ${TN}>;`).join('\n')}
+fn tileLoad(k: u32, origin: vec2i) {
+  let q = clampPix(origin + vec2i(i32(k % ${TW}u), i32(k / ${TW}u)));
+  let gq = geoTap(geoCur, q);
+  tZ[k] = gq.z;
+  tN[k] = gq.n;${anySpec ? `
+  tR[k] = textureLoad(geoCur, q, 0).y >> 24u;` : ''}
+  ${I.map((i) => `{ let c = textureLoad(src${i}, q, 0); tC${i}[k] = vec2u(pack2x16float(c.rg), pack2x16float(c.ba)); }`).join('\n  ')}
+}
+${I.map((i) => `fn tileC${i}(k: i32) -> vec4f { let c = tC${i}[k]; return vec4f(unpack2x16float(c.x), unpack2x16float(c.y)); }`).join('\n')}
+fn tileGeo(k: i32) -> Geo {
+  var g: Geo;
+  g.z = tZ[k];
+  g.n = tN[k];
+  g.rough = ${anySpec ? 'f32(tR[k]) / 255.0' : '0.0'};
+  g.grad = vec2f(0.0);
+  return g;
+}`;
+  const loads: string[] = [];
+  for (let k0 = 0; k0 < TN; k0 += 64) loads.push(k0 + 64 <= TN ? `tileLoad(li + ${k0}u, origin);` : `if (li < ${TN - k0}u) { tileLoad(li + ${k0}u, origin); }`);
+  const prologue = tile ? /* wgsl */ `
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(workgroup_id) wid: vec3u, @builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_index) li: u32) {
+  let p = vec2i(gid.xy);
+  let origin = vec2i(wid.xy) * 8 - ${ts};
+  ${loads.join('\n  ')}
+  workgroupBarrier();
+  if (!inside(p)) { return; }
+  let ci = i32(lid.y + ${ts}u) * ${TW} + i32(lid.x + ${ts}u);
+  var g = tileGeo(ci);
+  g.grad = unpack2x16float(textureLoad(geoGrad, p, 0).r);
+  ${I.map((i) => `let c${i} = tileC${i}(ci);`).join('\n  ')}` : /* wgsl */ `
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
   let g = geoCenter(p);
-  ${I.map((i) => `let c${i} = textureLoad(src${i}, p, 0);`).join('\n  ')}
+  ${I.map((i) => `let c${i} = textureLoad(src${i}, p, 0);`).join('\n  ')}`;
+  const innerSample = (i: number, x: number, y: number) => (x === 0 && y === 0 ? `c${i}`
+    : tile ? `tileC${i}(${ti(x, y)})` : `textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0)`);
+  const code = /* wgsl */ `
+${header(b)}
+struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
+${kinds.map((k, i) => weightsWgsl(k, i, yN(i))).join('\n')}
+${tileWgsl}
+${prologue}
   if (g.z <= 0.0) {
     ${I.map((i) => `${store(i, `c${i}.rgb`, `c${i}.a`)} ${hist(i, `c${i}.rgb`)}`).join('\n    ')}
     return;
   }
-  // SVGF sec. 4.4: a 3x3 Gaussian of the variance drives the luminance weight
+${yTile ? `  let youngHere = textureLoad(youngTile, p / 8, 0).r != 0u;
+` : ''}  // SVGF sec. 4.4: a 3x3 Gaussian of the variance drives the luminance weight
   // only. The 3x3 taps are the inner taps of this iteration's kernel, loaded once
   // and reused (exactly the paper's prefilter at stride 1; wider at larger
   // strides: our approximation).
   ${I.map((i) => /* wgsl */ `
   setCenter${i}(g);
-  ${inner.map(([x, y], k) => `let s${i}_${k} = ${x === 0 && y === 0 ? `c${i}` : `textureLoad(src${i}, clampPix(p + vec2i(${x}, ${y}) * I.stride), 0)`};`).join('\n  ')}
+  ${inner.map(([x, y], k) => `let s${i}_${k} = ${innerSample(i, x, y)};`).join('\n  ')}
   let gVar${i} = (${inner.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * s${i}_${k}.a * s${i}_${k}.a`).join(' + ')}) / 16.0;
   let lc${i} = luma(c${i}.rgb);
-  let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;${v.youngLum?.[i] ? `
-  let tY${i} = clamp((textureLoad(accumCur${i}, p, 0).a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);
-  let lumK${i} = mix(bitcast<f32>(P${i}.pad1), 1.0, tY${i});
+  let lumDenom${i} = P${i}.sigmaL * sqrt(max(gVar${i}, 0.0)) + 1e-10;${young(i) ? `
+  ${yTile ? `var tY${i} = 1.0;   // settled tile: every pixel's t is 1
+  if (youngHere) { tY${i} = clamp((textureLoad(accumCur${i}, p, 0).a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0); }`
+    : `let tY${i} = clamp((textureLoad(accumCur${i}, p, 0).a - 1.0) / max(P${i}.rampFrames - 1.0, 1e-3), 0.0, 1.0);`}` : ''}${yL(i) ? `
+  let lumK${i} = mix(bitcast<f32>(P${i}.pad1), 1.0, tY${i});` : ''}${yN(i) ? `
   let sY${i} = bitcast<f32>(P${i}.pad2);
   sigmaNEff${i} = select(P${i}.sigmaN, exp2(mix(log2(max(sY${i}, 1e-3)), log2(P${i}.sigmaN), tY${i})), sY${i} > 0.0);` : ''}
   let hc${i} = ${f32s(h(0, 0))};

@@ -116,7 +116,10 @@ reconstruction), so a light that changes colour at constant luminance no longer 
 neutral elsewhere, +0.06–0.09 ms per signal at 1080p; proposed as the default, results/T3-light-changes.md],
 `antiLagGain` [1, per signal; λ = min(1, gain × the A-SVGF ratio): faster reaction, more boil on still views, fails
 rule 9 at 2 and 1.5],
-`remodulate` [false], `timestamps` [true]. Specular only:
+`remodulate` [false], `timestamps` [true], `outputAliasing` [false; true: the last à-trous iteration writes into the
+ping-pong texture that then serves as the output, −8 B/px per signal (140 → 124 B/px for the joint A-SVGF default),
+same values and cost, output valid until the next dispatch as for every output; radiance payload only;
+results/SVGF-COST.md]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
 History tests (review target 6, results `T6-boundaries.md`; measured, not adopted): `historyFallback` ['3x3' |
