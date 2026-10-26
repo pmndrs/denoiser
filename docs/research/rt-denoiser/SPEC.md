@@ -1275,7 +1275,17 @@ by q20 (a): a boil increase counts only if it ends above both the clean 4096-spp
 default's, and the spatial fix's young boil stays at or under A-SVGF's on every window, E1b §3.1). `'mips'` remains
 available (`historyFix: 'mips'`), with step (a) and the R3 mips pass exactly as above. The default output is
 byte-identical to the former explicit `historyFix: 'spatial'`. Pass counts of the resource reports now follow the
-mode (6 dispatches with `'spatial'`, 5 for occlusion). Open: the cut-frame loss (results/T1b-spatial-repair.md).
+mode (6 dispatches with `'spatial'`, 5 for occlusion).
+
+**v0.6 options (T1b, results/T1b-spatial-repair.md; default off):** `historyFixDense: r` — A = 0 pixels average every
+pixel within r px (weights as the disk: plane distance at the A = 0 tolerance × normal angle; radius capped by the
+disk's r0·2^(3(ρ−1)), or with `historyFixDenseCap: 'mip'` by D7's level-L tent 1.5·2^L, L = floor(3ρ + 0.5)), read from a
+(8 + 2r)² workgroup tile of depth, normal and acc that only workgroups holding an A = 0 pixel load; A ≥ 1 keeps the
+disk. r = 4 is proposed as the default: the cut frame's loss came from the sample count (17 one-frame values vs the
+mips' hundreds), and 49 dense values beat the mips there (1080p diffuse +0.46 dB, AO +2.84) while adding +0.12 dB
+diffuse / +0.29 AO pooled on the 7 paths at 4096 spp, lower boil everywhere, +5–7 % steady cost (single signal).
+Rejected / diagnostic: mip fallbacks (`historyFixMips`), extra rings (`historyFixWideRing(s)`), age weights,
+`youngBlurTaps`.
 
 ### 5.9 Spatial kernel (R5, R6, and R1's shape)
 

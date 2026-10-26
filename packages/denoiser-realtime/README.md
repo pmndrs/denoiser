@@ -207,6 +207,12 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   reference's) and better on the single frame right after a camera cut at 1080p (−1.9 dB diffuse for `'spatial'`
   there; better from the next frame; being worked on). Results: `docs/research/rt-denoiser/results/T1-recovery.md`
   §5.2, `E1b-high-reference.md` §3.
+  Options of the `'spatial'` fix, all off by default (results `T1b-spatial-repair.md`): `historyFixDense` [0; 4
+  proposed as the default] rebuilds A = 0 pixels (resets, reveals) from every pixel within that many px (a shared-memory
+  tile; the 1080p cut frame then beats the mips, +0.12 dB diffuse / +0.29 AO pooled), `historyFixDenseCap` ['disk';
+  'mip' gives specular / SO the mips' footprint], and diagnostic ones: `historyFixWideRing` / `historyFixWideRings` /
+  `historyFixWideUse`, `historyFixAgeWeight`, `historyFixMips` ('young' / 'reset' / 'hit' / 'clamp',
+  `historyFixMipsClamp`), `historyFixYoungThreshold`, `youngBlurTaps`.
 - The output texture rotates between internal buffers (valid until the next dispatch,
   per the TemporalDenoiser contract).
 - Options (defaults): `hitDistanceScale` [1], `hitDistanceViewScale` [0.05],

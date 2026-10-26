@@ -264,6 +264,19 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Lock races: a GPU-lock waiter that sleeps 30 s between `mkdir` tries loses to every faster poller for an hour on a
   busy afternoon; 2 s is fine (one `mkdir` per try). — reflection-motion, 2026-10-26
 
+- **Replay outputs fill the disk fast**: a 1080p replay writes ~70 MB per frame and arm (diffuse + specular f32), a
+  24-frame capture × 30 arms is ~50 GB. At 100 % disk the Vite servers died silently (curl 000) and a capture page hung
+  at frame 0 with an idle Chrome. Score right after replaying and delete the outputs (a per-capture `score && rm`
+  script in the background), and check `df` in long batches. In zsh, `rm -rf a/* b/x*` with one unmatched glob
+  aborts the whole command ("no matches found") and deletes nothing: use `find … -name … -exec rm -rf {} +`.
+  — t1b, 2026-10-26
+- `git pull --rebase` in this shared worktree autostashes everyone's uncommitted work (`rebase.autoStash`), which
+  touches the shared stash stack. After `git fetch`, check `git status -sb`; when not behind, just push. Stage only
+  your hunks without touching other agents' WIP in the same file: `git update-index --cacheinfo 100644,$(git
+  hash-object -w <HEAD version + your patch>),<path>` and commit the index. — t1b, 2026-10-26
+- A GPU-lock waiter polling every 30 s lost the lock to faster pollers for 40+ minutes several times; 5 s polling of a
+  `mkdir` is harmless. — t1b, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -715,6 +728,22 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - A history-rejection option can be level on the test bed and still fail rule 9 on the real scene: the reflection hit
   test was ±0.01 dB on the 7 paths but +16 % boil on the two SSR captures with a moving object, where the rejected
   history had been hiding SSR noise. Run the `*-move` captures before calling a rejection test free. — reflection-motion, 2026-10-26
+
+- **The spatial history repair's cut-frame loss was sample count, not footprint and not ĥ** (results/T1b-spatial-repair.md):
+  on a full reset every tap is A = 0 too, so 16 taps average 17 values of one frame, while the level-3 mips average
+  hundreds. Wider rings help little; more estimates close to the pixel help most (64 / 128 taps within 8 px: −0.45 /
+  −0.04 dB vs the mips). Scattered taps are expensive on a reset frame (128 taps: 11.9 ms at 1080p); a workgroup-shared
+  dense tile gives every pixel within 4 px for 2.4 ms and beats the mips (+0.44 dB). Falling back to the mips fixes the
+  frame itself but the blocky fill becomes the next frames' history (−0.5 … −1 dB on frames 1–3) and loses −4 dB on a
+  wide reveal: judge a reset fix on the frames after it too. A dense window must keep the roughness-scaled radius for
+  specular (glossy pixels: −1.3 dB without the cap). — t1b, 2026-10-26
+- **The mips win or lose a reset by content**: flat, smooth surfaces (floor, box faces after the `cut` path's cut) want
+  the widest average; detailed views (the orbit side: fence slats, contacts) and wide reveals want full resolution. One
+  cut frame is not "the" reset; measure at least two different views. The 960×540 cut showed almost no loss (−0.13
+  dB) because pixel radii cover 4× the scene there. — t1b, 2026-10-26
+- **Static-camera references have zero boil** (fixed per-pixel seeds), so on static-camera windows (reveal holds) the
+  q20 (a) boil clause reduces to "not above the default's boil". Moving-camera windows need the 4096-spp reference's own
+  boil as the floor. — t1b, 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

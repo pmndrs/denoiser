@@ -837,6 +837,24 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the shipped A-SVGF default's young boil on every window. Settled: every arm at or under the 4096 reference (spatial
       +1…+3 %). Recommendation unchanged (keep `'mips'` by the letter); the question for Dennis is now "boil that rises to
       about a clean reference's level, but not above the default filter's".
+      **T1b (results/T1b-spatial-repair.md): cut-frame loss explained and fixed as an option** — the cause is the sample
+      count at a full reset (every tap A = 0), not the footprint or ĥ; `historyFixDense: 4` (+ `historyFixDenseCap:
+      'mip'`) beats the mips on the cut frame on all four signals and passes rule 9 against the new default (proposal
+      above). Reveal paths (narrow / wide strips, one wide reveal, then a hold) confirm the spatial repair over the
+      mips on revealed surfaces (+0.5 … +4.0 dB on the first frame).
+- [ ] **Default flip proposal (recurrent, rule 9 passed): `historyFixDense: 4` + `historyFixDenseCap: 'mip'`**
+      (results/T1b-spatial-repair.md; options in 474619c / f0a2872, default off). Fixes q19's follow-up: the `'spatial'`
+      default lost the frame right after a camera cut because every tap is A = 0 there (17 one-frame values vs the
+      mips' hundreds); A = 0 pixels now average every pixel within 4 px from a workgroup-shared tile. Cut frame vs
+      `'mips'` (1080p, 4096 spp): diffuse **+0.46 dB**, specular +0.16, AO +2.84, SO +0.08 (the `'spatial'` default:
+      −1.91 / −0.67 / −0.20 / −1.43). Rule 9 vs the shipped `'spatial'`
+      default, live 1080p, 7 paths (4096 spp on five): diffuse +0.118 pooled / +0.34 disoccluded, AO +0.292 / +0.70, SO
+      +0.111, specular +0.005 (worst path −0.003); 26 captures diffuse +0.13 / young +0.40; FLIP and flicker equal or
+      lower; boil equal or lower in every region of every capture (young diffuse −0 … −23 %); cost +0.11 … +0.13 ms per
+      frame (+5 … +7 % of a single-signal recurrent filter, solo bench), +1.3 ms once per reset frame, no memory.
+      Look: cleaner first frames after cuts and wide reveals (fewer blotches). If approved: two defaults in
+      `resolveRecurrent` (radiance and occlusion), byte checks, README / SPEC §5.8; re-time on the RTX machine. —
+      found by t1b, owner recurrent / Dennis
 - [x] (spec-author, 546c777: §4.3 / §4.4 / §4.5 v0.5, §5.8 v0.5 + D7 row, §0.2 / §13 recovery numbers, §12 items 15–16; `youngNormalPower: 16` written as a proposal awaiting Dennis and a quiet-GPU cost check, the default stays 0) SPEC deviations for the spec author (results/T1-recovery.md): §4.3 / §4.4 gain the options `spatialHistoryWeight`
       (null), `youngLuminanceWeight` (loss), `youngNormalPower` (proposal, above); §5.8 (D7) gains `historyFix: 'spatial'`
       + `historyFixRadius` (8 px, halving per frame, no mips / depth atlas); §0.2 / §13 can quote the T1 recovery numbers
@@ -849,7 +867,8 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       `DiffuseSpecularDenoiser` / `OcclusionDenoiser` resource reports still count 7 recurrent passes with
       `historyFix: 'spatial'` (6 dispatch). — found by t1, owners svgf / recurrent / testbed
       **(e) fixed** with the q19 flip (`recurrentPassCount`: 6 with `'spatial'`, 7 with `'mips'`, one fewer for occlusion);
-      (c) and (d) taken by the recurrent agent (results/T1b-spatial-repair.md).
+      **(c) and (d) done** (t1b, results/T1b-spatial-repair.md: cause, `historyFixDense` proposal, reveal paths `rv-*`
+      and the fixed-set scorer `data/t1b-reveal.mjs`).
 - [x] (bistro-sponza; commits ab3f4d7, f96caa0, 1303313 + results) **Bistro and Sponza as scoring scenes** (SPEC §12
       item 7): `realtime-gi.html?scene=sponza|bistro` (models loaded by path from outside git, `$RT_SCENE_ASSETS`, default
       `examples/three-temporal/scene-assets` (Git LFS since 2026-10-26); Sponza = Cryengine Limited License, Bistro = CC BY 4.0), sun + local
