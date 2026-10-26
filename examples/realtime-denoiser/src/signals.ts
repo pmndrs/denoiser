@@ -108,6 +108,25 @@ export const DEMODULATION = {
   specular: 'f0 * A + B, (A, B) = Karis 2014 EnvBRDFApprox(perceptual roughness, max(NdotV, 1e-4)); denominator clamped >= 1e-3',
 };
 
+/** sub-pixel jitter in pixels (x right, y down) for a path frame index */
+export type JitterFn = (index: number) => [number, number];
+/** radical inverse of i in base b (Halton) */
+const halton = (i: number, b: number) => { let f = 1, r = 0; for (; i > 0; i = Math.floor(i / b)) { f /= b; r += f * (i % b); } return r; };
+/**
+ * Camera jitter sequences (review target 8): 'halton<N>' = Halton(2, 3) points 1..N minus 0.5 (pixels, in [-0.5, 0.5)),
+ * cycled over the path frame index, as TAA / temporal upscalers jitter (FSR's native-resolution phase count is 8).
+ * 'off' (default) = pixel centres, exactly the test bed's output before jitter existed.
+ */
+export function jitterSequence(spec: string | null): JitterFn | undefined {
+  if (!spec || spec === 'off') return undefined;
+  const m = /^halton(\d+)$/.exec(spec);
+  if (!m) throw new Error(`jitter=${spec}: expected off or halton<N>`);
+  const n = Number(m[1]);
+  return (index) => { const k = (index % n) + 1; return [halton(k, 2) - 0.5, halton(k, 3) - 0.5]; };
+}
+/** clip-space translation by (ox, oy) in NDC: x' = x + ox w (column-major) */
+const jitterNdc = (ox: number, oy: number) => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, ox, oy, 0, 1]);
+
 /** samples per reference dispatch (keeps each command buffer short) */
 const REF_CHUNK = 32;
 
@@ -127,10 +146,13 @@ export class SceneSignals {
   readonly scene: SceneKind;
   /** v1 signals rendered: the dirs / translucency entries run every frame, v1 references can be requested */
   readonly v1: boolean;
+  /** sub-pixel camera jitter per path frame index (review target 8, results/T8-jitter.md); none = pixel centres */
+  readonly jitter?: JitterFn;
 
   constructor(readonly device: GPUDevice, readonly width: number, readonly height: number, readonly sampling: Sampling = 'blue',
-    opts: { scene?: SceneKind; v1?: boolean } = {}) {
+    opts: { scene?: SceneKind; v1?: boolean; jitter?: JitterFn } = {}) {
     this.scene = opts.scene ?? 'standard';
+    this.jitter = opts.jitter;
     this.v1 = opts.v1 ?? this.scene !== 'standard';
     const usage = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST;
     this.textures = Object.fromEntries(Object.entries(TEX_FORMATS).map(([name, format]) =>
@@ -197,12 +219,12 @@ export class SceneSignals {
   }
 
   /** camera for a frame state (+ the previous state for reprojection) */
-  camera(cur: FrameState, prev: FrameState): FrameCamera {
+  camera(cur: FrameState, prev: FrameState, jitter: [number, number] = [0, 0]): FrameCamera {
     const proj = perspective(FOVY, this.aspect, NEAR, FAR);
     return {
       view: lookAt(cur.eye, cur.target), projection: proj,
       prevView: lookAt(prev.eye, prev.target), prevProjection: proj,
-      jitter: [0, 0], near: NEAR, far: FAR, position: cur.eye, reversedDepth: false,
+      jitter, near: NEAR, far: FAR, position: cur.eye, reversedDepth: false,
     };
   }
 
@@ -214,12 +236,17 @@ export class SceneSignals {
     reset: boolean; seed?: number; refs?: Signal[]; refSpp?: number; refSalt?: number; inject?: InjectOptions;
   }): FrameCamera {
     const d = this.device;
-    const cam = this.camera(cur, prev);
+    const jit = this.jitter?.(index) ?? [0, 0];
+    const cam = this.camera(cur, prev, jit);
     const vp = mul(cam.projection as Float32Array, cam.view as Float32Array);
     const pvp = mul(cam.prevProjection as Float32Array, cam.prevView as Float32Array);
     const b = new ArrayBuffer(512);
     const f = new Float32Array(b), u = new Uint32Array(b);
-    f.set(invert(vp), 0); f.set(vp, 16); f.set(pvp, 32); f.set(cam.view as Float32Array, 48); f.set(cam.prevView as Float32Array, 64);
+    // Jitter (CAPTURE-FORMAT): pixel p's primary ray goes through (p + 0.5 + j). Only the ray generation
+    // (scene.ts primary(): invViewProj at the pixel centre) uses the jittered matrix, whose projection adds
+    // (-2 jx / W, +2 jy / H) to NDC; depth, motion and the references' matrices stay unjittered, so motion =
+    // ndc_sample - ndc_prev (no jitter delta) and every reference sees this frame's sample positions.
+    f.set(invert(jit[0] === 0 && jit[1] === 0 ? vp : mul(jitterNdc(-2 * jit[0] / this.width, 2 * jit[1] / this.height), vp)), 0); f.set(vp, 16); f.set(pvp, 32); f.set(cam.view as Float32Array, 48); f.set(cam.prevView as Float32Array, 64);
     f.set(cur.eye, 80); u[83] = opts.seed ?? index;
     u[84] = this.width; u[85] = this.height; u[86] = 0; u[87] = this.sampling === 'white' ? 0 : 1;
     f.set(cur.light.pos, 88); f[91] = cur.light.radius;

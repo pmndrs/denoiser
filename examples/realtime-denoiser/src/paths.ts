@@ -211,6 +211,20 @@ PATHS.push(
     PATHS.find((p) => p.id === 'thin')!.at(48), 25),
 );
 
+// ---- jitter paths (review target 8, results/T8-jitter.md): thin's / glossy's frame-48 pose held for frames 0-31, a
+// sub-pixel pan 32-63 (the original path's motion at 1/8 speed, path frames 48 -> 52: 1.5 mm / frame), then the end pose
+// held 64-95. Run with &jitter=halton8 and without; windows: settled 16-31 and 80-95, pan 40-63.
+export const JIT_FRAMES = 96;
+const jitPan = (base: PathDef, f: number) => base.at(48 + Math.min(Math.max(f - 32, 0), 32) / 8);
+for (const id of ['thin', 'glossy']) {
+  const base = PATHS.find((p) => p.id === id)!;
+  PATHS.push({
+    id: `${id}-jit`, label: `${id}: hold, sub-pixel pan, hold`, frames: JIT_FRAMES, resets: [],
+    about: `target 8: ${id}'s frame-48 pose held 0-31, a sub-pixel pan 32-63 (${id}'s motion at 1/8 speed), held 64-95; with and without &jitter`,
+    at: (f) => jitPan(base, f),
+  });
+}
+
 // ---- reveal paths (T1b, results/T1b-spatial-repair.md; audit priority 4 / review target 1): a static camera on
 // the fence side (patterned, indirectly lit background: slats, their shadows and sky occlusion on the floor, boxes and
 // spheres behind) and the movable sphere as a foreground occluder 2 m in front of it. Nothing else moves, so a

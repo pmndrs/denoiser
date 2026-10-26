@@ -40,6 +40,10 @@
 //   &sampling=blue|white      sampler of the 1-spp signals (default blue: spatiotemporal blue
 //                             noise, src/bluenoise.ts; white = PCG per pixel/frame); references
 //                             are the same either way
+//   &jitter=off|halton<N>     sub-pixel camera jitter (review target 8, results/T8-jitter.md): pixel p's primary ray
+//                             through p + 0.5 + j, j = Halton(2, 3) point (path frame mod N) + 1, minus 0.5 (pixels);
+//                             depth / motion stay unjittered (motion = ndc_sample - ndc_prev, CAPTURE-FORMAT), every
+//                             reference uses the same sample positions, FrameCamera.jitter carries j. Default off
 //   &start=S                  begin at path frame S (it becomes frame 0, a reset); paths are
 //                             pure functions of the frame index, so eval with the same
 //                             path/start/frames/size renders exactly the frames of a capture
@@ -87,7 +91,7 @@ import './paths-reflect';
 import './paths-light';   // registers the lc-* light-change paths (review target 3, results/T3-light-changes.md)
 import { ReflectEval } from './reflect-eval';
 import {
-  ALL_SIGNALS, DEMODULATION, isOccSignal, isShSignal, isV1Signal, SceneSignals, SIGNALS, V1_SIGNALS, type Sampling, type Signal, type TexName,
+  ALL_SIGNALS, DEMODULATION, isOccSignal, jitterSequence, isShSignal, isV1Signal, SceneSignals, SIGNALS, V1_SIGNALS, type Sampling, type Signal, type TexName,
 } from './signals';
 import { PanelView } from './view';
 
@@ -119,7 +123,7 @@ const CAPTURE = mode === 'capture'
 // URL keys the test bed reads itself; every other key is a denoiser setting (registry `settings`)
 const TESTBED_KEYS = new Set(['signal', 'signals', 'denoiser', 'path', 'mode', 'preset', 'w', 'h', 'frames', 'start', 'refspp', 'refs',
   'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling', 'dump', 'dumpRect',
-  'refsalt', 'ref2spp', 'ref2salt', 'flip2', 'refK', 'refS', 'v1', 'rmCrops', 'rmHalf']);
+  'refsalt', 'ref2spp', 'ref2salt', 'flip2', 'refK', 'refS', 'v1', 'rmCrops', 'rmHalf', 'jitter']);
 // v1: guard k and sharpening s of the SPEC M7-8 / M7-9 resolve applied to diffuse_sh_ref (vsShRef)
 const REF_K = Number(q.get('refK') ?? 1);
 const REF_S = Number(q.get('refS') ?? 0);
@@ -224,7 +228,7 @@ async function main() {
   log(`${mode} ${signals.join(',')} path=${path.id}${START ? ` start=${START}` : ''} ${W}x${H} frames=${FRAMES} refspp=${REFSPP} sampling=${SAMPLING}${INJECT ? ' noise=inject' : ''} features=[${[...device.features].join(',')}]`);
 
   const V1 = signals.some(isV1Signal) || (path.scene ?? 'standard') !== 'standard' || q.get('v1') === '1';
-  const scene = new SceneSignals(device, W, H, SAMPLING, { scene: path.scene ?? 'standard', v1: V1 });
+  const scene = new SceneSignals(device, W, H, SAMPLING, { scene: path.scene ?? 'standard', v1: V1, jitter: jitterSequence(q.get('jitter')) });
   if (V1) log(`v1: scene build ${scene.scene}, v1 buffers rendered`);
   await scene.init();
   const refsNeeded: Signal[] = REFSPP <= 0 ? [] : q.get('refs') === 'all' ? [...new Set([...SIGNALS, ...signals])] : signals;
