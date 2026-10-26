@@ -245,7 +245,7 @@ fn surfaceCurvature(p: vec2i, g: Geo, X: vec3f) -> f32 {
  * per-signal virtual uv (xy; (-1, -1) = none) and this frame's 3x3 mean hit distance (z; hits only, mostly misses =
  * F.far), SPEC R-9 distance with curvature
  */
-function virtualUvWgsl(i: number): string {
+function virtualUvWgsl(i: number, needUV = true): string {
   return /* wgsl */ `
 fn virtualUV${i}(p: vec2i, g: Geo, X: vec3f) -> vec4f {
   var hs = 0.0;
@@ -273,7 +273,7 @@ fn virtualUV${i}(p: vec2i, g: Geo, X: vec3f) -> vec4f {
   // tap's stored spread): a reflected edge, a grazing floor or a glossy lobe makes the per-frame 3x3 mean itself
   // unstable there; this frame's spread alone rejected static glossy pixels whenever their 9 samples clustered
   // (test bed light path, mirror bin -0.5 dB); the full stored spread kept trail pixels at a moving object's old edge
-  let spread = max(hi - lo, 0.0);
+  let spread = max(hi - lo, 0.0);${needUV ? `
   let k = surfaceCurvature(p, g, X);
   let den = 1.0 + 2.0 * k * h;
   // past a concave mirror's focal point the image is real (inverted, in front): no virtual candidate there
@@ -281,7 +281,8 @@ fn virtualUV${i}(p: vec2i, g: Geo, X: vec3f) -> vec4f {
   let a = g.rough * g.rough;
   let fdom = (1.0 - a) * (sqrt(1.0 - a) + a);
   let uv = prevUVOfWorld(X + normalize(X - F.camPos) * (h / den * fdom));
-  return vec4f(select(vec2f(-1.0), uv, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0))), h, spread);
+  return vec4f(select(vec2f(-1.0), uv, all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0))), h, spread);` : `
+  return vec4f(-1.0, -1.0, h, spread);   // reflectionHitTest alone: no virtual candidate, only the statistics`}
 }`;
 }
 
@@ -528,7 +529,7 @@ ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
 ${REPROJECT_WGSL}
-${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i) : '')).join('\n') : ''}
+${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i, refl(i) !== 'surface') : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
