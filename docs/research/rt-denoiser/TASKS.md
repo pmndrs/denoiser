@@ -1144,6 +1144,18 @@ harness builder runs them and returns images/metrics only.)_
 
 - [ ] **Codex audit handoff, reviewed (2026-10-26):** read [sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md) and [sources/audit-current-state.md](sources/audit-current-state.md) (never the originals) with the staleness notes in [reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md). — clean reviewer, owner: orchestrator (fold into the queue)
 
+- [ ] **Native round 4 (order set by the orchestrator, 2026-10-26 evening):** conventions from now on: native headline at
+      its best (REBLUR diffuse A = 0.01, specular (0.1, 0.1, 1); defaults as a second column), cost headline = steady frames
+      4–7 plus a frames 1–3 column. (1) Cost re-time at HEAD, clocks locked: `svgf-auto` (now youngNormalPower 16),
+      `shadows` (q21 defaults), `recurrent` + `occlusion-recurrent` (historyFix 'spatial' + historyFixDense 4: workgroup
+      shared memory, check occupancy), vs native. (2) P8 reflection motion: write the six `rm540-*` captures
+      (examples/realtime-denoiser/CAPTURES.md "Reflection-motion"), native REBLUR / RELAX specular at best vs `svgf-auto`,
+      `recurrent`, `recurrent@virtualMotion=false`. (3) Bistro / Sponza native replay at best settings (captures over the NAS
+      from the Mac's tools/rt-capture/captures, or regenerate after `git lfs pull --include
+      "examples/three-temporal/scene-assets/**" --exclude ""`). (4) Long-hold f16 repeat per results/DISTANCE-LONG.md §8
+      (`bistro-hold` capture over the NAS; test-bed holds regenerate): is `f16Rounding: 'store'` byte-identical to
+      `'nearest'` on D3D12? run-realtime.mjs Windows patch merged (93a28ef). — orchestrator
+
 ## Questions for Dennis
 
 _(only genuine blockers or taste calls; continue with a provisional best guess meanwhile)_
