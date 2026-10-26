@@ -1012,7 +1012,12 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       with a moving mirror (`rm540-refl-turn`) or marker 2 are written `static: true`. No consumer reads the flag
       today; fold `FrameState.reflect` (reflector pose, marker 2) into the test when it matters — found by
       reflection-motion, owner `examples/realtime-denoiser`
-- [ ] **M5 Pro bench re-time of the shipped defaults after the 2026-10-26 flips** (found writing SPEC v0.6): every M5 Pro
+- [x] (timing evaluator, 69676e5; [results/REMEASURE-2026-10-26.md](results/REMEASURE-2026-10-26.md)) _10-25 protocol at
+      f649a50, 9 clean runs per config: joint A-SVGF default **4.40 ms** (`youngNormalPower: 16` +0.28 ms / +6.8 %; exactly the
+      4 ms + 10 % edge), recurrent default **4.06** (`'spatial'` + dense 4 +0.17 vs `'mips'`, T6 +0.02), SVGF `'off'` 3.86;
+      shadows q21 **0.62 `orbit` / 0.72 `thin`** (q21 free; q23 0.64 / 0.74; q24 0.60); AO + SO A-SVGF 2.89 / recurrent 2.54;
+      q25 free, q26 +0.15 ms. ≤ 2× native still met (projected recurrent ≈ 1.07×; round 4 measures). SPEC §0.2 / §0.3 /
+      §10.3 rows to fold (spec author)._ **M5 Pro bench re-time of the shipped defaults after the 2026-10-26 flips** (found writing SPEC v0.6): every M5 Pro
       cost row in SPEC §0.2 / §10.3 predates them. Quiet GPU, test-bed solo bench, 1080p, steady frames: joint
       `svgf-auto` (now `youngNormalPower: 16`; the RTX reads +0.31 ms / +5 %, which on the M5 Pro would put the default at
       ≈ 4.4 ms, the edge of the 4 ms ± 10 % guide), joint `recurrent` (`'spatial'` + `historyFixDense: 4`; only single-signal
