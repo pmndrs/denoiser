@@ -778,6 +778,29 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Per-pixel neighbourhood loops in the temporal pass are expensive on the M5 Pro: a 25 × 4 float isolation test cost
   +0.07…0.15 ms at 1080p (+10…20 %). Binary 1-ray windows fit in 25 bits; the same test with shifts and masks, run
   only where E > 0, cost +0.01…0.03 ms with byte-identical outputs. — shadows, 2026-10-26
+- **Before working an open item, re-measure it on today's defaults.** Two of five shadow follow-ups had moved: the
+  no-history control on the moving hard light was 29.23 dB on the pre-q21 defaults and 30.63 on the shipped ones, and
+  DISTANCE-LONG's +0.27 dB "slow g learning" gap was +0.05 dB once replayed on the q21 defaults (its probe predated them).
+  Check which commit's defaults a number came from (results docs say so) before building for it. — shadows, 2026-10-27
+- **Split a boil increase by whether the truth changes there before calling it a regression.** compare.mjs's dynamic boil is
+  not motion-compensated on a static camera with a moving light, so it counts legitimate change; q24's +8 % on `bistro-move`
+  was 105 % in pixels whose reference second difference was ≥ 0.02 (where the reference is steady q24 *lowered* boil), and
+  the error boil √mean((b_out − b_ref)²)/√6 went down. Then look at the time series of the pixels that carry it: here one
+  real artefact (a jump) hid in the legitimate part (`data/shadows-followups-diag-boil.mjs`). — shadows, 2026-10-27
+- **"Pass the input through" in a spatial pass passes the temporal history, not the raw sample.** `backfacePass` trusts that a
+  back face's visibility is exactly 0, but its input is the accumulated history: a surface turning away from a moving light
+  kept its lit history for ~15 frames (no own g → full cap, non-uniform window → no clamp or snap). Make the exactness true
+  where it is known (snap the history: `horizonSnap`), not only where it is consumed. — shadows, 2026-10-27
+- **A per-pixel decision taken from one frame's 1-ray samples flickers, and so does anything it switches.** A radius floor
+  keyed on this frame's clean-step test boiled more than no test at all (edge boil 0.0261 vs 0.0215); the same floor scaled
+  by the accumulated noise estimate kept 95 % of the gain at shipped-level boil. Drive switches from accumulated quantities.
+  — shadows, 2026-10-27
+- **A moving light moves every penumbra by ρ = (light displacement / light size) penumbra widths per frame**, whatever the
+  penumbra's size (shadow displacement = g × ΔL, width = g × light size). Motion vectors don't know it; the light input does.
+  At ρ ≥ 1 a history keyed to surface motion is stale at every edge, which is why the spatial filter alone beat the full
+  denoiser on the moving hard light (ρ = 1.5). — shadows, 2026-10-27
+- In a chained shell command, a stray `cat > file` without a heredoc waits on stdin and hangs the whole call until the tool
+  timeout. — shadows, 2026-10-27
 
 - **Long holds from short captures: loop a static window.** `tools/rt-capture/loop-capture.mjs` repeats a still
   capture's frames (symlinks, the window's mean reference) after an optional head; with identical inputs every period,

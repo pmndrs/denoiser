@@ -955,7 +955,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       +3…17 %, real-scene static-penumbra boil +9 %, 1080p tPSNR −0.15. Sharper hard edges vs calmer wide penumbrae
       (results/SHADOWS-LOOK.md "Verdict"; image `results/img/shadows-look-bistro-move-bollard.png`) — found by shadows,
       owner Dennis
-- [ ] (shadows, results/SHADOWS-MOTION.md: the raw-5×5 hard-edge test landed as option `stepTest`; `bistro-move` frame 0 23.44 → 23.85, + `terminatorAnalytic` 24.08, still below the raw 25.05; the test bed's hard light (2–3 px penumbrae) shows no frame-0 loss at all; what is left is the 1-px floor on sub-pixel penumbrae) Shadows under hard local lights, frame 0 / fresh pixels: `bistro-move` frame 0 is 23.4 dB vs the raw 25.0 with every
+- [ ] (shadows follow-ups, results/SHADOWS-FOLLOWUPS.md §2: q23 + `floorE: 0.05` 24.11, + q24 + `horizonSnap` 24.36 vs raw 25.05; pooled over the sequence the combination is level with raw, 24.38 vs 24.42; left: fresh pixels' noisy windows keep the one-frame noise radius) (shadows, results/SHADOWS-MOTION.md: the raw-5×5 hard-edge test landed as option `stepTest`; `bistro-move` frame 0 23.44 → 23.85, + `terminatorAnalytic` 24.08, still below the raw 25.05; the test bed's hard light (2–3 px penumbrae) shows no frame-0 loss at all; what is left is the 1-px floor on sub-pixel penumbrae) Shadows under hard local lights, frame 0 / fresh pixels: `bistro-move` frame 0 is 23.4 dB vs the raw 25.0 with every
       kept variant (fresh pixels keep the noise radius; capping them cost the reset windows 1.5–4.8 dB at frame 0, the
       occluder radius there is one sample and the 3×3-tile minimum). `minRadius: 0.5` + `mergeMin: false` win the 960×540
       replays (+2.3 dB `bistro-move`) but lose 0.16 dB at 1080p (`thin` −0.57). Candidate: a hard-edge test from the raw
@@ -980,16 +980,37 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       hard-light edges 21.8 → 23.2 dB, contacts +2.0. Look: crisper hard edges and contacts, calmer edges, the kernel
       rotation no longer animates. Caveat: contact boil +7 % on std540-orbit (not a rule-9 region) — found by shadows, owner
       Dennis → shadows (`resolveShadowOptions`, README, SPEC §7.4 / §7.5)
-- [ ] **Question for Dennis: shadows `terminatorAnalytic: true`** (q24; SPEC v0.7 §12 item 18) (occluder-free terminators get the analytic
+- [ ] (shadows follow-ups, 52d37cb, results/SHADOWS-FOLLOWUPS.md §4: **the boil exception is legitimate change plus a back-face lag**: 105 % of the +8 % sits where the reference itself changes; where it is steady q24 lowers boil, and its error boil is lower. The jump: surfaces turning away from the moving lantern go from the exact analytic ≈ 0 to `backfacePass`'s lagging lit *history* (~15 frames). New option `horizonSnap` (whole light below the horizon and a 0 sample: history 0) removes it: **q24 + `horizonSnap` passes rule 9 on every clause** — 1080p 40.00 vs 38.49 dB (worst path +0.95), real +0.90 (worst +0.38), std540 +1.36, FLIP −27 / −11 / −23 %, `bistro-move` dynamic boil +1.4 % (was +8.1 %), every counting boil increase ≤ +2.7 %, cost −0.01 / −0.02 ms. Proposed amendment for Dennis: q24 = `terminatorAnalytic` + `horizonSnap`; the SH-7 trust question stays) **Question for Dennis: shadows `terminatorAnalytic: true`** (q24; SPEC v0.7 §12 item 18) (occluder-free terminators get the analytic
       above-horizon fraction of the light, H18 Eq. 4 / 12): 1080p +1.47 dB, FLIP −24 %, flicker −25 %, every path +0.87…+2.67;
       real +0.63 (knot +1.5, Bistro +0.02…+0.25), FLIP −4 %; sun +0.9…1.1 with an exact light direction; no cost. Fails the
       boil clause on one region of one capture (`bistro-move` dynamic +8 %, above reference and shipped), and it trusts the
       renderer's horizon rule and light direction exactly (with the test bed's directional stand-in, whose direction is off by
       up to 0.4 θ, the sun captures lose 0.6–0.8 dB) — found by shadows, owner Dennis
-- [ ] Shadows: contacts under a hard light stay below the raw input (results/SHADOWS-MOTION.md: 17.9 dB with `stepTest` vs raw
+- [x] (shadows follow-ups, 52d37cb, results/SHADOWS-FOLLOWUPS.md §1 / §3: contacts: blur across a binary step from the 1-px `minRadius` floor once `stepTest` removed the noise radius (the 3×3-tile minimum is not it); option `floorE` gets contacts above raw, question below. Moving hard light: reproduced on the shipped defaults (no-history 30.63 vs 27.68); the history drags because the light moves 1.5 penumbra widths per frame; option `lightMotion`, question below) Shadows: contacts under a hard light stay below the raw input (results/SHADOWS-MOTION.md: 17.9 dB with `stepTest` vs raw
       21.9, temporal-only 29.5): the 1-px floor and the 3×3-tile minimum next to the contact; `minRadius: 0.5` lost 0.16 dB at
       1080p before (SHADOWS-LOOK). Also on a moving hard light the no-history control beats the full denoiser (29.2 vs 27.7):
       history costs more than it gains where hard edges move ~1 px/frame — found by shadows, owner shadows
+- [ ] **Question for Dennis: shadows `floorE: 0.05` on top of q23** (shadows follow-ups, 52d37cb; new, decisions page number
+      to assign): the 1-px radius floor scaled by the noise estimate, so contacts and sub-pixel shadows stay sharp. Hard-light
+      contacts 17.88 → 22.62 dB (raw 21.88), real captures +0.83 dB over shipped / +0.40 over q23 (every capture up), FLIP −7 %,
+      1080p level (+0.01 over q23, worst path −0.02), no cost. **Fails the boil clause narrowly**: `bistro-move` dynamic boil
+      +5.6 % and `sponza-orbit` motion-compensated changing boil +7 % above shipped and the references (crisper edges
+      resampled on a moving camera); 540p frame 0 −0.15 … −0.8 dB vs q23. Evidence results/SHADOWS-FOLLOWUPS.md §1; image
+      `results/img/shadows-followups-contacts.png` — found by shadows, owner Dennis
+- [ ] **Question for Dennis: shadows `lightMotion: 1`** (shadows follow-ups, 52d37cb; new): a moving light moves every penumbra
+      by (light displacement / light size) widths per frame; the option caps the history at one such width and drops it at
+      moving edges. Moving hard light 27.68 → 30.44 dB (above the no-history control with 0.5), trail 0.142 → 0.040, std540-light
+      +1.97, 1080p `light` +0.44, still lights unchanged, cost +0.002…0.004 ms; but noisier while the light moves (edge boil
+      +47 % there; std540-light static-penumbra boil +6.5 %: fails the boil clause). Tracking vs noise under moving lights.
+      Evidence results/SHADOWS-FOLLOWUPS.md §3 — found by shadows, owner Dennis
+- [ ] Shadows: move the history along the shadow's motion under a moving light instead of dropping it (`lightMotion`'s
+      better form): shadow motion vectors from the blocker and light positions (Zeng et al. 2021, TRMV §4.1 Eq. 3); we have h
+      and the light per occluded sample, so the blocker point is known for a sphere or directional light. Measure on
+      `sm-hard-light`, `sm-sun-light`, `bistro-move`, std540-light (results/SHADOWS-FOLLOWUPS.md §3) — found by shadows,
+      owner shadows
+- [ ] Shadows `horizonSnap`: check per pixel whether its static-penumbra boil rise on the moving-camera Bistro / Sponza
+      captures (+22 % bistro-orbit, below the reference's own) comes from guide normals that disagree with the renderer's
+      horizon test (SH-7), e.g. by replaying with `normal_geom` where the capture has it — found by shadows, owner shadows
 - [ ] Shadows: quality after a light stops (results/SHADOWS-MOTION.md hold check): 15 frames after a moving sun returns, 2.7 dB
       below the frozen control at the same frames (hard light 1.0 dB); camera / occluder paths recover fully. Anti-lag
       restarts leave short histories; measure the anti-lag v3 candidates (below) on `sm-sun-light` / `sm-hard-light` holds —
@@ -1231,7 +1252,7 @@ harness builder runs them and returns images/metrics only.)_
       (our design, option): keep the temporal (unblurred) ĥ as the history's ĥ, or a separate unblurred ĥ, A/B on
       contacts and specular pixelation. Recurrent is not a default, so low priority. — found by distance-long, owner
       recurrent owners
-- [ ] Shadows on a still camera learn g slowly in rarely occluded pixels (results/DISTANCE-LONG.md §3.4): the same Bistro
+- [x] (shadows follow-ups, results/SHADOWS-FOLLOWUPS.md §5: reproduced on the pre-q21 defaults the probe ran, arrive − hold +0.30 / +0.28 dB window-mean; with the shipped q21 defaults +0.05 / +0.06 dB, sharpness 0.775 vs 0.768: the gap was in the umbra class and q21 closed it; residual in lit / penumbra too small for a pass change, nothing built) Shadows on a still camera learn g slowly in rarely occluded pixels (results/DISTANCE-LONG.md §3.4): the same Bistro
       view settles +0.27 dB / edge 0.821 vs 0.806 better after a 48-frame walk than from a reset, and the reset hold closes
       only 0.09 dB of the gap in 384 frames (the sun's g = h is camera-independent, so the walk carried it in). Candidate:
       a longer `maxScaleHistory` (or no decay) for pixels with few occluded samples, or a better seed than the tile's nearest
@@ -1389,6 +1410,11 @@ filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "
   bed, 4096-spp windows and the 11 real captures; fixes the ~20-frame tint lag after a colour change; one by-construction
   exception on constant-light pixels during a colour event). Item under "Found along the way"; evidence
   results/T3-light-changes.md §6. (Decisions page q26; SPEC v0.7 §12 item 20.)
+- **Shadows follow-ups (2026-10-27, shadows):** (1) amend q24 to `terminatorAnalytic` + `horizonSnap`: the boil exception
+  was a back-face lag, the pair passes every rule-9 clause (1080p +1.51 dB, FLIP −27 %); (2) `floorE: 0.05` on top of q23
+  (contacts above the raw input, real +0.40 dB over q23; boil +5.6 / +7 % on two captures); (3) `lightMotion: 1` (moving
+  lights tracked, +2.8 dB on a moving hard light, but noisier while the light moves). Items under "Found along the way";
+  evidence results/SHADOWS-FOLLOWUPS.md.
 - **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
   changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
   horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md. (Decisions page q23 / q24; SPEC
