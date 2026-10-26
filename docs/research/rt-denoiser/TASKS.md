@@ -1158,9 +1158,43 @@ harness builder runs them and returns images/metrics only.)_
       `antiLag: 'gradient'` (no renderer produced its input so far; review target 3). Also a cost note: one mask
       shared by diffuse, specular, shadows and AO vs four internal tests. PROVENANCE: FSR3 is MIT (allowed, RULES §2).
       — orchestrator, owner: unassigned (queued after target D)
-- [ ] **Upscaler `shadingChange` as an input for `antiLag: 'gradient'`** (split from the item above, its step 3). Late
+- [x] (t3, results/T3-light-changes.md §5: measured, nothing built: luminance-only (0 % of a constant-luminance colour
+      change detected even on the clean reference), floors that ignore 1-frame ramps (0 % on a fade), behind the denoiser
+      it sees only what the denoiser already let through and fired once (11 % of the changed pixels, a frame late) on the
+      shipped default's output, on 1-spp input 13 % false positives every frame; and it is a gated 0..1 response, not the
+      signed per-stratum pair `'gradient'` reconstructs) **Upscaler `shadingChange` as an input for `antiLag: 'gradient'`** (split from the item above, its step 3). Late
       product (frame N−1), ceil(render/2), r32float. Still no renderer produces `antiLag: 'gradient'`'s input; assess
       only if `'gradient'` gets a consumer. — upscaler-guides evaluator, owner unassigned
+- [x] (t3, 062361a + docs commit; results/T3-light-changes.md) **Review target 3: light changes on stationary geometry.**
+      New test-bed paths `lc-step` / `lc-hue` / `lc-fade` / `lc-jump` / `lc-emitter` (fixed camera, onset 24, return 56;
+      capture set `light-change`), scorer t3-score.mjs (onset / held / return windows, old-appearance fraction, frames to
+      the new appearance, ramp lag, static-region boil). _Reproduced on the shipped defaults: (1) A-SVGF is luminance-only
+      (S2 §3.1), so a colour change at constant luminance lingers **longer with `'auto'` than with `'off'`** (21 vs 10
+      frames diffuse, 17 vs 10 specular; α_min 0.1); recurrent 32 / 40 frames (32 % of the old tint left after 32
+      frames); (2) moderate brightness steps are slow on diffuse (λ is relative: 8 frames, `'off'` 9–10), specular 4;
+      (3) constant-light pixels boil +25…38 % during an event (λ leaks through the reconstruction); (4) shadows switch at
+      once. Options (default off, byte-identical default WGSL + replays): `antiLagChroma` (passes rule 9, proposed below)
+      and `antiLagGain` (per signal; specular +0.41 dB under camera motion but fails boil on still views)._
+- [ ] **Proposal for Dennis: SVGF `antiLagChroma: true`** (results/T3-light-changes.md §6.5). Fixes the lingering tint
+      after a light colour change (lc-hue 21 → 8 frames diffuse, 17 → 4 specular; transition window +3.8 / +3.3 dB, FLIP
+      −22 / −32 %); level everywhere else (1080p 7 paths +0.002 / +0.009 dB, FLIP ±0.0 / −0.2 %, flicker equal; 4096 spp
+      −0.001 / +0.009; 11 real captures +0.000 / +0.001, boil ≤ +1.1 % in every region); +0.06…0.11 ms per signal
+      (+2…4 %), +4 B/px per signal at 1/9 res. One by-construction exception: on lc-hue's constant-light pixels boil
+      rises +44 % in the event windows, i.e. a colour change now gets the shipped default's own brightness-event leak
+      (+38 % on lc-step). Changes the look of colour changes only. — found by t3, owner Dennis → `packages/denoiser-realtime` (`resolveOptions`, README, SPEC §4.6)
+- [ ] SVGF anti-lag: λ leaks into constant-light pixels during a light event (+25…38 % boil there with the shipped
+      default on lc-step / lc-jump, strict bit-identical-reference mask; results/T3-light-changes.md §3): the 4-iteration
+      reconstruction (up to 24 px) plus the 3×3 max carry it. `antiLagRadius: 0` only trims it (+23 %) and slows the
+      reaction. Idea (ours, untested): confine the reconstructed λ per pixel, e.g. only where the pixel's own 3×3 change
+      agrees in sign with δ̂. — found by t3, owner `packages/denoiser-realtime`
+- [ ] SVGF specular `antiLagGain` gated by camera motion: gain 2 is +0.41 dB specular on the 7 moving 1080p paths
+      (+0.80 on 4096-spp glossy) but +49 % settled-pixel boil on the still `light` window and three-knot-static; a gain
+      that applies only where the view moves (parallax / motion length) might keep the first without the second.
+      Lead, not built (results/T3-light-changes.md §4.2, §6). — found by t3, owner `packages/denoiser-realtime`
+- [ ] Recurrent: colour changes linger 32 / 40 frames (luminance-only detector, fast history and clamp; A cap 31); a
+      lower `antiLagCurrentSigma` (1.5) speeds brightness steps (18 → 12 frames) but adds +30…56 % boil and doesn't see
+      colour. Chroma moments in the current-frame detector (the specular path already accumulates rgb moments) would be
+      the analogue of `antiLagChroma`. Not built (recurrent is opt-in). — found by t3, owner recurrent
 
 - [ ] **Codex audit handoff, reviewed (2026-10-26):** read [sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md) and [sources/audit-current-state.md](sources/audit-current-state.md) (never the originals) with the staleness notes in [reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md). — clean reviewer, owner: orchestrator (fold into the queue)
 
@@ -1198,6 +1232,10 @@ filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "
   pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
   brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;
   evidence results/DISTANCE-LONG.md §6. (Decisions page q25; SPEC v0.6 §12 item 19, §3.8.)
+- **Light colour changes (2026-10-26, t3):** approve `antiLagChroma: true` as the SVGF default (passes rule 9 on the test
+  bed, 4096-spp windows and the 11 real captures; fixes the ~20-frame tint lag after a colour change; one by-construction
+  exception on constant-light pixels during a colour event). Item under "Found along the way"; evidence
+  results/T3-light-changes.md §6.
 - **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
   changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
   horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md. (Decisions page q23 / q24; SPEC

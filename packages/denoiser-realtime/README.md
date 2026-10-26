@@ -110,6 +110,11 @@ specular with anti-lag v2], `luminanceVariance`
 bench; 0 = the previous behaviour; SPEC §4.4], `spatialHistoryWeight` [0; measured null], `youngLuminanceWeight`
 [1 = off; measured a loss], `f16Rounding` ['store' | 'nearest': round to nearest before every f16 store, since Metal
 truncates; `'nearest'` proposed as the default, SPEC §3.8 / §12 item 19],
+`antiLagChroma` [false; true: `'auto'` also detects colour changes (YCoCg chroma gradients through the same
+reconstruction), so a light that changes colour at constant luminance no longer leaves its old tint for ~20 frames;
+neutral elsewhere, +0.06–0.09 ms per signal at 1080p; proposed as the default, results/T3-light-changes.md],
+`antiLagGain` [1, per signal; λ = min(1, gain × the A-SVGF ratio): faster reaction, more boil on still views, fails
+rule 9 at 2 and 1.5],
 `remodulate` [false], `timestamps` [true]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].

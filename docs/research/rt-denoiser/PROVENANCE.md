@@ -453,6 +453,22 @@ with a `SpatialFixConfig`, `blurPass(…, youngTaps)`). Every default path gener
 | `youngBlurTaps`: 8 more blur taps (the R-3 disk turned by π/8) on A = 0 pixels | option | RTG II §49.5.5 prose (8-tap Poisson disk, rotated) = R-3 row | **our design**; partial gain, not pursued | | `blurPass(…, youngTaps)` |
 | evaluation: static-camera reveal paths `rv-narrow` / `rv-medium` / `rv-wide` and fixed revealed pixel sets followed over time | SPEC §13 | audit priority 4 (reviewed copy): "Score the same newly revealed surfaces over time, not just unrelated pixels grouped by history age" | **our tool**: reveal = the view depth grows by > 5 %, cover = it shrinks by > 5 %; boundary, mid-band, bias, FLIP, boil per set | | `examples/realtime-denoiser/src/paths.ts` (rv-*), `results/data/t1b-reveal.mjs` |
 
+### Light-change tests and anti-lag options (review target 3) — **options, default off** (results/T3-light-changes.md)
+
+_t3 agent (implementer / evaluator, RULES §8: no NRD code, README, release notes, port or quarantined file read).
+Sources read directly: Schied, Peters, Dachsbacher 2018 (A-SVGF, `svgf/asvgf.pdf` / `.txt`: §3.1 Eq. 2 and the
+"only the luminance" sentence p.24:6, §3.5 Eq. 13–15 p.24:8, the 3×3 max p.24:9, §5.4 limitations); the reviewed
+source note `sources/nrd-public-2022-2026.md` for ML25 p.34–35, PH23 and GI22; `@pmndrs/upscaler` (MIT, © 2026 Dennis
+Smolek; /Users/dex/Developer/fsr3 at 57eac72, read-only): `src/shaders/shadingChange.ts`, PARITY.md §3, CLAUDE.md.
+Every default path generates byte-identical WGSL (062361a)._
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| `antiLagChroma`: per-stratum YCoCg chroma change (δCo, δCg of the current mean vs the reprojected accumulated history) and the standard deviation of the current means, filtered with the luminance weights through the same reconstruction, λ = max(luminance term, max over Co, Cg of max(0, \|δ̂_c\| − kσ̂_c) / Δ̂) | §4.6 option | S2 §3.1 restricts the temporal gradient to luminance "thus saving resources"; S2 §3.4–3.5 reconstruction and λ (as the 'auto' rows above); public parallel: ML25 p.34–35 computes its history confidence over all YCoCg channels (via the source note); YCoCg: Malvar & Sullivan 2003 | **our design**: chroma normalized by the luminance Δ̂, the v2 composite-kernel noise floor for both chroma channels, rg32uint storage (σ, not var) | | `src/shaders/gradient.ts` (`GradientVariant.chroma`, `COCG_WGSL`, `PACK_C_WGSL`), `src/svgf.ts` |
+| `antiLagGain`: λ = min(1, g · ratio), per signal | §4.6 option | S2 Eq. 14–15 (g = 1) | **our design** (a scale on the ratio; baked into the λ pass per signal, not structural) | | `src/shaders/gradient.ts` `gradientLambdaPassV2`, `src/svgf.ts` |
+| evaluation: fixed-camera light-change paths (`lc-step`, `lc-hue`, `lc-fade`, `lc-jump`, `lc-emitter`), onset / held / return windows, old-appearance fraction r = Σ(o − n)(b − n)/Σ(b − n)², frames to r < 0.1, ramp lag, static-region boil with a bit-identical-reference mask | SPEC §13 | review target 3 (sources/nrd-review-targets.md: "identical event times … separately report onset, held illumination and return") | **our tool** | | `examples/realtime-denoiser/src/paths-light.ts`, `results/data/t3-score.mjs` |
+| evaluation: CPU port of the upscaler's `shadingChange` response (block-mean luma ratio at 4×4 / 8×8, contrast-gated floors) to measure it as an anti-lag input | — | `@pmndrs/upscaler` `src/shaders/shadingChange.ts` (MIT, from its own upstream) | identity reprojection (fixed camera, no jitter); measurement only, nothing of it in the package | | `results/data/t3-shading-change.mjs` |
+
 ## Open provenance items
 
 - Verify the K14m constants against the original Unreal Engine blog post (the fetch was

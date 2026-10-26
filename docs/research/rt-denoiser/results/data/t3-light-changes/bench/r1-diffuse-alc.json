@@ -1,0 +1,58 @@
+[
+ {
+  "query": "signal=diffuse&mode=bench&preset=full&path=orbit&n=200&denoiser=svgf-auto@antiLagChroma=1",
+  "ready": true,
+  "results": {
+   "mode": "bench",
+   "path": "orbit",
+   "width": 1920,
+   "height": 1080,
+   "frames": 200,
+   "sampling": "blue",
+   "query": "?signal=diffuse&mode=bench&preset=full&path=orbit&n=200&denoiser=svgf-auto@antiLagChroma=1",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "0x0000",
+    "description": "Apple M5 Pro"
+   },
+   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "results": {
+    "diffuse": {
+     "svgf-auto@antiLagChroma=1": {
+      "gpuMs": {
+       "median": 2.918,
+       "p25": 2.795,
+       "p90": 3.6304,
+       "min": 2.7163,
+       "n": 200
+      },
+      "passesMs": {
+       "prepass": 0.1752,
+       "gradient_create": 0.2579,
+       "gradient_atrous_0": 0.036,
+       "gradient_atrous_1": 0.0338,
+       "gradient_atrous_2": 0.033,
+       "gradient_atrous_3": 0.0369,
+       "gradient_lambda": 0.0731,
+       "temporal": 0.4422,
+       "variance": 0.2589,
+       "atrous_0": 0.3228,
+       "atrous_1": 0.3201,
+       "atrous_2": 0.3135,
+       "atrous_3": 0.3102,
+       "atrous_4": 0.306
+      },
+      "wallMs": {
+       "median": 4.2,
+       "p25": 4,
+       "p90": 5.3,
+       "min": 3.7,
+       "n": 200
+      }
+     }
+    }
+   }
+  }
+ }
+]

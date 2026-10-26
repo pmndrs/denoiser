@@ -968,3 +968,31 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   'auto' layouts accept r32float / rg32float through `textureLoad`. Depth must be a `depth32float` texture: copy
   r32float device depth with a full-screen pass that writes `@builtin(frag_depth)`. It has no `motion_z`, and its
   reconstruct ignores FLAG_RESET. — upscaler-guides, 2026-10-26
+
+## Light changes (review target 3, 2026-10-26)
+
+- **Never `cp` a mirror copy over a worktree file.** I copied my scratch-mirror `main.ts` (HEAD + one import line) over
+  the worktree's, which held another agent's uncommitted edits; a `for f in …; do git diff --quiet HEAD -- $f && echo
+  clean; done && cp …` chain does not stop on a dirty file (the loop's status is the last `echo`'s). Restored from that
+  agent's own mirror (same mtime as its other copied file). Insert your hunk into the current worktree file instead
+  (a Python `replace` with an assert, or `patch -F3` from a diff against the base commit), and look at `git status`
+  first. — t3, 2026-10-26
+- **A luminance-only anti-lag can be slower than none.** A-SVGF's gradient is luminance only (S2 §3.1), and with anti-lag
+  on, SVGF runs α_min 0.1 instead of 0.2, so a light that changes colour at constant luminance left its old tint 21 frames
+  with `'auto'` vs 10 with `'off'`. Test colour separately from brightness on every temporal filter. — t3, 2026-10-26
+- **Lag without noise on a fixed camera: the old-appearance fraction.** r_t = Σ(o − n)(b − n)/Σ(b − n)² over the pixels
+  that change (b / n = the reference before / after) averages the noise away, counts colour, and gives "frames to < 10 %
+  old" directly; a filter's own bias shows as r ≠ 0 before the event. The test bed's references use fixed per-pixel seeds,
+  so pixels whose light doesn't change have bit-identical references: a strict static mask (`change == 0`) separates
+  leaked λ from legitimately changing dim pixels. — t3, 2026-10-26
+- **A-SVGF's λ is a relative change**, so a light that changes a pixel's indirect light by 20 % drops only ~30 % of the
+  history per frame (8 frames to settle on diffuse). Scaling λ speeds every reaction and pays on still views (boil +17…49 %);
+  the gain is all specular under camera motion (+0.4 dB), so judge such knobs on moving *and* still captures. — t3, 2026-10-26
+- **A detector downstream of the denoiser can't see what the denoiser hides.** The upscaler's `shadingChange` compares
+  frame-to-frame changes of the image it gets; behind a temporal denoiser that image moves a few % per frame, under its
+  floors, so it fired once on a light step (a frame late) and never on the return. Measure a guide on the image it will
+  really get, not on the reference. — t3, 2026-10-26
+- GPU lock with a busy neighbour: another agent re-took the lock page after page for ~35 min; queue the whole batch in one
+  background script that takes the lock per group (`until mkdir …; sleep 3`), write docs meanwhile, and keep scoring
+  (CPU) outside the lock. Replays of 96 frames at 960×540 take ~7 s each, so a 5-capture × 4-arm group holds the lock
+  ~2.5 min. — t3, 2026-10-26
