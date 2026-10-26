@@ -1046,6 +1046,22 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       boundary-young +0.18…+0.20, 4096 spp +0.014 / +0.015, real +0.007 / +0.033, boil −0.8…+0.6 %, +0.9 % cost) and
       `virtualHitTest: true` (specular: test bed +0.061, real +0.023, boil ≤ +4.7 %, +1.2 % cost; removes the
       clean-mirror duplicates). For the orchestrator. — t6, owner recurrent
+- [x] (t8, 978939f test bed + docs commit; [results/T8-jitter.md](results/T8-jitter.md)) **Review target 8: camera jitter
+      and sub-pixel motion.** _No action needed for the denoisers. One documentation fix, for an integration error._
+      Test bed `&jitter=halton<N>` (default off, eval output identical to HEAD) and paths `thin-jit` / `glossy-jit`
+      (hold, 0.29 px/frame pan, hold). Each configuration is scored against references at its own sample positions
+      (`results/data/t8-jitter/`). With jitter-free motion, all four shipped defaults keep settled brightness within
+      0.07 %, their edges fluctuate as much as the jittered reference's own (0.87–1.03× at boundaries), there are no double edges, and the
+      sub-pixel pan shows no motion-specific excess. The 0–4 dB boundary rise against the per-frame reference is phase mixing, not an
+      artefact. Motion that includes the jitter delta (three's raw `velocity` under a jittered projection) does damage:
+      shadows boil +24…104 % (above both floors), glossy specular 10 % softer. Fixed in
+      `docs/site/guides/realtime-denoisers.mdx`: motion must be jitter-free.
+- [ ] **SPEC C-1 / C-6 vs code: jitter** (results/T8-jitter.md §2). SPEC says the current pixel is reconstructed and
+      reprojected at its sample position `uv_s = (p + 0.5 + j)/size`. The code uses the pixel centre, ignoring
+      `FrameCamera.jitter` (`common.ts` `reproject` `uvOf(p)`, `recurrent.ts` "jitter ignored"): history stays at the
+      pixel centre, as in a TAA resolve. T8 measured that as correct; the 2026-10-15 FFX study
+      (`exp/jitter-study`) found compensation blurs. Proposed: make the SPEC text match the code and say
+      `FrameCamera.jitter` is informational for these filters. — found by t8, owner spec author
 - [ ] **Bistro AO / diffuse boil from SVGF's normal-test resets** (results/T6-boundaries.md §5): shipped A-SVGF AO boils at
       2.6× the reference's level on `bistro-orbit` (0.0103 vs 0.0039), diffuse 2.1×, because the cos 0.95 test resets
       pixels on normal-mapped / dense surfaces; relaxing it fixes the boil but loses 1.6 dB (history shaded at another

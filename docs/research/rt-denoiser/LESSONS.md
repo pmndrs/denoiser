@@ -1030,3 +1030,23 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   ~1 min and 9 rounds ~15 min. Re-time rather than quote projections. Starting Vite with a scratch config
   outside the repo prints `UNRESOLVED_IMPORT 'esbuild'` warnings; they are harmless (the server is `ready`).
   — timing evaluator, 2026-10-26
+
+## Camera jitter (review target 8, 2026-10-26)
+
+- **Jitter in the test bed needs no shader change**: jitter only the ray generation's inverse view-projection (`signals.ts`,
+  `&jitter=halton8`). Depth, motion and every reference keep the unjittered matrices, so motion stays `ndc_sample −
+  ndc_prev` and each reference sees the frame's own sample positions. `validate.mjs` already handles jitter (motion
+  reprojection 1e-5 px on the jittered captures). — t8, 2026-10-26
+- **A jittered point-sampled reference is far from its own average at edges**: the per-frame reference vs its 16-frame mean
+  at a still pose scores 16–30 dB at boundaries (thin shadows 16.5 dB). A temporal filter's output lands between the two,
+  so its "error vs the per-frame reference" rises 0–4 dB at boundaries with no artefact at all. Score a jittered
+  sequence against both (per-frame R1, window-mean R2), and check temporal fluctuation against the reference's own.
+  — t8, 2026-10-26
+- **Per-pixel temporal std over a window must skip frames where the pixel was sky**: under jitter, silhouette pixels flip
+  to sky, where AO/SO outputs are 0 and `ao_ref` is 1, so occlusion showed "2.2× the reference's fluctuation" that was
+  only the sky value. Count a pixel only if it is a receiver in every frame of the window. — t8, 2026-10-26
+- A batch that scores and then deletes the replay outputs means a scorer bug costs a full re-replay. When the disk allows
+  (a 96-frame 960×540 capture × 4 denoisers is ~4 GB), keep the outputs until the tables have been read. — t8, 2026-10-26
+- Loosening the history tests (`planeDistance=1`, `normalThreshold=0`) moved the jittered still-view outputs by ≤ 0.3 dB at
+  boundaries (shadows: identical), so the fsr3 "resets at jittered edges" mechanism (GUIDES-HANDOFF-RESPONSE report 3,
+  hint 2) is not what limits our filters there. — t8, 2026-10-26

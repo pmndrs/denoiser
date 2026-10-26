@@ -83,11 +83,19 @@ and what the denoisers assume about your signal:
 
 **Guides and camera**
 
-- **Motion**: NDC delta, **current minus previous**, +y up. This is three.js' `velocity`
-  node.
+- **Motion**: NDC delta, **current minus previous**, +y up, and **free of camera
+  jitter**: the surface's own motion, both frames projected with the unjittered
+  projection. This is three.js' `velocity` node. If you jitter the camera, give the
+  velocity node the unjittered projection, `velocity.setProjectionMatrix(unjittered)`,
+  as `@pmndrs/upscaler` and three's `TRAANode` / `TAAUNode` already do. Without it,
+  every pixel "moves" by the jitter step each frame. In our measurements that made
+  shadows boil up to twice as much and softened glossy reflections by about 10 %
+  ([T8](https://github.com/pmndrs/denoiser/blob/main/docs/research/rt-denoiser/results/T8-jitter.md)).
 - **Projection**: the **unjittered** projection matrix. Pass sub-pixel jitter
   separately in `camera.jitter` (pixels). Matrices are column-major (three's
-  `Matrix4.elements`).
+  `Matrix4.elements`). The real-time denoisers don't read the jitter value: each pixel's
+  history stays at the pixel centre, as in a TAA resolve, and the output keeps the
+  frame's own sample positions for the upscaler or TAA after it.
 - **Depth**: any hardware depth format, or r32float device depth, linearized with the
   projection (`camera.reversedDepth` for reversed-Z). Or pass **`guides.viewZ`**:
   linear view-space z in three.js view space, **negative in front of the camera**, sky
