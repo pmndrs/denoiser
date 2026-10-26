@@ -48,6 +48,9 @@ const OURS: Record<Signal, string> = {
 
 export async function main(log: (m: string) => void) {
   const q = new URLSearchParams(location.search);
+  // &sh.<option>=<value>: ShadowDenoiser options (numbers / true / false / strings), as on realtime-shadows.html
+  const shOptions: Record<string, unknown> = {};
+  for (const [k, v] of q) if (k.startsWith('sh.')) shOptions[k.slice(3)] = v === 'true' ? true : v === 'false' ? false : Number.isNaN(Number(v)) ? v : Number(v);
   const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
   const manual = q.has('manual');
   const sceneId = assetScene(q.get('scene'));
@@ -317,7 +320,7 @@ export async function main(log: (m: string) => void) {
   const lightOpt = () => (shadowLight === 'sun'
     ? { type: 'directional' as const, direction: [sunDir.x, sunDir.y, sunDir.z] as [number, number, number], angularRadius: cfg.sun.angularRadius }
     : { type: 'sphere' as const, position: [uLPos.value.x, uLPos.value.y, uLPos.value.z] as [number, number, number], radius: cfg.local.radius });
-  const shadows = realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt });
+  const shadows = realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: shOptions });
   const ffxSh = ffxShadows(shRTT, guides);
   const albedoD = () => { const a = dTex.sample(uv()); return a.rgb.mul(float(1).sub(a.a)); };
   /** direct irradiance of one light times its visibility */
