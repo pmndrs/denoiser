@@ -1137,3 +1137,27 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   to 2× apart) with no `Video Wake Lock` or camera activity left for the quiet check to see. Start a clean set with a few
   throwaway rounds, or cut the first ~5 minutes after the call by timestamp, and look at the per-round table before
   summarizing: the clean rounds afterwards agreed within 1.5 %. — svgf-cost, 2026-10-27
+
+## SVGF follow-ups (2026-10-27)
+
+- **Split a "leak" by the pixel's own state before blaming a neighbour.** The constant-light boil next to a light change
+  looked like λ spreading (T3) and then like the à-trous blending in reset neighbours; four spatial-channel variants
+  (history-ratio tap weights, a variance-prefilter cap, a λ edge-stop, a stronger luminance stop) moved nothing. Splitting
+  the band by the pixel's *own* λ settled it in one run: pixels whose λ stayed 0 had no excess, the rest carried all of it
+  (two thirds of them share their 3×3 stratum with a changing pixel). A scratch registry entry that writes n / λ / the
+  unfiltered accumulation as the "output" (results/data/svgf-followups/tools/registry-wrap-dbg.ts) is a cheap way to get
+  per-pixel internals out of a replay. — svgf-followups
+- **A boil rise can hide in quadrature.** The static pixels' *unfiltered* accumulation boil rose 0.2 % (214 → 214.4 ×10⁻⁴),
+  which reads as "nothing", but in quadrature that is an added ~15 ×10⁻⁴ component, as large as the filtered output's whole
+  excess. Per-stratum boosts are spatially correlated, so the spatial filter does not remove them. Compare RMS figures as
+  √(b₁² − b₀²), not as ratios, when the baseline is noise-dominated. — svgf-followups
+- **Check what a capture's normal really is before reasoning about normal maps.** T6 attributed Bistro's normal-test
+  resets to normal-mapped `normalView`; the three-temporal scenes load geometry only (no textures, no normal maps), and a
+  `normal_geom` capture matched `normal` to cos > 0.9999 everywhere. The resets are geometric (dense tessellation). — svgf-followups
+- **The test bed creates one registry instance per signal**, so a joint-only settings path (the `d.` / `s.` per-signal SVGF
+  keys) silently fell back to the shared options in live pages and the first live A/B ran the wrong arm (specular got the
+  diffuse setting). Replays create the joint instance. Check a per-signal setting in both runners (here: the specular
+  output must stay byte-identical when its setting is the identity). — svgf-followups
+- **A graded history length can win where a relaxed accept test loses.** Keeping full history at another normal (T6
+  `'relative'`) smeared Bistro AO by 1.6 dB; keeping 2–4 frames of it where the strict test resets removes the restart noise
+  (+0.2 dB, boil −11 %) and smears nothing for long. For reflections even 2 frames lose, so make the cap per signal. — svgf-followups

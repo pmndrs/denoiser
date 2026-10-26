@@ -496,6 +496,15 @@ Every default path generates byte-identical WGSL (062361a)._
 | young-pixel à-trous variant compiled only where it can act (specular only with `specularNormalWeight: 'power'`; luminance factor only with `youngLuminanceWeight ≠ 1`); per-8×8-tile young flags from the variance pass let settled tiles skip the history-length load | §4.4 v0.5 (`youngNormalPower`) | T1's option (our design, rows above) | **our code**; byte-identical; −0.18 and −0.03 ms | | `atrousPass` (`youngLum` / `youngNormal` / `youngTile`), `variancePass` (`youngFlag`) |
 | `outputAliasing` (option, default false): the last à-trous iteration's ping-pong target is the output | §10.2, §12 item 4 (c) | SPEC §10.2's proposal (our design); the recurrent filter's rotating output | none: as proposed; byte-identical, −8 B/px per signal | | `src/svgf.ts` `configure` |
 
+### SVGF follow-ups (SVGF implementer, 2026-10-27) — options, default off (results/SVGF-FOLLOWUPS.md)
+
+| item | SPEC | source | our deviation | 2nd review | code |
+|---|---|---|---|---|---|
+| `normalTest: 'soft'` + `normalSoftThreshold` / `normalSoftHistory`: where the full normal test resets the pixel (no 2×2 tap and no 3×3 fallback texel passes), the 2×2 footprint is retried at a looser cosine and its passing taps give a history capped at 1 + (frames − 1)·s, s = their bilinear-weighted normal agreement ramp between the two thresholds; frames per signal (1 = today's reset) | §3.2 / §4.2 option | SVGF §4.1 (S1: per-tap normal / depth consistency, renormalized bilinear weights); A-SVGF's history length n as the blend weight 1/n (S2 / its code, as the temporal rows above) | **our design**: a graded history *length* from normal agreement instead of a binary reset, applied only where the binary test resets, per-signal cap | | `src/shaders/svgf.ts` `TemporalVariant.soft`, `temporalPass`; `src/svgf.ts` |
+| `historyNormal: 'geometric'`: the history's geometry test (normal agreement, backface, plane distance) on the renderer's geometric normal (`guides.geometricNormal`, octahedral 16+16 bits, ping-pong), the edge stops on `guides.normal` | §3.2 option | SVGF §4.1 tests; octahedral encoding Cigolle et al. 2014 (JCGT 3(2)); the smooth / detail normal split of the SH payload (M7-4, CAPTURE-FORMAT `normal_geom`) | **our design** (which normal feeds the history test) | | `src/shaders/svgf.ts` `GEO_NORMAL_*`, `geoNormalPackPass`; `src/svgf.ts` `gn` |
+| `antiLagHistoryScale`: after the anti-lag boost the history length becomes max(1, (1 − λ)·n) instead of n = 1/α | §4.6 option | S2 Eq. 14–15 (α boost by λ); A-SVGF code sets n from α (rows above) | **our design** (keeps the boost, drops its persistence) | | `src/shaders/svgf.ts` `TemporalVariant.lamScale` |
+| evaluation: static-pixel spill by distance to the nearest changing receiver, split by the pixel's own λ and by stratum purity; a debug replay entry reading n / λ / the unfiltered accumulation | SPEC §13 | T3's strict static mask (results/T3-light-changes.md) | **our tools** | | `results/data/svgf-followups/tools/` |
+
 ## Open provenance items
 
 - Verify the K14m constants against the original Unreal Engine blog post (the fetch was

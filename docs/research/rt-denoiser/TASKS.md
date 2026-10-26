@@ -1092,7 +1092,13 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       pixel centre, as in a TAA resolve. T8 measured that as correct; the 2026-10-15 FFX study
       (`exp/jitter-study`) found compensation blurs. Proposed: make the SPEC text match the code and say
       `FrameCamera.jitter` is informational for these filters. — found by t8, owner spec author
-- [ ] **Bistro AO / diffuse boil from SVGF's normal-test resets** (results/T6-boundaries.md §5): shipped A-SVGF AO boils at
+- [x] (svgf-followups, 764e44d + docs; results/SVGF-FOLLOWUPS.md §3) _Reproduced (AO boil 0.0103 = 2.6× the reference's). T6's
+      premise corrected: the Bistro / Sponza captures have no normal maps (geometry-only scenes; `normal_geom` = `normal` to
+      cos > 0.9999), the resets are geometric. New option `normalTest: 'soft'` (where the full test resets, a cos-0.5 retry
+      keeps ≤ 1 + 2·agreement frames; `normalSoftHistory` per signal, 1 = today's reset): 11 real captures diffuse +0.150 dB,
+      AO +0.183, boil −8.7 / −11 %, specular byte-identical, test bed / 4096 spp level, cost ±0 → **passes rule 9, proposed
+      below**. `historyNormal: 'geometric'` (option) fails on the normal-mapped detail build (specular −0.19 dB)._
+      **Bistro AO / diffuse boil from SVGF's normal-test resets** (results/T6-boundaries.md §5): shipped A-SVGF AO boils at
       2.6× the reference's level on `bistro-orbit` (0.0103 vs 0.0039), diffuse 2.1×, because the cos 0.95 test resets
       pixels on normal-mapped / dense surfaces; relaxing it fixes the boil but loses 1.6 dB (history shaded at another
       normal). Candidates that keep the normal discrimination: a history weight from normal agreement instead of a hard
@@ -1305,11 +1311,30 @@ harness builder runs them and returns images/metrics only.)_
       (+2…4 %), +4 B/px per signal at 1/9 res. One by-construction exception: on lc-hue's constant-light pixels boil
       rises +44 % in the event windows, i.e. a colour change now gets the shipped default's own brightness-event leak
       (+38 % on lc-step). Changes the look of colour changes only. — found by t3, owner Dennis → `packages/denoiser-realtime` (`resolveOptions`, README, SPEC §4.6)
-- [ ] SVGF anti-lag: λ leaks into constant-light pixels during a light event (+25…38 % boil there with the shipped
+- [x] (svgf-followups, 764e44d + docs; results/SVGF-FOLLOWUPS.md §2) _Reproduced; cause measured: the excess sits only in
+      static pixels within 2 px of a changing one whose **own** stratum λ > 0 (2/3 share the 3×3 stratum with changing
+      pixels, 1/3 get λ via the 3×3 max), half from the boost, half from the n = 1/α clamp keeping it; not λ spreading far,
+      not the spatial filter (four à-trous variants changed nothing). No per-pixel fix at 1 spp: `antiLagRadius: 0`,
+      `gradientIterations: 2` and the new option `antiLagHistoryScale` (n ← (1 − λ) n) cut the leak by 1/2–2/3 but slow t10
+      by 2–7 frames. None proposed; q26 evidence in §2.3 (the exception is the shipped default's own behaviour)._
+      SVGF anti-lag: λ leaks into constant-light pixels during a light event (+25…38 % boil there with the shipped
       default on lc-step / lc-jump, strict bit-identical-reference mask; results/T3-light-changes.md §3): the 4-iteration
       reconstruction (up to 24 px) plus the 3×3 max carry it. `antiLagRadius: 0` only trims it (+23 %) and slows the
       reaction. Idea (ours, untested): confine the reconstructed λ per pixel, e.g. only where the pixel's own 3×3 change
       agrees in sign with δ̂. — found by t3, owner `packages/denoiser-realtime`
+- [ ] **Proposal for Dennis: SVGF `normalTest: 'soft'` as the default** (its defaults = the measured configuration:
+      `normalSoftThreshold` 0.5, `normalSoftHistory` 3 for diffuse / AO, 1 = today's reset for specular / SO;
+      results/SVGF-FOLLOWUPS.md §3.3, §6). Passes every rule-9
+      clause: 11 real captures diffuse +0.150 dB / AO +0.183 (Bistro orbit AO +0.26, boil 0.0103 → 0.0082), boil −8.7 / −11 %
+      and lower in every region of every capture, FLIP −0.2 / −0.1 %, worst capture −0.017 dB; test bed 1080p 7 paths level
+      (worst −0.017 SO `object`), 4096 spp ±0, normal-mapped detail paths diffuse +0.05 / AO +0.20; specular byte-identical;
+      cost ±0 (±0.6 % on Bistro / Sponza), no memory. Changes the look of moving views over dense geometry (less boil).
+      Code change if approved: one default in `resolveOptions`, README, SPEC §3.2 / §4.2 / §12. — found by
+      svgf-followups, owner Dennis → `packages/denoiser-realtime`
+- [ ] Bistro AO still boils at 2.1× the reference's with `normalTest: 'soft'` (0.0082 vs 0.0039; 8 frames of soft history
+      reach 0.0077, results/SVGF-FOLLOWUPS.md §3.2). Not yet attributed: resets the soft retry can't keep (plane test,
+      cos < 0.5), 3×3-fallback pixels (equal-weight history at full length), young-pixel treatment. Next step: split the
+      remaining boil by reset cause on bistro-orbit (as §2.2 did for the light leak). — found by svgf-followups, owner svgf
 - [ ] SVGF specular `antiLagGain` gated by camera motion: gain 2 is +0.41 dB specular on the 7 moving 1080p paths
       (+0.80 on 4096-spp glossy) but +49 % settled-pixel boil on the still `light` window and three-knot-static; a gain
       that applies only where the view moves (parallax / motion length) might keep the first without the second.
@@ -1406,6 +1431,12 @@ filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "
   +0.8…+2.9 dB, FLIP −8…−19 %; fails the boil / flicker clauses on still views: a little shimmer comes back with the
   contrast). Item under "Found along the way"; evidence results/T5-normal-detail.md §5. (Decisions page q27; SPEC v0.7
   §12 item 21.)
+- **Normal-test resets (2026-10-27, svgf-followups):** approve `normalTest: 'soft'` (diffuse / AO 3 frames, specular / SO 1) as
+  the SVGF default: passes rule 9 on the 11 real captures, the test bed and 4096 spp; less boil on moving views of dense
+  geometry (Bistro AO boil −21 %, +0.26 dB). Item under "Found along the way"; evidence results/SVGF-FOLLOWUPS.md §3.
+- **q26 follow-up (2026-10-27, svgf-followups):** the constant-light leak that q26's exception names is the shipped
+  default's per-stratum boost within 2 px of a light change (results/SVGF-FOLLOWUPS.md §2); every fix measured slows the
+  reaction q26 buys. Recommendation: judge q26 with the exception as a property of A-SVGF.
 - **Light colour changes (2026-10-26, t3):** approve `antiLagChroma: true` as the SVGF default (passes rule 9 on the test
   bed, 4096-spp windows and the 11 real captures; fixes the ~20-frame tint lag after a colour change; one by-construction
   exception on constant-light pixels during a colour event). Item under "Found along the way"; evidence
