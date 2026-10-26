@@ -35,6 +35,11 @@ export const CAPTURE_SETS = {
   // shadows only (visibility + occluder distance + guides), 960x540.
   'shadow-motion': ['hard', 'sun'].flatMap((l) => ['camera', 'light', 'object', 'frozen'].map((mo) => (
     { name: `sm-${l}-${mo}`, path: `sm-${l}-${mo}`, start: 0, frames: 80, w: 960, h: 540, signals: 'shadows' }))),
+  // Reflection motion (results/REFLECTION-MOTION.md, CAPTURES.md "Reflection-motion captures"): reflect build, specular only
+  // (guides + specular + hit distance + reference: 22 floats = 45.6 MB / frame), frames 0-47 = 40 moving + 7 held, 13.1 GB.
+  // The marker images' oracle positions come from the path (src/reflect-oracle.ts), not from the capture.
+  reflect: ['rm-cam-plane', 'rm-obj-plane', 'rm-refl-turn', 'rm-cam-convex', 'rm-cam-concave', 'rm-cam-plane-r10'].map((p) => (
+    { name: p.replace('rm-', 'rm540-'), path: p, start: 0, frames: 48, w: 960, h: 540, signals: 'specular', refspp: p.endsWith('r10') ? 1024 : 256 })),
   // T0.7 round trip (small): orbit + cut across its reset
   roundtrip: [
     { name: 'rt-orbit', path: 'orbit', start: 0, frames: 24, w: 960, h: 540 },

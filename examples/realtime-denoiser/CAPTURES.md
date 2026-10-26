@@ -108,6 +108,32 @@ node tools/rt-capture/compare.mjs v1-bumpy [--sh-k 1 --sh-s 0]      # v1 tables 
 node tools/rt-capture/preview.mjs v1-glass --strip shadow-rgb --frame 15
 ```
 
+## Reflection-motion captures (review target 2)
+
+The reflect build's isolated reflection tests ([results/REFLECTION-MOTION.md](../../docs/research/rt-denoiser/results/REFLECTION-MOTION.md),
+paths `rm-*` in `src/paths-reflect.ts`) as captures, so native NRD (Windows harness, black box) and our replay see the
+same frames. Specular only (guides, `specular`, `specular_hitt`, `specular_ref`), 960×540, path frames 0–47 (40 moving,
+7 held): **45.6 MB per frame, 13.1 GB for the set**. Not written by default; write them when a native comparison is due:
+
+```sh
+node examples/realtime-denoiser/run-headless.mjs --serve --set=reflect
+```
+
+| capture | path | what moves | why |
+|---|---|---|---|
+| `rm540-cam-plane` | `rm-cam-plane` | camera | plane mirror under camera parallax (near and far marker) |
+| `rm540-obj-plane` | `rm-obj-plane` | reflected marker | zero-parallax motion: the trail case of A-SVGF |
+| `rm540-refl-turn` | `rm-refl-turn` | mirror turns | reflector rotation |
+| `rm540-cam-convex` | `rm-cam-convex` | camera | convex curvature |
+| `rm540-cam-concave` | `rm-cam-concave` | camera | concave mirror, a real image past the focus |
+| `rm540-cam-plane-r10` | `rm-cam-plane-r10` | camera | glossy (r 0.1), 1024-spp reference |
+
+The marker positions, and with them the oracle's image positions, come from the path definition (frame index =
+path frame), so a replay output can be scored with `src/reflect-oracle.ts` without the live test bed. Live, the same
+metrics are one eval page per path (`signal=specular&mode=eval&path=rm-…`, results under `results.reflect`).
+The manifest's `static` flag only looks at marker 1 (`src/capture.ts` `isStatic`): `rm540-refl-turn` says static
+although its mirror turns (no consumer reads the flag today).
+
 ## Capture and replay, one at a time
 
 ```sh

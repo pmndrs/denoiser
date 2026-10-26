@@ -256,6 +256,14 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   "last batch" line must compute that number from the job count (12 queries per page batch: 98 jobs end at batch 8,
   not 9). — shadows, 2026-10-26
 
+- `git pull --rebase` in this shared worktree autostashes every other agent's uncommitted edits and re-applies them
+  ("Created autostash … Applied autostash"). It worked, but a conflict would leave their work in the shared stash
+  stack. `git fetch` first and rebase only when `git log HEAD..@{u}` is non-empty. To commit a file that another agent
+  is also editing, apply only your hunks to the index (`git apply --cached my.patch`, patch made against `HEAD`) and to
+  the working tree, then `git commit` without a pathspec. — reflection-motion, 2026-10-26
+- Lock races: a GPU-lock waiter that sleeps 30 s between `mkdir` tries loses to every faster poller for an hour on a
+  busy afternoon; 2 s is fine (one `mkdir` per try). — reflection-motion, 2026-10-26
+
 ## WebGPU / WGSL
 
 - Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
@@ -681,6 +689,32 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   lesson): `minRadius: 0.5` + `mergeMin: false` scored level on std540 and +2.3 dB on `bistro-move`, but −0.16 dB at
   1080p live (`thin` −0.57). The pixel footprint halves at 1080p, so a px-based floor means something else there.
   Screen hard-edge changes at 1080p too. — shadows, 2026-10-26
+
+- **"Uses no hit distance" is not "drags".** SVGF specular reprojects reflections with surface motion yet tracks a
+  mirror under camera motion: the R-8 cap gives r ≈ 0 about one frame of history whenever there is parallax. It fails
+  only where parallax is 0 (a moving reflected object, a turning mirror: 3–6 px trails with A-SVGF, 25–28 px without)
+  and on glossy r 0.1–0.2, where the cap admits many frames. Read the code path per configuration before assuming a
+  missing input shows up as an artefact (results/REFLECTION-MOTION.md). — reflection-motion, 2026-10-26
+- **Virtual-motion reprojection has its own disocclusion: the reflected world's.** Background pixels next to a
+  reflected object reproject, correctly by their own far hit distance, to where the object's image *was*; the history
+  there is the object. A confidence that only shortens that history (our recurrent filter: to 3 frames) shows a
+  *leading* ghost and duplicate images on clean mirrors. A per-tap test of the stored hit distance against this
+  frame's catches it, but its tolerance needs the local spread of hit distances: without it held mirrors lost
+  2.5–3.4 dB (per-frame 3×3 means jitter at reflected edges and over grazing floors); with only this frame's spread
+  static glossy pixels whose 9 samples cluster got rejected (−0.5…−0.7 dB); with the full stored spread the old edge
+  of a moving object kept its history. Half the stored spread kept both. — reflection-motion, 2026-10-26
+- Isolated reflection tests need: marker images far apart on screen (a window holding two markers' images gave
+  centroid "errors" of 10–25 px that were pure mixing), reflector-only pixels (a marker seen directly sits next to its
+  own image), a per-path window size (a mirror ball's images are a few px across), and the renderer validated against
+  the oracle first (the reference centroid should land within a fraction of a pixel; ours: 0.02–0.3 px).
+  — reflection-motion, 2026-10-26
+- Brightness-weighted dual-source blending (surface + virtual history, Eto et al. 2023) helps glossy mirrors (r 0.1:
+  drag gone, +2.6 dB on the reflector) and hurts everything rough (r ≥ 0.2 up to −8 dB, the r 0.9 floor −0.8 dB pooled,
+  FLIP +5…+50 %): a noisy 3×3 mean cannot pick a candidate and a blend of two histories is a blur. Gate it by
+  roughness. — reflection-motion, 2026-10-26
+- A history-rejection option can be level on the test bed and still fail rule 9 on the real scene: the reflection hit
+  test was ±0.01 dB on the 7 paths but +16 % boil on the two SSR captures with a moving object, where the rejected
+  history had been hiding SSR noise. Run the `*-move` captures before calling a rejection test free. — reflection-motion, 2026-10-26
 
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 

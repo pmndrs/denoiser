@@ -920,6 +920,29 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [x] (shadows, flip commit) `packages/denoiser-realtime/README.md` shadows options: `snapHardPx`, `backfacePass`, `noiseCap`,
       `noiseCapSettled` (1a2861a; after Dennis's call on the flip) — found by shadows, owner README
 
+- [x] reflection-motion (5053015 test bed, 409be4f + 222bec2 options, docs commit) **Review target 2 / target D (c): isolated reflection-motion tests.**
+      Reflect build + 16 `rm-*` paths (plane / convex / concave / rippled mirrors, grazing; camera-, reflected-object- and
+      reflector-only motion, stop / hold, cut, roughness sweep), an independent CPU oracle of the markers' mirror images
+      and ROI metrics (position error, lag, trail, ghost energy, duplicates, recovery) in the test bed's eval. Inventory,
+      reproduction, two options and their rule-9 A/B: results/REFLECTION-MOTION.md. _Shipped A-SVGF: no drag on mirrors
+      under camera motion, short trails at zero parallax; plain SVGF drags and duplicates there (28 px); recurrent
+      virtual motion shows a leading ghost (below). Options default off, byte-identical default; neither passes rule 9
+      (real-scene moving-object boil +16 %, cost)._
+- [ ] **Recurrent specular: leading ghost / duplicate images from virtual motion on clean mirrors** (results/REFLECTION-MOTION.md
+      §3: far image 5.6 px ahead of the oracle, extra blobs on 36 / 40 frames, reflector region −9 dB vs A-SVGF; with
+      `virtualMotion: false` it tracks). Cause: reflected-world disocclusion; low virtual confidence only shortens that
+      history to A_fast = 3 and the 3×3 clamp lets a high-contrast image through. Candidate: SVGF's `reflectionHitTest`
+      per-tap test (stored 3×3 hit distance vs this frame's, tolerance (0.1 + 0.4 r) + max(spread, ½ stored spread))
+      inside `virt{i}`, dropping failed taps. Repro: `signal=specular&mode=eval&path=rm-cam-plane&denoiser=recurrent-specular,recurrent-specular@r.virtualMotion=false`
+      — found by reflection-motion, owner recurrent (`src/shaders/recurrent.ts`)
+- [ ] `src/capture.ts` `isStatic` looks only at the movable sphere (marker 1 in the reflect build): reflect-build captures
+      with a moving mirror (`rm540-refl-turn`) or marker 2 are written `static: true`. No consumer reads the flag
+      today; fold `FrameState.reflect` (reflector pose, marker 2) into the test when it matters — found by
+      reflection-motion, owner `examples/realtime-denoiser`
+- [ ] README (`packages/denoiser-realtime`): document the specular options `reflectionHitTest` and
+      `reflectionReprojection` ('virtual' measured as a loss; 'dual' for glossy mirrors under camera motion), their cost
+      and the rule-9 result (results/REFLECTION-MOTION.md §6) — found by reflection-motion, owner `packages/denoiser-realtime`
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The
@@ -961,6 +984,13 @@ harness builder runs them and returns images/metrics only.)_
 - **v1 captures have landed (2026-10-25, testbed-v1, c0e3876…208b40a):** P6 and P7 can run. Write them with
   `node examples/realtime-denoiser/run-headless.mjs --serve --set=v1` (`v1-bumpy`, `v1-bounce`, `v1-glass`,
   `v1-glass-moving`, `v1-glass-still`; 960×540, 8.63 GB, ~2 min); format in CAPTURE-FORMAT.md §v1. — orchestrator
+- [ ] **P8: native specular on isolated reflection motion** (results/REFLECTION-MOTION.md, CAPTURES.md "Reflection-motion
+      captures"; write them with `run-headless.mjs --serve --set=reflect`, 13.1 GB): REBLUR / RELAX specular (with the
+      specular hit distance, REBLUR's normalization as in round 3) on `rm540-cam-plane`, `-obj-plane`, `-refl-turn`,
+      `-cam-convex`, `-cam-concave`, `-cam-plane-r10`. Compare outputs: the marker images against the path's oracle
+      positions (`src/reflect-oracle.ts`; frame index = path frame), trails behind the moving marker and the turning
+      mirror's far image, duplicates, lag at r 0.1. Question: does native show A-SVGF's 3–6 px zero-parallax trails, or
+      the recurrent filter's leading ghost? — reflection-motion, owner harness builder
 - [ ] **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
       and two standard paths with `diffuse_dir` / `normal_geom`. Run `REBLUR_DIFFUSE_SH` and `RELAX_DIFFUSE_SH` (input packed
       by native's front end from `diffuse` + `diffuse_dir`). Return (a) the colour-extraction output scored against
@@ -991,7 +1021,11 @@ harness builder runs them and returns images/metrics only.)_
       f16 item above): does g drift down over a long hold and band the contact shadows? (b) recurrent carries hit
       distance through f16 buffers and re-filters it every frame: does the accumulated hit distance drift from the
       per-frame mean and mis-size radii / virtual motion (specular pixelation)? (c) SVGF / A-SVGF specular uses no hit
-      distance at all (reflections reproject with surface motion): overlaps review target 2. (d) AO / SO filter a
+      distance at all (reflections reproject with surface motion): overlaps review target 2. _(c) answered
+      (reflection-motion, results/REFLECTION-MOTION.md): harmless on mirrors under camera motion (the R-8 cap keeps ~1
+      frame there; images within 0.2 px of an analytic oracle), 3–6 px trails where parallax is 0 (moving reflected
+      object, turning mirror), ~1 px glossy drag at r 0.1–0.2; options `reflectionHitTest` / `reflectionReprojection`
+      built, both fail rule 9 on boil and cost, so no flip._ (d) AO / SO filter a
       normalized hit distance: long-hold contact darkening (target 7). Fixes land as options. — orchestrator,
       owner: unassigned (after the shadows-look agent and the 4096-spp runs)
 
