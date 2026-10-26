@@ -1050,3 +1050,28 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - Loosening the history tests (`planeDistance=1`, `normalThreshold=0`) moved the jittered still-view outputs by ≤ 0.3 dB at
   boundaries (shadows: identical), so the fsr3 "resets at jittered edges" mechanism (GUIDES-HANDOFF-RESPONSE report 3,
   hint 2) is not what limits our filters there. — t8, 2026-10-26
+
+## Normal-mapped detail (T5, 2026-10-26)
+
+- **Detail-band energy mixes contrast and noise; regress instead.** Σ band_out² / Σ band_ref² rises with noise and falls
+  with blur, and a noisy reference inflates its denominator (M7's "SH keeps 25–50 %" against 256 spp reads 0.66–0.70
+  against 4096). The regression gain k = Σ b_o b_r / Σ b_r² is blind to noise (uncorrelated with b_r) and the residual
+  Σ(b_o − k b_r)² / Σ b_r² is the noise: report both (results/data/t5-normal-detail/score.mjs). — t5, 2026-10-26
+- **Tune on one normal map, test on another.** M7's SH settings won on the domes they were tuned on and lost 1.4–3.6 dB to
+  the plain filter on held-out grooves; a second pattern (and a still view, where the plain filter's long history keeps
+  88 % of the contrast) changed the ranking. Add held-out patterns as scene variants behind a build flag so the tuned
+  build stays byte-identical. — t5, 2026-10-26
+- **Contrast and still-view shimmer trade one for one in a spatial filter.** Every way to keep more bump contrast in the SH
+  filter (detail-normal weight, its stride-gated form) raised the still-view boil about in proportion; against a still
+  reference (boil ≈ 0) rule 9's clause fails for any rise. Sharpening the resolve was the only free contrast (+0.06–0.08,
+  boil within the reference's): it reshapes the payload instead of averaging fewer samples. — t5, 2026-10-26
+- **An extra guide read per à-trous tap costs ~20 % on the M5 Pro** (SH à-trous is load-bound: +0.75 ms at 1080p for one
+  rgba16float normal per tap). Spare bits in what the taps already load are free: an 8:8 octahedral normal in the unused
+  upper half of the f16 ping-pong's last word, written once by the variance pass, cut it to +9 % with outputs within
+  0.005 dB. Look for padding in the texel before adding a binding. — t5, 2026-10-26
+- `xargs`-free batch hygiene: a zsh `${(s/:/)spec}` split of "capture:mask:a:1-2,b:3-4" also splits the window list at
+  its colons; pass windows as a named preset (`--windows light`) or use a delimiter that the value can't contain.
+  A throttle on `pgrep -f score.mjs` also counted another agent's `score.mjs`: match your own path. — t5, 2026-10-26
+- A Chrome tab holding "Video Wake Lock" (a call or video on Dennis's desktop) ran through a whole bench window; with the
+  quiet-GPU check honouring it the bench just waits (holding the GPU lock). Either release the lock while waiting or bench
+  through it with `IGNORE_VIDEO=1` and quote fastest frames (medians moved ≤ 3 % here). — t5, 2026-10-26

@@ -1253,6 +1253,48 @@ harness builder runs them and returns images/metrics only.)_
       colour. Chroma moments in the current-frame detector (the specular path already accumulates rgb moments) would be
       the analogue of `antiLagChroma`. Not built (recurrent is opt-in). — found by t3, owner recurrent
 
+- [x] (t5, 06637b0 + docs commit; results/T5-normal-detail.md) **Review target 5: normal-mapped diffuse and specular detail.**
+      New `detail` scene build (held-out grooves / fine-cell normal maps, a smooth control, an emitter seen only by the
+      secondary rays), paths `dt-*`, capture set `t5` (4096-spp references), scorer with a noise-free detail-contrast
+      measure (band regression gain) and motion-compensated boil per region. _Reproduced: the shipped plain A-SVGF keeps
+      47–66 % of the bump contrast under camera motion and its bump-region boil is 1.2–4.5× the reference's (diffuse;
+      specular 1.5–3.6×): sparkle. The SH payload is calm but flat (62–73 %) and loses to plain on the held-out grooves
+      (−1.4 dB orbit, −3.6 dB still) and the corridor. Recurrent washes bumps out (6–32 %). Options (default off, WGSL and
+      default replays byte-identical): `shDetailNormalPower` (+0.8…+2.9 dB over SH, FLIP −8…−19 %, beats plain under
+      motion on every pattern; fails the flicker / boil clauses on still views; proposed below), `shDetailNormalStride`
+      (dead end), `youngNormalPower` honoured by SH (passes, flip below); `shSharpen: 1` passes (flip below)._
+- [ ] **Proposal for Dennis: `shDetailNormalPower: 16` as the default of `payload: 'sh'`** (results/T5-normal-detail.md §3, §5).
+      Normal-mapped diffuse through the SH payload keeps more of its bumps: contrast 0.62–0.73 → 0.68–0.80, +0.8…+2.9 dB
+      (+0.5…+1.2 while the light sweeps), FLIP −8…−19 % on all six normal-mapped captures (M7 domes, held-out grooves and fine cells, the coloured corridor,
+      still views under a moving light); it then beats the plain default under camera motion on every pattern (+1.0…+4.6
+      dB, bump boil −46…−76 %) and is level on still views (+1.2 / −0.7 dB). Smooth surfaces −0.02…−0.07 dB, 7 standard
+      paths ±0.01 dB. Cost +0.3 ms (+9 %, one signal, 1080p), no memory. **Fails rule 9 against the shipped SH filter**:
+      still-view bump flicker +15…+45 % and boil +24…+75 % (the still reference has no boil, so any rise counts), and on
+      the fine cells under motion boil +40 % to 1.1× the reference's. Look: crisper bumps with a little shimmer on still
+      views (p 8: half the gain, still-view boil +13…+25 %). SH stays opt-in either way. — found by t5, owner Dennis →
+      `packages/denoiser-realtime` (`resolveOptions`, README, SPEC §8.5)
+- [ ] **Config-level flips for the orchestrator (payload 'sh', rule 9 passes on every clause that can run; the SH options
+      don't reach the plain filters and no real-scene capture has SH inputs, so the real-scene part is not applicable):**
+      (a) `shSharpen: 1` (M7 picked 0.75 from 256-spp scores): bump contrast +0.06…+0.08 on every normal-mapped capture,
+      FLIP −0.1…−1.9 %, PSNR −0.02…+0.20, flicker −0…−6 %, boil +6…+9 % but under the reference's own; exact on smooth
+      surfaces and the 7 paths (the resolve is renormalized at the guide normal); free. Not run on `t5-light-grooves`.
+      (b) `youngNormalPower: 16` for 'sh' (target 5's question): no effect on normal-mapped captures (±0.02 dB), 7 paths
+      +0.00…+0.024 dB pooled, disoccluded +0.04…+0.10, tPSNR up to +0.09 at 4096 spp (the plain flip's pattern); cost
+      +0.26 ms (+8 %). Both one line in `resolveOptions` (`shSharpen` / the 'sh' branch of `youngNormalPower`), README,
+      SPEC §8.5 / §4.4. — found by t5, owner orchestrator → `packages/denoiser-realtime`
+- [ ] Plain specular on normal-mapped glossy surfaces sparkles (bump-region boil 1.5–3.6× the reference's under the orbit,
+      0.0029–0.0040 on still holds against a reference ~0; results/T5-normal-detail.md §3) and no SH specular variant beats
+      it (−2.8…−4.5 dB; with `shDetailNormalPower: 32` still −1.6…−2.9). Lead: a lobe-aware detail-normal treatment for
+      the plain specular filter, or longer history where the lobe sees the same light. — found by t5, owner svgf
+- [ ] Recurrent on normal-mapped surfaces keeps 6–32 % of the bump contrast (−0.7…−4.2 dB vs the plain default): its
+      diffuse normal weight is the ~61° lobe angle and its kernel plane tilts with the detail normal. Candidates: a
+      geometric normal for the kernel plane plus a tighter detail-normal weight, or an SH payload (SPEC §8.5.6). Recurrent
+      is opt-in. — found by t5, owner recurrent
+- [ ] SH anti-lag directional blind spot (untested): the SH gradient compares the payload's luminance at the smooth
+      normal, so a light that turns the bump shading without changing the irradiance at the smooth normal (an emitter
+      circling at constant elevation) would not shorten the history. T5's sweep changed both and showed no SH-specific
+      lag. A constant-elevation `dt-*` path would test it. — found by t5, owner svgf
+
 - [ ] **Codex audit handoff, reviewed (2026-10-26):** read [sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md) and [sources/audit-current-state.md](sources/audit-current-state.md) (never the originals) with the staleness notes in [reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md). — clean reviewer, owner: orchestrator (fold into the queue)
 
 - [ ] **Native round 4 (order set by the orchestrator, 2026-10-26 evening):** conventions from now on: native headline at
@@ -1294,6 +1336,9 @@ filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "
   pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
   brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;
   evidence results/DISTANCE-LONG.md §6. (Decisions page q25; SPEC v0.6 §12 item 19, §3.8.)
+- **Normal-mapped detail (2026-10-26, t5):** approve `shDetailNormalPower: 16` as the SH payload's default (crisper bumps,
+  +0.8…+2.9 dB, FLIP −8…−19 %; fails the boil / flicker clauses on still views: a little shimmer comes back with the
+  contrast). Item under "Found along the way"; evidence results/T5-normal-detail.md §5.
 - **Light colour changes (2026-10-26, t3):** approve `antiLagChroma: true` as the SVGF default (passes rule 9 on the test
   bed, 4096-spp windows and the 11 real captures; fixes the ~20-frame tint lag after a colour change; one by-construction
   exception on constant-light pixels during a colour event). Item under "Found along the way"; evidence
