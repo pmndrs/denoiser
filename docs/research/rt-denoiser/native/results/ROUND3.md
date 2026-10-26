@@ -3,7 +3,7 @@
 _Harness builder, 2026-10-26. Ours at `feat/rt-denoiser-cleanroom` @ `9b20263`; native NRD v4.18.0
 (`e06852b`); one RTX 3060 Laptop GPU (driver 592.00). Images, metrics, timings and settings names
 only. Steps are pushed as they finish: 1. REBLUR hit-distance sweep (done), 2. cost re-run at HEAD
-(done), 3. P6 / P7._
+(done), 3. P6 / P7 (done)._
 
 ## 1. REBLUR hit-distance sweep
 
@@ -110,3 +110,94 @@ Fastest run, each against native's fastest run: `svgf` 0.99×, `svgf-auto` 1.13�
   give 6.966. That moves the RELAX ratios up by ~0.03×.
 - Wall time (submit to done) still adds 2–3.5 ms per frame on our side (`svgf` 7.7 ms wall, against
   REBLUR's 5.5 ms). It is not in the ratios.
+
+## 3. P6 / P7 on the v1 captures
+
+The v1 set was rewritten with `node examples/realtime-denoiser/run-headless.mjs --serve --set=v1`
+(5 / 5 captures validated, 8.63 GB): `v1-bumpy` (32 frames), `v1-bounce` (16), `v1-glass` (16),
+`v1-glass-moving` (40) and `v1-glass-still` (16), all at 960×540 with 256-spp references. Scores
+come from `compare.mjs`, with ours and native in the same table. Per-capture `compare.md` / `.json`,
+native `run.json` / `timings.csv` and crops are in [v1-bumpy/](v1-bumpy/), [v1-bounce/](v1-bounce/),
+[v1-glass/](v1-glass/), [v1-glass-moving/](v1-glass-moving/) and
+[v1-glass-still/](v1-glass-still/). How the harness feeds these modes:
+[SETUP.md](../SETUP.md#harness-additions-for-v1-captures-p6--p7).
+
+GPU ms below are from one run each, at the same locked clocks as step 2 (1200 / 7151 MHz), with
+the 50 ms warm-up. They are not the 3-run protocol from step 2. Native memory is `nrdMemoryMb` at
+960×540: REBLUR-SH 30.7 MB, RELAX-SH 44.1 MB, SIGMA translucency 14.3 MB, SIGMA 9.0 MB. Our replay
+doesn't measure memory.
+
+### P6: directional (SH) diffuse, `sh-diffuse`
+
+Pooled PSNR against `diffuse_ref` (dB). Bump = pixels whose shading and geometric normals differ by
+more than 5°. Band energy = detail energy kept, against the reference: 1 = all kept, below 1 =
+smoothed, above 1 = residual noise. Native has three readouts of the same run: SG colour, SG resolve
+and SH resolve, both resolves at the shading normal.
+
+| | v1-bumpy | bump | band energy | v1-bounce | GPU ms (bounce) |
+|---|---|---|---|---|---|
+| noisy | 16.18 | 15.62 | 48.8 | 14.65 | |
+| REBLUR-SH, colour / SG / SH resolve | 31.83 / 32.10 / 26.05 | 27.88 / 29.76 / 25.64 | 0.14 / 0.25 / 0.34 | 30.16 / 30.30 / 25.80 | 0.84 |
+| REBLUR-SH, A = 0.01: colour / SG / SH | **33.34** / 32.35 / 27.44 | 29.12 / 30.24 / 27.19 | 0.14 / 0.25 / 0.34 | **32.30** / 29.54 / 27.84 | 0.81 |
+| RELAX-SH, colour / SG / SH resolve | 32.68 / **33.09** / 31.77 | 28.62 / **30.98** / 30.56 | 0.15 / 0.26 / 0.28 | 30.52 / 30.28 / **31.05** | 1.25 |
+| ours `svgf-plain` | 35.37 | 31.57 | 1.22 | 35.53 | 0.83 |
+| ours `svgf-plain-smooth` | 34.69 | 30.60 | 0.17 | 33.77 | 0.82 |
+| ours `svgf-sh-auto` | **36.67** | **34.16** | 0.44 | **36.45** | 1.41 |
+
+- **Ours leads by 3.3–4.2 dB.** `svgf-sh-auto` is 3.3 dB over native's best readout on `v1-bumpy`
+  and 4.2 dB on `v1-bounce`. In the bump region it leads by 3.2 dB. `svgf-plain` is also 2.0–3.2 dB
+  over native.
+- **Native flattens the bump detail.** Band energy is 0.14–0.34 for every native readout, against
+  0.44 for `svgf-sh-auto`. See [v1-bumpy/crops/sh-diffuse-f31.png](v1-bumpy/crops/sh-diffuse-f31.png):
+  noisy, REBLUR-SH colour at A = 0.01, RELAX-SH SG, `svgf-plain`, `svgf-sh-auto`, reference.
+  `svgf-plain` keeps the bumps but also leaves noise (band energy 1.22).
+- **The fair plain comparison is `svgf-plain-smooth`.** It filters with `normal_geom`, as native
+  does. It still leads native's best by 1.4–1.5 dB.
+- **No native readout is best on both captures.** REBLUR-SH colour at A = 0.01 is native's best on
+  `v1-bounce`; RELAX-SH SG resolve is native's best on `v1-bumpy`.
+- **REBLUR-SH's SH resolve is 4.4–5.8 dB below its own colour readout**, with a +0.05 bias. RELAX-SH's
+  SH resolve, on identical inputs and the same harness code path, is within 1 dB of its colour
+  readout. I checked the harness inputs: the same public pack/unpack helpers for both, world-space
+  ray directions and normals, and resolve at the shading normal as the format specifies. I found
+  nothing harness-side, so I read this as a design difference, with medium confidence.
+- **A = 0.01 helps REBLUR-SH's colour readout** (+1.5 / +2.1 dB), consistent with step 1, but not
+  its SG resolve on `v1-bounce` (−0.8 dB).
+- **Cost on `v1-bounce`** (diffuse only on both sides):
+  - `svgf-sh-auto` is 1.68× REBLUR-SH and 1.13× RELAX-SH.
+  - `svgf-plain` is 0.98× REBLUR-SH.
+  - On `v1-bumpy`, ours also denoises `sh-specular` (2.68 / 2.04 ms), which native doesn't run
+    here, so there is no ratio for it.
+
+### P7: translucent (coloured) shadows, `shadow-rgb`
+
+Pooled PSNR against `shadow_rgb_ref` (dB). Tint = pixels whose reference chroma exceeds 0.02.
+Chroma error = mean |S/ΣS − R/ΣR|. Static penumbra boil = reference-free temporal noise in the
+static penumbra; the reference's own value is in brackets.
+
+| | v1-glass | tint | chroma err | static pen. boil | v1-glass-moving | dynamic | static pen. boil | v1-glass-still | static pen. boil | GPU ms |
+|---|---|---|---|---|---|---|---|---|---|---|
+| noisy (v·T) | 21.08 | 13.96 | 0.068 | | 20.47 | 12.08 | | 20.82 | | |
+| SIGMA translucency, mode 0 | 29.77 | 23.84 | 0.0096 | 0.059 | 27.94 | 19.38 | 0.098 | 30.96 | 0.060 | 0.39–0.41 |
+| SIGMA translucency, mode 1 | 30.18 | 25.66 | 0.0069 | 0.046 | 29.01 | 20.47 | 0.084 | 32.40 | 0.035 | 0.41–0.42 |
+| ours `shadows-translucent` | **35.15** | **32.03** | **0.0034** | **0.011** (0.009) | **33.20** | **25.18** | **0.019** (0.007) | **36.87** | **0.012** (0.000) | 0.64–0.66 |
+
+- **Ours leads by 4.2–5.0 dB on `shadow-rgb`** over SIGMA's better mode (mode 1, where the
+  nearest glass layer is the occluder). It leads by 5.0–6.4 dB inside the tint region and has
+  0.5–0.6× the chroma error.
+- **SIGMA's static penumbra boils 3–5× more than ours.** That includes the frozen
+  `v1-glass-still` (0.035, against a reference at 0.000). This is consistent with round 2's opaque
+  SIGMA result (ROUND2.md, "SIGMA checks"). See
+  [v1-glass-moving/crops/shadow-rgb-f39.png](v1-glass-moving/crops/shadow-rgb-f39.png) (noisy,
+  mode 0, mode 1, ours, reference): mode 0 leaves blotchy, trailing tint in the moving coloured
+  shadow, and mode 1 is cleaner but blurrier.
+- **Exception: SIGMA mode 1 has lower dynamic boil on `v1-glass-moving`** (0.035, against ours at
+  0.042 and the reference at 0.046), but it scores 4.7 dB lower PSNR in that dynamic region. It's
+  smoother than the reference there and further from it.
+- **Opaque part (`visibility` against `visibility_ref`):** SIGMA scores 29.89 / 28.27 / 32.08 and
+  ours 35.48 / 32.90 / 38.04. Mode 0's `.x` is identical to opaque SIGMA. Mode 1's `.x` counts the
+  glass as an occluder, so it isn't comparable with the opaque reference (11–13 dB) and isn't
+  ranked.
+- **Cost:** ours is 1.54–1.61× SIGMA translucency, within the 2× target.
+- **Harness fix this round:** the translucency input is now v·T. The first runs passed T alone,
+  which our format sets to 1 in umbra (scores were 11–13 dB with a +0.2 bias). Only the fixed
+  build's results are above. Details are in [SETUP.md](../SETUP.md#harness-additions-for-v1-captures-p6--p7).
