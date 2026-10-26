@@ -774,6 +774,30 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
   +0.07…0.15 ms at 1080p (+10…20 %). Binary 1-ray windows fit in 25 bits; the same test with shifts and masks, run
   only where E > 0, cost +0.01…0.03 ms with byte-identical outputs. — shadows, 2026-10-26
 
+- **Long holds from short captures: loop a static window.** `tools/rt-capture/loop-capture.mjs` repeats a still
+  capture's frames (symlinks, the window's mean reference) after an optional head; with identical inputs every period,
+  any change between settled, period-aligned windows is the filter's own state, so drift separates from sampling noise
+  exactly, and "arrive" vs "hold" runs share their hold inputs bit for bit (same view, two histories). 384 frames of a
+  960×540 signal replay in ~25 s. — distance-long, 2026-10-26
+- **Metal's truncating f16 stores are a bias, not noise, and a bias can hide another.** Every rgba16float history sits
+  0.2–0.7 % dark (more stores per frame or a smaller α = more); a value re-stored without new samples ratchets down
+  until the arithmetic maps it to itself (shadow g −5 %, lit histories stuck at 1 − ulp, so the same view can settle
+  differently after different histories). Removing it is +0.1 … +0.7 dB on SVGF / AO but −0.05 … −0.16 dB on shadows,
+  whose penumbrae are biased bright: compare a rounding fix per filter, not "precision can only help". `pack2x16float`
+  → `unpack2x16float` before the store is an exact round-to-nearest. — distance-long, 2026-10-26
+- **A recurrent filter's history is its filtered output, so anything stored with the signal is re-filtered every
+  frame.** The recurrent ĥ (.a) settles at a fixed point of "blend 1/32 raw, then blur": +12 … +34 % above the raw mean
+  in contacts, within ~150 frames, then flat. Not drift, not f16 — read a "distance degrades with history" report as
+  "which quantities ride the feedback loop". — distance-long, 2026-10-26
+- **Check the port and the server before trusting a replay.** Twice another agent's Vite held "my" port (5481, 5482):
+  a capture page loaded their test bed and spun orphaned for 2 h, and a byte-identity check compared against their
+  build (every file "differed"). Start servers with `--strictPort`, check the log says `ready`, `lsof` the port's
+  owner, and when you kill a runner kill its headless Chrome too (`ps -o ppid` = 1 afterwards means orphaned).
+  — distance-long, 2026-10-26
+- **The GPU lock is contended; split long work into lock-sized groups.** With 4–6 agents queued, a 30 s poll lost the
+  lock for over an hour. One capture group or one page per hold (≤ 15 min), 3 s polling, release between groups,
+  and code / doc writing while waiting. — distance-long, 2026-10-26
+
 ## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
 
 _Facts about driving native NRD as a black box: interface and build behavior only._

@@ -782,7 +782,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       shared-exponent layout; est. −0.4 ms / −16 B/px per signal). (h) `inputs.radiance` stays required with an encoded
       `inputs.sh` (core type unchanged; ignored then). (i) `ShResolver` is diffuse only (specular: fused or
       `SH_RESOLVE_WGSL`'s `shResolveSpecular`).
-- [ ] **Plain SVGF loses ~0.1–0.16 dB to f16 truncation** on Metal: `rgba16float` storage writes round toward zero
+- [~] (distance-long: option `f16Rounding` built in 73358ce for SVGF, recurrent, shadows and the occlusion normalizer; measured per filter in results/DISTANCE-LONG.md §3.3 / §6; flip proposed for SVGF + recurrent under target D, shadows keep 'store' because truncation cancels part of their bright penumbra bias) **Plain SVGF loses ~0.1–0.16 dB to f16 truncation** on Metal: `rgba16float` storage writes round toward zero
       (LESSONS), `pack2x16float` to nearest. A half-ulp bias before each store (or packing by hand) is likely a free
       gain for every rgba16float history/ping-pong in the package (SVGF, recurrent, occlusion, shadows); measure per
       filter, it breaks bit-identity. — found by m7-sh, owner svgf / filter owners
@@ -1062,7 +1062,7 @@ harness builder runs them and returns images/metrics only.)_
       (models now in git LFS, 1a3dc42; copy the 19.7 GB of captures over the NAS or regenerate them per CAPTURES.md
       "Bistro and Sponza"; `lights[0]` is directional on sun captures and a per-frame moving sphere on `bistro-move`). — orchestrator
 
-- [ ] **Review target D: distance information degrading over long histories** (Dennis, 2026-10-26; lead = a public
+- [x] (distance-long, 73358ce + docs; [results/DISTANCE-LONG.md](results/DISTANCE-LONG.md)) **Review target D: distance information degrading over long histories** (Dennis, 2026-10-26; lead = a public
       blog's "what", relayed by Dennis, no code or technique: distance feeds both filtering and reflection tracking,
       repeated processing can distort it, and recent work ties better distance handling to less specular pixelation
       and less long-history contact-shadow banding, i.e. images that get worse as frames accumulate). Reproduce first
@@ -1079,7 +1079,41 @@ harness builder runs them and returns images/metrics only.)_
       object, turning mirror), ~1 px glossy drag at r 0.1–0.2; options `reflectionHitTest` / `reflectionReprojection`
       built, both fail rule 9 on boil and cost, so no flip._ (d) AO / SO filter a
       normalized hit distance: long-hold contact darkening (target 7). Fixes land as options. — orchestrator,
-      owner: unassigned (after the shadows-look agent and the 4096-spp runs)
+      owner: distance-long agent.
+      _Answered (results/DISTANCE-LONG.md; Mac only): **no signal's image drifts** over ≥ 378-frame holds (2016 frames on
+      the knot) of `glossy`, `thin`, `three-knot-still` and a new Bistro hold, shipped defaults and recurrent, incl. the
+      same final view reached after a 60-frame arc / Bistro's 48-frame walk (loop captures with exactly repeating hold
+      inputs, so settled-window changes are the filter's state alone). (a) g **decays** in rarely occluded outer-penumbra
+      pixels (truncating re-stores of unrefreshed values) to 0.947 of its raw mean by ~600 frames, then flat; contact g
+      within 0.1–2 %; no visible effect, no banding. (b) recurrent ĥ is a **biased plateau**, +12 … +34 % in contacts from
+      re-blurring the history every frame (not f16, not drift). (c) see above. (d) **no** contact darkening: shipped AO /
+      SO are slightly bright in contacts and flat. Truncation itself is a −0.2 … −0.7 % brightness plateau on every
+      rgba16float history; option `f16Rounding: 'nearest'` built (default byte-identical, 160 replay files), passes rule 9
+      for SVGF diffuse / specular / AO / SO and recurrent (+0.07 / +0.02 / +0.19 / 0.00 dB at 256 spp, diffuse +0.22 and
+      AO +0.42 at 4096 spp, FLIP −1 … −17 %), loses slightly on shadows (−0.05 pooled, thin −0.14): flip proposed for SVGF
+      + recurrent only (below, Questions for Dennis). Follow-ups below._
+- [ ] **Proposed default flip: `f16Rounding: 'nearest'` for the SVGF and recurrent pipelines** (DiffuseDenoiser,
+      SpecularDenoiser, DiffuseSpecularDenoiser, OcclusionDenoiser 'svgf' and 'recurrent'; ShadowDenoiser stays 'store').
+      Rule 9 passed (results/DISTANCE-LONG.md §6: 7 paths at 1080p, 4096-spp refs on orbit / light / glossy, 6 real-scene
+      captures, cost within noise); look change: SVGF outputs 0.2–0.5 % brighter (Metal's truncation darkening removed).
+      A no-op on GPUs whose f16 stores round to nearest (to be confirmed on RTX, next item). Needs Dennis's approval
+      (changes the look). — found by distance-long, owner: Dennis → svgf / recurrent owners
+- [ ] **Native round: target D long holds on RTX** (separate Metal-only effects): copy or regenerate `dl-glossy`, `dl-thin`
+      (test bed `glossy-arrive` / `thin-arrive`, ~30 s each), `three-knot-still`, `bistro-orbit`, `bistro-hold` (kept in
+      tools/rt-capture/captures, 2.0 GB), build the loops and run the probe matrix on the RTX machine: commands in
+      results/DISTANCE-LONG.md §8. Expected if D3D12 rounds f16 stores to nearest: `'store'` = `'nearest'` byte for byte,
+      the §3.3 deltas and the g decay vanish, recurrent's contact ĥ inflation and Bistro's arrive − hold shadow gap
+      remain. — found by distance-long, owner: Windows harness builder (native round 4)
+- [ ] Recurrent ĥ re-blur (results/DISTANCE-LONG.md §3.2 / §4): the post-blur output is the next history, so ĥ settles
+      +12 … +34 % above its raw mean in contacts and caps the blur radius (c_h·hDenorm(ĥ)) that much wider there. Candidate
+      (our design, option): keep the temporal (unblurred) ĥ as the history's ĥ, or a separate unblurred ĥ, A/B on
+      contacts and specular pixelation. Recurrent is not a default, so low priority. — found by distance-long, owner
+      recurrent owners
+- [ ] Shadows on a still camera learn g slowly in rarely occluded pixels (results/DISTANCE-LONG.md §3.4): the same Bistro
+      view settles +0.27 dB / edge 0.821 vs 0.806 better after a 48-frame walk than from a reset, and the reset hold closes
+      only 0.09 dB of the gap in 384 frames (the sun's g = h is camera-independent, so the walk carried it in). Candidate:
+      a longer `maxScaleHistory` (or no decay) for pixels with few occluded samples, or a better seed than the tile's nearest
+      occluder; A/B on sun captures. — found by distance-long, owner shadows owners
 
 - [x] (upscaler-guides evaluator, results/UPSCALER-GUIDES.md; steps 1 and 3 done, step 2 not built: the mask is not
       better) **Upscaler guides as optional denoiser inputs** (Dennis, 2026-10-26). _Result: scored against exact
@@ -1128,6 +1162,10 @@ The entries that used to be here (joint default for `filter: 'recurrent'` — re
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
 
+- **f16 rounding (2026-10-26, distance-long):** approve `f16Rounding: 'nearest'` as the default of the SVGF and recurrent
+  pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
+  brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;
+  evidence results/DISTANCE-LONG.md §6.
 - **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
   changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
   horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md.
