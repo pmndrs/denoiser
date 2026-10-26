@@ -84,6 +84,7 @@ import { BoundaryMask, DetailBand, HistoryAge, LdrPacker, REGIONS, Scorer, ShRes
 import { pathById, PATHS, type PathDef } from './paths';
 import type { ReflectPathDef } from './paths-reflect';   // registers the rm-* paths (reflect build) into PATHS
 import './paths-reflect';
+import './paths-light';   // registers the lc-* light-change paths (review target 3, results/T3-light-changes.md)
 import { ReflectEval } from './reflect-eval';
 import {
   ALL_SIGNALS, DEMODULATION, isOccSignal, isShSignal, isV1Signal, SceneSignals, SIGNALS, V1_SIGNALS, type Sampling, type Signal, type TexName,

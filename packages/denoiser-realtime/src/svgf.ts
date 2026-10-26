@@ -13,6 +13,7 @@ import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
 import {
   GRADIENT_DOWNSAMPLE, gradientAtrousPass, gradientAtrousPassV2, gradientCreatePass, gradientCreatePassV2, gradientLambdaPass, gradientLambdaPassV2,
+  type GradientVariant,
 } from './shaders/gradient';
 import { gradientCreatePassSh } from './shaders/sh-gradient';
 import { SH_PACK_NEAREST, SH_PACK_TRUNCATE, type ShEncoding } from './shaders/sh';
@@ -123,6 +124,20 @@ export interface SvgfOptions {
   antiLagRadius?: number;
   /** Anti-lag: a-trous iterations of the gradient reconstruction. Default 4 (5 with antiLagVersion 1, as A-SVGF). */
   gradientIterations?: number;
+  /**
+   * 'auto' anti-lag (v2) also detects colour changes (review target 3, results/T3-light-changes.md): the stratum's YCoCg
+   * chroma change goes through the same reconstruction, and lambda takes the larger of the luminance and chroma terms.
+   * A-SVGF (Schied et al. 2018, sec. 3.1) works with the luminance only, so a light that changes colour at constant
+   * luminance never shortens the history. Default false (luminance only). +4 B / px per signal at 1/9 resolution.
+   */
+  antiLagChroma?: boolean;
+  /**
+   * 'auto' anti-lag (v2): lambda = min(1, antiLagGain x |delta| / Delta) (after the noise floor). Default 1 (A-SVGF
+   * Eq. 14): a 20 % change only drops ~30 % of the history per frame; 2 drops it at a 50 % change. Per signal: a joint
+   * pipeline can run specular at 2 and diffuse at 1 (review target 3: faster specular under camera motion, but more
+   * boil on still views; results/T3-light-changes.md).
+   */
+  antiLagGain?: number;
   /**
    * Multiply the result by the demodulation factor (`inputs.demodulation`, or
    * `guides.albedo` for diffuse). Default false: output stays demodulated,
@@ -281,6 +296,8 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     antiLagVersion,
     antiLagRadius: o.antiLagRadius ?? 1,
     gradientIterations: o.gradientIterations ?? (antiLagVersion === 1 ? 5 : 4),
+    antiLagChroma: o.antiLagChroma ?? false,
+    antiLagGain: Math.max(0, o.antiLagGain ?? 1),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
     payload: o.payload ?? 'radiance',
@@ -366,6 +383,7 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate, o.shPingPacking);
   if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
   if (o.historyFallback !== '3x3') k.push(`fb-${o.historyFallback}`);
+  if (o.antiLagChroma) k.push('alc');
   if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
   return k.join('|');
 }
@@ -392,6 +410,8 @@ export class SvgfPipeline {
   private make: (name: string, def: PassDef) => void;
   private kinds: SignalKind[];
   private sh: boolean;
+  /** review target 3 'auto' anti-lag variant (antiLagChroma / antiLagGain), undefined at the defaults */
+  private gradVariant?: GradientVariant;
 
   constructor(private device: GPUDevice, signals: { kind: SignalKind; opts: ResolvedOptions }[], private label: string) {
     const d = device;
@@ -414,6 +434,10 @@ export class SvgfPipeline {
     this.make = make;
     this.kinds = kinds;
     this.sh = o.payload === 'sh';
+    // antiLagGain is per signal (not structural): each signal's value is baked into the shared lambda pass
+    this.gradVariant = o.antiLagChroma || signals.some((s) => s.opts.antiLagGain !== 1)
+      ? { chroma: o.antiLagChroma, gain: signals.map((s) => s.opts.antiLagGain) } : undefined;
+    if (this.gradVariant && this.sh) throw new Error(`${label}: antiLagChroma / antiLagGain need payload 'radiance'`);
     const box = o.kernel === '3x3';
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
@@ -451,9 +475,17 @@ export class SvgfPipeline {
     }
     if (o.antiLag !== 'off' && !this.sh) {
       const v1 = o.antiLagVersion === 1;
-      make('gcreate', (v1 ? gradientCreatePass : gradientCreatePassV2)(kinds.length, o.antiLag === 'gradient'));
-      make('gatrous', (v1 ? gradientAtrousPass : gradientAtrousPassV2)(kinds.length));
-      make('glambda', (v1 ? gradientLambdaPass : gradientLambdaPassV2)(kinds.length));
+      if (this.gradVariant) {
+        // review target 3 options (antiLagChroma / antiLagGain): v2 'auto' only
+        if (v1 || o.antiLag !== 'auto') throw new Error(`${label}: antiLagChroma / antiLagGain need antiLag 'auto' with antiLagVersion 2`);
+        make('gcreate', gradientCreatePassV2(kinds.length, false, this.gradVariant));
+        make('gatrous', gradientAtrousPassV2(kinds.length, this.gradVariant));
+        make('glambda', gradientLambdaPassV2(kinds.length, this.gradVariant));
+      } else {
+        make('gcreate', (v1 ? gradientCreatePass : gradientCreatePassV2)(kinds.length, o.antiLag === 'gradient'));
+        make('gatrous', (v1 ? gradientAtrousPass : gradientAtrousPassV2)(kinds.length));
+        make('glambda', (v1 ? gradientLambdaPass : gradientLambdaPassV2)(kinds.length));
+      }
     }
     if (o.antiLag !== 'off' && this.sh) {
       make('gatrous', gradientAtrousPassV2(kinds.length));
@@ -499,6 +531,8 @@ export class SvgfPipeline {
           ? ['g0a', 'g1a', 'g0b', 'g1b'].map((n) => tex(n, 'rgba32float', this.gw, this.gh))
           : ['ga', 'gb'].map((n) => tex(n, 'rgba32uint', this.gw, this.gh));
         s.grad.push(tex('lambda', 'r32float', this.gw, this.gh));
+        // antiLagChroma: chroma gradients, rg32uint ping-pong after lambda (grad[3], grad[4])
+        if (this.gradVariant?.chroma) s.grad.push(tex('ca', 'rg32uint', this.gw, this.gh), tex('cb', 'rg32uint', this.gw, this.gh));
       }
       this.writeParams(s);
     }
@@ -603,19 +637,21 @@ export class SvgfPipeline {
       this.sigs.forEach((s, i) => { gradResult[i] = s.grad[4]; });
     } else if (o.antiLag !== 'off') {
       // v2: thread per stratum, packed rgba32uint ping-pong (grad[0], grad[1]), lambda grad[2]
+      const ch = !!this.gradVariant?.chroma;
       runPass(enc, timer, name('gradient_create'), this.pipes.gcreate, this.group('gcreate', per((s, f) => ({
         input: f.radiance, accumPrev: s.accum[c ^ 1], gradInput: f.gradient ?? gp.dummy32, outG: s.grad[0],
+        ...(ch ? { outC: s.grad[3] } : {}),
       }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
       let a = 0;
       for (let it = 0; it < o.gradientIterations; it++) {
-        const res = per((s) => ({ inG: s.grad[a], outG: s.grad[a ^ 1] }));
+        const res = per((s) => ({ inG: s.grad[a], outG: s.grad[a ^ 1], ...(ch ? { inC: s.grad[3 + a], outC: s.grad[3 + (a ^ 1)] } : {}) }));
         res.It = this.iterParams[it];
         runPass(enc, timer, name(`gradient_atrous_${it}`), this.pipes.gatrous, this.group('gatrous', res),
           Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
         a ^= 1;
       }
       runPass(enc, timer, name('gradient_lambda'), this.pipes.glambda, this.group('glambda', per((s) => ({
-        inG: s.grad[a], outL: s.grad[2],
+        inG: s.grad[a], outL: s.grad[2], ...(ch ? { inC: s.grad[3 + a] } : {}),
       }))), Math.ceil(this.gw / 8), Math.ceil(this.gh / 8));
       this.sigs.forEach((s, i) => { gradResult[i] = s.grad[2]; });
     }

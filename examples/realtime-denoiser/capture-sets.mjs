@@ -40,6 +40,13 @@ export const CAPTURE_SETS = {
   // The marker images' oracle positions come from the path (src/reflect-oracle.ts), not from the capture.
   reflect: ['rm-cam-plane', 'rm-obj-plane', 'rm-refl-turn', 'rm-cam-convex', 'rm-cam-concave', 'rm-cam-plane-r10'].map((p) => (
     { name: p.replace('rm-', 'rm540-'), path: p, start: 0, frames: 48, w: 960, h: 540, signals: 'specular', refspp: p.endsWith('r10') ? 1024 : 256 })),
+  // Light changes (review target 3, results/T3-light-changes.md; paths src/paths-light.ts): fixed camera and geometry,
+  // onset at frame 24, return at 56, 96 frames, 960x540. lc-step / lc-hue / lc-fade / lc-jump: all three signals, 256-spp
+  // references (6.4 GB each); lc-emitter (reflect build): diffuse + specular, 4096-spp references (the emitter is small).
+  'light-change': [
+    ...['lc-step', 'lc-hue', 'lc-fade', 'lc-jump'].map((p) => ({ name: p.replace('lc-', 'lc540-'), path: p, start: 0, frames: 96, w: 960, h: 540 })),
+    { name: 'lc540-emitter', path: 'lc-emitter', start: 0, frames: 96, w: 960, h: 540, signals: 'diffuse,specular', refspp: 4096 },
+  ],
   // T0.7 round trip (small): orbit + cut across its reset
   roundtrip: [
     { name: 'rt-orbit', path: 'orbit', start: 0, frames: 24, w: 960, h: 540 },

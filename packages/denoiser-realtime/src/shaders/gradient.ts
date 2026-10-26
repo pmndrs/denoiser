@@ -45,8 +45,32 @@ fn unpackG0(u: vec4u) -> vec4f { let a = unpack2x16float(u.x); let b = unpack2x1
 fn unpackG1(u: vec4u) -> vec4f { let a = unpack2x16float(u.z); let b = unpack2x16float(u.w); return vec4f(a.x, a.y * a.y, b); }
 `;
 
+/** GradientVariant.chroma storage: rg32uint = (delta Co, delta Cg | var Co, var Cg as standard deviations). */
+const PACK_C_WGSL = /* wgsl */ `
+fn unpackC(u: vec4u) -> vec4f { let d = unpack2x16float(u.x); let sd = unpack2x16float(u.y); return vec4f(d, sd * sd); }
+fn packC(c: vec4f) -> vec4u { return vec4u(pack2x16float(c.xy), pack2x16float(sqrt(max(c.zw, vec2f(0.0)))), 0u, 0u); }
+`;
+
 /** Stratum size (A-SVGF: 3x3 strata, <= 11 % of samples recycled). */
 export const GRADIENT_DOWNSAMPLE = 3;
+
+/** YCoCg chroma (Malvar & Sullivan 2003): Co = (R - B) / 2, Cg = (2G - R - B) / 4 (GradientVariant.chroma). */
+const COCG_WGSL = /* wgsl */ `
+fn cocg(c: vec3f) -> vec2f { return vec2f(0.5 * (c.r - c.b), 0.25 * (2.0 * c.g - c.r - c.b)); }
+`;
+
+/**
+ * Optional 'auto' anti-lag variants (review target 3, docs/research/rt-denoiser/results/T3-light-changes.md; our design).
+ * Every field at its default compiles exactly today's passes.
+ * - chroma: A-SVGF works with "only the luminance of the temporal gradient" (S2 sec. 3.1, Eq. 2), so a light that changes
+ *   colour at constant luminance never registers. With chroma, gradient_create also writes the stratum's YCoCg chroma
+ *   change (delta Co, delta Cg) and the standard deviation of the current means (one rg32uint per stratum, 4 halves);
+ *   the reconstruction filters them with the luminance weights (linear, like var(delta) in v2), and gradient_lambda
+ *   adds max over Co, Cg of max(0, |delta_c| - k sigma_c) / Delta (Delta = the luminance normalizer of S2 Eq. 13-14).
+ * - gain: lambda = min(1, gain x the v2 lambda) (S2 Eq. 14 is gain 1): a relative change of 1 / gain drops the history.
+ *   One value per signal of the pass (baked into the code, so signals with different gains still share a pipeline).
+ */
+export interface GradientVariant { chroma?: boolean; gain?: number[] }
 
 /**
  * v2 gradient samples (our design): one thread per 3x3 stratum and ONE reprojection,
@@ -57,8 +81,9 @@ export const GRADIENT_DOWNSAMPLE = 3;
  * stratum; strata whose centre reprojection is not fully valid or that touch sky get
  * no history (they are fresh history anyway). ~4x fewer loads than v1.
  */
-export function gradientCreatePassV2(count: number, fromInput: boolean): PassDef {
+export function gradientCreatePassV2(count: number, fromInput: boolean, gv: GradientVariant = {}): PassDef {
   const I = [...Array(count).keys()];
+  const C = !!gv.chroma && !fromInput;
   const b = new Bindings();
   b.uniform('F', 'Frame');
   I.forEach((i) => b.uniform(`P${i}`, 'Params'));
@@ -73,6 +98,7 @@ export function gradientCreatePassV2(count: number, fromInput: boolean): PassDef
     b.add(`accumPrev${i}`, 'texture_2d<f32>', 'F');
     b.add(`gradInput${i}`, 'texture_2d<f32>', 'f');
     b.add(`outG${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');   // packG()
+    if (C) b.add(`outC${i}`, 'texture_storage_2d<rg32uint, write>', 'rg32uint');   // (delta Co, delta Cg | sigma Co, sigma Cg)
   });
   const taps = [...Array(9).keys()].map((k) => [k % 3, Math.floor(k / 3)]);
   const code = /* wgsl */ `
@@ -80,14 +106,15 @@ ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
 ${REPROJECT_WGSL}
-${PACK_WGSL}
+${PACK_WGSL}${C ? COCG_WGSL : ''}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
   let s = vec2i(gid.xy);
   if (s.x >= P0.gradDims.x || s.y >= P0.gradDims.y) { return; }
   let p0 = s * 3;
-  ${I.map((i) => `var sL${i} = 0.0; var sL2${i} = 0.0;`).join(' ')}
+  ${I.map((i) => `var sL${i} = 0.0; var sL2${i} = 0.0;`).join(' ')}${C ? `
+  ${I.map((i) => `var sC${i} = vec2f(0.0); var sC2${i} = vec2f(0.0);`).join(' ')}` : ''}
   var cnt = 0.0;
   var zAny = 0.0; var pAny = p0;
   ${taps.map(([x, y]) => /* wgsl */ `
@@ -99,10 +126,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let w = select(0.0, 1.0, ok);
     cnt += w;
     if (ok && (zAny == 0.0 || ${x === 1 && y === 1 ? 'true' : 'false'})) { zAny = z; pAny = qc; }
-    ${I.map((i) => `{ let l = luma(max(textureLoad(input${i}, qc, 0).rgb, vec3f(0.0))) * w; sL${i} += l; sL2${i} += l * l; }`).join('\n    ')}
+    ${I.map((i) => (C ? `{ let c = max(textureLoad(input${i}, qc, 0).rgb, vec3f(0.0)); let l = luma(c) * w; sL${i} += l; sL2${i} += l * l;
+      let co = cocg(c) * w; sC${i} += co; sC2${i} += co * co; }` : `{ let l = luma(max(textureLoad(input${i}, qc, 0).rgb, vec3f(0.0))) * w; sL${i} += l; sL2${i} += l * l; }`)).join('\n    ')}
   }`).join('')}
   if (cnt <= 0.0) {
-    ${I.map((i) => `textureStore(outG${i}, s, vec4u(0u));`).join('\n    ')}
+    ${I.map((i) => `textureStore(outG${i}, s, vec4u(0u));${C ? ` textureStore(outC${i}, s, vec4u(0u));` : ''}`).join('\n    ')}
     return;
   }
   var g = geoTap(geoCur, pAny);
@@ -130,20 +158,29 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   {
     let m = sL${i} / cnt;
     let v = max(0.0, sL2${i} / cnt - m * m);
-    var g0 = vec4f(0.0, 0.0, 0.0, 1.0);
+    var g0 = vec4f(0.0, 0.0, 0.0, 1.0);${C ? `
+    var gc = vec4f(0.0);   // (delta Co, delta Cg, sigma Co, sigma Cg) of the current means` : ''}
     ${fromInput ? /* wgsl */ `
     let gi = textureLoad(gradInput${i}, s, 0);   // (l_prev, l_curr, valid)
     if (gi.z > 0.0 && !hasFlag(FRAME_RESET)) {
       g0 = vec4f(gi.y - gi.x, max(gi.x, gi.y), 0.0, 1.0);
     }` : /* wgsl */ `
-    if (hasHist) {
+    if (hasHist) {${C ? /* wgsl */ `
+      let ch = (textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uA.y), 0.0).rgb * wA.x * wA.y
+              + textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uA.y), 0.0).rgb * wB.x * wA.y
+              + textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uB.y), 0.0).rgb * wA.x * wB.y
+              + textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uB.y), 0.0).rgb * wB.x * wB.y) / 9.0;
+      let mh = luma(ch);
+      let mc = sC${i} / cnt;
+      gc = vec4f(mc - cocg(ch), sqrt(max(sC2${i} / cnt - mc * mc, vec2f(0.0)) / cnt));` : /* wgsl */ `
       let mh = (luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uA.y), 0.0).rgb) * wA.x * wA.y
               + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uA.y), 0.0).rgb) * wB.x * wA.y
               + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uA.x, uB.y), 0.0).rgb) * wA.x * wB.y
-              + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uB.y), 0.0).rgb) * wB.x * wB.y) / 9.0;
+              + luma(textureSampleLevel(accumPrev${i}, smp, vec2f(uB.x, uB.y), 0.0).rgb) * wB.x * wB.y) / 9.0;`}
       g0 = vec4f(m - mh, max(m, mh), v / cnt, 1.0);
     }`}
-    textureStore(outG${i}, s, packG(g0, vec4f(m, v, zAny, dz)));
+    textureStore(outG${i}, s, packG(g0, vec4f(m, v, zAny, dz)));${C ? `
+    textureStore(outC${i}, s, vec4u(pack2x16float(gc.xy), pack2x16float(gc.zw), 0u, 0u));` : ''}
   }`).join('')}
 }
 `;
@@ -161,14 +198,19 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * sum w^2 var / (sum w)^2 treats taps as independent although after the first
  * iteration neighbours share inputs: 5 iterations shrank the estimate ~20x too far.
  */
-export function gradientAtrousPassV2(count: number): PassDef {
+export function gradientAtrousPassV2(count: number, gv: GradientVariant = {}): PassDef {
   const I = [...Array(count).keys()];
+  const C = !!gv.chroma;
   const b = new Bindings();
   I.forEach((i) => b.uniform(`P${i}`, 'Params'));
   b.uniform('It', 'Iter');
   I.forEach((i) => {
     b.add(`inG${i}`, 'texture_2d<u32>', 'i');
     b.add(`outG${i}`, 'texture_storage_2d<rgba32uint, write>', 'rgba32uint');
+    if (C) {
+      b.add(`inC${i}`, 'texture_2d<u32>', 'i');
+      b.add(`outC${i}`, 'texture_storage_2d<rg32uint, write>', 'rg32uint');
+    }
   });
   const taps: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) taps.push([x, y]);
@@ -176,7 +218,7 @@ export function gradientAtrousPassV2(count: number): PassDef {
 ${PARAMS_STRUCT}
 struct Iter { stride: i32, iteration: i32, pad0: i32, pad1: i32 }
 ${b.wgsl}
-${PACK_WGSL}
+${PACK_WGSL}${C ? PACK_C_WGSL : ''}
 
 fn inStrata(q: vec2i) -> bool { return q.x >= 0 && q.y >= 0 && q.x < P0.gradDims.x && q.y < P0.gradDims.y; }
 
@@ -190,28 +232,32 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     let c0 = unpackG0(cu);
     let c1 = unpackG1(cu);
     if (c1.z <= 0.0) {
-      textureStore(outG${i}, s, cu);
+      textureStore(outG${i}, s, cu);${C ? `
+      textureStore(outC${i}, s, textureLoad(inC${i}, s, 0));` : ''}
     } else {
       ${taps.map(([x, y], k) => `let q${k} = s + vec2i(${x}, ${y}) * It.stride;
       let u${k} = textureLoad(inG${i}, clamp(q${k}, vec2i(0), P0.gradDims - 1), 0);
-      let a${k} = unpackG0(u${k}); let b${k} = unpackG1(u${k});`).join('\n      ')}
+      let a${k} = unpackG0(u${k}); let b${k} = unpackG1(u${k});${C ? `
+      let e${k} = unpackC(textureLoad(inC${i}, clamp(q${k}, vec2i(0), P0.gradDims - 1), 0));` : ''}`).join('\n      ')}
       let gv = (4.0 * c1.y + ${taps.map(([x, y], k) => `${(2 - Math.abs(x)) * (2 - Math.abs(y))}.0 * b${k}.y`).join(' + ')}) / 16.0;
       let sl = 3.0 * sqrt(max(gv, 0.0)) + 1e-10;
       let dzs = c1.w * f32(It.stride) * f32(P0.gradDown);
-      var s0 = c0; var sL = c1.x; var sV = c1.y; var sw = 1.0;
+      var s0 = c0; var sL = c1.x; var sV = c1.y; var sw = 1.0;${C ? `
+      var sC = unpackC(textureLoad(inC${i}, s, 0));` : ''}
       var sR = vec2f(0.0); var sR2 = 0.0;
       ${taps.map(([x, y], k) => `{
         let wl = abs(b${k}.x - c1.x) / sl;
         let wz = abs(b${k}.z - c1.z) / (dzs * ${Math.hypot(x, y).toFixed(6)} + 1e-2 * c1.z);
         let w = select(0.0, exp(-wl * wl - wz), inStrata(q${k}) && b${k}.z > 0.0);
-        s0 += a${k} * w; sL += b${k}.x * w; sV += b${k}.y * w * w; sw += w;
+        s0 += a${k} * w; sL += b${k}.x * w; sV += b${k}.y * w * w; sw += w;${C ? ` sC += e${k} * w;` : ''}
         let fo = vec2f(${x}.0, ${y}.0) * f32(It.stride);
         sR += fo * w; sR2 += dot(fo, fo) * w;
       }`).join('\n      ')}
       var o0 = s0 / sw;
       let m = sR / sw;
       o0.w = 1.0 + max(0.0, o0.w - 1.0) + 0.5 * max(0.0, sR2 / sw - dot(m, m));
-      textureStore(outG${i}, s, packG(o0, vec4f(sL / sw, sV / (sw * sw), c1.z, c1.w)));
+      textureStore(outG${i}, s, packG(o0, vec4f(sL / sw, sV / (sw * sw), c1.z, c1.w)));${C ? `
+      textureStore(outC${i}, s, packC(sC / sw));` : ''}
     }
   }`).join('')}
 }
@@ -224,18 +270,21 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
  * sigma^2 = var(delta) x sum K^2 of the composite kernel, sum K^2 ~ 1/(4 pi v)
  * (2-D Gaussian of per-axis variance v; clamped to <= 1).
  */
-export function gradientLambdaPassV2(count: number): PassDef {
+export function gradientLambdaPassV2(count: number, gv: GradientVariant = {}): PassDef {
   const I = [...Array(count).keys()];
+  const C = !!gv.chroma;
+  const gain = (i: number) => gv.gain?.[i] ?? 1;
   const b = new Bindings();
   I.forEach((i) => b.uniform(`P${i}`, 'Params'));
   I.forEach((i) => {
     b.add(`inG${i}`, 'texture_2d<u32>', 'i');
+    if (C) b.add(`inC${i}`, 'texture_2d<u32>', 'i');
     b.add(`outL${i}`, 'texture_storage_2d<r32float, write>', 'r32float');
   });
   const code = /* wgsl */ `
 ${PARAMS_STRUCT}
 ${b.wgsl}
-${PACK_WGSL}
+${PACK_WGSL}${C ? PACK_C_WGSL : ''}
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
@@ -251,8 +300,15 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
         var d = abs(v.x);
         if ((P${i}.flags & P_GRADIENT_INPUT) == 0u) {
           d = max(0.0, d - P${i}.gradNoiseK * sqrt(v.z * min(1.0, 1.0 / (12.566371 * max(v.w - 1.0, 1e-6)))));
-        }
-        lam = max(lam, d / v.y);
+        }${C ? `
+        {
+          // chroma (GradientVariant.chroma): same composite-kernel noise floor, normalized by the luminance Delta
+          let cv = unpackC(textureLoad(inC${i}, clamp(s + vec2i(dx, dy), vec2i(0), P${i}.gradDims - 1), 0));
+          let sk = min(1.0, 1.0 / (12.566371 * max(v.w - 1.0, 1e-6)));
+          let dc = max(vec2f(0.0), abs(cv.xy) - P${i}.gradNoiseK * sqrt(cv.zw * sk));
+          d = max(d, max(dc.x, dc.y));
+        }` : ''}
+        lam = max(lam, ${gain(i) !== 1 ? `${gain(i).toFixed(6)} * d / v.y` : 'd / v.y'});
       }
     }
     textureStore(outL${i}, s, vec4f(clamp(lam, 0.0, 1.0)));
