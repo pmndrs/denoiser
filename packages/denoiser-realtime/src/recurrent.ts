@@ -159,19 +159,19 @@ export interface RecurrentOptions {
    * tune.virtHitTestA × the virtual ĥ tolerance (virtualHitTolerance + virtualHitToleranceRoughness · r) plus
    * tune.virtHitTestB × the 3x3 spread of this frame's ĥ: a reflected-world disocclusion (background pixels next to a
    * reflected object whose virtual footprint lands where the object's image was) then has no virtual history instead
-   * of a short one. Default false (compiled out, bit-identical).
+   * of a short one. Default true since T6 (rule 9 passed for the recurrent filter); false compiles it out. OcclusionDenoiser keeps false.
    */
   virtualHitTest?: boolean;
   /**
    * Review target 6 candidate (results/T6-boundaries.md): minimum cosine between this pixel's normal and a history tap's
-   * normal (SVGF sec. 4.1's normal test, on top of the plane test). Default 0: backfacing taps only (today's test,
-   * compiled as before). Geometry tolerances are shared: the first signal's value applies to a joint pipeline.
+   * normal (SVGF sec. 4.1's normal test, on top of the plane test). Default 0.95 since T6 (with normalTest 'relative';
+   * rule 9 passed); 0 = backfacing taps only (the previous test). OcclusionDenoiser keeps 0. Geometry tolerances are shared: the first signal's value applies to a joint pipeline.
    */
   normalThreshold?: number;
   /**
    * Review target 6 candidate (results/T6-boundaries.md, our design): 'relative' relaxes the history normal test to the
    * pixel's own neighbourhood: min(normalThreshold, lowest normal cosine between this pixel and its 3x3 neighbours on
-   * the same surface - 0.02), floored at the backface test. Default 'center' (normalThreshold as is).
+   * the same surface - 0.02), floored at the backface test. Default 'relative' since T6; 'center' = normalThreshold as is.
    */
   normalTest?: 'center' | 'relative';
   /** Virtual-history clamp window γ (σ of this frame's 3x3, SPEC R-11: 2), widened × (1 + 2·confidence) (tune.virtWiden). Default 1. */
@@ -280,9 +280,9 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     blurTaps: o.blurTaps ?? 8,
     postBlurTaps: o.postBlurTaps ?? 4,
     virtualMotion: o.virtualMotion ?? true,
-    virtualHitTest: o.virtualHitTest ?? false,
-    normalThreshold: o.normalThreshold ?? 0,
-    normalTest: o.normalTest ?? 'center',
+    virtualHitTest: o.virtualHitTest ?? true, // T6: default on (rule 9 passed)
+    normalThreshold: o.normalThreshold ?? 0.95, // T6: 0.95 + 'relative' by default (rule 9 passed)
+    normalTest: o.normalTest ?? 'relative',
     virtualClampSigma: o.virtualClampSigma ?? 1,
     virtualAngleScale: o.virtualAngleScale ?? 0.5,
     virtualHitTolerance: o.virtualHitTolerance ?? 0.05,

@@ -1036,7 +1036,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the whole frame there with ≤ 0.003 signed bias (no systematic bleeding; noise and smoothing in a 2 px band).
       Exact-GT detection harness with option variants (`results/data/t6-boundaries/detect.ts`). The four detection
       follow-ups above are answered; no shipped default changes._
-- [ ] **Proposed config flip for the recurrent option** (results/T6-boundaries.md §6, §7; passes every rule-9 clause,
+- [x] (orchestrator, applied 2026-10-26 night under Dennis's standing "go with the recommendation" for config defaults; OcclusionDenoiser's recurrent pipeline keeps the previous values (not measured there); byte checks on std540-object: new default = explicit options, occlusion-recurrent unchanged) **Proposed config flip for the recurrent option** (results/T6-boundaries.md §6, §7; passes every rule-9 clause,
       changes no shipped default): `normalThreshold: 0.95` + `normalTest: 'relative'` (test bed +0.007 / +0.010 dB,
       boundary-young +0.18…+0.20, 4096 spp +0.014 / +0.015, real +0.007 / +0.033, boil −0.8…+0.6 %, +0.9 % cost) and
       `virtualHitTest: true` (specular: test bed +0.061, real +0.023, boil ≤ +4.7 %, +1.2 % cost; removes the

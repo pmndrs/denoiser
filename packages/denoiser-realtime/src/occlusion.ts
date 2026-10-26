@@ -77,7 +77,8 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
   if (filter === 'recurrent') {
     const r = rest as Partial<RecurrentOptions>;
     // occlusion defaults (test bed, T5): minimum blur radius 2 px (radiance: 1)
-    return { filter, signals, o: resolveRecurrent({ ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
+    // T6's normal test and virtualHitTest were measured on the radiance pipeline only: occlusion keeps the previous values
+    return { filter, signals, o: resolveRecurrent({ normalThreshold: 0, normalTest: 'center', virtualHitTest: false, ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
   }
   if (filter !== 'svgf') throw new Error(`OcclusionDenoiser: unknown filter '${filter}'`);
   const { hitDistanceScale = DEFAULT_A, hitDistanceViewScale = DEFAULT_B, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
