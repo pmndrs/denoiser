@@ -96,12 +96,12 @@ export interface RecurrentOptions {
    */
   youngBlurTaps?: number;
   /**
-   * 'spatial' history fix, T1b extension (default 0 = off): pixels with A = 0 average every pixel within this many px
+   * 'spatial' history fix, T1b extension (default 4 since T1b, rule 9 passed; 0 = the 16 disk taps only): pixels with A = 0 average every pixel within this many px
    * (geometry / normal weighted; a shared-memory tile loaded only by workgroups that hold an A = 0 pixel) instead of
    * the 16 disk taps. Structural; at most 7 (workgroup memory).
    */
   historyFixDense?: number;
-  /** historyFixDense radius cap: 'disk' (default: the disk's roughness-scaled radius) or 'mip' (the D7 mip level's tent, larger on mid-rough specular). Structural. */
+  /** historyFixDense radius cap: 'mip' (default: the D7 mip level's tent, larger on mid-rough specular) or 'disk' (the disk's roughness-scaled radius). Structural. */
   historyFixDenseCap?: 'disk' | 'mip';
   /** Young-fraction threshold of historyFixWideRing / historyFixMips 'young' (0..1). Default 0.9. Structural. */
   historyFixYoungThreshold?: number;
@@ -238,8 +238,8 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixYoungThreshold: o.historyFixYoungThreshold ?? 0.9,
     historyFixMipsClamp: o.historyFixMipsClamp ?? 1,
     youngBlurTaps: o.youngBlurTaps ?? 0,
-    historyFixDense: Math.min(Math.max(Math.round(o.historyFixDense ?? 0), 0), 7),
-    historyFixDenseCap: o.historyFixDenseCap ?? 'disk',
+    historyFixDense: Math.min(Math.max(Math.round(o.historyFixDense ?? 4), 0), 7), // 4 + 'mip': default since T1b (rule 9 passed)
+    historyFixDenseCap: o.historyFixDenseCap ?? 'mip',
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,

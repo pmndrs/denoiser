@@ -842,7 +842,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       'mip'`) beats the mips on the cut frame on all four signals and passes rule 9 against the new default (proposal
       above). Reveal paths (narrow / wide strips, one wide reveal, then a hold) confirm the spatial repair over the
       mips on revealed surfaces (+0.5 … +4.0 dB on the first frame).
-- [ ] **Default flip proposal (recurrent, rule 9 passed): `historyFixDense: 4` + `historyFixDenseCap: 'mip'`**
+- [x] (orchestrator, applied 2026-10-26 under Dennis's standing "go with the recommendation" for config defaults and as the follow-up his q19 (a) asked for; byte check: new default = explicit options on std540-cut, recurrent and occlusion-recurrent, 26/26 files; RTX re-time in native round 4; SPEC §5.8 fold-in: spec author) **Default flip proposal (recurrent, rule 9 passed): `historyFixDense: 4` + `historyFixDenseCap: 'mip'`**
       (results/T1b-spatial-repair.md; options in 474619c / f0a2872, default off). Fixes q19's follow-up: the `'spatial'`
       default lost the frame right after a camera cut because every tap is A = 0 there (17 one-frame values vs the
       mips' hundreds); A = 0 pixels now average every pixel within 4 px from a workgroup-shared tile. Cut frame vs

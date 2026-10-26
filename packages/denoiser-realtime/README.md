@@ -204,13 +204,14 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   SPEC D7) uses a 3-level mip pyramid with a depth atlas instead. `'spatial'` is better on every pooled, disoccluded
   and boundary measure (4096-spp references: diffuse +0.34 dB pooled / +0.49 disoccluded, AO +0.39 / +0.82, FLIP
   −0.5 %), one dispatch and 1.5 B/px leaner; `'mips'` is stiller on young pixels (its boil sits further under a clean
-  reference's) and better on the single frame right after a camera cut at 1080p (−1.9 dB diffuse for `'spatial'`
-  there; better from the next frame; being worked on). Results: `docs/research/rt-denoiser/results/T1-recovery.md`
+  reference's). The plain disk taps lost the single frame right after a camera cut at 1080p (−1.9 dB diffuse);
+  the default `historyFixDense: 4` fixes that (cut frame vs `'mips'`: diffuse +0.46 dB, specular +0.16, AO +2.84,
+  SO +0.08). Results: `docs/research/rt-denoiser/results/T1-recovery.md`
   §5.2, `E1b-high-reference.md` §3.
-  Options of the `'spatial'` fix, all off by default (results `T1b-spatial-repair.md`): `historyFixDense` [0; 4
-  proposed as the default] rebuilds A = 0 pixels (resets, reveals) from every pixel within that many px (a shared-memory
-  tile; the 1080p cut frame then beats the mips, +0.12 dB diffuse / +0.29 AO pooled), `historyFixDenseCap` ['disk';
-  'mip' gives specular / SO the mips' footprint], and diagnostic ones: `historyFixWideRing` / `historyFixWideRings` /
+  Options of the `'spatial'` fix (results `T1b-spatial-repair.md`): `historyFixDense` [4; 0 = the 16 disk taps only]
+  rebuilds A = 0 pixels (resets, reveals) from every pixel within that many px (a shared-memory tile; the 1080p cut frame
+  then beats the mips on every signal, and pooled +0.12 dB diffuse / +0.29 AO over the disk taps alone; +0.11-0.13 ms),
+  `historyFixDenseCap` ['mip': specular / SO get the mips' footprint; 'disk'], and diagnostic ones (off by default): `historyFixWideRing` / `historyFixWideRings` /
   `historyFixWideUse`, `historyFixAgeWeight`, `historyFixMips` ('young' / 'reset' / 'hit' / 'clamp',
   `historyFixMipsClamp`), `historyFixYoungThreshold`, `youngBlurTaps`.
 - The output texture rotates between internal buffers (valid until the next dispatch,
