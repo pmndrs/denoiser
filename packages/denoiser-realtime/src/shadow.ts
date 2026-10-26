@@ -36,7 +36,7 @@ import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
   SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
-  TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type SpatialVariant, type TrVariant,
+  TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type SpatialVariant, type TemporalVariant, type TrVariant,
 } from './shaders/shadow';
 
 export interface ShadowDenoiserOptions {
@@ -234,6 +234,30 @@ export interface ShadowDenoiserOptions {
    */
   terminatorAnalytic?: boolean;
   /**
+   * Noise-scaled radius floor (results/SHADOWS-FOLLOWUPS.md, our design): the `minRadius` floor is scaled by
+   * clamp(E / floorE, 0.5, 1) with E the accumulated H18 noise estimate, so where E is 0 (with `stepTest`: clean hard
+   * steps; contacts and small lights, whose penumbra is narrower than a pixel) the floor halves and the kernel's taps all
+   * land on the pixel, while noisy penumbrae keep the 1-px floor. 0 = off (pipeline variant when > 0; needs
+   * `noiseBlend` > 0). Default 0.
+   */
+  floorE?: number;
+  /**
+   * Whole light below the receiver's horizon (n.l <= -sin of its angular radius) and a 0 sample: the temporal history is
+   * set to 0 (results/SHADOWS-FOLLOWUPS.md, our design from the renderer contract SH-7 / Heitz et al. 2018 Eq. 4 / 12: the
+   * horizon-clipped light is known exactly). Without it a surface turning away from a moving light keeps its lit history
+   * for up to maxHistory frames where the 5x5 window isn't uniform (and `backfacePass` passes that history on).
+   * Pipeline variant. Default false.
+   */
+  horizonSnap?: boolean;
+  /**
+   * History response to a moving light (results/SHADOWS-FOLLOWUPS.md, our design from M12's penumbra geometry): a shadow
+   * feature moves by g x the light's displacement, i.e. (displacement / light size) penumbra widths per frame. The history
+   * is capped at lightMotion such widths (pixel widths below a 1-px penumbra), and dropped where that is under one frame
+   * and the raw 5x5 window holds an edge. Needs the light of the previous dispatch (no effect on the first frame after a
+   * reset or with a still light). 0 = off (pipeline variant when > 0). Default 0.
+   */
+  lightMotion?: number;
+  /**
    * Pixels with the whole light below their horizon (n.l <= -sin of the light's angular radius) and no occluded
    * sample of their own pass their input through instead of taking the terminator radius (pipeline variant;
    * results/SHADOWS-LOOK.md). Default true (Dennis, q21 (a), 2026-10-26).
@@ -332,6 +356,9 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     normalThreshold: o.normalThreshold ?? 0,
     normalTest: o.normalTest ?? 'center',
     terminatorAnalytic: o.terminatorAnalytic ?? false,
+    floorE: o.floorE ?? 0,
+    horizonSnap: o.horizonSnap ?? false,
+    lightMotion: o.lightMotion ?? 0,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
@@ -424,6 +451,10 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private withE = false;
   private needsReset = true;
   private cur = 0;
+  /** Temporal-pass variants (opaque path only): horizonSnap, lightMotion. */
+  private temporalVariant: TemporalVariant = {};
+  /** lightMotion: the light of the previous dispatch (undefined after a reset). */
+  private prevLight?: ShadowLight;
 
   private frame: GPUBuffer;
   private params: GPUBuffer;
@@ -506,6 +537,11 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
     if (o.terminatorAnalytic && !tr) sv.terminatorAnalytic = true;
+    if (o.floorE > 0 && this.withE && !tr) sv.floorE = true;
+    if (!tr) {
+      if (o.horizonSnap) this.temporalVariant.horizonSnap = true;
+      if (o.lightMotion > 0) this.temporalVariant.lightMotion = true;
+    }
     this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
       // wide path: the v-only tiles run the opaque denoiser's own spatial passes (same code, same cost)
@@ -607,13 +643,13 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     const reset = this.needsReset;
     this.needsReset = false;
     writeFrameUniform(d, this.frame, W, H, this.frameIndex++, guides, camera, reset);
-    this.writeParams(inputs, camera);
+    this.writeParams(inputs, camera, reset);
 
     const enc = d.createCommandEncoder({ label: 'shadows' });
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr, this.withE && o.stepTest, o.edgeBox, o.normalThreshold, o.normalTest === 'relative'), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr, this.withE && o.stepTest, o.edgeBox, o.normalThreshold, o.normalTest === 'relative', this.temporalVariant), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false, argsOffset = 0) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });
@@ -699,7 +735,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     return result;
   }
 
-  private writeParams(inputs: ShadowInputs, camera: FrameCamera) {
+  private writeParams(inputs: ShadowInputs, camera: FrameCamera, reset: boolean) {
     const o = this.options;
     const W = this.width, H = this.height;
     const P = mat4(camera.projection);
@@ -735,6 +771,29 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[94] = o.stabilizeYoung;
     f[95] = o.noiseCap;
     f[96] = o.snapHardPx;
+    if (o.floorE > 0) f[99] = o.floorE;
+    if (this.temporalVariant.lightMotion) {
+      // light displacement since the last dispatch, in light sizes (sphere: radius; directional: angular radius)
+      const cur = inputs.light ?? o.light;
+      const prev = this.prevLight;
+      let rho = 0;
+      if (cur && prev && !reset) {
+        if (cur.type === 'sphere' && prev.type === 'sphere') {
+          const d = Math.hypot(cur.position[0] - prev.position[0], cur.position[1] - prev.position[1], cur.position[2] - prev.position[2]);
+          rho = cur.radius > 0 ? d / cur.radius : (d > 0 ? 1e3 : 0);
+        } else if (cur.type === 'directional' && prev.type === 'directional') {
+          const c = cur.direction[0] * prev.direction[0] + cur.direction[1] * prev.direction[1] + cur.direction[2] * prev.direction[2];
+          const n = Math.hypot(...cur.direction) * Math.hypot(...prev.direction);
+          const ang = Math.acos(Math.min(Math.max(c / Math.max(n, 1e-12), -1), 1));
+          rho = cur.angularRadius > 0 ? ang / cur.angularRadius : (ang > 0 ? 1e3 : 0);
+        } else {
+          rho = 1e3;
+        }
+      }
+      f[97] = rho;
+      f[98] = o.lightMotion;
+      this.prevLight = cur ? JSON.parse(JSON.stringify(cur)) as ShadowLight : undefined;
+    }
     f[83] = o.pass1Phase;
     const light = inputs.light ?? o.light;
     const noise = !inputs.hitDistance || !light;

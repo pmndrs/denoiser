@@ -422,7 +422,12 @@ const out = shadows.dispatch(
   kernel where the raw 5×5 is a clean step: crisper hard edges and contacts, wide penumbrae unchanged), `edgeBox` [false]
   (hard edges: history clamped to the 3×3 raw min / max, no trailing behind moving hard shadows), `terminatorAnalytic`
   [false] (occluder-free terminators get the analytic above-horizon fraction of the light instead of a 16 px kernel;
-  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `normalThreshold` [0] / `normalTest`
+  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `horizonSnap` [false] (whole light below the
+  horizon and a 0 sample: the history is 0, so a surface turning away from a moving light doesn't keep its lit history;
+  pairs with `terminatorAnalytic`), `floorE` [0] (the 1-px `minRadius` floor scaled by the noise estimate E, down to half
+  where E is 0: with `stepTest`, contacts and sub-pixel penumbrae are no longer blurred), `lightMotion` [0] (history capped
+  at k penumbra widths of the light's motion, dropped at moving edges: sharper shadows of a moving light, more noise while
+  it moves) — results/SHADOWS-FOLLOWUPS.md, `normalThreshold` [0] / `normalTest`
   ['center'] (a history normal test as on the recurrent filter: passes rule 9 but gains only +0.004…+0.010 dB for
   +5.8 % cost, results/T6-boundaries.md), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],

@@ -168,7 +168,15 @@ const TILE = 8;
  * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
  * tile's halo grows to max(2, youngRadius)).
  */
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false): string {
+/**
+ * Temporal-pass variants of results/SHADOWS-FOLLOWUPS.md (options; each off by default, and off it leaves the WGSL
+ * text unchanged): `horizonSnap`
+ * (whole light below the horizon and a 0 sample: the history is 0), `lightMotion` (history cap from the light's
+ * motion, SP.q4 = light displacement / light size this frame, SP.q5 = the option's gain).
+ */
+export interface TemporalVariant { horizonSnap?: boolean; lightMotion?: boolean }
+
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false, tv: TemporalVariant = {}): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
   const SW = TILE + 2 * HB;                            // shared tile width
   const YR = young ? youngRadius : 2;
@@ -577,7 +585,18 @@ ${nb.join('\n')}
       }
       let mu = m1 / nS;
       let sigma = sqrt(max(m2 / nS - mu * mu, 0.0));
-      // near-hard edges (v2.1, our design): a 5x5 mean is a biased estimate of a pixel next to a
+${tv.lightMotion ? `      // (lightMotion, results/SHADOWS-FOLLOWUPS.md, our design from M12's penumbra geometry) motion vectors don't move
+      // shadows, but a moving light does: a shadow feature at penumbra scale g moves by g x (light displacement), i.e.
+      // SP.q4 = (light displacement / light size) penumbra widths, max(W_px, 1) / (W_px q4) pixel-or-penumbra widths
+      // per frame. Keep the history no longer than q5 such widths; where that is under one frame and the raw window
+      // holds an edge (sigma > 0), drop it (this pixel starts over, as a disocclusion; uniform windows still snap)
+      if (SP.q4 > 0.0 && A >= 0.0) {
+        let wK = select(1.0, max(wPx, 1.0) / max(wPx, 1e-3), wPx < 1e29);
+        let capM = SP.q5 * wK / SP.q4;
+        cap = min(cap, capM);
+        if (capM < 1.0 && sigma > 0.0) { A = -1.0; }
+      }
+` : ''}      // near-hard edges (v2.1, our design): a 5x5 mean is a biased estimate of a pixel next to a
       // step (up to ~0.4 off), so the window grows by up to 1 (no clamp) as the penumbra width
       // falls below clampEdgePx; such pixels keep a short history anyway (cap ~ W_px^2)
       let win = SP.clampSigma * sigma${clampGeo ? ' * sqrt(25.0 / nS)' : ''} + SP.clampFloor
@@ -610,7 +629,25 @@ ${edgeBox ? `      // (edgeBox, results/SHADOWS-MOTION.md) at hard edges the win
       // there a uniform 5x5 window means the pixel is outside the penumbra, and a kept fractional history is
       // only resampling blur of the nearby edge)
       if (sigma == 0.0 && spFlag(SF_SNAP) && (!spFlag(SF_SNAP_CHANGE) || abs(vH - mu) > win || wPx < SP.snapHardPx)) { vC = mu; }
-      let An = min(A, cap) + 1.0;   // 0 after a disocclusion
+${tv.horizonSnap ? `      // (horizonSnap, results/SHADOWS-FOLLOWUPS.md, our design from the renderer contract SH-7 and H18 Eq. 4 / 12: the
+      // horizon-clipped light is known analytically) the whole light below the receiver's tangent plane and a 0
+      // sample: visibility is exactly 0, so the history is too (else a surface turning away from a moving light keeps
+      // its old lit history for up to maxHistory frames when the 5x5 window isn't uniform)
+      if (!spFlag(SF_NOISE) && vRaw <= 0.0) {
+        var lvH: vec3f;
+        var sinH: f32;
+        if (spFlag(SF_SPHERE)) {
+          let tl = SP.light - r.world;
+          let dl = length(tl);
+          lvH = tl / max(dl, 1e-6);
+          sinH = min(SP.lightSize / max(dl, 1e-6), 1.0);
+        } else {
+          lvH = normalize(SP.light);
+          sinH = SP.lightSize * inverseSqrt(1.0 + SP.lightSize * SP.lightSize);
+        }
+        if (dot(g.n, lvH) <= -sinH) { vC = 0.0; }
+      }
+` : ''}      let An = min(A, cap) + 1.0;   // 0 after a disocclusion
       vAcc = mix(vC, vRaw, 1.0 / (1.0 + An));
       // young-frames counter (v2.1, our design): youngFrames on a fresh pixel (no valid history),
       // one less per frame, carried in the A channel above youngBase; unlike A it is not shortened
@@ -823,7 +860,7 @@ export const SHADOW_TILES_WGSL = shadowTilesWgsl(false);
  * occluder estimate pass their input through (nothing reaches them; filtering only pulls light in);
  * `noiseCapSettled` (option noiseCapSettled): the cap only on pixels past their young frames (youngFrames).
  */
-export interface SpatialVariant { noiseCap?: boolean; noiseCapSettled?: boolean; backface?: boolean; terminatorAnalytic?: boolean }
+export interface SpatialVariant { noiseCap?: boolean; noiseCapSettled?: boolean; backface?: boolean; terminatorAnalytic?: boolean; floorE?: boolean }
 
 /**
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
@@ -992,7 +1029,10 @@ ${sv.terminatorAnalytic ? `    // (terminatorAnalytic: Heitz et al. 2018 Eq. 4 /
   }
   let An = saturate(h.z / SP.maxHistory);
   Rw *= SP.radiusScale * mix(1.0, SP.historyShrink, An) * select(1.0, 0.5, PASS == 1) * (1.0 + SP.freshBoost / (1.0 + h.z));
-  Rw = max(Rw, SP.minRadiusPx * pix);
+${sv.floorE ? `  // (floorE, results/SHADOWS-FOLLOWUPS.md, our design) the 1-px floor blurs steps whose penumbra is narrower than a pixel
+  // (contacts, small lights); scale it by the accumulated noise estimate E (stepTest makes E 0 at clean steps), down to half
+  // (every tap on this pixel: the 8 disk taps sit within 0.94 radii) where E is 0; E moves slowly, so the floor does too
+  Rw = max(Rw, SP.minRadiusPx * pix * clamp(f32(gc.y >> 24u) / 255.0 / SP.q6, 0.5, 1.0));` : `  Rw = max(Rw, SP.minRadiusPx * pix);`}
   if (Rw < 0.5 * pix) {${tr ? `
     textureStore(outTex, p, vec4f(vin, 0.0, 0.0, 0.0));
     if (tAct) { textureStore(outTr, p, vec4f(tauC, 1.0)); }
