@@ -177,6 +177,24 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
 
+- [ ] **SVGF: option to switch off the 3×3 history fallback** (SVGF §4.1, "for thin geometry"). With it off, SVGF's
+      disocclusion detection matches the strict plane test (interior misses 20.7 → 0.1 ‰ vs exact GT, wrong-surface
+      misses ~0 either way), and `svgf-auto` gains **+0.07…+0.34 dB on the disoccluded region** of `orbit`, `pan`,
+      `thin`, `cut`, `object` (diffuse and specular, 960×540, 256-spp refs; total +0.004…+0.035 dB; flicker unchanged),
+      `thin` included (results/UPSCALER-GUIDES.md §4). Land as an option (default keeps the fallback), then the rule-9
+      A/B: 1080p × 7 paths, captures, 4096-spp references on orbit / light / glossy. Then also try the stricter variant (reset when < half the bilinear weight is valid, `r.sumW > 0.5`: resets the silhouette band the mask adds) against fallback-off; the scratch run was dropped for GPU-lock time. — found by
+      upscaler-guides evaluator, owner unassigned (packages/denoiser-realtime svgf)
+- [ ] **Recurrent / shadows: wrong-surface history at a moving object's contact.** On `object` our plane test (no
+      normal test) keeps history from another surface for 3.7–3.9 % of the revealed pixels that have no same-object
+      texel nearby (1080p; glossy 0.4 %, other paths ~0); SVGF's normal test (cos 0.95) catches them (0.0 %).
+      Candidate: a loose normal-agreement test for recurrent / shadows, measured on `object` and the captures.
+      (results/UPSCALER-GUIDES.md §2) — found by upscaler-guides evaluator, owner unassigned
+- [ ] **SVGF's normal test resets visible pixels on real geometry.** Against exact GT on the Bistro / Sponza captures,
+      SVGF's resets have 39.7 % precision pooled (Bistro 4.6–46 %): the cos 0.95 normal test rejects the same surface
+      on dense, finely tessellated geometry; the plane test alone gives 88.6 %. Sweep `normalThreshold` on the captures
+      (needless resets = young-pixel noise). (results/UPSCALER-GUIDES.md §3) — found by upscaler-guides evaluator,
+      owner unassigned
+
 - [x] (spec-author, SPEC v0.1 §1.2/§9: superseded by the built API) API additions proposed by SPEC §1.2/§9 (`ShadowInputs.light` done: faade1e, `ShadowLight`): `FrameGuides.f0?`, `ShadowInputs.light`
       (capture `lights` fields), options `inputDemodulated` (default true) and
       `output: 'demodulated' | 'remodulated'` (default demodulated), and how
@@ -977,7 +995,17 @@ harness builder runs them and returns images/metrics only.)_
       normalized hit distance: long-hold contact darkening (target 7). Fixes land as options. — orchestrator,
       owner: unassigned (after the shadows-look agent and the 4096-spp runs)
 
-- [ ] **Upscaler guides as optional denoiser inputs** (Dennis, 2026-10-26). `@pmndrs/upscaler` (../fsr3, MIT; FSR3-class)
+- [x] (upscaler-guides evaluator, results/UPSCALER-GUIDES.md; steps 1 and 3 done, step 2 not built: the mask is not
+      better) **Upscaler guides as optional denoiser inputs** (Dennis, 2026-10-26). _Result: scored against exact
+      ground truth (test bed re-traced at t−1; Bistro / Sponza captures by BVH ray casts). Our plane test misses 0.12 %
+      of wrong-surface disocclusions (SVGF 0.00 %), the upscaler's `disocclusion ≥ 0.5` misses 14 % (1080p) / 21 %
+      (960×540), 41 % on `thin`: it is computed from dilated (nearest-of-3×3) depth / motion, which shifts it one pixel
+      onto the occluder. Precision 84–92 % vs ours 99+ %, with no `motion_z` (false resets on objects moving in depth:
+      124 k on `sponza-move`). Real scenes: ours 69.6 / 88.6 % recall / precision, mask 61.3 / 38.6 %. Cost 0.16 ms at
+      1080p as an extra pass; our per-tap tests stay either way (they weight the history fetch). Needs a three.js
+      renderer (raw WebGPU only via non-exported internals) and a depth texture. The one gap it could fill, SVGF's
+      3×3-fallback misses, is closed better by switching the fallback off (follow-up below). Step (3)
+      `shadingChange` not assessed (open below)._ `@pmndrs/upscaler` (../fsr3, MIT; FSR3-class)
       already publishes a guides bundle (TEMPORAL-GUIDES-SPEC.md, GUIDES-HANDOFF.md): a graded 0..1 `disocclusion` mask
       (reconstructed previous depth + confidence vote, grazing-plane fix b16274a), dilated motion / depth, previous depth,
       same-frame after `dispatchGuides({depth, velocity})` (split dispatch, before effects), plus `shadingChange` (late,
@@ -990,6 +1018,9 @@ harness builder runs them and returns images/metrics only.)_
       `antiLag: 'gradient'` (no renderer produced its input so far; review target 3). Also a cost note: one mask
       shared by diffuse, specular, shadows and AO vs four internal tests. PROVENANCE: FSR3 is MIT (allowed, RULES §2).
       — orchestrator, owner: unassigned (queued after target D)
+- [ ] **Upscaler `shadingChange` as an input for `antiLag: 'gradient'`** (split from the item above, its step 3). Late
+      product (frame N−1), ceil(render/2), r32float. Still no renderer produces `antiLag: 'gradient'`'s input; assess
+      only if `'gradient'` gets a consumer. — upscaler-guides evaluator, owner unassigned
 
 - [ ] **Codex audit handoff, reviewed (2026-10-26):** read [sources/audit-public-research-prompt.md](sources/audit-public-research-prompt.md) and [sources/audit-current-state.md](sources/audit-current-state.md) (never the originals) with the staleness notes in [reviews/codex-audit-2026-10-26-review.md](reviews/codex-audit-2026-10-26-review.md). — clean reviewer, owner: orchestrator (fold into the queue)
 

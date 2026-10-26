@@ -828,3 +828,27 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   to it), 4096-spp ceiling 44.4 (A-SVGF 41.9 measured vs 45.6 "true"); its variance falls only ×9 per ×16 spp. Read
   `thin` diffuse with the "true" column. The test bed's JSON rounds metrics to 4 decimals, so flicker deltas under ~3 %
   (values 0.0013–0.0045 at 1080p) are invisible. — e1b, 2026-10-26
+
+## Upscaler guides evaluation (2026-10-26)
+
+- A page that builds the test bed's `SceneSignals` outside `main.ts` needs the test bed's device limit,
+  `requiredLimits: { maxStorageTexturesPerShaderStage: 8 }`; without it every scene pipeline is silently invalid
+  ("Invalid ComputePipeline rt guides"). — upscaler-guides, 2026-10-26
+- Scoring a disocclusion detector against point-visibility ground truth: most "misses" sit in the 1–2 px silhouette
+  band, where a neighbour texel on the same surface was visible, so keeping its history is not ghosting. Split the
+  score into interior (3×3 GT uniform) and band, and count a wrong-surface class (no same-object texel in the 3×3
+  around the true reprojection) for the misses that really ghost. Raw recall alone ranked SVGF worst while it ghosts
+  least. — upscaler-guides, 2026-10-26
+- BVH ground truth for the three-temporal scenes: ray-cast single-sided materials with `FrontSide` (the raster draws
+  them FrontSide; `asset.meshes[i].material.side`), else 1.35 % of Bistro pixels come out "occluded" by back faces.
+  A cheap self-check catches it: cast from the CURRENT eye to each pixel's own unprojected `viewz` point; nothing may
+  be hit in front of it (fixed: ≤ 0.005 %). — upscaler-guides, 2026-10-26
+- GPU timestamps on Apple: a timestamped pass recorded right behind heavy passes in the SAME command buffer reads their
+  tail (the upscaler's reconstruct: 1.3 ms median, 0.17 ms min). Submit the warm-up separately and await
+  `onSubmittedWorkDone()` before the timed submit (then 0.158 ms median, stable over 3 rounds). — upscaler-guides,
+  2026-10-26
+- `@pmndrs/upscaler` without a three.js renderer: alias `@fsr3/*` → `/Users/dex/Developer/fsr3/src/*` in Vite and
+  import `shaders/reconstruct`, `internal/ConstantsBuffer`, `internal/ComputePass` (pure WebGPU, no three import). Its
+  'auto' layouts accept r32float / rg32float through `textureLoad`. Depth must be a `depth32float` texture: copy
+  r32float device depth with a full-screen pass that writes `@builtin(frag_depth)`. It has no `motion_z`, and its
+  reconstruct ignores FLAG_RESET. — upscaler-guides, 2026-10-26

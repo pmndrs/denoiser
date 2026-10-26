@@ -1,0 +1,47 @@
+{
+ "query": "mode=bench&w=960&h=540&n=200",
+ "W": 960,
+ "H": 540,
+ "n": 200,
+ "median": 0.045957,
+ "min": 0.037332,
+ "p90": 0.517976,
+ "ours": {
+  "svgf": {
+   "prepass": 0.168165,
+   "gradient_create": 0.085539,
+   "gradient_atrous_0": 0.045666,
+   "gradient_atrous_1": 0.052916,
+   "gradient_atrous_2": 0.052374,
+   "gradient_atrous_3": 0.052916,
+   "gradient_lambda": 0.056374,
+   "temporal": 0.18233,
+   "variance": 0.487618,
+   "atrous_0": 0.274162,
+   "atrous_1": 0.248747,
+   "atrous_2": 0.266996,
+   "atrous_3": 0.26183,
+   "atrous_4": 0.257579,
+   "total": 2.542961
+  },
+  "recurrent": {
+   "prepass": 0.179998,
+   "pre_blur": 0.278704,
+   "temporal": 0.302204,
+   "mips": 0.190955,
+   "history_fix": 0.341453,
+   "blur": 0.277371,
+   "post_blur": 0.258163,
+   "stabilize": 0.280413,
+   "total": 2.100008
+  },
+  "shadows": {
+   "temporal": 0.335704,
+   "tiles": 0.043457,
+   "spatial0": 0.15279,
+   "spatial1": 0.153915,
+   "stabilize": 0.138707,
+   "total": 0.7799050000000001
+  }
+ }
+}
