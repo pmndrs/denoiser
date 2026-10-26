@@ -4,6 +4,12 @@ _e1 agent (evaluator, RULES.md rule 8: no NRD code, README or port read), 2026-1
 here was measured on our own test bed. It answers SPEC §13's question: how much do the 256-spp
 references compress the gaps between our filters?_
 
+> **Follow-up: [E1b-high-reference.md](E1b-high-reference.md)** (2026-10-26) adds the leftovers: diffuse / specular on
+> `thin` and `cut` at 4096 spp (so §6 now covers all 7 paths for every signal: diffuse recurrent vs `auto` −2.39 dB,
+> specular −1.81), the 4096-spp noise floors on `thin` / `cut` / `pan` (`thin`'s diffuse reference is still noisy at
+> 4096: ceiling 44.4 dB), and the 4096-spp A/Bs of SVGF `youngNormalPower: 16` and recurrent `historyFix: 'spatial'`.
+> No ranking changes.
+
 ## Conclusion first
 
 - **No ranking changes.** On every signal, every path and every pair of arms, the order at

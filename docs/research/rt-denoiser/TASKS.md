@@ -610,8 +610,12 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       paths, AO −2.33 on 7, specular −1.91; `antiLag: 'auto'` vs `'off'` diffuse +0.93, specular +2.81) next to the 256-spp
       ones, and the 256-spp ceilings (diffuse 41.7, specular 36.9 dB) in §13. No recommendation flips. results/E1-high-reference.md
       — found by e1, owner spec-author
-- [ ] E-1 leftovers: diffuse / specular on `thin` and `cut` at 4096 spp (both pages lost the GPU device under another agent's
+- [x] (e1b, results/E1b-high-reference.md §1; snapshot 7ea3928, 256-spp scores = REMEASURE to the 4th decimal: no ranking change; 7 paths diffuse recurrent vs `auto` −0.86 → −2.39 dB, SVGF vs `auto` −0.24 → −0.86, specular −0.94 → −1.81 / −1.59 → −2.63; `thin`'s diffuse reference is noisy even at 4096 spp: floor 41.4 dB, ceiling 44.4, `auto` 41.9 measured vs 45.6 "true") E-1 leftovers: diffuse / specular on `thin` and `cut` at 4096 spp (both pages lost the GPU device under another agent's
       2048-spp captures; rerun on a quiet GPU, ~10 min each), and 4096-spp floors on those paths — found by e1, owner eval agent
+- [ ] SPEC §0.2 / §12 items 1–2 quote E-1's 5-path 4096 gaps; the 7-path values are in results/E1b-high-reference.md §1.3
+      (recurrent vs `auto` diffuse −2.51 → −2.39, specular −1.91 → −1.81; `antiLag: 'auto'` vs `'off'` diffuse +0.93 → +0.86,
+      specular +2.81 → +2.63). `thin` diffuse needs the "true" column or a 16k-spp reference for any close call. — found by
+      e1b, owner spec-author
 - [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
 - [x] (moving-shadows, d02613d e573a04 033a869 + docs commit; results/M4.md §12) **moving-shadows**: the rotating knot's shadow
@@ -789,12 +793,27 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       §4). Before flipping: re-measure the cost on a quiet GPU (§5.5 was contended; normalized it is within noise). If
       approved: one line in `resolveOptions` (0 → 16), byte checks of the other defaults, docs. — found by t1,
       owner svgf / Dennis
+      **4096-spp check (e1b, results/E1b-high-reference.md §2): still passes rule 9.** `orbit` / `light` / `glossy` pooled
+      +0.001 → +0.003 dB, disoccluded +0.03 → +0.06, FLIP ±0, flicker ±0, "true" ±0.00; `cut` / `pan` pooled +0.011 /
+      +0.019, `cut` disoccluded +0.12; worst path `light` −0.003 → −0.010; frame after the cut −0.08 → −0.14 (post-cut
+      8-frame window −0.02); 540p captures young PSNR +0.05…+0.14, young boil −0…−4 %, settled ±0. Quiet-GPU cost check
+      still open.
 - [ ] **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
       PSNR / FLIP / boundary measure and leaner, but young-pixel boil +4…+70 % (to ≤ SVGF's level, below the reference's
       own boil) and settled boil +6.6 % on the real scene: rule 9's boil clause fails by the letter; also −0.4…−1.4 dB on
       the single frame right after a cut at 1080p (better from the next frame). Proposal: keep `'mips'` unless Dennis
       reads the boil change as acceptable for the recurrent filter (results/T1-recovery.md §5.2). — found by t1, owner
       recurrent / Dennis
+      **4096-spp check (e1b, results/E1b-high-reference.md §3): gains double, the boil framing changes.** 4 paths pooled
+      diffuse +0.14 → +0.34 dB (disoccluded +0.29 → +0.49), specular +0.07 → +0.12, AO +0.18 → +0.39 (+0.60 → +0.82),
+      SO +0.14 → +0.16; cut frame diffuse −1.26 → −1.91, specular −0.67, SO −1.43 (8-frame post-cut window diffuse −0.31,
+      AO +0.79). Boil: the 256-spp reference's own young boil (0.0076–0.0111 diffuse) was mostly its noise; the 4096
+      reference's is 0.0014–0.0048, and young diffuse boil of every arm is above it on moving-camera windows (A-SVGF
+      1.1–3.5×; mips 1.7–3.4×, except `pan` 0.77×; spatial 1.1–3.5×). So the spatial fix's +7 % (`orbit`) / +38 % (`pan`)
+      young boil moves the output away from a clean reference (on `pan` from under it to 1.06× of it), while staying ≤
+      the shipped A-SVGF default's young boil on every window. Settled: every arm at or under the 4096 reference (spatial
+      +1…+3 %). Recommendation unchanged (keep `'mips'` by the letter); the question for Dennis is now "boil that rises to
+      about a clean reference's level, but not above the default filter's".
 - [x] (spec-author, 546c777: §4.3 / §4.4 / §4.5 v0.5, §5.8 v0.5 + D7 row, §0.2 / §13 recovery numbers, §12 items 15–16; `youngNormalPower: 16` written as a proposal awaiting Dennis and a quiet-GPU cost check, the default stays 0) SPEC deviations for the spec author (results/T1-recovery.md): §4.3 / §4.4 gain the options `spatialHistoryWeight`
       (null), `youngLuminanceWeight` (loss), `youngNormalPower` (proposal, above); §5.8 (D7) gains `historyFix: 'spatial'`
       + `historyFixRadius` (8 px, halving per frame, no mips / depth atlas); §0.2 / §13 can quote the T1 recovery numbers

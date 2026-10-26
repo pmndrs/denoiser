@@ -814,3 +814,17 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - Judge a default flip region by region (contact, dynamic, flicker), not by the pooled mean: the occlusion `'off'` flip
   looked "level" at −0.10 dB pooled but lost 0.6 dB in contact, added 15 % AO flicker, and was reverted under rule 9.
   — occlusion-antilag-off, 2026-10-26
+
+- **A 256-spp reference's "own boil" is mostly its noise.** Young diffuse reference boil was 0.0076–0.0111 at 256 spp and
+  0.0014–0.0048 at 4096 on the same frames; against 4096, young pixels of every filter boil *above* the reference
+  (A-SVGF 1.1–3.5×), so "below the reference's own boil" (T1) was an artifact. Judge boil floors with a high-spp
+  reference. With a static camera the reference is the same estimate every frame (fixed per-pixel seeds): its boil is 0
+  except where the scene changes, so it is no noise floor there. — e1b, 2026-10-26
+- Capturing one test-bed window twice with different `refspp` gives byte-identical noisy inputs and guides (only `*_ref`
+  differ): replay once, symlink `outputs/<cap256>/<name>` → `outputs/<cap4k>/<name>`, and score both with t1-score.mjs.
+  Test-bed capture manifests are `capture.json` (not `manifest.json`); a success check on the wrong name made every
+  capture run twice. — e1b, 2026-10-26
+- `thin`'s diffuse reference is the noisiest of the 7 paths: 256-spp ceiling 34.8 dB (filters scored 34.2–34.5, pinned
+  to it), 4096-spp ceiling 44.4 (A-SVGF 41.9 measured vs 45.6 "true"); its variance falls only ×9 per ×16 spp. Read
+  `thin` diffuse with the "true" column. The test bed's JSON rounds metrics to 4 decimals, so flicker deltas under ~3 %
+  (values 0.0013–0.0045 at 1080p) are invisible. — e1b, 2026-10-26
