@@ -1,0 +1,60 @@
+2026-10-26T10:46:26.3783068+09:00,start ours svgf-auto run1 temp60
+2026-10-26T10:46:40.0037748+09:00,end ours svgf-auto run1
+2026-10-26T10:46:40.0655331+09:00,start ours svgf run1 temp62
+2026-10-26T10:46:52.0161343+09:00,end ours svgf run1
+2026-10-26T10:46:52.0997767+09:00,start ours shadows run1 temp62
+2026-10-26T10:47:02.1457177+09:00,end ours shadows run1
+2026-10-26T10:47:02.2200780+09:00,start ours occlusion-svgf-auto run1 temp63
+2026-10-26T10:47:13.2024675+09:00,end ours occlusion-svgf-auto run1
+2026-10-26T10:47:13.2966495+09:00,start ours occlusion-svgf run1 temp63
+2026-10-26T10:47:24.1653380+09:00,end ours occlusion-svgf run1
+2026-10-26T10:47:24.2260778+09:00,start ours svgf-auto-ynp16 run1 temp64
+2026-10-26T10:47:37.8829249+09:00,end ours svgf-auto-ynp16 run1
+2026-10-26T10:47:37.9446151+09:00,start native reblur run1 temp64
+2026-10-26T10:47:41.5968837+09:00,end native reblur run1
+2026-10-26T10:47:41.6448304+09:00,start native relax run1 temp65
+2026-10-26T10:47:45.1890829+09:00,end native relax run1
+2026-10-26T10:47:45.2424747+09:00,start native sigma run1 temp64
+2026-10-26T10:47:47.8515024+09:00,end native sigma run1
+2026-10-26T10:47:47.8973914+09:00,start ours svgf-auto run2 temp65
+2026-10-26T10:48:00.5656838+09:00,end ours svgf-auto run2
+2026-10-26T10:48:00.6255862+09:00,start ours svgf run2 temp64
+2026-10-26T10:48:11.3232510+09:00,end ours svgf run2
+2026-10-26T10:48:11.3839504+09:00,start ours shadows run2 temp65
+2026-10-26T10:48:21.0671884+09:00,end ours shadows run2
+2026-10-26T10:48:21.1279552+09:00,start ours occlusion-svgf-auto run2 temp65
+2026-10-26T10:48:31.7831492+09:00,end ours occlusion-svgf-auto run2
+2026-10-26T10:48:31.8442753+09:00,start ours occlusion-svgf run2 temp65
+2026-10-26T10:48:41.5181396+09:00,end ours occlusion-svgf run2
+2026-10-26T10:48:41.5790703+09:00,start ours svgf-auto-ynp16 run2 temp66
+2026-10-26T10:48:53.2670991+09:00,end ours svgf-auto-ynp16 run2
+2026-10-26T10:48:53.3288790+09:00,start native reblur run2 temp66
+2026-10-26T10:48:56.8203864+09:00,end native reblur run2
+2026-10-26T10:48:56.8754504+09:00,start native relax run2 temp66
+2026-10-26T10:49:00.2975468+09:00,end native relax run2
+2026-10-26T10:49:00.3397297+09:00,start native sigma run2 temp67
+2026-10-26T10:49:02.9504806+09:00,end native sigma run2
+2026-10-26T10:49:03.0123437+09:00,start ours svgf-auto run3 temp67
+2026-10-26T10:49:14.9740601+09:00,end ours svgf-auto run3
+2026-10-26T10:49:15.0351649+09:00,start ours svgf run3 temp66
+2026-10-26T10:49:26.0511718+09:00,end ours svgf run3
+2026-10-26T10:49:26.1105678+09:00,start ours shadows run3 temp66
+2026-10-26T10:49:36.0428950+09:00,end ours shadows run3
+2026-10-26T10:49:36.1040468+09:00,start ours occlusion-svgf-auto run3 temp66
+2026-10-26T10:49:46.8481152+09:00,end ours occlusion-svgf-auto run3
+2026-10-26T10:49:46.9149991+09:00,start ours occlusion-svgf run3 temp66
+2026-10-26T10:49:56.5362438+09:00,end ours occlusion-svgf run3
+2026-10-26T10:49:56.5993681+09:00,start ours svgf-auto-ynp16 run3 temp67
+2026-10-26T10:50:07.4649160+09:00,end ours svgf-auto-ynp16 run3
+2026-10-26T10:50:07.5255732+09:00,start native reblur run3 temp68
+2026-10-26T10:50:10.3941865+09:00,end native reblur run3
+2026-10-26T10:50:10.4942409+09:00,start native relax run3 temp69
+2026-10-26T10:50:13.3161845+09:00,end native relax run3
+2026-10-26T10:50:13.3739571+09:00,start native sigma run3 temp68
+2026-10-26T10:50:16.8053682+09:00,end native sigma run3
+2026-10-26T10:51:47.3818141+09:00,start native reblur-occlusion run1 temp61
+2026-10-26T10:51:50.2058758+09:00,end native reblur-occlusion run1
+2026-10-26T10:51:50.3130390+09:00,start native reblur-occlusion run2 temp64
+2026-10-26T10:51:53.2517248+09:00,end native reblur-occlusion run2
+2026-10-26T10:51:53.3535114+09:00,start native reblur-occlusion run3 temp64
+2026-10-26T10:51:56.0783416+09:00,end native reblur-occlusion run3

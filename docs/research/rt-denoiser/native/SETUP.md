@@ -235,3 +235,25 @@ fails with MODULE_NOT_FOUND; run the commands from the repo root as written.
   constant hit distance; our capture format).
 - Regression: outputs on `synthetic-static` are bit-identical to the previous build; D3D12 debug
   layer + NRI validation clean.
+
+### Harness additions for v1 captures (P6 / P7)
+
+- **Filter normal.** `normal_geom` when the capture has it (CAPTURE-FORMAT v1), else `normal`.
+- **Directional diffuse** (`--denoisers reblur-sh,relax-sh`: `REBLUR_DIFFUSE_SH` /
+  `RELAX_DIFFUSE_SH`). Input: `diffuse` with its ray direction `diffuse_dir`, through the
+  `NRD.hlsli` SH pack helpers. REBLUR gets the normalized hit distance as above, RELAX the raw one.
+  Each denoiser writes three readouts of the same run as `sh-diffuse`:
+  - `-color`: the SG colour
+  - `-sgresolve`: the SG diffuse resolve at `normal` (shading normal), with V from the camera
+  - `-shresolve`: the SH diffuse resolve at `normal`
+- **Translucent shadows** (`--denoisers sigma-translucency --translucency-mode 0|1`:
+  `SIGMA_SHADOW_TRANSLUCENCY`).
+  - Translucency input: **v·T**, the light's full rgb visibility, as in the README's
+    multi-light example.
+  - Mode 0: the penumbra input and the occlusion flag come from opaque occluders only.
+  - Mode 1: the nearest translucent layer (`translucent_dist`) also counts as the occluder.
+  - Outputs: `shadow-rgb` = the unpacked `.yzw`, and `visibility` = `.x`. In mode 1 `.x` includes
+    the glass, so it can't be compared with `visibility_ref`.
+  - _Fixed in round 3:_ the first runs passed T alone. Our format sets T = (1, 1, 1) wherever
+    v = 0, so umbra read as fully transmitted (+0.2 bias, 11–13 dB). Only results from the fixed
+    build are reported.
