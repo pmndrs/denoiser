@@ -90,6 +90,12 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
       marked built with as-built deviation tables and measured cost / memory, E-1's 4096-spp gaps in §0.2 / §12 items 1–2,
       T1's options and recovery numbers (§4.3–4.5, §5.8, §0.2, §13), §12 items 15–16 (open: `youngNormalPower: 16`,
       `historyFix: 'spatial'`), §4.5 / §4.6 `antiLag: 'auto'` default, §9 / §10.3 / §11 refreshed._
+      _v0.6 (2026-10-26 evening, spec author, e594d0e): the 2026-10-26 defaults checked against src (SVGF
+      `youngNormalPower: 16`, recurrent `'spatial'` + `historyFixDense: 4` / `'mip'`, shadows `backfacePass` + `snapHardPx: 2`,
+      rule 9's q20 (a) boil clause); §12 items 15–16 decided (item 16's option letters now match the decisions page),
+      items 17–19 = open q23 / q24 / q25; new options with their rule-9 status (§3.8 `f16Rounding`, §4.7 reflection
+      tracking, §7.4–7.5 shadows options); E-1b 7-path gaps, Sponza / Bistro, native rounds 2–3, target D, reflection
+      motion, upscaler guides, T1b; §13 evaluation tools; §0 / §10 at measured values._
 - [x] (4619633) **T0.2 PROVENANCE.md skeleton** (spec author): pass → public source → our deviation.
 - [x] (0a035e3, 85783f8, 0047bfb, 10ecb5b) testbed **T0.3 Test bed signals** (`examples/realtime-denoiser`): 1-bounce diffuse GI + hitT,
       specular + hitT over a roughness range, shadows + occluder distance + light size,
@@ -635,7 +641,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       — found by e1, owner spec-author
 - [x] (e1b, results/E1b-high-reference.md §1; snapshot 7ea3928, 256-spp scores = REMEASURE to the 4th decimal: no ranking change; 7 paths diffuse recurrent vs `auto` −0.86 → −2.39 dB, SVGF vs `auto` −0.24 → −0.86, specular −0.94 → −1.81 / −1.59 → −2.63; `thin`'s diffuse reference is noisy even at 4096 spp: floor 41.4 dB, ceiling 44.4, `auto` 41.9 measured vs 45.6 "true") E-1 leftovers: diffuse / specular on `thin` and `cut` at 4096 spp (both pages lost the GPU device under another agent's
       2048-spp captures; rerun on a quiet GPU, ~10 min each), and 4096-spp floors on those paths — found by e1, owner eval agent
-- [ ] SPEC §0.2 / §12 items 1–2 quote E-1's 5-path 4096 gaps; the 7-path values are in results/E1b-high-reference.md §1.3
+- [x] (spec-author, e594d0e: SPEC v0.6 §0.2 4096-spp table on 7 paths for every signal with the v0.5 5-path values noted, §12 items 1–2, §4.6, §5 intro; `thin`'s reference-limited diffuse and the "true" column in §0.2 / §13) SPEC §0.2 / §12 items 1–2 quote E-1's 5-path 4096 gaps; the 7-path values are in results/E1b-high-reference.md §1.3
       (recurrent vs `auto` diffuse −2.51 → −2.39, specular −1.91 → −1.81; `antiLag: 'auto'` vs `'off'` diffuse +0.93 → +0.86,
       specular +2.81 → +2.63). `thin` diffuse needs the "true" column or a 16k-spp reference for any close call. — found by
       e1b, owner spec-author
@@ -809,7 +815,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (Dennis's lead; +0.67 / +0.43 dB pooled diffuse / specular over 14 captures, boundary +1.2…+4.6 dB, −1.5 B/px, one
       dispatch fewer; **fails rule 9's boil clause**), SVGF `spatialHistoryWeight` (null), `youngLuminanceWeight` (loss);
       shadows' fresh-pixel knobs already at their best. — t1
-- [x] (orchestrator, flipped after native round 3: +0.31 ms at 1080p on the RTX, svgf-auto 1.14× → 1.20× REBLUR steady, i.e. +5 %, within rule 9's +10 %; default 16 for the radiance payload, 0 kept for payload 'sh' and OcclusionDenoiser (unmeasured); registry ids `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain*` pinned to 0, so they keep their old meaning, while `svgf-auto` follows the package default and now means youngNormalPower 16 (use `svgf-auto@youngNormalPower=0` for the old shipped default); SPEC §4.4 / §12 item 15 / table rows and README to fold in: spec author) **Default flip, APPROVED by Dennis q18 (a) 2026-10-26, pending only the Windows locked-clock cost check (≤ +10 %; native round 3 step 2): SVGF `youngNormalPower: 16`** (keep the option and document both values: Dennis "we can add the option to change it still with notes to both paths"). Was: Default flip proposal (look change, needs Dennis): SVGF `youngNormalPower: 16` (results/T1-recovery.md §5.1).
+- [x] (orchestrator, flipped after native round 3: +0.31 ms at 1080p on the RTX, svgf-auto 1.14× → 1.20× REBLUR steady, i.e. +5 %, within rule 9's +10 %; default 16 for the radiance payload, 0 kept for payload 'sh' and OcclusionDenoiser (unmeasured); registry ids `svgf`, `svgf-diffuse`, `svgf-specular`, `svgf-plain*` pinned to 0, so they keep their old meaning, while `svgf-auto` follows the package default and now means youngNormalPower 16 (use `svgf-auto@youngNormalPower=0` for the old shipped default); SPEC §4.4 / §12 item 15 / table rows and README to fold in: spec author; **folded in e594d0e**: SPEC v0.6 §0.1–0.3, §4.4–4.5, §9, §10.3, §12 item 15; README SVGF options) **Default flip, APPROVED by Dennis q18 (a) 2026-10-26, pending only the Windows locked-clock cost check (≤ +10 %; native round 3 step 2): SVGF `youngNormalPower: 16`** (keep the option and document both values: Dennis "we can add the option to change it still with notes to both paths"). Was: Default flip proposal (look change, needs Dennis): SVGF `youngNormalPower: 16` (results/T1-recovery.md §5.1).
       Rule-9 A/B: 1080p 7 paths diffuse 38.500 → 38.501 dB pooled, disoccluded +0.02, FLIP ±0, flicker ±0; 14 captures
       −0.02…+0.32 dB, FLIP ≤ +0.5 %, boil lower everywhere; specular byte-identical; cost within noise (§5.5). Visible
       effect: young pixels on curved surfaces are smoother on the first frames after a reset or anti-lag event (strip in
@@ -821,7 +827,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       +0.019, `cut` disoccluded +0.12; worst path `light` −0.003 → −0.010; frame after the cut −0.08 → −0.14 (post-cut
       8-frame window −0.02); 540p captures young PSNR +0.05…+0.14, young boil −0…−4 %, settled ±0. Quiet-GPU cost check
       still open.
-- [x] (**Dennis q19 (a), 2026-10-26: `historyFix: 'spatial'` is the recurrent default**, with rule 9's boil clause as amended by q20 (a); flipped by the recurrent agent in the commit "denoiser-realtime: historyFix 'spatial' is the recurrent default": new default output = old explicit `'spatial'` byte for byte, `'mips'` kept and documented (README, SPEC §5.8 v0.6, item 16); the cut-frame loss continues as a follow-up in results/T1b-spatial-repair.md) **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
+- [x] (**Dennis q19 (a), 2026-10-26: `historyFix: 'spatial'` is the recurrent default**, with rule 9's boil clause as amended by q20 (a); flipped by the recurrent agent in the commit "denoiser-realtime: historyFix 'spatial' is the recurrent default": new default output = old explicit `'spatial'` byte for byte, `'mips'` kept and documented (README, SPEC §5.8 v0.6, item 16); the cut-frame loss continues as a follow-up in results/T1b-spatial-repair.md; SPEC v0.6 e594d0e: item 16 marked decided and its option letters relabelled to match the decisions page, (a) = `'spatial'`) **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
       PSNR / FLIP / boundary measure and leaner, but young-pixel boil +4…+70 % (to ≤ SVGF's level, below the reference's
       own boil) and settled boil +6.6 % on the real scene: rule 9's boil clause fails by the letter; also −0.4…−1.4 dB on
       the single frame right after a cut at 1080p (better from the next frame). Proposal: keep `'mips'` unless Dennis
@@ -842,7 +848,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       'mip'`) beats the mips on the cut frame on all four signals and passes rule 9 against the new default (proposal
       above). Reveal paths (narrow / wide strips, one wide reveal, then a hold) confirm the spatial repair over the
       mips on revealed surfaces (+0.5 … +4.0 dB on the first frame).
-- [x] (orchestrator, applied 2026-10-26 under Dennis's standing "go with the recommendation" for config defaults and as the follow-up his q19 (a) asked for; byte check: new default = explicit options on std540-cut, recurrent and occlusion-recurrent, 26/26 files; RTX re-time in native round 4; SPEC §5.8 fold-in: spec author) **Default flip proposal (recurrent, rule 9 passed): `historyFixDense: 4` + `historyFixDenseCap: 'mip'`**
+- [x] (orchestrator, applied 2026-10-26 under Dennis's standing "go with the recommendation" for config defaults and as the follow-up his q19 (a) asked for; byte check: new default = explicit options on std540-cut, recurrent and occlusion-recurrent, 26/26 files; RTX re-time in native round 4; SPEC §5.8 fold-in: spec author, **done e594d0e**: §5.8 v0.6 as the default, D7 row, §5.1 / §10.1 dispatches and 104 B/px, §0.2 / §10.3 cost rows, §12 item 16) **Default flip proposal (recurrent, rule 9 passed): `historyFixDense: 4` + `historyFixDenseCap: 'mip'`**
       (results/T1b-spatial-repair.md; options in 474619c / f0a2872, default off). Fixes q19's follow-up: the `'spatial'`
       default lost the frame right after a camera cut because every tap is A = 0 there (17 one-frame values vs the
       mips' hundreds); A = 0 pixels now average every pixel within 4 px from a workgroup-shared tile. Cut frame vs
@@ -991,6 +997,20 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       with a moving mirror (`rm540-refl-turn`) or marker 2 are written `static: true`. No consumer reads the flag
       today; fold `FrameState.reflect` (reflector pose, marker 2) into the test when it matters — found by
       reflection-motion, owner `examples/realtime-denoiser`
+- [ ] **M5 Pro bench re-time of the shipped defaults after the 2026-10-26 flips** (found writing SPEC v0.6): every M5 Pro
+      cost row in SPEC §0.2 / §10.3 predates them. Quiet GPU, test-bed solo bench, 1080p, steady frames: joint
+      `svgf-auto` (now `youngNormalPower: 16`; the RTX reads +0.31 ms / +5 %, which on the M5 Pro would put the default at
+      ≈ 4.4 ms, the edge of the 4 ms ± 10 % guide), joint `recurrent` (`'spatial'` + `historyFixDense: 4`; only single-signal
+      numbers exist, T1b §5) and `occlusion-recurrent`, `shadows` (q21 defaults; SL / SM medians exist per path). — found by
+      spec-author, owner results / bench (GPU lock, rule 11)
+- [ ] **Doc mismatch, results/scenes-bistro-sponza.md "Setup" row "denoisers"**: it calls `recurrent-svgfspec` (recurrent
+      diffuse + A-SVGF specular) "the `filter: 'recurrent'` default", but since 6be4f23 `DiffuseSpecularDenoiser({ filter:
+      'recurrent' })` runs recurrent for both signals and the mix is explicit (SPEC §12 item 1). The registry entry and
+      the numbers are fine; only the label is stale. — found by spec-author, owner results (bistro-sponza)
+- [ ] **Doc mismatch, native/results/ROUND3.md §3 (P6)**: the bullet "RELAX-SH SG resolve is native's best on
+      `v1-bumpy`" contradicts the table above it, where REBLUR-SH colour at A = 0.01 scores 33.34 vs RELAX-SH SG 33.09 on
+      `v1-bumpy` (RELAX-SH SG is best in the bump region, 30.98, and the "+3.3 dB over native's best" headline uses
+      33.34). SPEC v0.6 §8.5.5 quotes the table. — found by spec-author, owner harness builder
 - [ ] README (`packages/denoiser-realtime`): document the specular options `reflectionHitTest` and
       `reflectionReprojection` ('virtual' measured as a loss; 'dual' for glossy mirrors under camera motion), their cost
       and the rule-9 result (results/REFLECTION-MOTION.md §6) — found by reflection-motion, owner `packages/denoiser-realtime`
@@ -1043,13 +1063,13 @@ harness builder runs them and returns images/metrics only.)_
       positions (`src/reflect-oracle.ts`; frame index = path frame), trails behind the moving marker and the turning
       mirror's far image, duplicates, lag at r 0.1. Question: does native show A-SVGF's 3–6 px zero-parallax trails, or
       the recurrent filter's leading ghost? — reflection-motion, owner harness builder
-- [ ] **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
+- [x] (answered 01c9292, native/results/ROUND3.md §3: ours `svgf-sh-auto` +3.3 / +4.2 dB over native's best readout, native band energy 0.14–0.34, cost 1.68× REBLUR-SH; folded into SPEC v0.6 §8.5.5, e594d0e — spec-author) **P6: native SH variants on directional captures** (SPEC v0.3 §8.5.7, M7-13). Captures: CAPTURE-FORMAT v1 `bumpy`
       and two standard paths with `diffuse_dir` / `normal_geom`. Run `REBLUR_DIFFUSE_SH` and `RELAX_DIFFUSE_SH` (input packed
       by native's front end from `diffuse` + `diffuse_dir`). Return (a) the colour-extraction output scored against
       `diffuse_ref` with `compare.mjs`, (b) native's diffuse resolve with the shading normal (`normal`) scored against
       `diffuse_ref` on `bumpy`, (c) native's reported memory for the SH vs plain denoiser and the timings. Words/metrics
       only. — spec-author
-- [ ] **P7: native translucent shadows** (SPEC v0.3 §7.10.4, M8-10). Captures `glass`, `glass-moving`, `glass-still`
+- [x] (answered 01c9292, native/results/ROUND3.md §3: ours +4.2 … +5.0 dB over SIGMA translucency's better mode, its static-penumbra boil 3–5× ours, cost 1.54–1.61×; folded into SPEC v0.6 §7.10.3, e594d0e — spec-author) **P7: native translucent shadows** (SPEC v0.3 §7.10.4, M8-10). Captures `glass`, `glass-moving`, `glass-still`
       (CAPTURE-FORMAT v1 `transmittance`, `translucent_dist`). Run `SIGMA_SHADOW_TRANSLUCENCY` (penumbra and translucency
       packed by native's front end) and `SIGMA_SHADOW` on `visibility` alone. Score the rgb output against
       `shadow_rgb_ref` (clamp tonemap per channel) and the opaque part against `visibility_ref`, with the dynamic region
@@ -1177,10 +1197,11 @@ filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "
 - **f16 rounding (2026-10-26, distance-long):** approve `f16Rounding: 'nearest'` as the default of the SVGF and recurrent
   pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
   brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;
-  evidence results/DISTANCE-LONG.md §6.
+  evidence results/DISTANCE-LONG.md §6. (Decisions page q25; SPEC v0.6 §12 item 19, §3.8.)
 - **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
   changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
-  horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md.
+  horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md. (Decisions page q23 / q24; SPEC
+  v0.6 §12 items 17 / 18, §7.4–7.5.)
 - ~~**Shadows look (2026-10-26, shadows):**~~ (answered 2026-10-26: flip approved, q21 (a), landed; `noiseCap` stays an option, q22 (b)) approve the default flip `backfacePass: true` + `snapHardPx: 2` (passes rule 9,
   changes the look), and decide on `noiseCap` (sharper hard shadows, fails the boil clause). Both items under "Found
   along the way"; evidence results/SHADOWS-LOOK.md.
