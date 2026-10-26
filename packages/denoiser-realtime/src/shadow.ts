@@ -212,6 +212,19 @@ export interface ShadowDenoiserOptions {
    */
   edgeBox?: boolean;
   /**
+   * Review target 6 candidate (results/T6-boundaries.md): minimum cosine between the receiver's normal and a history
+   * tap's normal in the reprojection (SVGF sec. 4.1's normal test, on top of the plane test), so a revealed floor
+   * pixel next to a moving object's contact doesn't keep the object's history. Default 0: backfacing taps only
+   * (today's test). Pipeline variant.
+   */
+  normalThreshold?: number;
+  /**
+   * Review target 6 candidate (results/T6-boundaries.md, our design): 'relative' relaxes the history normal test to the
+   * receiver's own neighbourhood: min(normalThreshold, lowest normal cosine between it and its 3x3 neighbours on the
+   * same surface - 0.02), floored at the backface test. Default 'center'. Pipeline variant.
+   */
+  normalTest?: 'center' | 'relative';
+  /**
    * Self-shadowing terminators without an occluder (no occluded sample of their own, light partly below the horizon):
    * output the analytic fraction of the light above the horizon (area of the light's disk above the tangent plane)
    * instead of filtering with `terminatorRadius` (results/SHADOWS-MOTION.md). Heitz et al. 2018 Eq. 4 / 12 put the
@@ -316,6 +329,8 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseCapSettled: o.noiseCapSettled ?? false,
     stepTest: o.stepTest ?? false,
     edgeBox: o.edgeBox ?? false,
+    normalThreshold: o.normalThreshold ?? 0,
+    normalTest: o.normalTest ?? 'center',
     terminatorAnalytic: o.terminatorAnalytic ?? false,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
@@ -598,7 +613,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr, this.withE && o.stepTest, o.edgeBox), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr, this.withE && o.stepTest, o.edgeBox, o.normalThreshold, o.normalTest === 'relative'), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false, argsOffset = 0) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });

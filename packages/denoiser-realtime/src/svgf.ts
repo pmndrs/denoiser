@@ -20,7 +20,7 @@ import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, temporalPass, variancePass, type ReflectionReprojection, type SignalKind,
+  PARAMS_SIZE, temporalPass, variancePass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -170,6 +170,23 @@ export interface SvgfOptions {
    * before every store (src/f16.ts; diagnostic / candidate option, results/DISTANCE-LONG.md).
    */
   f16Rounding?: F16Rounding;
+  /**
+   * Review target 6 (results/T6-boundaries.md): history when no tap of the 2x2 footprint passes the plane / normal tests.
+   * '3x3' (default, today's behaviour): SVGF's 3x3 fallback (Schied et al. 2017 sec. 4.1, "for thin geometry"), equal
+   * weights; 'off': no fallback, the pixel restarts (its history came from texels up to 1.5 px away, and as "settled"
+   * history it skipped the young-pixel variance and kernel treatment); 'strict': no fallback, and the pixel also
+   * restarts when less than half of the bilinear weight is valid (our design). Payload 'radiance' only. Geometry
+   * tolerances are shared, so the first signal's value applies to a joint pipeline.
+   */
+  historyFallback?: HistoryFallback;
+  /**
+   * Review target 6 (results/T6-boundaries.md): the history normal test (normalThreshold). 'center' (default, today's
+   * test): each tap's normal against this pixel's; 'relative' (our design): the threshold relaxes to the lowest normal
+   * cosine between this pixel and its 3x3 neighbours on the same surface (minus 0.02), so detailed geometry (dense
+   * tessellation, normal maps) doesn't fail its own sub-pixel resampling while smooth surfaces keep the full test.
+   * Payload 'radiance' only; shared geometry test (first signal's value).
+   */
+  normalTest?: NormalTest;
 }
 
 /** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
@@ -285,6 +302,8 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     specularNormalWeight: o.specularNormalWeight ?? 'lobe',
     reflectionReprojection: o.reflectionReprojection ?? 'surface',
     reflectionHitTest: o.reflectionHitTest ?? false,
+    historyFallback: o.historyFallback ?? '3x3',
+    normalTest: o.normalTest ?? 'center',
   };
 }
 
@@ -346,6 +365,8 @@ export function structuralKey(o: ResolvedOptions) {
   const k: (string | number | boolean)[] = [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion];
   if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate, o.shPingPacking);
   if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
+  if (o.historyFallback !== '3x3') k.push(`fb-${o.historyFallback}`);
+  if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
   return k.join('|');
 }
 
@@ -397,6 +418,7 @@ export class SvgfPipeline {
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
       if (signals.some((s) => reflVariant(s.kind, s.opts))) throw new Error(`${label}: reflectionReprojection / reflectionHitTest need payload 'radiance'`);
+      if (o.historyFallback !== '3x3' || o.normalTest !== 'center') throw new Error(`${label}: historyFallback / normalTest need payload 'radiance'`);
       for (const s of signals) {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
       }
@@ -413,7 +435,10 @@ export class SvgfPipeline {
     } else {
       const rr = signals.map((s) => (s.kind === 'specular' ? s.opts.reflectionReprojection : 'surface'));
       const ht = signals.map((s) => s.kind === 'specular' && s.opts.reflectionHitTest);
-      make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht }) : temporalPass(kinds));
+      // T6 variants (compiled in only when not default)
+      const fb = { ...(o.historyFallback !== '3x3' ? { fallback: o.historyFallback } : {}), ...(o.normalTest !== 'center' ? { normalTest: o.normalTest } : {}) };
+      make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht, ...fb })
+        : Object.keys(fb).length ? temporalPass(kinds, fb) : temporalPass(kinds));
       const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
       make('variance', hw.some(Boolean) ? variancePass(kinds, { historyWeight: hw }) : variancePass(kinds));
       const yl = signals.map((s) => s.opts.youngLuminanceWeight !== 1 || s.opts.youngNormalPower > 0);

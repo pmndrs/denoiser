@@ -150,6 +150,34 @@ fn sampleCatmullRom(tex: texture_2d<f32>, smp: sampler, uv: vec2f) -> vec4f {
 `;
 
 /**
+ * Review target 6 (results/T6-boundaries.md), option `normalTest: 'relative'` (our design): the history normal test's
+ * cosine threshold relaxes to the pixel's own neighbourhood, min(tol, lowest normal cosine between p and its 3x3
+ * neighbours on the same surface - 0.02), so detailed geometry (dense tessellation, normal maps: adjacent texels of
+ * one surface >18 deg apart on Bistro) doesn't fail its own resampling, while smooth surfaces keep the full test.
+ * Same surface = screen-space depth continuity (|dz| <= 2 % z + 2 ring x the robust z slope; no normal involved).
+ * Needs `geoCur` (current packed geometry), `F`, geoTap.
+ */
+export const REL_NORMAL_WGSL = /* wgsl */ `
+fn relNormalTol(p: vec2i, g: Geo, tol: f32) -> f32 {
+  let z0 = g.z;
+  let zl = bitcast<f32>(textureLoad(geoCur, clampPix(p - vec2i(1, 0)), 0).x);
+  let zr = bitcast<f32>(textureLoad(geoCur, clampPix(p + vec2i(1, 0)), 0).x);
+  let zu = bitcast<f32>(textureLoad(geoCur, clampPix(p - vec2i(0, 1)), 0).x);
+  let zd = bitcast<f32>(textureLoad(geoCur, clampPix(p + vec2i(0, 1)), 0).x);
+  let sl = max(min(abs(zr - z0), abs(z0 - zl)), min(abs(zd - z0), abs(z0 - zu)));
+  var c = 1.0;
+  for (var k = 0; k < 9; k++) {
+    if (k == 4) { continue; }
+    let q = p + vec2i(k % 3 - 1, k / 3 - 1);
+    if (!inside(q)) { continue; }
+    let gq = geoTap(geoCur, q);
+    if (gq.z > 0.0 && abs(gq.z - z0) <= 0.02 * z0 + 2.0 * sl) { c = min(c, dot(g.n, gq.n)); }
+  }
+  return min(tol, c - 0.02);
+}
+`;
+
+/**
  * Shared temporal core. Expects in scope: `F: Frame`, `geoPrev:
  * texture_2d<u32>`, `motionTex`, `motionZTex: texture_2d<f32>`, and the tolerances
  * passed as arguments.

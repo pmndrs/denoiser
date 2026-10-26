@@ -30,7 +30,7 @@
 //   variance prefilter from the inner taps at stride > 1; depth slope from the
 //   prepass; per-tap angle ratio in cosine space.
 import { Bindings, type PassDef } from './bindings';
-import { FRAME_WGSL, REPROJECT_WGSL } from './common';
+import { FRAME_WGSL, REL_NORMAL_WGSL, REPROJECT_WGSL } from './common';
 
 export type SignalKind = 'diffuse' | 'specular';
 
@@ -182,7 +182,16 @@ export type ReflectionReprojection = 'surface' | 'virtual' | 'dual';
  * disagrees with this frame's (option `reflectionHitTest`; the virtual candidate always has the test). Our design:
  * a reflected-world disocclusion test, the reflection analogue of SVGF's depth test (S1 sec. 4.1).
  */
-export interface TemporalVariant { reflection?: ReflectionReprojection[]; hitTest?: boolean[] }
+/**
+ * `fallback` (option `historyFallback`, review target 6, results/T6-boundaries.md): what the shared reprojection does when
+ * the 2x2 footprint fails. '3x3' (default): SVGF's 3x3 fallback (S1 sec. 4.1, "for thin geometry"), equal weights;
+ * 'off': no fallback, the pixel restarts; 'strict': no fallback, and the pixel also restarts when less than half of
+ * the bilinear weight is valid (resets the silhouette band; our design). Compiled in only when not '3x3'.
+ */
+export type HistoryFallback = '3x3' | 'off' | 'strict';
+/** `normalTest` (option normalTest, T6): 'relative' relaxes the normal threshold to the pixel's neighbourhood (common.ts REL_NORMAL_WGSL). */
+export type NormalTest = 'center' | 'relative';
+export interface TemporalVariant { reflection?: ReflectionReprojection[]; hitTest?: boolean[]; fallback?: HistoryFallback; normalTest?: NormalTest }
 
 /** WGSL shared by every signal with a reflection reprojection variant (needs F, geoCur, geoPrev, REPROJECT_WGSL). */
 const VIRTUAL_WGSL = /* wgsl */ `
@@ -292,6 +301,9 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
   /** this signal runs the reflection variant body (reads the hit distance, rgba32float moments) */
   const rv = (i: number) => refl(i) !== 'surface' || hitT(i);
   const anyVirt = kinds.some((_, i) => rv(i));
+  const fallback = tv.fallback ?? '3x3';
+  const rel = tv.normalTest === 'relative';
+  const NT = rel ? 'nTol' : 'P0.normalTol';
   const b = new Bindings();
   b.uniform('F', 'Frame');
   kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
@@ -528,7 +540,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
 ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
-${REPROJECT_WGSL}
+${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}
 ${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i, refl(i) !== 'surface') : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
@@ -547,16 +559,26 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var fbMask = 0u;
   var fb0 = vec2i(0);
   if (!reset) {
-    r = reproject(p, g, P0.planeTol, P0.normalTol);
+    r = reproject(p, g, P0.planeTol, P0.normalTol);${rel ? `
+    // normalTest 'relative' (T6): the normal threshold relaxed to this pixel's own neighbourhood, computed only where a
+    // tap failed (a relaxed threshold keeps every tap the full one passed, so this equals testing with it everywhere)
+    var nTol = P0.normalTol;
+    if (!r.allValid) {
+      nTol = relNormalTol(p, g, P0.normalTol);
+      if (nTol < P0.normalTol) { r = reproject(p, g, P0.planeTol, nTol); }
+    }` : ''}${fallback === '3x3' ? `
     if (r.sumW <= 0.01) {
       // SVGF sec. 4.1: 3x3 fallback (thin geometry), equal weights.
       fb0 = vec2i(floor(r.prevUV * F.dims));
       for (var k = 0u; k < 9u; k++) {
-        if (tapValid(fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1), g, r.expPrev, P0.planeTol, P0.normalTol)) {
+        if (tapValid(fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1), g, r.expPrev, P0.planeTol, ${NT})) {
           fbMask |= 1u << k;
         }
       }
-    }
+    }` : fallback === 'strict' ? `
+    // historyFallback 'strict' (T6): no 3x3 fallback; restart unless at least half the bilinear weight is valid
+    if (r.sumW < 0.5) { r.sumW = 0.0; }` : `
+    // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}
   }
 ${kinds.map((_, i) => (rv(i) ? perSignalVirt(i, refl(i), hitT(i)) : perSignal(i))).join('\n')}
 }

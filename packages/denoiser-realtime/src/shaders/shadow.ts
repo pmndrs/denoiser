@@ -168,7 +168,7 @@ const TILE = 8;
  * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
  * tile's halo grows to max(2, youngRadius)).
  */
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false): string {
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
   const SW = TILE + 2 * HB;                            // shared tile width
   const YR = young ? youngRadius : 2;
@@ -248,7 +248,27 @@ fn linZ(p: vec2i) -> f32 {
 // plane distance is linear in the tap pixel; the plane is the current normal (not the
 // pairwise-averaged one).
 var<private> ePrev: f32;   // previous frame's noise estimate E (geometry tap byte), bilinear over the valid taps
-fn reprojFast(p: vec2i, g: Geo) -> Reproj {
+${normalRelative ? `// normalTest 'relative' (T6, our design; as common.ts REL_NORMAL_WGSL, from this pass's own inputs): the normal
+// threshold relaxes to the lowest normal cosine between p and its 3x3 neighbours on the same surface, minus 0.02
+fn relNormalTolS(p: vec2i, g: Geo, tol: f32) -> f32 {
+  let z0 = g.z;
+  let zl = linZ(clampPix(p - vec2i(1, 0)));
+  let zr = linZ(clampPix(p + vec2i(1, 0)));
+  let zu = linZ(clampPix(p - vec2i(0, 1)));
+  let zd = linZ(clampPix(p + vec2i(0, 1)));
+  let sl = max(min(abs(zr - z0), abs(z0 - zl)), min(abs(zd - z0), abs(z0 - zu)));
+  var c = 1.0;
+  for (var k = 0; k < 9; k++) {
+    if (k == 4) { continue; }
+    let q = p + vec2i(k % 3 - 1, k / 3 - 1);
+    if (!inside(q)) { continue; }
+    let zq = linZ(q);
+    let nq = textureLoad(normalTex, q, 0).xyz;
+    if (zq > 0.0 && dot(nq, nq) >= 0.01 && abs(zq - z0) <= 0.02 * z0 + 2.0 * sl) { c = min(c, dot(g.n, normalize(nq))); }
+  }
+  return min(tol, c - 0.02);
+}
+` : ''}fn reprojFast(p: vec2i, g: Geo) -> Reproj {
   var r: Reproj;
   let mv = textureLoad(motionTex, p, 0).xy;
   r.prevUV = uvOf(p) - vec2f(mv.x, -mv.y) * 0.5;
@@ -285,8 +305,24 @@ fn reprojFast(p: vec2i, g: Geo) -> Reproj {
     let nqf = vec3f(nq.xy + select(vec2f(max(-nq.z, 0.0)), vec2f(-max(-nq.z, 0.0)), nq.xy >= vec2f(0.0)), nq.z);
     let qc = vec2f(q) + 0.5;
     let pd = a.x + a.y * qc.x + a.z * qc.y + dt * (b.x + b.y * qc.x + b.z * qc.y) - c;
-    valid[k] = select(0.0, 1.0, inside(q) && dt > 0.0 && dot(g.n, nqf) > 0.0 && abs(pd) <= tol);
-  }
+    valid[k] = select(0.0, 1.0, inside(q) && dt > 0.0 && dot(g.n, nqf) > ${normalCos > 0 ? `${normalCos.toFixed(6)} * length(nqf)` : '0.0'} && abs(pd) <= tol);
+  }${normalRelative ? `
+  // normalTest 'relative' (T6): where a tap failed, retest with the threshold relaxed to this pixel's neighbourhood
+  // (a relaxed threshold keeps every tap the full one passed: equal to testing with it everywhere)
+  if (any(valid < vec4f(0.5))) {
+    let nTolS = max(relNormalTolS(p, g, ${normalCos.toFixed(6)}), 0.0);
+    for (var k = 0; k < 4; k++) {
+      let q = r.base + TAP_OFFS[k];
+      let gt = textureLoad(geoPrev, clampPix(q), 0).xy;
+      let dt = bitcast<f32>(gt.x);
+      let e = vec2f(f32(gt.y & 4095u), f32((gt.y >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0;
+      let nq = vec3f(e, 1.0 - abs(e.x) - abs(e.y));
+      let nqf = vec3f(nq.xy + select(vec2f(max(-nq.z, 0.0)), vec2f(-max(-nq.z, 0.0)), nq.xy >= vec2f(0.0)), nq.z);
+      let qc = vec2f(q) + 0.5;
+      let pd = a.x + a.y * qc.x + a.z * qc.y + dt * (b.x + b.y * qc.x + b.z * qc.y) - c;
+      valid[k] = select(0.0, 1.0, inside(q) && dt > 0.0 && dot(g.n, nqf) > nTolS * length(nqf) && abs(pd) <= tol);
+    }
+  }` : ''}
   r.valid = valid;
   r.w = r.bil * valid;
   r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;

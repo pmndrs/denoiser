@@ -30,6 +30,14 @@
 //               TEMPORAL PSNR (-10 log10 mean (e_t - e_t-1)^2) and biasDen is the motion-compensated
 //               flicker (mean |e_t - e_t-1|) of the denoised output.
 //
+//   Boundary region (review target 6, docs/research/rt-denoiser/results/T6-boundaries.md): receivers within
+//               BOUNDARY_R (2) px of a geometric discontinuity of the exact primary G-buffer (the scene's own,
+//               noise-free viewz / normal, not a denoiser's guides): a 5x5 neighbour that is sky, or whose view
+//               depth differs by more than 2 % |z| + 2 x ring x the robust local z slope (silhouettes, thin
+//               objects, the background beside them), or whose normal differs by more than acos(0.8) = 37 deg
+//               (creases, contacts). Regions 'boundary' (all ages), 'boundary-young' (age < ageK) and
+//               'boundary-temporal' (the motion-compensated temporal sums there, as 'static-temporal').
+//
 // val(): shadows score visibility clamped to [0,1]; diffuse / specular score each
 // channel after a Reinhard x/(1+x) tonemap (as examples/ffx-denoiser), so a few hot
 // pixels don't dominate; shadow-rgb (v1) scores each rgb channel clamped to [0, 1] (mode 2: it is a
@@ -96,13 +104,55 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 }
 `;
 
-export const SLOTS = 19;
+export const SLOTS = 22;
 export const REGIONS = ['all', 'penumbra', 'disoccluded', 'rough<0.15', 'rough<0.35', 'rough<0.6', 'rough>=0.6',
-  'dynamic', 'static', 'static-penumbra', 'dynamic-temporal', 'static-temporal', 'tint', 'bump'] as const;
+  'dynamic', 'static', 'static-penumbra', 'dynamic-temporal', 'static-temporal', 'tint', 'bump',
+  'boundary', 'boundary-young', 'boundary-temporal'] as const;
 /** Regions reported only for some signals (v1): 'tint' for shadow-rgb, 'bump' for sh-diffuse / sh-specular. */
 export const V1_REGIONS = new Set(['tint', 'bump']);
 /** Partial-sum slot of each region in REGIONS (slots 7..10 are temporal / lum / non-finite / fixed flicker, 18 v1 misc). */
-const REGION_SLOTS = [0, 1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 17];
+const REGION_SLOTS = [0, 1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21];
+/** Boundary region (target 6): radius in px, depth margin (relative), normal cosine (see the header). */
+export const BOUNDARY_R = 2;
+
+// boundary mask from the exact primary G-buffer (1 = within BOUNDARY_R px of a silhouette / crease / contact)
+export const BOUNDARY_WGSL = /* wgsl */ `
+struct Bd { dims: vec2u, _a: u32, _b: u32 };
+@group(0) @binding(0) var<uniform> bd: Bd;
+@group(0) @binding(1) var t_viewz: texture_2d<f32>;
+@group(0) @binding(2) var t_normal: texture_2d<f32>;
+@group(0) @binding(3) var t_depth: texture_2d<f32>;
+@group(0) @binding(4) var o_mask: texture_storage_2d<r32float, write>;
+fn recv(q: vec2i) -> bool { let d = textureLoad(t_depth, q, 0).r; return d > 0.0 && d < 1.0; }
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= bd.dims)) { return; }
+  let p = vec2i(id.xy);
+  var b = 0.0;
+  if (recv(p)) {
+    let hi = vec2i(bd.dims) - 1;
+    let z = abs(textureLoad(t_viewz, p, 0).r);
+    let zl = abs(textureLoad(t_viewz, clamp(p - vec2i(1, 0), vec2i(0), hi), 0).r);
+    let zr = abs(textureLoad(t_viewz, clamp(p + vec2i(1, 0), vec2i(0), hi), 0).r);
+    let zu = abs(textureLoad(t_viewz, clamp(p - vec2i(0, 1), vec2i(0), hi), 0).r);
+    let zd = abs(textureLoad(t_viewz, clamp(p + vec2i(0, 1), vec2i(0), hi), 0).r);
+    let slope = max(min(abs(zr - z), abs(z - zl)), min(abs(zd - z), abs(z - zu)));
+    let n = normalize(textureLoad(t_normal, p, 0).xyz);
+    for (var dy = -${BOUNDARY_R}; dy <= ${BOUNDARY_R}; dy++) {
+      for (var dx = -${BOUNDARY_R}; dx <= ${BOUNDARY_R}; dx++) {
+        let q = p + vec2i(dx, dy);
+        if (any(q < vec2i(0)) || any(q > hi)) { continue; }
+        if (!recv(q)) { b = 1.0; continue; }
+        let ring = f32(max(abs(dx), abs(dy)));
+        let zq = abs(textureLoad(t_viewz, q, 0).r);
+        if (abs(zq - z) > 0.02 * z + 2.0 * ring * slope) { b = 1.0; }
+        if (dot(n, normalize(textureLoad(t_normal, q, 0).xyz)) < 0.8) { b = 1.0; }
+      }
+    }
+  }
+  textureStore(o_mask, p, vec4f(b));
+}
+`;
 /** Dynamic region: reference change threshold and window in frames (see the header). */
 export const DYN_DELTA = 0.05;
 export const DYN_K = 4;
@@ -180,6 +230,7 @@ struct M { dims: vec2u, mode: u32, validPrev: u32, ageK: f32, hasPen: u32, flags
 @group(0) @binding(14) var t_dyn: texture_2d<f32>;
 @group(0) @binding(15) var t_n: texture_2d<f32>;
 @group(0) @binding(16) var t_ng: texture_2d<f32>;
+@group(0) @binding(17) var t_bnd: texture_2d<f32>;
 
 const NS: u32 = ${SLOTS}u;
 var<workgroup> sh: array<vec4f, 256>;
@@ -251,6 +302,9 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
       }
       let age = textureLoad(t_age, pix, 0).r;
       if (age < m.ageK) { s[2] = reg; }
+      // boundary region (flags bit 2: mask bound)
+      let isBnd = (m.flags & 4u) != 0u && textureLoad(t_bnd, pix, 0).r > 0.5;
+      if (isBnd) { s[19] = reg; if (age < m.ageK) { s[20] = reg; } }
       // dynamic / static split (DYN_WGSL flag)
       let isDyn = textureLoad(t_dyn, pix, 0).r > 0.5;
       if (isDyn) { s[11] = reg; } else {
@@ -272,6 +326,7 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(local_invocation_inde
         s[8].w = dot(dn, dn) / 3.0;
         // region-shaped temporal sums: [noisy de^2, denoised de^2, count, denoised |de|]
         s[select(15u, 14u, isDyn)] = vec4f(dot(dn, dn) / 3.0, dot(dd, dd) / 3.0, 1.0, (abs(dd.x) + abs(dd.y) + abs(dd.z)) / 3.0);
+        if (isBnd) { s[21] = vec4f(dot(dn, dn) / 3.0, dot(dd, dd) / 3.0, 1.0, (abs(dd.x) + abs(dd.y) + abs(dd.z)) / 3.0); }
       }
       if (m.validPrev != 0u) {
         // fixed-pixel flicker (examples/ffx-denoiser and tools/rt-capture/compare.mjs definition):
@@ -365,6 +420,28 @@ export class HistoryAge {
   }
 }
 
+/** Boundary mask of the current frame (BOUNDARY_WGSL), from the scene's exact viewz / normal / depth. */
+export class BoundaryMask {
+  readonly mask: GPUTexture;
+  private pipe: GPUComputePipeline;
+  private u: GPUBuffer;
+  constructor(private device: GPUDevice, private W: number, private H: number) {
+    this.mask = device.createTexture({ label: 'boundary', size: [W, H], format: 'r32float', usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC });
+    this.pipe = device.createComputePipeline({ label: 'boundary', layout: 'auto', compute: { module: device.createShaderModule({ code: BOUNDARY_WGSL }), entryPoint: 'main' } });
+    this.u = device.createBuffer({ size: 16, usage: U.UNIFORM | U.COPY_DST });
+    device.queue.writeBuffer(this.u, 0, new Uint32Array([W, H, 0, 0]));
+  }
+  update(t: { viewz: GPUTexture; normal: GPUTexture; depth: GPUTexture }) {
+    const enc = this.device.createCommandEncoder({ label: 'boundary' });
+    const pass = enc.beginComputePass();
+    pass.setPipeline(this.pipe);
+    pass.setBindGroup(0, bindAll(this.device, this.pipe, [this.u, t.viewz, t.normal, t.depth, this.mask]));
+    pass.dispatchWorkgroups(Math.ceil(this.W / 8), Math.ceil(this.H / 8));
+    pass.end();
+    this.device.queue.submit([enc.finish()]);
+  }
+}
+
 export interface FrameScore {
   /** per region: [sseNoisy, sseDen, count, signedErrDen] (sums) */
   regions: number[][];
@@ -425,6 +502,8 @@ export class Scorer {
     tonemap?: 'scalar' | 'reinhard' | 'clamp';
     /** v1 (sh-*): the shading and geometric normals, for the bump region and the floor fraction */
     normals?: { normal: GPUTexture; geom: GPUTexture };
+    /** target 6: boundary mask (BoundaryMask.mask), for the 'boundary*' regions */
+    boundary?: GPUTexture;
   }): Promise<FrameScore> {
     const prev = this.cur;
     this.cur ^= 1;
@@ -433,7 +512,7 @@ export class Scorer {
     const clampRgb = !o.scalar && o.tonemap === 'clamp';
     u[0] = this.W; u[1] = this.H; u[2] = o.scalar ? 0 : clampRgb ? 2 : 1; u[3] = o.validPrev ? 1 : 0; f[4] = o.ageK;
     u[5] = o.pen ? (o.contact ? 2 : clampRgb ? 3 : 1) : 0;
-    u[6] = (o.normals ? 1 : 0) | (clampRgb ? 2 : 0);
+    u[6] = (o.normals ? 1 : 0) | (clampRgb ? 2 : 0) | (o.boundary ? 4 : 0);
     this.device.queue.writeBuffer(this.u, 0, b);
     const db = new ArrayBuffer(32);
     const du = new Uint32Array(db), df = new Float32Array(db);
@@ -449,7 +528,7 @@ export class Scorer {
     pass.setPipeline(this.pipe);
     pass.setBindGroup(0, bindAll(this.device, this.pipe, [this.u, o.noisy, o.den, o.ref, o.depth, o.rough, o.age, o.motion, o.pen ?? o.ref,
       this.eN[prev], this.eD[prev], this.eN[this.cur], this.eD[this.cur], this.partials, this.dynFlag,
-      o.normals?.normal ?? o.depth, o.normals?.geom ?? o.depth]));
+      o.normals?.normal ?? o.depth, o.normals?.geom ?? o.depth, o.boundary ?? o.depth]));
     pass.dispatchWorkgroups(...this.wg);
     pass.end();
     enc.copyBufferToBuffer(this.partials, 0, this.readback, 0, this.partials.size);

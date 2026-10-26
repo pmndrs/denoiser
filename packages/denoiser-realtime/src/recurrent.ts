@@ -21,7 +21,7 @@ import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
 import {
   blurPass, formatOf, historyFixPass, type SpatialFixConfig, isOccKind, isSpecKind, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG,
-  RP_NO_FIREFLY, RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass,
+  RP_NO_FIREFLY, RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass, type RecurrentTemporalVariant,
   trivialPass, type RecurrentKind,
 } from './shaders/recurrent';
 
@@ -153,6 +153,27 @@ export interface RecurrentOptions {
   specularHistoryScale?: number;
   /** Specular virtual-motion (reflected-image) reprojection, blended with surface motion (SPEC R-9..R-12). Default true. */
   virtualMotion?: boolean;
+  /**
+   * Review target 6 candidate (results/T6-boundaries.md; our design after the SVGF option `reflectionHitTest`): drop a
+   * virtual-footprint tap when its stored fast ĥ disagrees with this frame's pre-blurred ĥ by more than
+   * tune.virtHitTestA × the virtual ĥ tolerance (virtualHitTolerance + virtualHitToleranceRoughness · r) plus
+   * tune.virtHitTestB × the 3x3 spread of this frame's ĥ: a reflected-world disocclusion (background pixels next to a
+   * reflected object whose virtual footprint lands where the object's image was) then has no virtual history instead
+   * of a short one. Default false (compiled out, bit-identical).
+   */
+  virtualHitTest?: boolean;
+  /**
+   * Review target 6 candidate (results/T6-boundaries.md): minimum cosine between this pixel's normal and a history tap's
+   * normal (SVGF sec. 4.1's normal test, on top of the plane test). Default 0: backfacing taps only (today's test,
+   * compiled as before). Geometry tolerances are shared: the first signal's value applies to a joint pipeline.
+   */
+  normalThreshold?: number;
+  /**
+   * Review target 6 candidate (results/T6-boundaries.md, our design): 'relative' relaxes the history normal test to the
+   * pixel's own neighbourhood: min(normalThreshold, lowest normal cosine between this pixel and its 3x3 neighbours on
+   * the same surface - 0.02), floored at the backface test. Default 'center' (normalThreshold as is).
+   */
+  normalTest?: 'center' | 'relative';
   /** Virtual-history clamp window γ (σ of this frame's 3x3, SPEC R-11: 2), widened × (1 + 2·confidence) (tune.virtWiden). Default 1. */
   virtualClampSigma?: number;
   /** Virtual confidence normal tolerance, × lobe half-angle (SPEC R-10). Default 0.5. */
@@ -196,6 +217,9 @@ export interface RecurrentTune {
   elong: number;
   /** occlusion kinds only: clamp the slow ĥ into the fast-history window in history fix (1) or only shorten A (0) */
   occClamp: number;
+  /** virtualHitTest tolerance: a × the virtual ĥ tolerance + b × the 3x3 ĥ spread (compiled in) */
+  virtHitTestA: number;
+  virtHitTestB: number;
 }
 
 export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius' | 'antiLag'>> & {
@@ -256,6 +280,9 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     blurTaps: o.blurTaps ?? 8,
     postBlurTaps: o.postBlurTaps ?? 4,
     virtualMotion: o.virtualMotion ?? true,
+    virtualHitTest: o.virtualHitTest ?? false,
+    normalThreshold: o.normalThreshold ?? 0,
+    normalTest: o.normalTest ?? 'center',
     virtualClampSigma: o.virtualClampSigma ?? 1,
     virtualAngleScale: o.virtualAngleScale ?? 0.5,
     virtualHitTolerance: o.virtualHitTolerance ?? 0.05,
@@ -270,7 +297,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
       postLo: 0.5, postHi: 2.0, postDelta: 0.3,
       stabGammaLo: 1, stabGammaHi: 3, stabBeta: 0.02,
-      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1,
+      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1, virtHitTestA: 2, virtHitTestB: 1,
       ...o.tune,
     },
   };
@@ -315,6 +342,9 @@ export function recurrentStructuralKey(o: ResolvedRecurrent) {
   if (o.historyFix === 'spatial' && (x.ageWeight || x.wide || x.mips !== 'off' || x.dense)) k.push(JSON.stringify(x));
   if (o.youngBlurTaps) k.push(`ybt${o.youngBlurTaps}`);
   if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
+  if (o.normalThreshold > 0) k.push(`nt${o.normalThreshold}`);
+  if (o.normalTest !== 'center') k.push(`ntest-${o.normalTest}`);
+  if (o.virtualHitTest) k.push(`vht${o.tune.virtHitTestA},${o.tune.virtHitTestB}`);
   return k.join('|');
 }
 
@@ -378,7 +408,14 @@ export class RecurrentPipeline {
     };
     const T = (k: 'preBlurTaps' | 'blurTaps' | 'postBlurTaps') => signals.map((s) => taps(s.opts, k, s.kind));
     if (!this.occ) make('pre_blur', preBlurPass(kinds, T('preBlurTaps')));
-    make('temporal', temporalPass(kinds));
+    const o = this.opts;
+    // T6 variants (compiled in only when on; per-signal virtualHitTest, shared geometry test)
+    const tv: RecurrentTemporalVariant = {
+      ...(o.normalThreshold > 0 ? { normalCos: o.normalThreshold } : {}),
+      ...(o.normalTest === 'relative' ? { normalRelative: true } : {}),
+      ...(signals.some((s) => s.opts.virtualHitTest) ? { virtualHitTest: { a: o.tune.virtHitTestA, b: o.tune.virtHitTestB } } : {}),
+    };
+    make('temporal', Object.keys(tv).length ? temporalPass(kinds, tv) : temporalPass(kinds));
     const fx = spatialFixOf(this.opts);
     this.spatialFix = this.opts.historyFix === 'spatial' && fx.mips === 'off';
     if (!this.spatialFix) make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton

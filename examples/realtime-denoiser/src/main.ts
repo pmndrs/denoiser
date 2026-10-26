@@ -60,7 +60,8 @@
 //   &ppd=<pixels per degree>  FLIP viewing condition (default W / 46.4, see PPD)
 //   &ageK=8                   "disoccluded" region = < ageK frames of valid history
 //   &n=100                    bench frames
-//   eval: &show=age puts the ground-truth history age in panel 1 (white = >= ageK frames)
+//   eval: &show=age puts the ground-truth history age in panel 1 (white = >= ageK frames); &show=boundary the
+//         boundary-region mask (target 6, metrics.ts BOUNDARY_WGSL)
 //         &dump=F&dumpRect=x,y,w,h  read back that crop of frame F's noisy / denoised / reference
 //         (channel .r for scalar signals, rgb otherwise) into results.dumps (occlusion-crops.mjs)
 //   reflect build (rm-* paths, src/paths-reflect.ts; results/REFLECTION-MOTION.md): eval on signal=specular adds
@@ -79,7 +80,7 @@ import { CaptureClient, fromFrameCamera } from '../../../tools/rt-capture/src/fo
 import { captureBuffers, captureFrameBytes, frameExtra, isStatic, lightsOf, liveFrame, liveManifest } from './capture';
 import { defaultDenoisers, denoiserById, DENOISERS, toCaptureSignal, type DenoiserEntry } from './denoisers';
 import { flipMean, prepareFlip, unpackLdr, type FlipPrepared } from './flip';
-import { DetailBand, HistoryAge, LdrPacker, REGIONS, Scorer, ShResolve, V1_REGIONS, type FrameScore } from './metrics';
+import { BoundaryMask, DetailBand, HistoryAge, LdrPacker, REGIONS, Scorer, ShResolve, V1_REGIONS, type FrameScore } from './metrics';
 import { pathById, PATHS, type PathDef } from './paths';
 import type { ReflectPathDef } from './paths-reflect';   // registers the rm-* paths (reflect build) into PATHS
 import './paths-reflect';
@@ -317,6 +318,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     log(`capture ${CAPTURE}: ${FRAMES} frames x ${(frameBytes / 2 ** 20).toFixed(1)} MiB -> ${info.root}/captures/${CAPTURE}`);
   }
   const age = new HistoryAge(device, W, H);
+  const bnd = new BoundaryMask(device, W, H);
   const scorePipe = Scorer.pipeline(device);
   for (const p of pairs) p.scorer = new Scorer(device, W, H, scorePipe);
   // v1: detail band (sh-*), resolved SH reference (sh-diffuse)
@@ -370,11 +372,12 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     const frame = frameOf(f, reset, cam);
     if (writer) await writer.writeFrame({ index: f, reset, camera: cam, extra: frameExtra(scene.frameMeta!, START + f) }, captureBuffers(scene, signals, refs.length > 0));
     age.update(T, reset);
+    bnd.update(T);
     const scoreArgs = (sig: ReturnType<SceneSignals['signal']>, s: Signal, reset: boolean) => ({
       depth: T.depth, rough: T.roughness, age: age.current, motion: T.motion,
       pen: isOccSignal(s) || s === 'shadow-rgb' ? sig.ref : refs.includes('shadows') ? T.visibilityRef : undefined, contact: isOccSignal(s),
       scalar: sig.scalar, validPrev: !reset, ageK: f - lastReset(f) >= AGE_K ? AGE_K : 0,
-      tonemap: sig.tonemap, ...(isShSignal(s) ? { normals: { normal: T.normal, geom: T.normalGeom } } : {}),
+      tonemap: sig.tonemap, ...(isShSignal(s) ? { normals: { normal: T.normal, geom: T.normalGeom } } : {}), boundary: bnd.mask,
     });
     const shRef = shResolve?.run(T.diffuseShRefA, T.diffuseShRefB, T.normal, T.normalGeom, T.depth);
     // reference noise floor: the second set scored against the first (as "denoised" and "noisy")
@@ -393,6 +396,7 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
         // "disoccluded" excludes the AGE_K frames right after a reset (everything is history-less
         // there; those frames are covered by psnrDenFirstFrame / psnrDenAfterCut)
         ageK: f - lastReset(f) >= AGE_K ? AGE_K : 0,
+        boundary: bnd.mask,
         ...v1Args,
       });
       p.frames.push(r);
@@ -441,7 +445,8 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
       const last = p.frames[p.frames.length - 1];
       const sig = scene.signal(p.signal);
       // &show=age: panel 1 shows the ground-truth history age (white = >= ageK frames)
-      const p0 = q.get('show') === 'age' ? { tex: age.current, mode: 2, exposure: 1 / AGE_K } : { tex: sig.noisy, mode: sig.scalar ? 0 : 1 };
+      const p0 = q.get('show') === 'age' ? { tex: age.current, mode: 2, exposure: 1 / AGE_K }
+        : q.get('show') === 'boundary' ? { tex: bnd.mask, mode: 2, exposure: 1 } : { tex: sig.noisy, mode: sig.scalar ? 0 : 1 };
       view.show([p0, { tex: p.lastOut!, mode: sig.scalar ? 0 : 1 }, { tex: sig.ref, mode: sig.scalar ? 0 : 1 }], sig.ref);
       log(`frame ${f}: ${pairs.map((pp) => { const l = pp.frames[pp.frames.length - 1]; return `${pp.signal}/${pp.key} ${psnr(l.regions[0][1], l.regions[0][2]).toFixed(2)} dB`; }).join('  ')}  (noisy ${psnr(last.regions[0][0], last.regions[0][2]).toFixed(2)})`);
     }

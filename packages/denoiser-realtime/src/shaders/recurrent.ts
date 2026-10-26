@@ -51,7 +51,7 @@
 //   post-blur (both) and pre-blur (specular); 10x10 shared tiles for the 3x3
 //   neighbourhoods; cheaper recurrent-only reprojection (REPROJECT_R).
 import { Bindings, type PassDef } from './bindings';
-import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REPROJECT_WGSL } from './common';
+import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REL_NORMAL_WGSL, REPROJECT_WGSL } from './common';
 
 /**
  * Signal kinds. `ao` / `so` are the occlusion-only mode (SPEC §8 O-2, M5): the same passes
@@ -486,7 +486,17 @@ const temporalDiffuse = (i: number, sl: number, kind: RecurrentKind = 'diffuse')
 // R2 per-signal body, specular (SPEC §5.6, R-7..R-12): surface and virtual history
 // candidates, virtual confidence and clamp, blended in alpha space by the amount of
 // virtual motion m = F_dom(alpha).
-const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular') => /* wgsl */ `
+/**
+ * Temporal-pass variant (review target 6, results/T6-boundaries.md), compiled in only when set:
+ * `normalCos` (option normalThreshold): history taps whose normal is within acos(normalCos) of this pixel's
+ * (SVGF sec. 4.1's normal test; default: backfacing taps only); `virtualHitTest` (option virtualHitTest): each virtual
+ * footprint tap's stored fast ĥ must agree with this frame's pre-blurred ĥ within a·(virtual ĥ tolerance) + b·(3x3
+ * spread of this frame's ĥ), else the tap is dropped (a reflected-world disocclusion, our design after the SVGF
+ * option reflectionHitTest).
+ */
+export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?: boolean; virtualHitTest?: { a: number; b: number } }
+
+const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular', vht?: { a: number; b: number }) => /* wgsl */ `
   {
     let pre = pc${i};
     var a = 0.0;
@@ -508,8 +518,12 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
         let kappa = curvSum / max(curvN, 1.0) * P${i}.virtCurv;
         hV = hV / max(1.0 + 2.0 * kappa * hV, 0.05);
         let uvV = virtualPrevUV(r.world, hV, fdom);
-        if (onScreen(uvV)) {
-          let v = virt${i}(g, r.expPrev, uvV);
+        if (onScreen(uvV)) {${vht ? `
+          // virtualHitTest (T6): this frame's pre-blurred ĥ and its 3x3 spread; taps whose stored fast ĥ disagrees drop out
+          let hMu${i} = m1_${i}.y / nn;
+          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * g.rough) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
+          let v = virt${i}(g, r.expPrev, uvV, ${hOf(kind, 'pre')}, hTol${i});` : `
+          let v = virt${i}(g, r.expPrev, uvV);`}
           if (v.vg > 0.0) {
             m = fdom;   // R-12: amount of virtual motion
             Hv = v.H;
@@ -563,8 +577,9 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
 // reproject()): previous view-space positions from the linear unprojection with the
 // previous projection, and the plane test against the plane {Xp, np} of this pixel
 // (current normal only; SPEC averages it pairwise with each tap's normal), its
-// distance linear in the tap pixel (as the kernels). Backfacing taps rejected.
-const REPROJECT_R = /* wgsl */ `
+// distance linear in the tap pixel (as the kernels). Backfacing taps rejected (or, with the T6 option
+// normalThreshold, taps beyond that normal angle).
+const reprojectRWgsl = (normalCos?: number, relative = false) => /* wgsl */ `
 fn viewPosPrevAt(uv: vec2f, d: f32) -> vec3f {
   let ndc = ndcOf(uv);
   if (isOrtho()) { return vec3f((ndc.x - RF.unp2.x) * RF.prevUnp.x, (ndc.y - RF.unp2.y) * RF.prevUnp.y, -d); }
@@ -589,8 +604,19 @@ fn reprojectR(p: vec2i, g: Geo, tol: f32) -> Reproj {
     let q0 = r.base + TAP_OFFS[${k}];
     let q = clampPix(q0);
     let gq = geoTap(geoPrev, q);
-    r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= tol);
-  }`).join('\n  ')}
+    r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > ${normalCos ? normalCos.toFixed(6) : '0.0'} && planeDist(pl, q, gq.z) <= tol);
+  }`).join('\n  ')}${relative ? `
+  // normalTest 'relative' (T6): where a tap failed, retest with the threshold relaxed to this pixel's neighbourhood
+  // (a relaxed threshold keeps every tap the full one passed: equal to testing with it everywhere)
+  if (any(r.valid < vec4f(0.5))) {
+    let nTolR = max(relNormalTol(p, g, ${(normalCos ?? 0).toFixed(6)}), 0.0);
+    ${[0, 1, 2, 3].map((k) => `{
+      let q0 = r.base + TAP_OFFS[${k}];
+      let q = clampPix(q0);
+      let gq = geoTap(geoPrev, q);
+      r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > nTolR && planeDist(pl, q, gq.z) <= tol);
+    }`).join('\n    ')}
+  }` : ''}
   r.w = r.bil * r.valid;
   r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
   r.allValid = all(r.valid > vec4f(0.5));
@@ -615,7 +641,7 @@ fn catmullRomLoad1(tex: texture_2d<f32>, uv: vec2f) -> f32 {
 }
 `;
 
-export function temporalPass(kinds: RecurrentKind[]): PassDef {
+export function temporalPass(kinds: RecurrentKind[], tv: RecurrentTemporalVariant = {}): PassDef {
   const b = base(kinds);
   addReproj(b);
   b.add('smp', 'sampler', 's');
@@ -655,7 +681,7 @@ fn specCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
 // lie on it); bilinear only (Catmull-Rom here: +0.04 dB for 0.13 ms). Also returns
 // the valid-weighted previous normal, roughness and fast history there.
 struct ${V} { H: ${VT(kinds[i])}, Fv: vec4f, n: vec3f, r: f32, vg: f32 }
-fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> ${V} {
+fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f${tv.virtualHitTest ? ', hRef: f32, hTol: f32' : ''}) -> ${V} {
   var o: ${V};
   let pp = uv * F.dims - 0.5;
   let base = vec2i(floor(pp));
@@ -670,7 +696,7 @@ fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> ${V} {
     let gq = geoTap(geoPrev, q);
     let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
     let fq = textureLoad(fastPrev, q, 0);
-    let ok = all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= P0.planeTol;
+    let ok = all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= P0.planeTol${tv.virtualHitTest ? ` && abs(fq[${2 * slotOf(kinds[i])} + 1] - hRef) <= hTol` : ''};
     let w = select(0.0, max(bil[${k}], 1e-3), ok);
     o.vg += select(0.0, bil[${k}], ok);
     o.H += h * w;
@@ -684,7 +710,7 @@ fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f) -> ${V} {
 }`;
   const code = /* wgsl */ `
 ${head(b, REPROJECT_WGSL)}
-${REPROJECT_R}${hasOcc ? CATMULL_ROM_LOAD : ''}
+${tv.normalRelative ? REL_NORMAL_WGSL : ''}${reprojectRWgsl(tv.normalCos, tv.normalRelative)}${hasOcc ? CATMULL_ROM_LOAD : ''}
 ${kinds.map((k, i) => (isSpecKind(k) || isOccKind(k) ? signalWgsl(k, i) + (isSpecKind(k) ? specCap(i) : '') : '')).join('\n')}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
@@ -776,7 +802,7 @@ fn main(${TILE_MAIN}) {
       }` : ''}
     }`).join('')}
   }
-  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i]) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
+  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
   textureStore(outFast, p, fastOut);
   var mask = 0u;
   if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
