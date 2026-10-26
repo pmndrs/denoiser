@@ -1019,3 +1019,14 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - The upscaler-guides `run.mjs` names output files after the whole query: a long `det=` list hits ENAMETOOLONG. The
   T6 copy (`results/data/t6-boundaries/run.mjs`) drops the `det=` part from the file name. Capture scoring with the
   boundary region takes ~5 min of CPU per Bistro capture; keep it outside the GPU lock. — t6, 2026-10-26
+- **A desktop video call ruins bench medians, and the headless-only quiet check can't see it.** A Slack call with the camera
+  on (Dennis at the Mac) put every 1080p bench page into a slow state for its 50 minutes: joint diffuse + specular medians
+  +5 … +100 %, single runs up to 2.9×, shadows +5 % with outliers. The fastest frames moved ≤ 0.15 ms. Before and between
+  rounds check `pmset -g assertions | grep "Video Wake Lock"` and the camera service (`UVCAssistant` CPU > 3 %). Stamp every
+  page with its time so a contaminated window can be cut afterwards. `results/data/remeasure-2026-10-26/bench.mjs` waits on
+  both. Without such load, 9 clean rounds had no slow-clock-state run at all (run medians within 3 % for every
+  configuration). So some earlier "slow clock state" runs may have been desktop load: record it. — timing evaluator, 2026-10-26
+- The full REMEASURE timing protocol is cheap now: a 1080p bench page (n = 200) takes ~3 s, so a 17-configuration round is
+  ~1 min and 9 rounds ~15 min. Re-time rather than quote projections. Starting Vite with a scratch config
+  outside the repo prints `UNRESOLVED_IMPORT 'esbuild'` warnings; they are harmless (the server is `ready`).
+  — timing evaluator, 2026-10-26
