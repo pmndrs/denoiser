@@ -15,6 +15,7 @@
 //   R7 stabilize    reads r, q (reprojected)     writes p = S (output, next frame's S_prev)
 // Next frame: p' = r, q' = p, r' = q, s' = s.
 import type { PassTimer } from './common';
+import { withF16Rounding, type F16Rounding } from './f16';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res } from './gpu';
 import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
@@ -166,6 +167,12 @@ export interface RecurrentOptions {
   timestamps?: boolean;
   /** @internal Replace every pass by a trivial kernel with the same bindings (SPEC §10.3 skeleton timing). */
   skeleton?: boolean;
+  /**
+   * Rounding of values written to the rgba16float buffers: 'store' (default) leaves it to the platform
+   * (Metal truncates toward zero), 'nearest' rounds to nearest-even before every store (src/f16.ts;
+   * diagnostic / candidate option, results/DISTANCE-LONG.md).
+   */
+  f16Rounding?: F16Rounding;
   /** @internal Weight tolerance overrides (sweeps): [geometry A=0, A=1], normal tightening, hit [r=0, r=1, tightening], post-blur [lo, hi, delta], stabilization γ [lo, hi], β. */
   tune?: Partial<RecurrentTune>;
 }
@@ -254,6 +261,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
     skeleton: o.skeleton ?? false,
+    f16Rounding: o.f16Rounding ?? 'store',
     tune: {
       geoTolLo: 0.02, geoTolHi: 0.005, normalTight: 0.25,
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
@@ -303,6 +311,7 @@ export function recurrentStructuralKey(o: ResolvedRecurrent) {
   const x = spatialFixOf(o);
   if (o.historyFix === 'spatial' && (x.ageWeight || x.wide || x.mips !== 'off' || x.dense)) k.push(JSON.stringify(x));
   if (o.youngBlurTaps) k.push(`ybt${o.youngBlurTaps}`);
+  if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
   return k.join('|');
 }
 
@@ -359,6 +368,7 @@ export class RecurrentPipeline {
     const skel = this.opts.skeleton;
     const make = (name: string, def: PassDef, trivial = skel) => {
       if (trivial) def = trivialPass(def);
+      if (this.opts.f16Rounding !== 'store') def = { ...def, code: withF16Rounding(def.code, this.opts.f16Rounding) };
       this.defs[name] = def;
       this.layouts[name] = makeLayout(d, `${label} ${name}`, def.entries.map((e) => e.kind));
       this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);

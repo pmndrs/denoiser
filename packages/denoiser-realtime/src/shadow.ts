@@ -30,6 +30,7 @@ import type {
   FrameCamera, FrameGuides, ShadowInputs, ShadowLight, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
 import { invert, isDepthFormat, mat4, PassTimer, type M4 } from './common';
+import { withF16Rounding, type F16Rounding } from './f16';
 import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
@@ -233,6 +234,12 @@ export interface ShadowDenoiserOptions {
   light?: ShadowLight;
   /** Per-pass GPU timestamps into `gpuTimings`. Default true. */
   timestamps?: boolean;
+  /**
+   * Rounding of values written to the rgba16float textures (history: v, g, A, n_g; translucency): 'store'
+   * (default) leaves it to the platform (Metal truncates toward zero), 'nearest' rounds to nearest-even
+   * before every store (src/f16.ts; diagnostic / candidate option, results/DISTANCE-LONG.md).
+   */
+  f16Rounding?: F16Rounding;
 }
 
 type Resolved = Required<Omit<ShadowDenoiserOptions, 'light' | 'antiLag'>> & { light?: ShadowLight };
@@ -293,6 +300,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     translucencyOwnGate: o.translucencyOwnGate ?? 'antiLag',
     translucencyPath: o.translucencyPath ?? 'auto',
     timestamps: o.timestamps ?? true,
+    f16Rounding: o.f16Rounding ?? 'store',
     ...(o.light ? { light: o.light } : {}),
   };
 }
@@ -447,27 +455,32 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     if (tr) {
       if (o.spatialPasses > 0) {
         // compose reads the tile mode at run time; stabilize is specialized per list
-        this.lastPipe = pipeline(device, 'shadows stabilize (translucency, v tiles)', shadowStabilizeTrWgsl(tr, tr.compose ? true : false), this.layouts.stabilize);
-        this.lastTauPipe = tr.compose ? this.lastPipe : pipeline(device, 'shadows stabilize (translucency, tau tiles)', shadowStabilizeTrWgsl(tr, true), this.layouts.stabilize);
+        this.lastPipe = this.mkPipe('shadows stabilize (translucency, v tiles)', shadowStabilizeTrWgsl(tr, tr.compose ? true : false), this.layouts.stabilize);
+        this.lastTauPipe = tr.compose ? this.lastPipe : this.mkPipe('shadows stabilize (translucency, tau tiles)', shadowStabilizeTrWgsl(tr, true), this.layouts.stabilize);
       }
     } else if (o.stabilize > 0 && o.spatialPasses > 0) {
-      this.stabPipe = pipeline(device, 'shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
+      this.stabPipe = this.mkPipe('shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
-    this.tilesPipe = pipeline(device, 'shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
+    this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
       // wide path: the v-only tiles run the opaque denoiser's own spatial passes (same code, same cost)
       this.spatialVLayout = layout(device, 'shadows spatial (v tiles)', ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float']);
-      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, undefined, true, sv), this.spatialVLayout!));
+      this.spatialPipes = [0, 1].map((i) => this.mkPipe(`shadows spatial${i}`, shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, undefined, true, sv), this.spatialVLayout!));
     } else {
-      this.spatialPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i}`,
+      this.spatialPipes = [0, 1].map((i) => this.mkPipe(`shadows spatial${i}`,
         shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, false, sv), this.layouts.spatial));
     }
     if (tr) {
-      this.spatialTauPipes = [0, 1].map((i) => pipeline(device, `shadows spatial${i} (tau tiles)`,
+      this.spatialTauPipes = [0, 1].map((i) => this.mkPipe(`shadows spatial${i} (tau tiles)`,
         shadowSpatialWgsl(i as 0 | 1, o.normalWeight, this.withE, tr, true, sv), this.layouts.spatial));
     }
+  }
+
+  /** A compute pipeline of this instance (f16Rounding 'nearest': f16 stores rounded first, src/f16.ts). */
+  private mkPipe(label: string, code: string, l: GPUBindGroupLayout): GPUComputePipeline {
+    return pipeline(this.device, label, withF16Rounding(code, this.options.f16Rounding), l);
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
@@ -557,7 +570,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= pipeline(d, `shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false, argsOffset = 0) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });

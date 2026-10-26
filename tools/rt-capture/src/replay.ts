@@ -91,6 +91,12 @@ export interface ReplayDenoiser {
   dispatchAsync?(frame: ReplayFrame): Promise<Partial<Record<SignalName, GPUTexture>>>;
   /** Extra facts for run.json (`denoiserInfo`), read after the last frame (e.g. which model ran). */
   info?(): Record<string, unknown>;
+  /**
+   * @internal Diagnostics: internal textures of the last dispatch by name (e.g. `visibility/history`: the shadow
+   * history v, g, A, n_g; `diffuse/history`: recurrent H with ĥ in .a; `diffuse/accum`: SVGF's history). Read by
+   * probes (examples/realtime-denoiser distance probe); valid until the next dispatch.
+   */
+  inspect?(): Record<string, GPUTexture | undefined>;
   resetHistory(): void;
   /** Per-pass GPU ms of the last measured frame, keyed `<signal>/<pass>` or `<pass>`. */
   gpuTimings?(): Map<string, number>;
@@ -132,7 +138,8 @@ export interface ReplayOptions {
    */
   warmMs?: number;
   /** Progress callback. */
-  onFrame?(index: number, outputs: Partial<Record<SignalName, GPUTexture>>, frame: ReplayFrame): void | Promise<void>;
+  onFrame?(index: number, outputs: Partial<Record<SignalName, GPUTexture>>, frame: ReplayFrame,
+    inspect?: Record<string, GPUTexture | undefined>): void | Promise<void>;
 }
 
 export interface TimingRow { frame: number; pass: string; ms: number }
@@ -346,7 +353,7 @@ export async function replay(device: GPUDevice, opts: ReplayOptions): Promise<Re
       const data = await readTextures(device, list.map((s) => ({ texture: out[s]!, channels: SIGNAL_CH[s] })));
       if (write) list.forEach((s, i) => uploads.push(client.put(`${outDir}/${frameDir(f.index)}/${s}.f32`, data[i].buffer as ArrayBuffer)));
       if (uploads.length > 48) await Promise.all(uploads.splice(0));
-      await opts.onFrame?.(f.index, out, frame);
+      await opts.onFrame?.(f.index, out, frame, den.inspect?.());
     }
     await Promise.all(uploads);
     denoiserInfo = den.info?.();

@@ -16,6 +16,7 @@ import {
 } from './shaders/gradient';
 import { gradientCreatePassSh } from './shaders/sh-gradient';
 import { SH_PACK_NEAREST, SH_PACK_TRUNCATE, type ShEncoding } from './shaders/sh';
+import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
@@ -163,6 +164,12 @@ export interface SvgfOptions {
   shPingPacking?: 'f16' | 'u8';
   /** @internal Test only: f16 packing rounds toward zero (as rgba16float stores do on Metal), for the plain-vs-SH regression. */
   shPackTruncate?: boolean;
+  /**
+   * Rounding of values written to the rgba16float textures (history, à-trous ping-pong, output): 'store'
+   * (default) leaves it to the platform (Metal truncates toward zero), 'nearest' rounds to nearest-even
+   * before every store (src/f16.ts; diagnostic / candidate option, results/DISTANCE-LONG.md).
+   */
+  f16Rounding?: F16Rounding;
 }
 
 /** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
@@ -269,6 +276,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shGuard: o.shGuard ?? 1,
     shSharpen: o.shSharpen ?? 0.75,
     shPackTruncate: o.shPackTruncate ?? false,
+    f16Rounding: o.f16Rounding ?? 'store',
     shPingPacking: o.shPingPacking ?? 'f16',
     specularHistoryScale: o.specularHistoryScale ?? 1,
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
@@ -337,6 +345,7 @@ class SignalState {
 export function structuralKey(o: ResolvedOptions) {
   const k: (string | number | boolean)[] = [o.atrousIterations, o.kernel, o.feedback, o.antiLag, o.gradientIterations, o.antiLagVersion];
   if (o.payload !== 'radiance') k.push(o.payload, o.shEncoding, o.shPackTruncate, o.shPingPacking);
+  if (o.f16Rounding !== 'store') k.push(o.f16Rounding);
   return k.join('|');
 }
 
@@ -375,7 +384,8 @@ export class SvgfPipeline {
       this.iterParams.push(b);
     }
     const make = (name: string, def0: PassDef) => {
-      const def = o.shPackTruncate ? { ...def0, code: def0.code.replace(SH_PACK_NEAREST, SH_PACK_TRUNCATE) } : def0;
+      const def1 = o.shPackTruncate ? { ...def0, code: def0.code.replace(SH_PACK_NEAREST, SH_PACK_TRUNCATE) } : def0;
+      const def = o.f16Rounding !== 'store' ? { ...def1, code: withF16Rounding(def1.code, o.f16Rounding) } : def1;
       this.defs[name] = def;
       this.layouts[name] = makeLayout(d, `${label} ${name}`, def.entries.map((e) => e.kind));
       this.pipes[name] = makePipeline(d, `${label} ${name}`, def.code, this.layouts[name]);

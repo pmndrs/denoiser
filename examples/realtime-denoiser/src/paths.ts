@@ -185,6 +185,32 @@ for (const [lk, lf, about] of [['hard', smHard, 'hard local light (r 4 cm)'], ['
   );
 }
 
+// ---- long-hold paths (review target D / target 7, results/DISTANCE-LONG.md): ARRIVE_FRAMES of a constant-speed
+// arc around the view's target that stops exactly on the hold pose, then HOLD_FRAMES of that pose (camera, light
+// and objects still). Captured once; tools/rt-capture/loop-capture.mjs loops the hold window into >= 300-frame
+// sequences: "hold" (reset on the hold pose, hold from the start) and "arrive" (the arc, then the hold), so the
+// same final view is reached through two histories on identical hold inputs.
+export const ARRIVE_FRAMES = 60;
+export const HOLD_FRAMES = 64;
+/** eye orbited about the vertical through `target` by `deg` degrees */
+const yawAbout = (eye: V3, target: V3, deg: number): V3 => {
+  const a = (deg * Math.PI) / 180, dx = eye[0] - target[0], dz = eye[2] - target[2];
+  return [target[0] + dx * Math.cos(a) - dz * Math.sin(a), eye[1], target[2] + dx * Math.sin(a) + dz * Math.cos(a)];
+};
+const arriveHold = (id: string, label: string, about: string, hold: FrameState, arcDeg: number): PathDef => ({
+  id, label, frames: ARRIVE_FRAMES + HOLD_FRAMES, resets: [], about,
+  at: (f) => {
+    const k = Math.min(f, ARRIVE_FRAMES);
+    return state(yawAbout(hold.eye, hold.target, arcDeg * (1 - k / ARRIVE_FRAMES)), hold.target);
+  },
+});
+PATHS.push(
+  arriveHold('glossy-arrive', 'glossy: arc, then hold', `target D: ${ARRIVE_FRAMES} frames of a 25 deg arc (0.42 deg/frame) ending on glossy's frame-48 pose, then ${HOLD_FRAMES} frames holding it (glossy floor, sphere contacts)`,
+    PATHS.find((p) => p.id === 'glossy')!.at(48), -25),
+  arriveHold('thin-arrive', 'thin: arc, then hold', `target D: ${ARRIVE_FRAMES} frames of a 25 deg arc ending on thin's frame-48 pose, then ${HOLD_FRAMES} frames holding it (fence slats, thin contact shadows)`,
+    PATHS.find((p) => p.id === 'thin')!.at(48), 25),
+);
+
 // ---- reveal paths (T1b, results/T1b-spatial-repair.md; audit priority 4 / review target 1): a static camera on
 // the fence side (patterned, indirectly lit background: slats, their shadows and sky occlusion on the floor, boxes and
 // spheres behind) and the movable sphere as a foreground occluder 2 m in front of it. Nothing else moves, so a

@@ -15,6 +15,7 @@
 //
 // Output: ĥ in `.r` (recurrent: r32float; svgf: rgba16float gray). 1 = open, → 0 at
 // contact; the falloff is 1 / (1 + h / (a + b·depth)) (SPEC F-3, §12 item 6).
+import { withF16Rounding, type F16Rounding } from './f16';
 import type { FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser } from '@pmndrs/denoiser-core';
 import { PassTimer } from './common';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
@@ -103,9 +104,9 @@ export class HitDistanceNormalizer {
   private outs: GPUTexture[] = [];
   private next = 0;
 
-  constructor(private device: GPUDevice, readonly depth: 'geo' | 'viewz' = 'viewz', label = 'occlusion normalize') {
+  constructor(private device: GPUDevice, readonly depth: 'geo' | 'viewz' = 'viewz', label = 'occlusion normalize', f16Rounding: F16Rounding = 'store') {
     this.layout = makeLayout(device, label, ['u', 'f', depth === 'geo' ? 'i' : 'f', 'rgba16float']);
-    this.pipe = makePipeline(device, label, normalizeHitWgsl(depth), this.layout);
+    this.pipe = makePipeline(device, label, withF16Rounding(normalizeHitWgsl(depth), f16Rounding), this.layout);
     this.params = device.createBuffer({ label, size: OCC_NORM_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.setCurve(DEFAULT_A, DEFAULT_B);
   }
@@ -187,7 +188,7 @@ export class OcclusionDenoiser implements TemporalDenoiser<OcclusionInputs> {
       passes = recurrentPassCount(r.o, true);
     } else {
       this.svgf = new SvgfPipeline(device, r.signals.map((k, i) => ({ kind: k, opts: r.perSignal[i] })), this.name);
-      this.norm = new HitDistanceNormalizer(device, 'geo', `${this.name} normalize`);
+      this.norm = new HitDistanceNormalizer(device, 'geo', `${this.name} normalize`, r.o.f16Rounding);
       this.norm.setCurve(r.hitDistanceScale, r.hitDistanceViewScale);
       passes = 3 + r.o.atrousIterations + (r.o.antiLag !== 'off' ? 2 + r.o.gradientIterations : 0);
     }

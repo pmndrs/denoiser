@@ -95,6 +95,17 @@ export function perSignal(
         return out;
       },
       resetHistory() { for (const d of dens.values()) d.resetHistory(); },
+      inspect() {
+        // @internal debug textures: recurrent / shadows 'history', SVGF 'accum' (classes without debugTexture: none)
+        const o: Record<string, GPUTexture | undefined> = {};
+        for (const [s, d] of dens) {
+          const dbg = (d as { debugTexture?: (n: string) => GPUTexture | undefined }).debugTexture;
+          if (!dbg) continue;
+          const n = d.name.startsWith('svgf') ? 'accum' : 'history';
+          o[`${s}/${n}`] = dbg.call(d, n);
+        }
+        return o;
+      },
       gpuTimings() {
         const m = new Map<string, number>();
         for (const [s, d] of dens) for (const [k, v] of d.gpuTimings ?? []) m.set(dens.size > 1 ? `${s}/${k}` : k, v);
@@ -163,7 +174,7 @@ const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance'
   'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
   'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale',
   'spatialVarianceRadius', 'spatialHistoryWeight', 'youngLuminanceWeight', 'youngNormalPower'] as const;
-const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight', 'reflectionReprojection'] as const;
+const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight', 'f16Rounding', 'reflectionReprojection'] as const;
 
 /** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
 export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOptions = {}): SpecularSvgfOptions {
@@ -341,6 +352,7 @@ registerDenoiser({
         };
       },
       resetHistory() { den.resetHistory(); },
+      inspect() { return { 'visibility/history': den.debugTexture('history') }; },
       gpuTimings() { return new Map(den.gpuTimings ?? []); },
       dispose() { den.dispose(); },
     };

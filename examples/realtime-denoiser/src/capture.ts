@@ -46,12 +46,17 @@ const SIGNAL_TEX: Record<Signal, TexName[]> = {
 };
 const REF_TEX: Partial<Record<Signal, TexName[]>> = {
   diffuse: ['diffuseRef'], specular: ['specularRef'], shadows: ['visibilityRef'],
+  // occlusion references as extra 1-channel buffers (`ao_ref` / `so_ref`, as the three-temporal captures' ao_ref;
+  // ignored by v0 readers), written only when ao / so are among the captured signals
+  ao: ['aoRef'], so: ['soRef'],
   'sh-diffuse': ['diffuseRef', 'diffuseShRefA'], 'sh-specular': ['specularRef', 'specularShRefA'], 'shadow-rgb': ['visibilityRef', 'shadowRgbRef'],
 };
 /** the second half (channels 4..5) of a 6-channel SH reference */
 const SH_HI: Partial<Record<TexName, TexName>> = { diffuseShRefA: 'diffuseShRefB', specularShRefA: 'specularShRefB' };
 
-const channels = (name: string) => (BUFFER_CHANNELS as Record<string, number>)[name];
+/** extra 1-channel buffers outside CAPTURE-FORMAT v0's table */
+const EXTRA_1CH = new Set(['ao_ref', 'so_ref']);
+const channels = (name: string) => (BUFFER_CHANNELS as Record<string, number>)[name] ?? (EXTRA_1CH.has(name) ? 1 : NaN);
 
 /** Textures of a capture of `signals`: guides (+ normal_geom with any v1 signal) + noisy + hit distance [+ reference]. */
 const bufferTex = (signals: Signal[], refs: boolean): TexName[] =>
@@ -63,6 +68,7 @@ export function captureBuffers(scene: SceneSignals, signals: Signal[], refs: boo
   const t = scene.textures;
   return Object.fromEntries(bufferTex(signals, refs).map((n) => {
     const hi = SH_HI[n];
+    if (EXTRA_1CH.has(CAPTURE_NAME[n])) return [CAPTURE_NAME[n], { texture: t[n], channels: 1 }];
     return [CAPTURE_NAME[n], hi ? { parts: [{ texture: t[n], channels: 4 }, { texture: t[hi], channels: 2 }] } : t[n]];
   }));
 }

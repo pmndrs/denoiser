@@ -277,6 +277,9 @@ const SET_SCENES = {};
 for (const sc of ['sponza', 'bistro']) for (const p of ['orbit', 'pan', 'move']) {
   CAPTURE_SETS[`${sc}-${p}`] = `${sc}-${p}:0:48`; SET_PATHS[`${sc}-${p}`] = `${sc}-${p}`; SET_SCENES[`${sc}-${p}`] = sc;
 }
+// review target D (docs/research/rt-denoiser/results/DISTANCE-LONG.md): bistro-orbit's last pose held still, path frames 48-79
+// (looped into long holds by tools/rt-capture/loop-capture.mjs; low per-frame references, averaged over the window there)
+CAPTURE_SETS['bistro-hold'] = 'bistro-hold:48:32'; SET_PATHS['bistro-hold'] = 'bistro-hold'; SET_SCENES['bistro-hold'] = 'bistro';
 
 async function runCapture(cdp) {
   const T = makeT(cdp);

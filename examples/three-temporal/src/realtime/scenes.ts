@@ -13,6 +13,7 @@
 //                 (moving occluder, object motion; its shadow sweeps static receivers)
 //   bistro-orbit  street orbit: the camera walks 5 cm/frame down the north street keeping a fixed point in view
 //   bistro-pan    8 frames of drift at the junction, then 6 cm/frame slide + 2.2 deg/frame yaw
+//   bistro-hold   bistro-orbit's last pose held still (long-hold tests, review target D)
 //   bistro-move   static camera in the street at dusk; the shadow light is a lantern that moves 7 cm/frame
 //                 along the street (moving light: every shadow it casts moves over static receivers)
 import * as THREE from 'three/webgpu';
@@ -113,6 +114,12 @@ const SPONZA: SceneConfig = {
 
 // ---- Bistro exterior (Amazon Lumberyard, ORCA, CC BY 4.0): metres, Y up, street floor at y = 0. North street from
 //      (13.5, -36.5) south-south-west to a Y junction near (-8, -5) (layout notes: vsm docs/specs/scenes.md S5).
+/** bistro-orbit's camera: walks 5 cm/frame from (12.8, 1.8, -34.5) toward (5.4, 1.8, -21.2) looking at (4.0, 2.0, -14.0). */
+function bistroOrbitPose(f: number): PathPose {
+  const fc = clampF(f, 64);
+  const a = V(12.8, 1.8, -34.5), b = V(5.4, 1.8, -21.2);
+  return { position: a.clone().lerp(b, (0.05 * fc) / a.distanceTo(b)), target: V(4.0, 2.0, -14.0) };
+}
 const BISTRO: SceneConfig = {
   id: 'bistro',
   label: 'Bistro exterior (Amazon Lumberyard, geometry only)',
@@ -129,7 +136,14 @@ const BISTRO: SceneConfig = {
     {
       name: 'bistro-orbit', frames: 64, shadow: 'sun',
       description: 'bistro-orbit: street orbit: the camera walks 5 cm/frame from (12.8, 1.8, -34.5) down the north street toward (5.4, 1.8, -21.2) keeping (4.0, 2.0, -14.0) in view; sun is the shadow light',
-      pose: (f) => { const fc = clampF(f, 64); const a = V(12.8, 1.8, -34.5), b = V(5.4, 1.8, -21.2); const p = a.clone().lerp(b, (0.05 * fc) / a.distanceTo(b)); return { position: p, target: V(4.0, 2.0, -14.0) }; },
+      pose: (f) => bistroOrbitPose(f),
+    },
+    {
+      // review target D (results/DISTANCE-LONG.md): a still view for long holds, looped by tools/rt-capture/loop-capture.mjs;
+      // captured from path frame 48 on, so it continues bistro-orbit's blue-noise index and can follow its 48 frames
+      name: 'bistro-hold', frames: 96, shadow: 'sun',
+      description: 'bistro-hold: bistro-orbit\'s frame-47 pose held still (camera, sun and lantern static); frames 48+ continue bistro-orbit (same final view after the walk)',
+      pose: () => bistroOrbitPose(47),
     },
     {
       name: 'bistro-pan', frames: 64, shadow: 'sun',
