@@ -20,7 +20,7 @@ import { PassTimer } from './common';
 import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex } from './gpu';
 import { GuidePass } from './guides';
 import {
-  RECURRENT_PASSES, RecurrentPipeline, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag, type RecurrentOptions,
+  recurrentPassCount, RecurrentPipeline, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag, type RecurrentOptions,
   type ResolvedRecurrent,
 } from './recurrent';
 import { normalizeHitWgsl, OCC_NORM_SIZE } from './shaders/occlusion';
@@ -184,7 +184,7 @@ export class OcclusionDenoiser implements TemporalDenoiser<OcclusionInputs> {
     let passes: number;
     if (r.filter === 'recurrent') {
       this.rec = new RecurrentPipeline(device, r.signals.map((k) => ({ kind: k === 'diffuse' ? 'ao' : 'so', opts: r.o })), this.name);
-      passes = RECURRENT_PASSES.length;
+      passes = recurrentPassCount(r.o, true);
     } else {
       this.svgf = new SvgfPipeline(device, r.signals.map((k, i) => ({ kind: k, opts: r.perSignal[i] })), this.name);
       this.norm = new HitDistanceNormalizer(device, 'geo', `${this.name} normalize`);

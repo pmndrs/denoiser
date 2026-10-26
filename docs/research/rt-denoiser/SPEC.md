@@ -120,7 +120,7 @@ recurrent vs SVGF swapped, M1 §11).
 |---|---|---|---|
 | shared temporal core | §3 | yes, used by every filter | v0.1 notes (Catmull-Rom gating C-8, anti-lag window and detector C-10/C-10b); the recurrent filter uses a cheaper reprojection (§5.1) |
 | SVGF / A-SVGF | §4 | yes (M1), anti-lag v2 | **the default filter for every radiance and occlusion signal, `antiLag: 'auto'` by default** (items 1–2, decided 2026-10-25); T1 young-history options built, default off (§4.3–4.5); `youngNormalPower: 16` proposed as a default (item 15, open) |
-| recurrent diffuse | §5 | yes (M2) | opt-in, memory-lean; not the default (item 1, decided); `historyFix: 'spatial'` built as an option (§5.8, item 16 open) |
+| recurrent diffuse | §5 | yes (M2) | opt-in, memory-lean; not the default (item 1, decided); `historyFix: 'spatial'` is its history fix since 2026-10-26 (§5.8, item 16 decided: decisions page q19 (a)) |
 | recurrent specular | §5.6 | yes (M3) | opt-in; `filter: 'recurrent'` on the joint class = recurrent for both signals (item 1, decided) |
 | shadows | §7 | yes (M4, v2.2) | provisional; **§7 describes v2.2 as built** (v0.5); `uniformSnap: 'change'` default (item 5, decided) |
 | occlusion | §8 | yes (M5) | default filter `'svgf'` (item 1, decided) with SVGF's `antiLag: 'auto'` (item 2; `'off'` tried and reverted); AO curve kept (item 6) |
@@ -283,8 +283,9 @@ Also decided: the realtime example pages stay local (`deployed: false`, q09); th
 
 **Open (v0.5, §12 items 15–16):** 15. SVGF `youngNormalPower: 16` as the default (meets rule 9, a
 look change; needs Dennis and a quiet-GPU cost check before any flip; the code default stays 0).
-16. Recurrent `historyFix: 'spatial'` instead of the mips (better on every PSNR / FLIP / boundary
-measure, fails rule 9's boil clause; proposal: keep `'mips'`).
+16. Recurrent `historyFix: 'spatial'` instead of the mips: **decided 2026-10-26** (decisions page q19 (a), with the
+rule-9 boil clause amended by q20 (a)): `'spatial'` is the default, `'mips'` stays an option; the cut-frame loss is
+a follow-up (results/T1b-spatial-repair.md).
 
 ---
 
@@ -1266,10 +1267,15 @@ No R3 `mips` dispatch and no depth atlas (one dispatch fewer, −1.5 B/px).
 
 Cost within noise on a contended bench (T1 §5.5). Verdict: better on every PSNR, FLIP and boundary
 measure and leaner, but it **fails rule 9's boil clause** (the mip fill was unusually still) and loses
-the single frame after a cut, so `'mips'` stays the default; §12 item 16 asks Dennis. It still trails
-SVGF's young-pixel handling (`t1-pan` diffuse 35.25 vs 35.80). Known gap: the resource reports of
-`DiffuseSpecularDenoiser` / `OcclusionDenoiser` still count the mips pass with `'spatial'`
-(TASKS "T1 follow-ups" (e)).
+the single frame after a cut, so `'mips'` stayed the default and §12 item 16 asked Dennis. It still trails
+SVGF's young-pixel handling (`t1-pan` diffuse 35.25 vs 35.80).
+
+**v0.6: default `historyFix: 'spatial'`** (Dennis, decisions page q19 (a), 2026-10-26; rule 9's boil clause amended
+by q20 (a): a boil increase counts only if it ends above both the clean 4096-spp reference's own boil and the shipped
+default's, and the spatial fix's young boil stays at or under A-SVGF's on every window, E1b §3.1). `'mips'` remains
+available (`historyFix: 'mips'`), with step (a) and the R3 mips pass exactly as above. The default output is
+byte-identical to the former explicit `historyFix: 'spatial'`. Pass counts of the resource reports now follow the
+mode (6 dispatches with `'spatial'`, 5 for occlusion). Open: the cut-frame loss (results/T1b-spatial-repair.md).
 
 ### 5.9 Spatial kernel (R5, R6, and R1's shape)
 
@@ -1433,7 +1439,7 @@ for a later use.
 | D4 | weights | W(x) = smoothstep(0,1,sat(1−x)) for all; geometry plane distance τ_g 2 %→0.5 %; normal θ_L(α)·lerp(1, 0.25, A_n) + 1°; roughness 0.05 + 0.25r; hit-distance on ĥ, lerp(0.1, 0.5, r)·lerp(1, 0.5, A_n); θ_L from our GGX derivation, E = 0.75; FB simple dominant fit with α | one shape everywhere (RTG2 Eq. 49.3); tolerances tighten with A (RTG2 p.841) | endpoints ×[0.5, 2]; E [0.5, 0.9]; r vs α in the fit |
 | D5 | hit distance | rational `ĥ = h/(h + a + b·d)`, a = 1, b = 0.05; main ĥ accumulates with the signal's A; responsive copy in `F` (cap A_fast = 3) for confidence and virtual motion; ĥ filtered by every pass except pre-blur, with the same weights as radiance; "mix input with reprojection" = the fast history | never clips far hits; AO/SO for free; one curve | a [0.25, 5], b [0, 0.2] |
 | D6 | disocclusion | τ = 1 %; all math in previous view space; pairwise-averaged normal; backface reject; **v0.1: Catmull-Rom if the 4 inner taps pass, clamped to their range** (v0: all 16) | removes the frame-of-reference ambiguity; the clamp makes the outer-ring test unnecessary | τ [0.5 %, 1.5 %] |
-| D7 | history fix | A_fix = 3; levels base + 3; start L = floor(3·sat(1 − A/A_fix)·ρ + 0.5), ρ = r for specular; 3×3 tent at level L; viewZ weight with τ_fix = 2 %·2^L; fall to finer level if normalized weight sum < 0.25; full replacement. **v0.5:** option `historyFix: 'spatial'` (full-resolution guided taps, no mips; §5.8), not the default (item 16) | RTG2 p.829 (3×3, viewZ only, 1–3 frames), GTC20 s.35 (start level) | A_fix [2, 6]; τ_fix [0.5 %, 5 %]; sum [0.1, 0.5] |
+| D7 | history fix | A_fix = 3; levels base + 3; start L = floor(3·sat(1 − A/A_fix)·ρ + 0.5), ρ = r for specular; 3×3 tent at level L; viewZ weight with τ_fix = 2 %·2^L; fall to finer level if normalized weight sum < 0.25; full replacement. **v0.5:** option `historyFix: 'spatial'` (full-resolution guided taps, no mips; §5.8); **v0.6: the default** (item 16, q19 (a)), the mips stay an option | RTG2 p.829 (3×3, viewZ only, 1–3 frames), GTC20 s.35 (start level) | A_fix [2, 6]; τ_fix [0.5 %, 5 %]; sum [0.1, 0.5] |
 | D8 | variance clamping | history fix: 3×3 of fast luminance, **v0.1: γ = 1 standard error** (v0: γ = 2 spreads; +0.37 dB), luminance-only clamp; stabilization: 3×3 of post-blur output, w = γ_s σ + β_s μ widening with A; "faster history" = `F` with A_fast = 3 | fast history makes the window track recent lighting; the window is the noise of the 3×3 mean; widening = "wider if possible" | γ [0.5, 2]; γ_s, β_s ranges above |
 | D9 | anti-firefly | clamp centre luminance to 1.5× the second-largest of 8 valid neighbours in history fix; skip specular r < 0.25 | rank-conditioned in spirit; no energy removed unless the centre is an extreme outlier | k_ff [1, 4] |
 | D10 | stabilization speed | α = max(1/(1+A), 1/8) (N_stab = 7), uses the signal's A after anti-lag | lag bounded by the clamp; mirrors (low A_s) stabilize less | N_stab [3, 31] |
@@ -2881,7 +2887,9 @@ measured):**
     - *Recommendation:* (a) after a quiet-GPU cost re-run confirms it (scheduled in TASKS native round
       3, item 2, for the RTX bench; the M5 Pro bench too); otherwise (b).
 
-16. **Recurrent `historyFix: 'spatial'` instead of the mips** (TASKS "Question for Dennis").
+16. **Recurrent `historyFix: 'spatial'` instead of the mips** (TASKS "Question for Dennis"). **Decided 2026-10-26:
+    `'spatial'` becomes the default** (decisions page q19 (a); the boil clause as amended by q20 (a)); `'mips'` stays an
+    option; §5.8 v0.6.
     The recurrent filter is opt-in (item 1), so this changes only that option's default.
     - *Evidence* (§5.8 v0.5, T1 §5.2). Better on every PSNR, FLIP and boundary measure (14 captures
       +0.67 / +0.43 dB diffuse / specular; 1080p +0.12 / +0.07, AO +0.14, SO +0.06), one dispatch and

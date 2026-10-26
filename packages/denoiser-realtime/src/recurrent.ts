@@ -8,8 +8,8 @@
 // stabilized output (S_prev), r and s free.
 //   R1 pre_blur     reads p (ĥ guide)            writes r = pre
 //   R2 temporal     reads r, p (reprojected)     writes s = acc (+ fast history, data)
-//   R3 mips         reads s                      writes p = signal mip atlas (+ depth atlas)
-//   R4 history_fix  reads s, p (atlas)           writes r = fix (data in place)
+//   R3 mips         reads s                      writes p = signal mip atlas (+ depth atlas)   [historyFix 'mips' only]
+//   R4 history_fix  reads s (+ p atlas)          writes r = fix (data in place)
 //   R5 blur         reads r                      writes p = blur
 //   R6 post_blur    reads p, s (centre)          writes r = H (next frame's history)
 //   R7 stabilize    reads r, q (reprojected)     writes p = S (output, next frame's S_prev)
@@ -54,11 +54,12 @@ export interface RecurrentOptions {
   /** History-fix minimum normalized weight sum before falling to a finer level (SPEC D7). Default 0.25. */
   historyFixMinWeight?: number;
   /**
-   * How the history fix rebuilds young pixels (A < historyFixFrames). 'mips' (default, SPEC D7): a 3-level
-   * mip pyramid of the accumulated signal, bilaterally upsampled by view depth. 'spatial' (target 1
-   * candidate, results/T1-recovery.md): no mips; 16 disk taps of the full-resolution accumulated signal,
-   * weighted by plane distance and normal, radius historyFixRadius (8 px) at A = 0 halving per frame.
-   * Structural (pipelines differ).
+   * How the history fix rebuilds young pixels (A < historyFixFrames). 'spatial' (default since 2026-10-26, Dennis
+   * q19 (a); results/T1-recovery.md §5.2): no mips; 16 disk taps of the full-resolution accumulated signal, weighted
+   * by plane distance and normal, radius historyFixRadius (8 px) at A = 0 halving per frame; one dispatch and the
+   * depth atlas (1.5 B/px) fewer. 'mips' (the default until then, SPEC D7): a 3-level mip pyramid of the accumulated
+   * signal, bilaterally upsampled by view depth; smoother (less young-pixel boil) and better on the single frame
+   * right after a camera cut at 1080p, worse on every pooled / disoccluded / boundary measure. Structural.
    */
   historyFix?: 'mips' | 'spatial';
   /** 'spatial' history fix: tap radius in pixels at A = 0, halving per frame (not scaled with resolution, like the mips). Default 8 (results/T1-recovery.md: 4 / 6 / 8 / 12 / 16 / 24 measured; 8 is best for specular, within 0.1 dB of best for diffuse). */
@@ -180,7 +181,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixFrames: o.historyFixFrames ?? 3,
     historyFixDepthTolerance: o.historyFixDepthTolerance ?? 0.02,
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
-    historyFix: o.historyFix ?? 'mips',
+    historyFix: o.historyFix ?? 'spatial',   // Dennis q19 (a), 2026-10-26 (was 'mips')
     historyFixRadius: o.historyFixRadius ?? 8,
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
@@ -262,6 +263,10 @@ function taps(o: ResolvedRecurrent, k: 'preBlurTaps' | 'blurTaps' | 'postBlurTap
 }
 
 export const RECURRENT_PASSES = ['pre_blur', 'temporal', 'mips', 'history_fix', 'blur', 'post_blur', 'stabilize'];
+/** Dispatches per frame of a recurrent pipeline: no `mips` with historyFix 'spatial', no `pre_blur` for occlusion. */
+export function recurrentPassCount(o: ResolvedRecurrent, occlusion = false) {
+  return RECURRENT_PASSES.length - (o.historyFix === 'spatial' ? 1 : 0) - (occlusion ? 1 : 0);
+}
 
 export class RecurrentPipeline {
   private sigs: SignalState[];

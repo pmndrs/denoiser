@@ -803,7 +803,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       +0.019, `cut` disoccluded +0.12; worst path `light` −0.003 → −0.010; frame after the cut −0.08 → −0.14 (post-cut
       8-frame window −0.02); 540p captures young PSNR +0.05…+0.14, young boil −0…−4 %, settled ±0. Quiet-GPU cost check
       still open.
-- [ ] **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
+- [x] (**Dennis q19 (a), 2026-10-26: `historyFix: 'spatial'` is the recurrent default**, with rule 9's boil clause as amended by q20 (a); flipped by the recurrent agent in the commit "denoiser-realtime: historyFix 'spatial' is the recurrent default": new default output = old explicit `'spatial'` byte for byte, `'mips'` kept and documented (README, SPEC §5.8 v0.6, item 16); the cut-frame loss continues as a follow-up in results/T1b-spatial-repair.md) **Question for Dennis (recurrent, opt-in filter): `historyFix: 'spatial'` instead of the mips?** Better on every
       PSNR / FLIP / boundary measure and leaner, but young-pixel boil +4…+70 % (to ≤ SVGF's level, below the reference's
       own boil) and settled boil +6.6 % on the real scene: rule 9's boil clause fails by the letter; also −0.4…−1.4 dB on
       the single frame right after a cut at 1080p (better from the next frame). Proposal: keep `'mips'` unless Dennis
@@ -830,6 +830,8 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       panel over a patterned, indirectly lit background, then a still interval) as target 1 suggests; (e)
       `DiffuseSpecularDenoiser` / `OcclusionDenoiser` resource reports still count 7 recurrent passes with
       `historyFix: 'spatial'` (6 dispatch). — found by t1, owners svgf / recurrent / testbed
+      **(e) fixed** with the q19 flip (`recurrentPassCount`: 6 with `'spatial'`, 7 with `'mips'`, one fewer for occlusion);
+      (c) and (d) taken by the recurrent agent (results/T1b-spatial-repair.md).
 - [x] (bistro-sponza; commits ab3f4d7, f96caa0, 1303313 + results) **Bistro and Sponza as scoring scenes** (SPEC §12
       item 7): `realtime-gi.html?scene=sponza|bistro` (models loaded by path from outside git, `$RT_SCENE_ASSETS`, default
       `examples/three-temporal/scene-assets` (Git LFS since 2026-10-26); Sponza = Cryengine Limited License, Bistro = CC BY 4.0), sun + local

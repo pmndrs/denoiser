@@ -177,7 +177,7 @@ structural options differ.
 ## Recurrent filter (provisional)
 
 `filter: 'recurrent'`: the recurrent-blur pipeline of SPEC v0 §5 (pre-blur →
-temporal accumulation → mips → history fix → blur → post-blur → temporal
+temporal accumulation → history fix → blur → post-blur → temporal
 stabilization; the post-blur output is next frame's history, the stabilization
 history never feeds back). Written from RTG II ch. 49 prose and Zhdan's GTC 2020
 talk plus our own designs; every pass cites its sources in
@@ -198,6 +198,15 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   dispatches (since 2026-10-25). Until then it meant recurrent diffuse + A-SVGF specular; that
   mix is now explicit: `{ filter: 'recurrent', specular: { filter: 'svgf', antiLag: 'auto' } }`
   (byte-identical to the old default).
+- **History fix** (young pixels, A < `historyFixFrames`): `historyFix: 'spatial'` (**default since 2026-10-26**,
+  Dennis q19 (a)) rebuilds them from 16 depth / normal-weighted disk taps of this frame's full-resolution accumulated
+  signal (radius `historyFixRadius` 8 px at A = 0, halving per frame); `historyFix: 'mips'` (the default until then,
+  SPEC D7) uses a 3-level mip pyramid with a depth atlas instead. `'spatial'` is better on every pooled, disoccluded
+  and boundary measure (4096-spp references: diffuse +0.34 dB pooled / +0.49 disoccluded, AO +0.39 / +0.82, FLIP
+  −0.5 %), one dispatch and 1.5 B/px leaner; `'mips'` is stiller on young pixels (its boil sits further under a clean
+  reference's) and better on the single frame right after a camera cut at 1080p (−1.9 dB diffuse for `'spatial'`
+  there; better from the next frame; being worked on). Results: `docs/research/rt-denoiser/results/T1-recovery.md`
+  §5.2, `E1b-high-reference.md` §3.
 - The output texture rotates between internal buffers (valid until the next dispatch,
   per the TemporalDenoiser contract).
 - Options (defaults): `hitDistanceScale` [1], `hitDistanceViewScale` [0.05],
@@ -205,8 +214,9 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   `blurRadius` [45 diffuse / 30 specular px @1080p], `minBlurRadius` [1],
   `specularMinRadiusScale` [1: the floor scales with f_r, none on mirrors], `preBlurTaps`
   [8 diffuse / 4 specular], `blurTaps` [8], `postBlurTaps` [4] (4 or 8, compiled in),
-  `maxAccumulatedFrames` [31], `fastFrames` [3], `historyFixFrames` [3],
-  `historyFixDepthTolerance` [0.02], `historyFixMinWeight` [0.25], `fireflyThreshold` [1.5],
+  `maxAccumulatedFrames` [31], `fastFrames` [3], `historyFix` ['spatial'; or 'mips'], `historyFixFrames` [3],
+  `historyFixRadius` [8 px, 'spatial'], `historyFixDepthTolerance` [0.02, 'mips'], `historyFixMinWeight` [0.25,
+  'mips'], `fireflyThreshold` [1.5],
   `historyAntiLag` [true] (renamed from `antiLag`, SPEC §12 item 8; the old name still works and
   warns once per instance), `antiLagSigma` [1], `antiLagStandardError` [true], `antiLagExcess` [0.5],
   `antiLagHitTolerance` [0.2], `antiLagCurrentSigma` [3], `antiLagCurrentHitTolerance`
@@ -220,15 +230,16 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
 | `prepass` (shared) | guides → packed geometry (no depth slope for recurrent-only denoisers) | rg32uint ×2 |
 | `pre_blur` | radiance (sanitized), hit distance → static disk on the tangent / lobe plane, radius clamped by last frame's denoised hit distance; ĥ unfiltered | rgba16float |
 | `temporal` | + reprojected history (Catmull-Rom / custom bilinear) → acc = lerp(H, pre, 1/(1+A)); specular: surface + virtual candidates blended in α by F_dom·[valid]; fast history (A ≤ 3); A + 2×2 validity + m packed in `data`; current-frame anti-lag detector (10×10 shared tile) | rgba16float ×2, rgba16float (fast), r32uint |
-| `mips` | acc → 3-level atlas (non-sky averages), depth atlas, one 16×16 shared-memory dispatch | rgba16float (rotation buffer), r32float |
-| `history_fix` | mip repair where A < 3, rank anti-firefly, fast-history clamp + A reduction (`data` read-write; shared tile) | rgba16float, r32uint rw |
+| `mips` (`historyFix: 'mips'` only) | acc → 3-level atlas (non-sky averages), depth atlas, one 16×16 shared-memory dispatch | rgba16float (rotation buffer), r32float |
+| `history_fix` | spatial repair where A < 3 (16 disk taps; or the mip repair), rank anti-firefly, fast-history clamp + A reduction (`data` read-write; shared tile) | rgba16float, r32uint rw |
 | `blur` | rotated 8-tap disk, radius R_max/(1+A), clamped by hit distance; geometry · normal · ĥ (· roughness) weights | rgba16float |
 | `post_blur` | unrotated 4-tap disk, radius × lerp(0.5, 2, δ/0.3) → next frame's history | rgba16float |
 | `stabilize` | own history (bilinear diffuse / Catmull-Rom specular), 3×3 clamp widening with A → output | rgba16float (+ remodulated outputs) |
 
 Memory (diffuse + specular): 4 rgba16float rotation buffers per signal, fast history ×2,
-`data` ×2, depth atlas, geometry ×2: **105.5 B/px** (target ≤ 100; half-res fast history would
-give 93.5, not implemented); diffuse only 73.5 B/px.
+`data` ×2, geometry ×2: **104 B/px** with the default `historyFix: 'spatial'` (target ≤ 100; half-res fast history
+would give 92, not implemented); diffuse only 72 B/px. `historyFix: 'mips'` adds the depth atlas (+1.5 B/px: 105.5 /
+73.5).
 
 ### Results (provisional; full tables in `docs/research/rt-denoiser/results/M2-M3.md`)
 
@@ -318,6 +329,9 @@ mean over paths; "contact" = pixels whose reference ĥ < 0.5; full tables: `resu
 | recurrent radiance alpha ("free") | 35.15 | 27.64 | 35.47 | 32.10 | 0 extra | 0 extra |
 
 (Medians run 15–60 % above the fastest-clock numbers; `results/M5.md` §5.)
+`recurrent` rows were measured with `historyFix: 'mips'`; the default since 2026-10-26, `'spatial'`, needs no depth
+atlas (56 / 72 B/px) and scores AO +0.39 dB pooled, +0.82 dB disoccluded, SO +0.16 dB against 4096-spp references
+(`results/E1b-high-reference.md` §3).
 
 SVGF beats the recurrent occlusion mode on every path for both signals (+0.9 dB AO,
 +1.4 dB SO), A-SVGF `auto` is best overall; recurrent is the memory-lean option and flickers

@@ -9,7 +9,7 @@ import type {
 import { PassTimer } from './common';
 import { GuidePass } from './guides';
 import {
-  RECURRENT_PASSES, RecurrentPipeline, recurrentStructuralKey, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag,
+  recurrentPassCount, RecurrentPipeline, recurrentStructuralKey, resolveRecurrent, usesDeprecatedAntiLag, warnDeprecatedAntiLag,
   type RecurrentOptions, type ResolvedRecurrent,
 } from './recurrent';
 import {
@@ -109,7 +109,7 @@ function makePipe(device: GPUDevice, signals: { kind: Kind; r: Resolved }[], lab
   if (signals[0].r.filter === 'recurrent') {
     const p = new RecurrentPipeline(device, signals.map((s) => ({ kind: s.kind, opts: s.r.o as ResolvedRecurrent })), label);
     return {
-      passes: RECURRENT_PASSES.length,
+      passes: recurrentPassCount(signals[0].r.o as ResolvedRecurrent),
       get outputs() { return p.outputs; },
       configure: (w, h) => p.configure(w, h),
       encode: (enc, timer, gp, frames, guides, camera, prefix) =>
