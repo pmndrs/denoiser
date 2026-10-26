@@ -94,10 +94,9 @@ export interface SvgfOptions {
    * ramping geometrically to sigmaNormal over varianceRampFrames frames. A low value (e.g. 8-16) lets young
    * pixels on curved surfaces average over the full a-trous footprint (with 128 a sphere stops it within a few
    * pixels), while creases (n.n' <= 0) still stop. Removes the post-reset blotches. Default 16 for the radiance
-   * payload (Dennis q18 (a), 2026-10-26: rule 9 passed at 256 and 4096 spp, +0.31 ms native-GPU cost at 1080p);
-   * 0 = the previous behaviour (sigmaNormal from the first frame), still the default for payload 'sh' and for
-   * OcclusionDenoiser (unmeasured there). Payload 'sh' honours an explicit value since review target 5
-   * (results/T5-normal-detail.md); before, it was ignored there.
+   * payload (Dennis q18 (a), 2026-10-26: rule 9 passed at 256 and 4096 spp, +0.31 ms native-GPU cost at 1080p) and,
+   * since review target 5, for payload 'sh' too (results/T5-normal-detail.md); 0 = the previous behaviour (sigmaNormal
+   * from the first frame), still the default for OcclusionDenoiser (unmeasured there).
    */
   youngNormalPower?: number;
   /**
@@ -181,8 +180,8 @@ export interface SvgfOptions {
   /** SH: ringing guard k on |b| relative to Y at the guide normal (SPEC M7-8). Default 1. */
   shGuard?: number;
   /**
-   * SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 0.75 (SPEC: 0; best or within
-   * 0.05 dB of best on the dev page, test-bed `bumpy` and `bounce`, results/M7.md).
+   * SH: sharpening s in [0, 1] of the fused diffuse resolve (SPEC M7-9). Default 1 since review target 5 (bump
+   * contrast +0.06…+0.08, FLIP −0.1…−1.9 %, rule 9 passed; results/T5-normal-detail.md); was 0.75 (results/M7.md).
    */
   shSharpen?: number;
   /**
@@ -304,7 +303,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     spatialVarianceRadius: o.spatialVarianceRadius === undefined ? -1 : Math.max(0, Math.round(o.spatialVarianceRadius)),
     spatialHistoryWeight: Math.max(0, o.spatialHistoryWeight ?? 0),
     youngLuminanceWeight: Math.max(0, o.youngLuminanceWeight ?? 1),
-    youngNormalPower: Math.max(0, o.youngNormalPower ?? (o.payload === 'sh' ? 0 : 16)), // 16: Dennis q18 (a), 2026-10-26
+    youngNormalPower: Math.max(0, o.youngNormalPower ?? 16), // 16: Dennis q18 (a) (radiance), T5 (SH payload); OcclusionDenoiser pins 0
     antiLag,
     antiLagNoiseFloor: o.antiLagNoiseFloor ?? -1,
     antiLagVersion,
@@ -324,7 +323,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shGuard: o.shGuard ?? 1,
     shDetailNormalPower: Math.max(0, o.shDetailNormalPower ?? 0),
     shDetailNormalStride: Math.max(1, o.shDetailNormalStride ?? 1),
-    shSharpen: o.shSharpen ?? 0.75,
+    shSharpen: o.shSharpen ?? 1, // T5 (results/T5-normal-detail.md): 1 passed rule 9 (was 0.75)
     shPackTruncate: o.shPackTruncate ?? false,
     f16Rounding: o.f16Rounding ?? 'store',
     shPingPacking: o.shPingPacking ?? 'f16',

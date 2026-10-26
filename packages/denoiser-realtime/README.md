@@ -104,7 +104,7 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 specular with anti-lag v2], `luminanceVariance`
 ['sample' | 'mean'], `antiLag` ['auto' | 'off' | 'gradient'], `antiLagVersion` [2 | 1],
 `antiLagNoiseFloor` [diffuse 2, specular 1; v1: 2], `antiLagRadius` [1], `gradientIterations` [4; v1: 5],
-`youngNormalPower` [16 for the radiance payload since 2026-10-26 (Dennis q18 (a)); 0 for `payload: 'sh'` and
+`youngNormalPower` [16 since 2026-10-26 (Dennis q18 (a); the SH payload since review target 5); 0 for
 `OcclusionDenoiser`: the normal edge-stop exponent of a pixel's first frame, ramping to `sigmaNormal` over
 `varianceRampFrames`; removes the blotches on curved surfaces in the first frames after a reset, +5 % cost on the RTX
 bench; 0 = the previous behaviour; SPEC §4.4; payload 'sh' honours an explicit value since review target 5 (before, it
@@ -538,7 +538,7 @@ const rgb = gi.dispatch(
   (`shUnpack`, `shResolveDiffuse(p, nDetail, sharpen, nGuide)`,
   `shResolveSpecular(p, nDetail, nGuide, view, roughness, lightSharp, rhoMax, fadeR)`), e.g.
   to light any BSDF with the payload.
-- **Options.** `shSharpen` (0.75, diffuse resolve: blend toward ambient + one extracted light; SPEC said 0),
+- **Options.** `shSharpen` (1 since review target 5, was 0.75; diffuse resolve: blend toward ambient + one extracted light; SPEC said 0),
   `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
   `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (2), `shMaxRatio` (4), `shFadeRoughness` (0.2);
   `shPingPacking` ('f16' | 'u8'); `shDetailNormalPower` (0 = off; review target 5: an extra spatial weight
@@ -561,7 +561,7 @@ const rgb = gi.dispatch(
 |---|---|---|---|
 | plain SVGF, filter normal = shading normal (`'auto'`) | 37.40 | 34.23 | **39.21** |
 | plain SVGF, filter normal = smooth (`'auto'`) | 36.19 | 32.27 | – |
-| **SH** (`'auto'`, `shSharpen` 0.75, the default) | **38.26** | **36.32** | 39.09 |
+| **SH** (`'auto'`, `shSharpen` 0.75, the M7 default) | **38.26** | **36.32** | 39.09 |
 
 - **Regression:** on the 7 standard paths SH at the guide normal matches plain SVGF within 0.013–0.038 dB
   at equal f16 rounding (as shipped +0.03…+0.10 dB, see the f16 note above).

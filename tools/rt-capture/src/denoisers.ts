@@ -446,7 +446,7 @@ function svgfSh(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
 }
 registerDenoiser({
   id: 'svgf-sh', description: "denoiser/realtime SVGF (antiLag 'off'), SH payload (M7): filter normal = normal_geom, fused resolve at the shading normal", signals: ['sh-diffuse', 'sh-specular'],
-  create: svgfSh({ antiLag: 'off' }),
+  create: svgfSh({ antiLag: 'off', youngNormalPower: 0, shSharpen: 0.75 }), // pinned: package defaults are 'auto', 16 and 1 (T5)
 });
 registerDenoiser({
   id: 'svgf-sh-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), SH payload (M7)", signals: ['sh-diffuse', 'sh-specular'],

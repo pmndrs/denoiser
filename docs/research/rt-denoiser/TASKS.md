@@ -1273,7 +1273,7 @@ harness builder runs them and returns images/metrics only.)_
       the fine cells under motion boil +40 % to 1.1× the reference's. Look: crisper bumps with a little shimmer on still
       views (p 8: half the gain, still-view boil +13…+25 %). SH stays opt-in either way. — found by t5, owner Dennis →
       `packages/denoiser-realtime` (`resolveOptions`, README, SPEC §8.5)
-- [ ] **Config-level flips for the orchestrator (payload 'sh', rule 9 passes on every clause that can run; the SH options
+- [x] (orchestrator, applied 2026-10-26 night; byte checks on v1-bumpy: new svgf-sh-auto default = explicit `youngNormalPower=16&m7.sharpen=1`, pinned `svgf-sh` and `svgf-plain` unchanged; SPEC §8.5 / §4.4 fold-in: spec author) **Config-level flips for the orchestrator (payload 'sh', rule 9 passes on every clause that can run; the SH options
       don't reach the plain filters and no real-scene capture has SH inputs, so the real-scene part is not applicable):**
       (a) `shSharpen: 1` (M7 picked 0.75 from 256-spp scores): bump contrast +0.06…+0.08 on every normal-mapped capture,
       FLIP −0.1…−1.9 %, PSNR −0.02…+0.20, flicker −0…−6 %, boil +6…+9 % but under the reference's own; exact on smooth
