@@ -104,6 +104,12 @@ anti-lag], `momentsAlpha` [= temporalAlpha], `maxHistory` [64],
 specular with anti-lag v2], `luminanceVariance`
 ['sample' | 'mean'], `antiLag` ['auto' | 'off' | 'gradient'], `antiLagVersion` [2 | 1],
 `antiLagNoiseFloor` [diffuse 2, specular 1; v1: 2], `antiLagRadius` [1], `gradientIterations` [4; v1: 5],
+`youngNormalPower` [16 for the radiance payload since 2026-10-26 (Dennis q18 (a)); 0 for `payload: 'sh'` and
+`OcclusionDenoiser`: the normal edge-stop exponent of a pixel's first frame, ramping to `sigmaNormal` over
+`varianceRampFrames`; removes the blotches on curved surfaces in the first frames after a reset, +5 % cost on the RTX
+bench; 0 = the previous behaviour; SPEC §4.4], `spatialHistoryWeight` [0; measured null], `youngLuminanceWeight`
+[1 = off; measured a loss], `f16Rounding` ['store' | 'nearest': round to nearest before every f16 store, since Metal
+truncates; `'nearest'` proposed as the default, SPEC §3.8 / §12 item 19],
 `remodulate` [false], `timestamps` [true]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
