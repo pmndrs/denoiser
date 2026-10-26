@@ -131,7 +131,8 @@ export interface ShadowDenoiserOptions {
   /**
    * With uniformSnap 'change': also snap where the pixel's own penumbra is narrower than this many pixels
    * (results/SHADOWS-LOOK.md: there 'change' keeps a fractional history that is only the resampling blur of
-   * the nearby hard edge, and moving cameras soften every hard edge). 0 = off. Default 0.
+   * the nearby hard edge, and moving cameras soften every hard edge). 0 = off. Default 2 (Dennis, q21 (a),
+   * 2026-10-26; rule-9 A/B in results/SHADOWS-LOOK.md).
    */
   snapHardPx?: number;
   /** Catmull-Rom history fetch for visibility where the 2x2 footprint is valid (clamped to it). Default true. */
@@ -197,7 +198,7 @@ export interface ShadowDenoiserOptions {
   /**
    * Pixels with the whole light below their horizon (n.l <= -sin of the light's angular radius) and no occluded
    * sample of their own pass their input through instead of taking the terminator radius (pipeline variant;
-   * results/SHADOWS-LOOK.md). Default false.
+   * results/SHADOWS-LOOK.md). Default true (Dennis, q21 (a), 2026-10-26).
    */
   backfacePass?: boolean;
   /**
@@ -273,7 +274,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     anisotropyMax: o.anisotropyMax ?? 4,
     catmullRom: o.catmullRom ?? true,
     uniformSnap: o.uniformSnap ?? 'change',
-    snapHardPx: o.snapHardPx ?? 0,
+    snapHardPx: o.snapHardPx ?? 2,
     spatialPasses: Math.max(0, Math.min(2, Math.round(o.spatialPasses ?? 2))),
     tileSkip: o.tileSkip ?? true,
     mergeMin: o.mergeMin ?? true,
@@ -282,7 +283,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseYoung: o.noiseYoung ?? 0,
     noiseCap: o.noiseCap ?? 0,
     noiseCapSettled: o.noiseCapSettled ?? false,
-    backfacePass: o.backfacePass ?? false,
+    backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
     translucencyEpsilon: o.translucencyEpsilon ?? 0.01,

@@ -877,7 +877,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       pooled, FLIP +2 %) and inside T1's cut / pan windows. Run `denoiser=shadows,shadows@sh.uniformSnap=true` on the 7
       paths at 1080p and the knot captures (boil), so SPEC §0.2 / §7 can quote the shipped configuration — found by
       spec-author, owner results / shadows
-- [ ] **Proposed default flip (Dennis approves, changes the look): shadows `backfacePass: true` + `snapHardPx: 2`.**
+- [x] (shadows, flip commit: approved by Dennis 2026-10-26, q21 (a); new default output byte-identical to the old `backfacePass: true, snapHardPx: 2` on std540-orbit / -light / -object, bistro-move, three-knot-static, sm-hard-camera and `shadows-translucent` m8-glass-moving wide + packed; README, SPEC §7.4 / §7.5 / §12 item 5) **Proposed default flip (Dennis approves, changes the look): shadows `backfacePass: true` + `snapHardPx: 2`.**
       Passes rule 9 (results/SHADOWS-LOOK.md "Rule-9 A/B"): 1080p 7 paths 38.49 vs 38.38 dB pooled, penumbra 29.39 vs
       29.37, FLIP 0.0124 vs 0.0132 (−6 %), flicker / tPSNR equal, no path below −0.02 dB; std540 35.66 vs 35.49, FLIP −9 %,
       boil ±0; 11 real captures 28.86 vs 28.33, FLIP −14 %, boil +1 %; cost equal (`thin` −0.02 ms), memory equal. Look:
@@ -886,7 +886,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       resampling, as v2.1 / `uniformSnap: true`; +0…4 % where the region is real motion), `bistro-move` static-penumbra
       boil +8 %. Images: `results/img/shadows-look-bistro-orbit-facade.png`, `-knot-edges.png`, `-bistro-move-sign.png`
       — found by shadows, owner Dennis → shadows (flip in `resolveShadowOptions`, README, SPEC §7.4 / §7.5)
-- [ ] **Question for Dennis: shadows `noiseCap: 2, noiseCapSettled: true`** (on top of the flip above, = `rec`): sharper
+- [x] (Dennis 2026-10-26, q22 (b): stays an option; a variant that doesn't add boil stays with shadows, results/SHADOWS-MOTION.md) **Question for Dennis: shadows `noiseCap: 2, noiseCapSettled: true`** (on top of the flip above, = `rec`): sharper
       hard shadows (+1.20 dB on the 11 real captures vs shipped, `bistro-move` +2.0 dB to 24.73, above the raw input;
       1080p +0.22 dB, FLIP −7 %) but rule 9's boil clause fails: std540 boil +6 % (max +12 %), static-penumbra boil
       +3…17 %, real-scene static-penumbra boil +9 %, 1080p tPSNR −0.15. Sharper hard edges vs calmer wide penumbrae
@@ -899,7 +899,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       5×5 (a step with agreeing sides, not noise) instead of E or the tile minimum — found by shadows, owner shadows
 - [ ] compare.mjs: an edge-sharpness column (mean |∇out| / |∇ref| where |∇ref| > 0.1; results/SHADOWS-LOOK.md) —
       boil and PSNR barely see the `'change'` veil, sharpness does (0.680 vs 0.595) — found by shadows, owner results
-- [ ] `packages/denoiser-realtime/README.md` shadows options: `snapHardPx`, `backfacePass`, `noiseCap`,
+- [x] (shadows, flip commit) `packages/denoiser-realtime/README.md` shadows options: `snapHardPx`, `backfacePass`, `noiseCap`,
       `noiseCapSettled` (1a2861a; after Dennis's call on the flip) — found by shadows, owner README
 
 ## Probes for the Windows harness
@@ -1011,6 +1011,6 @@ The entries that used to be here (joint default for `filter: 'recurrent'` — re
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
 
-- **Shadows look (2026-10-26, shadows):** approve the default flip `backfacePass: true` + `snapHardPx: 2` (passes rule 9,
+- ~~**Shadows look (2026-10-26, shadows):**~~ (answered 2026-10-26: flip approved, q21 (a), landed; `noiseCap` stays an option, q22 (b)) approve the default flip `backfacePass: true` + `snapHardPx: 2` (passes rule 9,
   changes the look), and decide on `noiseCap` (sharper hard shadows, fails the boil clause). Both items under "Found
   along the way"; evidence results/SHADOWS-LOOK.md.

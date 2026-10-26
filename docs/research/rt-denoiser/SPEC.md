@@ -1505,6 +1505,7 @@ are condensed into §7.0; each constant's deciding measurement is in the paramet
 | v2.1 | ff04c8a | normal-tested clamp window (`clampGeometry`), hard-edge widening (`clampEdgePx`), young mean over 8 frames with its own frame counter (`youngFrames`, `youngTaper`; replaces `youngSpan`) | "frame 2 worse than frame 1" after a reset on the real scene (−0.8 … −1.3 dB): the young mean switched off abruptly, and the 5×5 window pulled thin occluders and creases toward the surface next to them; +1.01 dB pooled, FLIP −29 %, frame 2 now above frame 1 everywhere |
 | v2.2 | 033a869 | fifth pass `stabilize`: a short history of the final output, box-clamped, gated to narrow ranges, with a clamp-distance anti-lag | visible boil in wide, soft penumbrae (the knot's shadow), from anti-lag restarts in static penumbrae, the per-frame kernel rotation and the raw history's update; knot boil 0.0062 → 0.0013 (FFX 0.0011), flicker −11 %, `light` −0.19 dB |
 | decisions | 255a06a | `uniformSnap` default `'change'` (Dennis, §12 item 5); numeric `antiLag` renamed `antiLagGain` (old name a deprecated alias that warns once) | between `true` (best FLIP) and `false` (best PSNR) on every metric |
+| decisions | (q21 (a) commit) | `snapHardPx: 2` + `backfacePass: true` defaults (Dennis, q21 (a), 2026-10-26); `noiseCap` stays an option (q22 (b)) | `'change'`'s grey veil next to hard edges on moving cameras gone, back faces stay black; passes rule 9 (results/SHADOWS-LOOK.md) |
 | M8 | 354e46c … 76c707c | `translucency` option (§7.10); the opaque path's WGSL is byte-identical without it | — |
 
 Tried and not kept (numbers in M4 §3, §10.3, §11.5, §12.2): kernel anisotropy along the projected
@@ -1581,7 +1582,7 @@ W_px   = lightSize · g / pixSize;   cap = clamp(1 · W_px², 1, 15)            
 win    = 0.4·σ·√(25/n) + 0.05 + saturate(1 − W_px / 2)                       (clampSigma, clampFloor, clampEdgePx)
 v_c    = clamp(v_H, μ − win, μ + win)
 if A ≥ 0:  A = lerp(A, min(A, 0), saturate(64·|v_c − v_H|))                  (antiLagGain, antiLagHistory)
-if σ = 0 and uniformSnap (and, for 'change', |v_H − μ| > win):  v_c = μ       (A kept)
+if σ = 0 and uniformSnap (and, for 'change', |v_H − μ| > win or W_px < 2):  v_c = μ   (A kept; snapHardPx)
 A'     = min(A, cap) + 1                                                       (0 without a valid history)
 v      = lerp(v_c, v_raw, 1/(1 + A'))
 y'     = 8 if A' = 0, else max(y − 1, 0)                                       (youngFrames)
@@ -1609,6 +1610,7 @@ history" won on reset replays and lost live).
 | hard-edge widening (`clampEdgePx`) | 2 px | a 5×5 mean is a biased estimate next to a step (up to ~0.4 off); 0 / 1 / 3 / 4: −0.06 / −0.03 / −0.02 / −0.10 dB vs 2 |
 | anti-lag (`antiLagGain`, `antiLagHistory`) | 64, 0 | a history the clamp moved by ≥ 1/64 restarts at the current frame: restart at 0 vs 1 +0.9 dB (from 1 the 1/n decay left a ~1 % residue after a light flip); gains 8 / 32 / 64: 30.47 / 31.11 / 31.18 (M4 §3). Known cost: a −0.15 … −0.3 dB step at frame 5 in static real-scene penumbrae (TASKS) |
 | uniform snap (`uniformSnap`) | `'change'` | Dennis, §12 item 5. `true` snaps wherever the counted taps agree (best FLIP), `'change'` only where the history sits outside the window (a real change: lit / umbra areas after a light flip), `false` never (best PSNR). v2 at 1080p: 37.11 / 37.23 / 37.29 dB, FLIP 0.0182 / 0.0186 / 0.0198 (REMEASURE §4); v2.1: off +0.29 dB, on FLIP 0.0129 vs 0.0141 |
+| hard-edge snap (`snapHardPx`) | 2 px | Dennis, q21 (a), 2026-10-26. With `'change'`, also snap a uniform window where the own penumbra is under 2 px: there a kept fractional history is only resampling blur of the nearby hard edge (the grey veil on moving cameras; Bistro edge sharpness 0.595 → 0.679). Together with `backfacePass`: 1080p 38.49 vs 38.38 dB, FLIP −6 %; real captures +0.53 dB, FLIP −14 % (results/SHADOWS-LOOK.md "Rule-9 A/B") |
 | history cap (`maxHistory`, `historyScale`, `minHistory`) | 15, 1·W_px², 1 | each reprojection resamples the history (a narrow penumbra blurs by ~√A px); cap 31: −1.3 dB; k = 1 / 0.25 / 0.0625 within ±0.1 dB after the window change |
 | history fetch (`catmullRom`) | true | +0.65 dB on `orbit` |
 | scale history (`maxScaleHistory`) | 7 | §7.2 |
@@ -1623,6 +1625,7 @@ tangent plane, axis T along the light direction projected on the plane:
 
 ```
 R_w  = lerp(lightSize · g_eff,  32 px · E · pixSize,  b_E)        b_E = saturate(noiseBlend + noiseYoung/(1 + A)) = 0.5
+       back face (no own estimate, n·l ≤ −sin θ_light):  input passed through (backfacePass, default since q21 (a))
        terminator (no own estimate, n·l < sin θ_light):  R_w = 16 px · pixSize
 R_w *= 0.75 · lerp(1, 0.5, A/15) · (pass 1: 0.5) · (1 + freshBoost/(1 + A))     (radiusScale, historyShrink)
 R_w  = max(R_w, 1 px);  axes ≤ 48 px at 1080p (× H/1080);  R_w < 0.5 px → input passed through
@@ -1641,6 +1644,8 @@ was off (TASKS).
 | radius factor (`radiusScale`) | 0.75 | the true profile is S-shaped and a disk as wide as the penumbra rounds its ends: 0.5 / 1.5 / 2 / 3·W vs 1·W on `orbit` +0.12 / −0.37 / −0.81 / −1.71 dB; 0.75 vs 1 after the clamp change +0.46 dB (4-path mean, per-frame) |
 | noise blend (`noiseBlend`, `noiseYoung`) | 0.5, 0 | found when the noise-only fallback beat the occluder sizing on reset replays (`std1080-orbit` 35.06 vs 34.25). Blend 0.25 / **0.5** / 0.75 / 1: replays 33.52 / **33.78** / 33.82 / 33.46, live 33.19 / **33.30** / 33.26 (960×540). E sizes exactly the outer penumbra where lit samples carry no occluder estimate. v2 vs v1 +0.56 dB pooled, +1.49 disoccluded |
 | noise radius (`noiseRadius`) | 32 px at 1080p | 16 / 24 / **32** / 48 / 64 px live 33.22 / 33.37 / **33.45** / 33.46 / 33.34 (flat around blend × radius ≈ 16 px) |
+| back faces (`backfacePass`) | true | Dennis, q21 (a), 2026-10-26: the whole light below the horizon gives v = 0 on every ray (SH-7), so the input is exact; the terminator radius pulled light in from lit neighbours (Bistro's sign and bollard, results/SHADOWS-LOOK.md; 1080p +0.10 dB, FLIP −6 %, `thin` −0.02 ms) |
+| noise-radius cap (`noiseCap`, `noiseCapSettled`) | 0 (off), false | option (q22 (b)): sharper near-hard shadows (real captures +0.67 dB on top of the two above, `bistro-move` +1.75) but more boil in wide penumbrae (results/SHADOWS-LOOK.md, results/SHADOWS-MOTION.md) |
 | shrink at full history (`historyShrink`) | 0.5 | 1 / 0.25: −0.28 / −0.01 dB |
 | floor / cap (`minRadius`, `maxRadius`) | 1 px, 48 px | 48 is a safety cap on the taps' cache footprint for very wide penumbrae (24 / 48 / 96 identical on the test bed) |
 | normal weight (`normalWeight`, structural) | on, 30° | off saves ~0.04 ms, costs −4.1 dB; plane 1 % / normal 20°: ±0.00 dB |
@@ -2753,6 +2758,9 @@ vs 35.40 pooled; frames 0–2 still 0.2–0.5 dB behind) and `thin`'s cost (6b: 
 5. **Shadows: uniform snap.**
    **Decided 2026-10-25 (Dennis): `'change'`** as the default (255a06a), still a setting (`true` /
    `false`). The 1080p check landed between on and off as predicted (REMEASURE §4).
+   **Follow-up decided 2026-10-26 (Dennis, q21 (a)):** `'change'` left a grey veil next to hard edges on moving
+   cameras (results/SHADOWS-LOOK.md); `snapHardPx: 2` (also snap uniform windows where the own penumbra is under
+   2 px) and `backfacePass: true` are the defaults now (§7.4, §7.5). `noiseCap` stays an option (q22 (b)).
    - *Evidence* (M4 §9, §10.5). Snap = where all 25 raw samples of the 5×5 window agree, the
      history takes their value. It was tuned against the per-frame-mean metric (empty `pan`
      frames scored 120 dB). Pooled, v2: on 37.11 / penumbra 28.57 / FLIP 0.0182; off 37.29 / 28.88 /

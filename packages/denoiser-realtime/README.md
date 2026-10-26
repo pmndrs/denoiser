@@ -381,7 +381,10 @@ const out = shadows.dispatch(
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
   [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLagGain` [64] (old name `antiLag` still accepted, deprecated), `antiLagHistory` [0],
   `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0.618],
-  `uniformSnap` ['change'], `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
+  `uniformSnap` ['change'], `snapHardPx` [2] ('change' also snaps uniform windows where the own penumbra is under 2 px:
+  crisp hard edges on a moving camera), `backfacePass` [true] (surfaces with the whole light below their horizon keep
+  their input: stay black), `noiseCap` [0] / `noiseCapSettled` [false] (cap the H18 noise radius at k × the
+  occluder-sized radius: sharper near-hard shadows, but more boil in wide penumbrae), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
   `youngFrames` [8], `youngTaper` [0.25], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
@@ -415,7 +418,8 @@ visibility, **pooled** (PSNR of the mean squared error over all frames and pixel
 | `ShadowDenoiser` v1 options | 36.55 | 28.11 | 33.19 | 0.018 | 0.0035 | 0.48–0.58 |
 | `ShadowDenoiser` v2 | 37.11 | 28.57 | 34.68 | 0.018 | 0.0033 | 0.48–0.59 |
 | `ShadowDenoiser` v2.1 | 38.12 | 29.05 | 35.33 | 0.0129 | 0.0027 | 0.58–0.69 |
-| **`ShadowDenoiser` (defaults, v2.2)** | **38.22** | **29.16** | **35.51** | 0.0131 | **0.0024** | 0.55–0.72 |
+| `ShadowDenoiser` v2.2 (`uniformSnap: true`, as measured in M4) | 38.22 | 29.16 | 35.51 | 0.0131 | 0.0024 | 0.55–0.72 |
+| **`ShadowDenoiser` (defaults since 2026-10-26: v2.2 + `snapHardPx: 2` + `backfacePass`)** | **38.49** | **29.39** | – | **0.0124** | **0.0024** | 0.55–0.72 |
 
 Ahead of FFX on every path. **v2.2** (M4.md §12, "Moving shadows") fixes visible boiling in wide,
 soft penumbrae (the rotating torus knot's shadow on the three.js page): in that shadow the output's
@@ -425,8 +429,10 @@ staying 8 dB more accurate; on the test bed flicker −11 % and temporal PSNR +0
 turns it off: v2.1's cost, 40 B/px; v2.1 read 0.52–0.66 ms on the same bench). v2.1 (M4.md §11) fixes the frame-2 dip after a reset and leads FFX
 from frame 0 on the reset-window replays, including `std1080-orbit`; it costs ~+0.1 ms (the
 normal-tested clamp; `clampGeometry: false` returns to v2's cost and gives up ~1 dB pooled). v2.2's
-0.55–0.72 ms are within the ~0.75 ms target (SPEC §12, decided 2026-10-25). The table ran
-`uniformSnap: true`; the default is `'change'` since then (on v2: +0.12 dB pooled, FLIP +2 %). GPU
+0.55–0.72 ms are within the ~0.75 ms target (SPEC §12, decided 2026-10-25). The v2.2 row ran
+`uniformSnap: true`; the default is `'change'` since then, and since 2026-10-26 (Dennis, q21 (a)) `snapHardPx: 2`
+and `backfacePass: true` (last row, results/SHADOWS-LOOK.md "Rule-9 A/B": the grey veil `'change'` left next to
+hard edges on moving cameras goes, back faces stay black; real-scene captures +0.53 dB, FLIP −14 %; same cost). GPU
 ms are the fastest of 4 solo runs (Apple M5 Pro, Chrome; the GPU has two clock states, ×1.3–1.8).
 Per pass on `thin`, the penumbra-heaviest view: temporal 0.42, tiles 0.005, spatial 0.12 + 0.11,
 stabilize 0.05 ms. `youngMean: 0` saves ~0.025 ms (−0.07 dB, measured on v2). Directional lights: the code path is exercised on
