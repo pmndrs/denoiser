@@ -25,6 +25,9 @@
 // (= the per-frame noise sigma of a temporally white signal; a linear change over 3 frames adds 0):
 // boilDynamic, boilStaticPenumbra (static region, 0.02 < ref < 0.98); the noisy baseline also carries
 // refBoilDynamic / refBoilStaticPenumbra, the same measure on the reference (its noise floor).
+// Visibility also gets edgeSharpness (results/SHADOWS-LOOK.md, SHADOWS-MOTION.md): sum |∇out| / sum |∇ref| over the
+// pixels where |∇ref| > 0.1 (forward differences, lib/capture.mjs gradMag), all frames: 1 = as crisp as the reference,
+// < 1 softer (PSNR and boil barely see a resampling veil), noisy input > 1.
 //
 // CAPTURE-FORMAT v1 signals (outputs `<signal>.f32`, 3 ch; CAPTURE-FORMAT v1 "Outputs and scoring"):
 //   sh-diffuse / sh-specular  scored like rgb signals against diffuse_ref / specular_ref (noisy baseline = the
@@ -42,7 +45,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  BUMP_COS, OUTPUTS_DIR, PSNR_CAP_DB, SIGNALS, V1_SIGNALS, frameDir, listDirs, maskedBlur3, mean, readBuffer, readF32, readManifest, reinhard,
+  BUMP_COS, OUTPUTS_DIR, PSNR_CAP_DB, SIGNALS, V1_SIGNALS, edgeGradSums, frameDir, gradMag, listDirs, maskedBlur3, mean, readBuffer, readF32, readManifest, reinhard,
   resolveCapture, scoreFrame, settledMask, shResolve,
 } from './lib/capture.mjs';
 
@@ -308,6 +311,11 @@ function scoreSequence(getOut, signal, isBaseline = false) {
       prevE3 = e3;
       hist = [Float32Array.from(outS, (v) => Math.min(Math.max(v, 0), 1)), hist[0]];
     }
+    if (signal === 'visibility') {
+      const c0 = capFrame(f);
+      c0.gRef ??= gradMag(c0.visibility_ref, c0.depth, m.width, m.height);
+      r.edge = edgeGradSums(out, c0.visibility_ref, c0.depth, m.width, m.height, 0.1, null, c0.gRef);
+    }
     if (v1) r.v1 = v1Frame(f, out, signal, isBaseline);
     if (vsSh) {
       const rs = scoreFrame(out, shRefResolved(f).rgb, c.depth, 3, m.frames[f].reset ? null : prevSh);
@@ -363,6 +371,7 @@ function scoreSequence(getOut, signal, isBaseline = false) {
     nonFinite: ok.reduce((a, r) => a + r.nonFinite, 0),
     perFramePsnr: per.map((r) => (r ? +r.psnr.toFixed(3) : null)),
     ...dynFields,
+    ...(signal === 'visibility' ? { edgeSharpness: (() => { let a = 0, b = 0; for (const r of ok) { a += r.edge.sumOut; b += r.edge.sumRef; } return b ? a / b : NaN; })() } : {}),
     ...(v1 ? v1Fields(per, ok) : {}),
     ...(vsSh ? { vsShRef: vsShFields(per), shRefResolve: { k: SH_K, s: SH_S } } : {}),
   };
@@ -452,11 +461,11 @@ if (vis.length) {
   const b = baselines.visibility;
   lines.push('', `Visibility, dynamic vs static region (dynamic: reference range over frames t-${DYN_K}..t > ${DYN_DELTA}, reprojected; ` +
     `${b.dynamicPixelsPerFrame} px per frame). Pooled PSNR; flicker = mean |e_t − e_t−1| and tPSNR, motion-compensated, valid history.`, '',
-  '| denoiser | dynamic PSNR | dynamic flicker | dynamic tPSNR | dynamic boil | static PSNR | static penumbra | static flicker | static tPSNR | static penumbra boil |', '|---|---|---|---|---|---|---|---|---|---|');
+  '| denoiser | dynamic PSNR | dynamic flicker | dynamic tPSNR | dynamic boil | static PSNR | static penumbra | static flicker | static tPSNR | static penumbra boil | edge sharpness |', '|---|---|---|---|---|---|---|---|---|---|---|');
   for (const r of [{ denoiser: 'noisy', ...b }, ...vis]) {
-    lines.push(`| ${r.denoiser} | ${f2(r.psnrDynamicPooled)} | ${f2(r.flickerDynamic, 4)} | ${f2(r.tpsnrDynamic)} | ${f2(r.boilDynamic, 4)} | ${f2(r.psnrStaticPooled)} | ${f2(r.psnrStaticPenumbraPooled)} | ${f2(r.flickerStatic, 4)} | ${f2(r.tpsnrStatic)} | ${f2(r.boilStaticPenumbra, 4)} |`);
+    lines.push(`| ${r.denoiser} | ${f2(r.psnrDynamicPooled)} | ${f2(r.flickerDynamic, 4)} | ${f2(r.tpsnrDynamic)} | ${f2(r.boilDynamic, 4)} | ${f2(r.psnrStaticPooled)} | ${f2(r.psnrStaticPenumbraPooled)} | ${f2(r.flickerStatic, 4)} | ${f2(r.tpsnrStatic)} | ${f2(r.boilStaticPenumbra, 4)} | ${f2(r.edgeSharpness, 3)} |`);
   }
-  lines.push(`| reference (its own boil) | | | | ${f2(b.refBoilDynamic, 4)} | | | | | ${f2(b.refBoilStaticPenumbra, 4)} |`);
+  lines.push(`| reference (its own boil) | | | | ${f2(b.refBoilDynamic, 4)} | | | | | ${f2(b.refBoilStaticPenumbra, 4)} | 1 |`);
 }
 // ---- v1 tables
 const shRows = results.filter((r) => r.signal.startsWith('sh-'));

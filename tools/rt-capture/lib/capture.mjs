@@ -311,3 +311,30 @@ export function settledMask(frames, k = 8) {
   let last = 0;
   return frames.map((f, i) => { if (f.reset || i === 0) last = i; return i - last >= k; });
 }
+
+/**
+ * Edge sharpness sums of one scalar frame (results/SHADOWS-LOOK.md, SHADOWS-MOTION.md): per-pixel gradient magnitude
+ * |∇x| = hypot(x[x+1] − x, x[y+1] − x) (forward differences, values clamped to [0, 1], a difference only where both
+ * pixels are scored), summed over the pixels where the reference's |∇ref| > thr. Sharpness = sumOut / sumRef over a
+ * sequence: 1 = as crisp as the reference, < 1 softer, a noisy input > 1. `mask` (optional Uint8Array) restricts the
+ * pixels further. Returns { sumOut, sumRef, n }.
+ */
+export function gradMag(x, depth, W, H) {
+  const g = new Float32Array(W * H);
+  const cl = (v) => (Number.isFinite(v) ? Math.min(Math.max(v, 0), 1) : 0);
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+    const i = y * W + xx;
+    if (!isScored(depth[i])) continue;
+    const c = cl(x[i]);
+    const gx = xx < W - 1 && isScored(depth[i + 1]) ? cl(x[i + 1]) - c : 0;
+    const gy = y < H - 1 && isScored(depth[i + W]) ? cl(x[i + W]) - c : 0;
+    g[i] = Math.hypot(gx, gy);
+  }
+  return g;
+}
+export function edgeGradSums(out, ref, depth, W, H, thr = 0.1, mask = null, gRef = null) {
+  const gr = gRef ?? gradMag(ref, depth, W, H), go = gradMag(out, depth, W, H);
+  let sumOut = 0, sumRef = 0, n = 0;
+  for (let i = 0; i < gr.length; i++) if (gr[i] > thr && (!mask || mask[i])) { sumOut += go[i]; sumRef += gr[i]; n++; }
+  return { sumOut, sumRef, n };
+}
