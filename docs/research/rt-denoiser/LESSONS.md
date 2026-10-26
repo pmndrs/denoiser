@@ -996,3 +996,26 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   background script that takes the lock per group (`until mkdir …; sleep 3`), write docs meanwhile, and keep scoring
   (CPU) outside the lock. Replays of 96 frames at 960×540 take ~7 s each, so a 5-capture × 4-arm group holds the lock
   ~2.5 min. — t3, 2026-10-26
+
+## Boundaries (T6, 2026-10-26)
+
+- **"Needless" resets against point-visibility ground truth are not needless for normal-dependent signals.** SVGF's
+  cos 0.95 normal test has 39.7 % precision on Bistro / Sponza (13 % of adjacent same-surface texel pairs differ by
+  > 18° there: dense tessellation, normal-mapped `normalView`). A test relaxed to the pixel's own normal spread raised
+  precision to 86.5 % and cut Bistro boil 30–38 %, but lost AO 1.6 dB and specular 1.1 dB (FLIP +12…+21 %): the
+  rejected history was shaded at another normal. Score a history-validity change downstream on the real normal-mapped
+  scenes before calling resets wasted (results/T6-boundaries.md §5). — t6, 2026-10-26
+- **History tests interact; a test-bed win can flip on real geometry.** SVGF without its 3×3 fallback won every
+  test-bed path (AO disoccluded +1.7 dB at 4096 spp) and lost on Bistro / Sponza (AO boil +6…+9 % above both floors):
+  there the fallback rescues the pixels whose 2×2 taps failed the normal test, with same-normal texels. Run the
+  Bistro / Sponza captures before proposing any disocclusion change. — t6, 2026-10-26
+- An expensive relaxed test can run only where the strict one failed, byte-identically, when the relaxed criterion
+  only ever accepts more (a tap that passed the strict threshold passes the relaxed one). Prove it with a replay byte
+  compare of the two forms (320 files, 0 differ), then time the lazy one. — t6, 2026-10-26
+- A per-tap hit-distance test on the recurrent virtual footprint removes reflected-world disocclusions (duplicate
+  images 36 → 0 / 40) but not a leading image whose footprint is self-consistent: that offset is an error in the
+  virtual distance (blended marker / background ĥ at the image edge), which no consistency test can see.
+  — t6, 2026-10-26
+- The upscaler-guides `run.mjs` names output files after the whole query: a long `det=` list hits ENAMETOOLONG. The
+  T6 copy (`results/data/t6-boundaries/run.mjs`) drops the `det=` part from the file name. Capture scoring with the
+  boundary region takes ~5 min of CPU per Bistro capture; keep it outside the GPU lock. — t6, 2026-10-26

@@ -1,0 +1,44 @@
+{
+ "query": "path=orbit&w=1920&h=1080&det=shadows,shadows@normalThreshold=0.95@normalTest=relative,shadows@normalThreshold=0.8@normalTest=relative",
+ "W": 1920,
+ "H": 1080,
+ "frames": 96,
+ "channels": {
+  "shadows": {
+   "TP": 1584946,
+   "FP": 848,
+   "FN": 370798,
+   "TN": 152025488,
+   "TPi": 903652,
+   "FPi": 538,
+   "FNi": 91,
+   "TNi": 150400398,
+   "hard": 1284206,
+   "FNhard": 84
+  },
+  "shadows@normalThreshold=0.95@normalTest=relative": {
+   "TP": 1584977,
+   "FP": 851,
+   "FN": 370767,
+   "TN": 152025485,
+   "TPi": 903667,
+   "FPi": 538,
+   "FNi": 76,
+   "TNi": 150400398,
+   "hard": 1284206,
+   "FNhard": 58
+  },
+  "shadows@normalThreshold=0.8@normalTest=relative": {
+   "TP": 1584971,
+   "FP": 850,
+   "FN": 370773,
+   "TN": 152025486,
+   "TPi": 903663,
+   "FPi": 538,
+   "FNi": 80,
+   "TNi": 150400398,
+   "hard": 1284206,
+   "FNhard": 64
+  }
+ }
+}

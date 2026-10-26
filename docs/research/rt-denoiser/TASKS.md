@@ -183,19 +183,30 @@ Status legend: `[ ]` open · `[~]` in progress (agent name) · `[x]` done (commi
 
 _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "unassigned">`)_
 
-- [ ] **SVGF: option to switch off the 3×3 history fallback** (SVGF §4.1, "for thin geometry"). With it off, SVGF's
+- [x] (t6, a7ef4a8 + docs; results/T6-boundaries.md §4) _Built: `historyFallback: '3x3' | 'off' | 'strict'` (default
+      byte-identical). `'off'` wins every test-bed path (1080p disoccluded +0.14…+0.51 dB, AO +1.66 at 4096 spp) but
+      **fails rule 9 on Bistro / Sponza** (diffuse −0.09, AO −0.10 dB; AO boil +6…+9 % above both floors on four
+      captures: there the fallback rescues pixels whose 2×2 taps failed the normal test). `'strict'` loses everywhere.
+      No flip._ **SVGF: option to switch off the 3×3 history fallback** (SVGF §4.1, "for thin geometry"). With it off, SVGF's
       disocclusion detection matches the strict plane test (interior misses 20.7 → 0.1 ‰ vs exact GT, wrong-surface
       misses ~0 either way), and `svgf-auto` gains **+0.07…+0.34 dB on the disoccluded region** of `orbit`, `pan`,
       `thin`, `cut`, `object` (diffuse and specular, 960×540, 256-spp refs; total +0.004…+0.035 dB; flicker unchanged),
       `thin` included (results/UPSCALER-GUIDES.md §4). Land as an option (default keeps the fallback), then the rule-9
       A/B: 1080p × 7 paths, captures, 4096-spp references on orbit / light / glossy. Then also try the stricter variant (reset when < half the bilinear weight is valid, `r.sumW > 0.5`: resets the silhouette band the mask adds) against fallback-off; the scratch run was dropped for GPU-lock time. — found by
       upscaler-guides evaluator, owner unassigned (packages/denoiser-realtime svgf)
-- [ ] **Recurrent / shadows: wrong-surface history at a moving object's contact.** On `object` our plane test (no
+- [x] (t6, a7ef4a8 + docs; results/T6-boundaries.md §6) _Built: `normalThreshold` and `normalTest: 'relative'` for recurrent
+      and shadows. 0.95 + `'relative'`: `object` misses 3.9 → 0.34 %; recurrent +0.007 / +0.010 dB test bed, +0.007 /
+      +0.033 real, +0.9 % cost: passes (config proposal below); shadows +0.004 / +0.010, +5.8 % cost: passes, too small to
+      recommend. Plain cos 0.95 / 0.8: recurrent +0.3…+0.44 dB real but boil fails on two captures (question for
+      Dennis); shadows −0.08 dB test bed._ **Recurrent / shadows: wrong-surface history at a moving object's contact.** On `object` our plane test (no
       normal test) keeps history from another surface for 3.7–3.9 % of the revealed pixels that have no same-object
       texel nearby (1080p; glossy 0.4 %, other paths ~0); SVGF's normal test (cos 0.95) catches them (0.0 %).
       Candidate: a loose normal-agreement test for recurrent / shadows, measured on `object` and the captures.
       (results/UPSCALER-GUIDES.md §2) — found by upscaler-guides evaluator, owner unassigned
-- [ ] **SVGF's normal test resets visible pixels on real geometry.** Against exact GT on the Bistro / Sponza captures,
+- [x] (t6, a7ef4a8 + docs; results/T6-boundaries.md §5) _Answered: those resets are not needless for normal-dependent
+      signals. `normalTest: 'relative'` (precision 39.7 → 86.5 %) loses Bistro AO 1.59 dB and specular 1.13 dB, FLIP
+      +12…+21 %, while cutting boil 30–38 %; threshold sweep 0.9…0 trades the same way. Keep cos 0.95. Follow-up below
+      (Bistro AO boil)._ **SVGF's normal test resets visible pixels on real geometry.** Against exact GT on the Bistro / Sponza captures,
       SVGF's resets have 39.7 % precision pooled (Bistro 4.6–46 %): the cos 0.95 normal test rejects the same surface
       on dense, finely tessellated geometry; the plane test alone gives 88.6 %. Sweep `normalThreshold` on the captures
       (needless resets = young-pixel noise). (results/UPSCALER-GUIDES.md §3) — found by upscaler-guides evaluator,
@@ -986,7 +997,11 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       under camera motion, short trails at zero parallax; plain SVGF drags and duplicates there (28 px); recurrent
       virtual motion shows a leading ghost (below). Options default off, byte-identical default; neither passes rule 9
       (real-scene moving-object boil +16 %, cost)._
-- [ ] **Recurrent specular: leading ghost / duplicate images from virtual motion on clean mirrors** (results/REFLECTION-MOTION.md
+- [x] (t6, a7ef4a8 + docs; results/T6-boundaries.md §7) _Built `virtualHitTest` (recurrent; virtual-footprint taps whose
+      stored fast ĥ disagrees with this frame's pre-blurred ĥ drop out): near duplicates 36 → 0 / 40, `rm-obj-plane` trail
+      27 → 12 px, `rm-refl-turn` / concave far image 7.3 / 6.3 → 2.3 / 2.0 px off. `rm-cam-plane`'s far image still
+      leads 5.3 px: a virtual-distance error, not a disocclusion (follow-up below). Rule 9 passes for the recurrent
+      option (7 paths +0.061 dB specular, 4096 spp −0.001, real +0.023, boil ≤ +4.7 %, cost +1.2 %)._ **Recurrent specular: leading ghost / duplicate images from virtual motion on clean mirrors** (results/REFLECTION-MOTION.md
       §3: far image 5.6 px ahead of the oracle, extra blobs on 36 / 40 frames, reflector region −9 dB vs A-SVGF; with
       `virtualMotion: false` it tracks). Cause: reflected-world disocclusion; low virtual confidence only shortens that
       history to A_fast = 3 and the 3×3 clamp lets a high-contrast image through. Candidate: SVGF's `reflectionHitTest`
@@ -1014,6 +1029,27 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
 - [ ] README (`packages/denoiser-realtime`): document the specular options `reflectionHitTest` and
       `reflectionReprojection` ('virtual' measured as a loss; 'dual' for glossy mirrors under camera motion), their cost
       and the rule-9 result (results/REFLECTION-MOTION.md §6) — found by reflection-motion, owner `packages/denoiser-realtime`
+
+- [x] (t6, a7ef4a8 + docs; [results/T6-boundaries.md](results/T6-boundaries.md)) **Review target 6: silhouettes, thin
+      objects, surface boundaries.** _Boundary region added (test bed `boundary` / `boundary-young` / `boundary-temporal`,
+      `&show=boundary`; capture scorer `results/data/t6-boundaries/score.mjs`): shipped defaults score 2.2–7.9 dB below
+      the whole frame there with ≤ 0.003 signed bias (no systematic bleeding; noise and smoothing in a 2 px band).
+      Exact-GT detection harness with option variants (`results/data/t6-boundaries/detect.ts`). The four detection
+      follow-ups above are answered; no shipped default changes._
+- [ ] **Proposed config flip for the recurrent option** (results/T6-boundaries.md §6, §7; passes every rule-9 clause,
+      changes no shipped default): `normalThreshold: 0.95` + `normalTest: 'relative'` (test bed +0.007 / +0.010 dB,
+      boundary-young +0.18…+0.20, 4096 spp +0.014 / +0.015, real +0.007 / +0.033, boil −0.8…+0.6 %, +0.9 % cost) and
+      `virtualHitTest: true` (specular: test bed +0.061, real +0.023, boil ≤ +4.7 %, +1.2 % cost; removes the
+      clean-mirror duplicates). For the orchestrator. — t6, owner recurrent
+- [ ] **Bistro AO / diffuse boil from SVGF's normal-test resets** (results/T6-boundaries.md §5): shipped A-SVGF AO boils at
+      2.6× the reference's level on `bistro-orbit` (0.0103 vs 0.0039), diffuse 2.1×, because the cos 0.95 test resets
+      pixels on normal-mapped / dense surfaces; relaxing it fixes the boil but loses 1.6 dB (history shaded at another
+      normal). Candidates that keep the normal discrimination: a history weight from normal agreement instead of a hard
+      reset, or the geometric normal as the test's input (renderer guide), measured on Bistro / Sponza. — t6, owner svgf
+- [ ] **Recurrent virtual distance error: far image leads on `rm-cam-plane`** (results/T6-boundaries.md §7): 5.3 px ahead
+      with `virtualHitTest` (5.6 without); the footprint is self-consistent, so the R-9 distance itself is off: the fast
+      ĥ that sizes it blends the marker's and the background's distances at the image edge. Candidate: size R-9 from the
+      pixel's own (un-blurred) ĥ or a min-distance over the 3×3. — t6, owner recurrent
 
 ## Probes for the Windows harness
 
@@ -1228,6 +1264,11 @@ The entries that used to be here (joint default for `filter: 'recurrent'` — re
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
 
+- **Recurrent normal test (2026-10-26, t6):** the recurrent option with a plain per-tap normal test (`normalThreshold`
+  0.8) gains +0.39 / +0.29 dB diffuse / specular on the 9 real captures (Bistro up to +0.8 dB, FLIP −1.6…−2.4 %) and is
+  level on the test bed, but its extra resets boil above the reference's level on `bistro-pan` diffuse and
+  `sponza-orbit` specular (rule 9 boil clause). Offer it as the recurrent config anyway? (The relaxed form that passes is
+  proposed above.) Evidence results/T6-boundaries.md §6.3.
 - **f16 rounding (2026-10-26, distance-long):** approve `f16Rounding: 'nearest'` as the default of the SVGF and recurrent
   pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
   brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;

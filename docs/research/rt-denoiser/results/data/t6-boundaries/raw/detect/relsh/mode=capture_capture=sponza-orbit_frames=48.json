@@ -1,0 +1,50 @@
+{
+ "query": "mode=capture&capture=sponza-orbit&frames=48&det=shadows,shadows@normalThreshold=0.95@normalTest=relative,shadows@normalThreshold=0.8@normalTest=relative",
+ "W": 960,
+ "H": 540,
+ "frames": 48,
+ "channels": {
+  "shadows": {
+   "TP": 50742,
+   "FP": 9410,
+   "FN": 90926,
+   "TN": 24192388,
+   "TPi": 9848,
+   "FPi": 7675,
+   "FNi": 5,
+   "TNi": 23703418,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "shadows@normalThreshold=0.95@normalTest=relative": {
+   "TP": 50937,
+   "FP": 10469,
+   "FN": 90731,
+   "TN": 24191329,
+   "TPi": 9849,
+   "FPi": 8573,
+   "FNi": 4,
+   "TNi": 23702520,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "shadows@normalThreshold=0.8@normalTest=relative": {
+   "TP": 50853,
+   "FP": 10197,
+   "FN": 90815,
+   "TN": 24191601,
+   "TPi": 9849,
+   "FPi": 8368,
+   "FNi": 4,
+   "TNi": 23702725,
+   "hard": 0,
+   "FNhard": 0
+  }
+ },
+ "gtStats": {
+  "selfChecked": 3477665,
+  "selfOccluded": 101,
+  "triangles": 262267,
+  "gtMs": 54314
+ }
+}

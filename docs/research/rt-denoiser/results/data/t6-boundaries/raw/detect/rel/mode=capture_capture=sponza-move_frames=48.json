@@ -1,0 +1,110 @@
+{
+ "query": "mode=capture&capture=sponza-move&frames=48&det=svgf,svgf@normalTest=relative,svgf@normalTest=relative@historyFallback=off,svgf@historyFallback=off,recurrent,recurrent@normalThreshold=0.95@normalTest=relative,recurrent@normalThreshold=0.8@normalTest=relative,recurrent@normalThreshold=0.95",
+ "W": 960,
+ "H": 540,
+ "frames": 48,
+ "channels": {
+  "svgf": {
+   "TP": 4318,
+   "FP": 155,
+   "FN": 17157,
+   "TN": 24343170,
+   "TPi": 107,
+   "FPi": 85,
+   "FNi": 32,
+   "TNi": 24290805,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@normalTest=relative": {
+   "TP": 3593,
+   "FP": 1,
+   "FN": 17882,
+   "TN": 24343324,
+   "TPi": 107,
+   "FPi": 0,
+   "FNi": 32,
+   "TNi": 24290890,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@normalTest=relative@historyFallback=off": {
+   "TP": 17679,
+   "FP": 7,
+   "FN": 3796,
+   "TN": 24343318,
+   "TPi": 138,
+   "FPi": 0,
+   "FNi": 1,
+   "TNi": 24290890,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@historyFallback=off": {
+   "TP": 17771,
+   "FP": 301,
+   "FN": 3704,
+   "TN": 24343024,
+   "TPi": 138,
+   "FPi": 146,
+   "FNi": 1,
+   "TNi": 24290744,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent": {
+   "TP": 10590,
+   "FP": 5,
+   "FN": 10885,
+   "TN": 24343320,
+   "TPi": 138,
+   "FPi": 0,
+   "FNi": 1,
+   "TNi": 24290890,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.95@normalTest=relative": {
+   "TP": 10634,
+   "FP": 5,
+   "FN": 10841,
+   "TN": 24343320,
+   "TPi": 138,
+   "FPi": 0,
+   "FNi": 1,
+   "TNi": 24290890,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.8@normalTest=relative": {
+   "TP": 10626,
+   "FP": 5,
+   "FN": 10849,
+   "TN": 24343320,
+   "TPi": 138,
+   "FPi": 0,
+   "FNi": 1,
+   "TNi": 24290890,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.95": {
+   "TP": 11273,
+   "FP": 271,
+   "FN": 10202,
+   "TN": 24343054,
+   "TPi": 138,
+   "FPi": 137,
+   "FNi": 1,
+   "TNi": 24290753,
+   "hard": 0,
+   "FNhard": 0
+  }
+ },
+ "gtStats": {
+  "selfChecked": 3480726,
+  "selfOccluded": 188,
+  "triangles": 262267,
+  "gtMs": 59300
+ }
+}

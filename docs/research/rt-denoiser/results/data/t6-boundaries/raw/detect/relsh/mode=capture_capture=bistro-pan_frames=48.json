@@ -1,0 +1,50 @@
+{
+ "query": "mode=capture&capture=bistro-pan&frames=48&det=shadows,shadows@normalThreshold=0.95@normalTest=relative,shadows@normalThreshold=0.8@normalTest=relative",
+ "W": 960,
+ "H": 540,
+ "frames": 48,
+ "channels": {
+  "shadows": {
+   "TP": 573303,
+   "FP": 63893,
+   "FN": 174305,
+   "TN": 23379653,
+   "TPi": 461105,
+   "FPi": 48161,
+   "FNi": 60,
+   "TNi": 22535367,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "shadows@normalThreshold=0.95@normalTest=relative": {
+   "TP": 574611,
+   "FP": 98342,
+   "FN": 172997,
+   "TN": 23345204,
+   "TPi": 461129,
+   "FPi": 75224,
+   "FNi": 36,
+   "TNi": 22508304,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "shadows@normalThreshold=0.8@normalTest=relative": {
+   "TP": 574356,
+   "FP": 89335,
+   "FN": 173252,
+   "TN": 23354211,
+   "TPi": 461129,
+   "FPi": 68245,
+   "FNi": 36,
+   "TNi": 22515283,
+   "hard": 0,
+   "FNhard": 0
+  }
+ },
+ "gtStats": {
+  "selfChecked": 3455869,
+  "selfOccluded": 121,
+  "triangles": 2827910,
+  "gtMs": 116534
+ }
+}
