@@ -328,11 +328,12 @@ export async function main(log: (m: string) => void) {
   const lightOpt = () => (shadowLight === 'sun'
     ? { type: 'directional' as const, direction: [sunDir.x, sunDir.y, sunDir.z] as [number, number, number], angularRadius: cfg.sun.angularRadius }
     : { type: 'sphere' as const, position: [uLPos.value.x, uLPos.value.y, uLPos.value.z] as [number, number, number], radius: cfg.local.radius });
-  // One shadow denoiser per preset; all run every frame (kept in the output graph at weight 0), so switching presets
-  // is instant and each keeps its own history. `shadows` (shipped) also lights the SSR input.
-  const shNodes = Object.fromEntries((Object.keys(SH_PRESETS) as ShPreset[]).map((k) => [k,
-    realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: { ...shOptions, ...SH_PRESETS[k].opts } as N })])) as Record<ShPreset, ReturnType<typeof realtimeShadows>>;
-  const shadows = shNodes.shipped;
+  // Shadow presets: one denoiser each, created on first use (the default page runs only `shadows`, as before, so
+  // benches and captures are unchanged); once created a preset runs every frame (kept in the output graph at
+  // weight 0), so switching back and forth is instant and keeps its history. `shadows` (shipped) also lights the SSR input.
+  const shadows = realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: shOptions });
+  const shNodes: Partial<Record<ShPreset, typeof shadows>> = { shipped: shadows };
+  const shNode = (k: ShPreset) => (shNodes[k] ??= realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: { ...shOptions, ...SH_PRESETS[k].opts } as N }));
   let shPreset: ShPreset = (q.get('shp') ?? '') in SH_PRESETS ? q.get('shp') as ShPreset : 'shipped';
   /** What the split view's left side shows for the shadow / lit signals: FFX, or our shipped preset (A/B a candidate). */
   let shLeft: 'ffx' | 'shipped' = q.get('shleft') === 'shipped' ? 'shipped' : 'ffx';
@@ -409,7 +410,7 @@ export async function main(log: (m: string) => void) {
     const side = leftShipped ? 'ours' : sideIn;
     const dif = side === 'ours' ? gi.diffuse.rgb : side === 'ref' ? (difRef as N).rgb : difRTT.sample(uv()).rgb;
     const spec = side === 'ours' ? gi.specular.rgb : side === 'other' ? ffxRefl.rgb : side === 'ref' ? (specRef as N).rgb : ssrNode.rgb;
-    const vis = side === 'ours' ? (leftShipped ? shadows : shNodes[shPreset]).r : side === 'other' ? ffxSh.r : side === 'ref' ? (visRef as N).r : shRTT.sample(uv()).r;
+    const vis = side === 'ours' ? (leftShipped ? shadows : shNode(shPreset)).r : side === 'other' ? ffxSh.r : side === 'ref' ? (visRef as N).r : shRTT.sample(uv()).r;
     switch (sig) {
       case 'diffuse': return dif;
       case 'specular': return spec.mul(side === 'ref' ? float(1) : ssrMask);
@@ -437,7 +438,7 @@ export async function main(log: (m: string) => void) {
         .add((visRef as N).r).add((difRef as N).r).add((specRef as N).r).add(ssrNode.a);
       col = (difRef as N).rgb.add(vec3(keep.mul(0)));
     }
-    col = col.add(vec3((Object.values(shNodes) as N[]).reduce((acc: N, n: N) => acc.add(n.r), float(0) as N).mul(0)));
+    if (Object.keys(shNodes).length > 1) col = col.add(vec3((Object.values(shNodes) as N[]).reduce((acc: N, n: N) => acc.add(n.r), float(0) as N).mul(0)));
     pipeline.outputNode = (sig === 'ao' || sig === 'shadow'
       ? renderOutput(vec4(col, 1), THREE.NoToneMapping, THREE.SRGBColorSpace)
       : renderOutput(vec4(col, 1), THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace)) as N;
