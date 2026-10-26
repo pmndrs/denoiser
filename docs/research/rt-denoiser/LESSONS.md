@@ -428,6 +428,11 @@ Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
 - Capture `motion` includes the current jitter (`ndc_sample − ndc_prev`), so
   `uv_prev = (p + 0.5 + jitter)/size + (−0.5·m.x, +0.5·m.y)`, and positions are rebuilt from
   the jittered sample NDC with the unjittered matrices (SPEC C-1, C-6). — spec-author, 2026-10-25
+  **Correction (SPEC v0.7, T8):** that is the capture format's geometry, not what our filters do. Every filter
+  reconstructs and reprojects at the pixel centre `(p + 0.5)/size` and never reads `FrameCamera.jitter`; the history
+  accumulates across jitter phases like a TAA resolve, and T8 measured that as correct (no artefact with jitter-free
+  motion). Motion must be jitter-free: `ndc_sample` and `ndc_prev` both through the unjittered projection, no jitter
+  delta. — spec-author, 2026-10-26
 - An infinite ground plane hits beyond the far plane near the horizon: the test bed wrote
   depth > 1 with normals there (validate.mjs: depth range warnings, "sky" normals non-zero).
   The guides now mark such pixels as sky (depth 1, viewz −far, normal 0). — wiring, 2026-10-25
@@ -1075,3 +1080,13 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - A Chrome tab holding "Video Wake Lock" (a call or video on Dennis's desktop) ran through a whole bench window; with the
   quiet-GPU check honouring it the bench just waits (holding the GPU lock). Either release the lock while waiting or bench
   through it with `IGNORE_VIDEO=1` and quote fastest frames (medians moved ≤ 3 % here). — t5, 2026-10-26
+
+## Spec fold-ins (SPEC v0.7, 2026-10-26)
+
+- **A spec formula whose input no code reads can stay wrong for weeks.** C-1 / C-6 reconstructed at the jittered
+  sample position from v0 to v0.6; no filter ever read `FrameCamera.jitter`, and only T8's end-to-end measurement
+  caught it. When folding results, grep the code for every input a SPEC formula consumes (`git grep -i jitter
+  packages/denoiser-realtime/src`), not only for the option names that changed. — spec-author, 2026-10-26
+- Results docs quote resource sizes in their own words; check them against the allocation. T3 wrote "+4 B/px per signal
+  at 1/9 resolution" for `antiLagChroma`, while `src/svgf.ts` allocates two rg32uint per signal at ⌈W/3⌉ × ⌈H/3⌉
+  (≈ 1.8 B/px). The SPEC quotes the allocation and the mismatch goes to TASKS. — spec-author, 2026-10-26
