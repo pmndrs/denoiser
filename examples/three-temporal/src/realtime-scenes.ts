@@ -47,10 +47,10 @@ const OURS: Record<Signal, string> = {
 };
 /** Shadow option presets for reviewing the open shadow decisions live (Shadow options buttons, keys 1-4; ?shp=<key>). */
 const SH_PRESETS = {
-  shipped: { label: 'shipped', opts: {} },
-  fix: { label: 'q21: snapHardPx 2 + backfacePass', opts: { snapHardPx: 2, backfacePass: true } },
-  snap: { label: 'q21 (b): uniformSnap true', opts: { uniformSnap: true } },
-  noisecap: { label: 'q22: q21 + noiseCap 2 (settled)', opts: { snapHardPx: 2, backfacePass: true, noiseCap: 2, noiseCapSettled: true } },
+  shipped: { label: 'shipped (q21 flip in)', opts: {} },
+  q23: { label: 'q23: stepTest + edgeBox + rotationStep 0', opts: { stepTest: true, edgeBox: true, rotationStep: 0 } },
+  q24: { label: 'q24: terminatorAnalytic', opts: { terminatorAnalytic: true } },
+  both: { label: 'q23 + q24', opts: { stepTest: true, edgeBox: true, rotationStep: 0, terminatorAnalytic: true } },
 } as const;
 type ShPreset = keyof typeof SH_PRESETS;
 
