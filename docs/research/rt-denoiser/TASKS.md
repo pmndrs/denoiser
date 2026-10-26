@@ -1077,7 +1077,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       with `virtualHitTest` (5.6 without); the footprint is self-consistent, so the R-9 distance itself is off: the fast
       ĥ that sizes it blends the marker's and the background's distances at the image edge. Candidate: size R-9 from the
       pixel's own (un-blurred) ĥ or a min-distance over the 3×3. — t6, owner recurrent
-- [ ] **Doc/code mismatch, README (`packages/denoiser-realtime/README.md`) misses T6's options** (found writing SPEC v0.7):
+- [x] (orchestrator: README SVGF options, recurrent options and shadows options now list them) **Doc/code mismatch, README (`packages/denoiser-realtime/README.md`) misses T6's options** (found writing SPEC v0.7):
       the recurrent defaults changed in f649a50 (`normalThreshold` 0 → 0.95, `normalTest` `'center'` → `'relative'`,
       `virtualHitTest` false → true; `OcclusionDenoiser`'s recurrent mode keeps 0 / `'center'` / false), but the README's
       recurrent option list names none of the three, and SVGF's `historyFallback` / `normalTest` and shadows'

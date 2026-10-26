@@ -119,6 +119,10 @@ rule 9 at 2 and 1.5],
 `remodulate` [false], `timestamps` [true]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
+History tests (review target 6, results `T6-boundaries.md`; measured, not adopted): `historyFallback` ['3x3' |
+'off' | 'strict'] (the SVGF paper's 3×3 fallback when the 2×2 footprint fails; 'off' wins on the test bed but loses
+on Bistro / Sponza AO), `normalTest` ['center' | 'relative'] (relaxing the cos 0.95 normal test to the pixel's own
+neighbourhood resets far less on dense geometry but loses Bistro AO / specular).
 
 ## Passes (per signal)
 
@@ -243,6 +247,11 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   `specularHistoryScale` [1], `virtualMotion` [true], `virtualClampSigma` [1],
   `virtualAngleScale` [0.5], `virtualHitTolerance` [0.05], `virtualHitToleranceRoughness`
   [0.25], `remodulate` [false], `timestamps` [true].
+  Review target 6 (results `T6-boundaries.md`, defaults since 2026-10-26, rule 9 passed): `normalThreshold` [0.95]
+  with `normalTest` ['relative'] (a history normal test relaxed to the pixel's own neighbourhood: removes the ghost at
+  a moving object's floor contact; 0 / 'center' = the previous plane test only) and `virtualHitTest` [true] (drops
+  virtual-motion history whose hit distance disagrees: removes the duplicate images on clean mirrors). The occlusion
+  pipeline keeps 0 / 'center' / false (not measured there).
 
 | pass | reads → writes | formats |
 |---|---|---|
@@ -407,7 +416,9 @@ const out = shadows.dispatch(
   kernel where the raw 5×5 is a clean step: crisper hard edges and contacts, wide penumbrae unchanged), `edgeBox` [false]
   (hard edges: history clamped to the 3×3 raw min / max, no trailing behind moving hard shadows), `terminatorAnalytic`
   [false] (occluder-free terminators get the analytic above-horizon fraction of the light instead of a 16 px kernel;
-  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
+  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `normalThreshold` [0] / `normalTest`
+  ['center'] (a history normal test as on the recurrent filter: passes rule 9 but gains only +0.004…+0.010 dB for
+  +5.8 % cost, results/T6-boundaries.md), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
   `noiseRadius` [32 px @1080p], `noiseBlend` [0.5], `noiseYoung` [0], `youngMean` [0.75],
   `youngFrames` [8], `youngTaper` [0.25], `youngRadius` [2], `youngMinPx` [1], `mergeMin` [true], `terminatorRadius`
