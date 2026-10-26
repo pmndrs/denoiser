@@ -101,6 +101,8 @@ export interface RecurrentOptions {
    * the 16 disk taps. Structural; at most 7 (workgroup memory).
    */
   historyFixDense?: number;
+  /** historyFixDense radius cap: 'disk' (default: the disk's roughness-scaled radius) or 'mip' (the D7 mip level's tent, larger on mid-rough specular). Structural. */
+  historyFixDenseCap?: 'disk' | 'mip';
   /** Young-fraction threshold of historyFixWideRing / historyFixMips 'young' (0..1). Default 0.9. Structural. */
   historyFixYoungThreshold?: number;
   /** Anti-firefly: centre luminance ≤ k × second-largest neighbour (SPEC D9); 0 disables. Default 1.5. */
@@ -237,6 +239,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixMipsClamp: o.historyFixMipsClamp ?? 1,
     youngBlurTaps: o.youngBlurTaps ?? 0,
     historyFixDense: Math.min(Math.max(Math.round(o.historyFixDense ?? 0), 0), 7),
+    historyFixDenseCap: o.historyFixDenseCap ?? 'disk',
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,
@@ -319,7 +322,7 @@ export function recurrentStructuralKey(o: ResolvedRecurrent) {
 function spatialFixOf(o: ResolvedRecurrent): SpatialFixConfig {
   return {
     ageWeight: o.historyFixAgeWeight, wide: o.historyFixWideRing, rings: o.historyFixWideRings, wideUse: o.historyFixWideUse,
-    mips: o.historyFixMips, clampK: o.historyFixMipsClamp, youngT: o.historyFixYoungThreshold, dense: o.historyFixDense,
+    mips: o.historyFixMips, clampK: o.historyFixMipsClamp, youngT: o.historyFixYoungThreshold, dense: o.historyFixDense, denseCap: o.historyFixDenseCap,
   };
 }
 

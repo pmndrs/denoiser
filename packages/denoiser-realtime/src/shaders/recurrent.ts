@@ -988,8 +988,10 @@ export interface SpatialFixConfig {
   /** dense > 0: pixels with A = 0 average every pixel within `dense` px (a shared-memory tile, loaded only by
    *  workgroups that hold an A = 0 pixel) with the same geometry / normal weights instead of the disk taps */
   dense: number;
+  /** dense radius cap: 'disk' (the disk's r0 2^(3 (rho - 1)), default) or 'mip' (D7's level-L tent, 1.5 2^L px) */
+  denseCap: 'disk' | 'mip';
 }
-export const SPATIAL_FIX_DEFAULT: SpatialFixConfig = { ageWeight: 0, wide: 0, rings: 1, wideUse: 'all', mips: 'off', clampK: 1, youngT: 0.9, dense: 0 };
+export const SPATIAL_FIX_DEFAULT: SpatialFixConfig = { ageWeight: 0, wide: 0, rings: 1, wideUse: 'all', mips: 'off', clampK: 1, youngT: 0.9, dense: 0, denseCap: 'disk' };
 const isDefaultFix = (c: SpatialFixConfig) => c.ageWeight === 0 && c.wide === 0 && c.mips === 'off' && !c.dense;
 const lit = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
@@ -1062,7 +1064,7 @@ fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} 
 }
 
 /** T1b `historyFixDense`: shared tile of z, normal and acc around the workgroup, and the dense A = 0 repair. */
-function denseRepairWgsl(kinds: RecurrentKind[], r: number): string {
+function denseRepairWgsl(kinds: RecurrentKind[], r: number, cap: 'disk' | 'mip' = 'disk'): string {
   const D = 8 + 2 * r, T = D * D;
   return /* wgsl */ `
 const DR: i32 = ${r};
@@ -1087,7 +1089,7 @@ fn loadDense(lid: vec3u, wid: vec3u) {
 ${kinds.map((k, i) => `
 fn denseRepair${i}(p: vec2i, lid: vec3u, g: Geo, pl: Plane, rho: f32) -> ${VT(k)} {
   // the disk taps' radius at A = 0 (r0 2^(3 (rho - 1)): small on glossy specular), capped by the tile
-  let R = min(P${i}.pad7 * exp2(3.0 * (rho - 1.0)), f32(DR));
+  let R = min(${cap === 'mip' ? 'select(0.0, 1.5 * exp2(floor(3.0 * rho + 0.5)), floor(3.0 * rho + 0.5) >= 1.0)' : `P${i}.pad7 * exp2(3.0 * (rho - 1.0))`}, f32(DR));
   if (R < 1.5) { return ${BIG(k, '-1.0')}; }
   let R2 = R * R;
   var sumW = 0.0;
@@ -1186,7 +1188,7 @@ fn xRepairOcc${i}(p: vec2i, g: Geo, pl: Plane, a: f32, rho: f32) -> f32 {
   const code = /* wgsl */ `
 ${head(b, ATLAS)}${xOccFns}
 
-${X ? `${spatialRepairWgslX(kinds, fix)}${withMips ? mipRepairWgsl(kinds) : ''}${fix.dense ? denseRepairWgsl(kinds, fix.dense) : ''}` : spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
+${X ? `${spatialRepairWgslX(kinds, fix)}${withMips ? mipRepairWgsl(kinds) : ''}${fix.dense ? denseRepairWgsl(kinds, fix.dense, fix.denseCap) : ''}` : spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
   { name: 'f', type: 'vec4f', load: (q) => `textureLoad(fastCur, ${q}, 0)` },
