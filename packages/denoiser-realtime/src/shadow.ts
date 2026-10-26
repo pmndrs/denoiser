@@ -197,6 +197,30 @@ export interface ShadowDenoiserOptions {
   /** noiseCap only on settled pixels (no young frames left, see youngFrames): fresh pixels keep the noise radius. Default false. */
   noiseCapSettled?: boolean;
   /**
+   * Hard-step test for the H18 noise estimate (results/SHADOWS-MOTION.md, our design): where the raw 5x5 window is a
+   * clean step (both values present, no sample disagreeing with all of its in-window 4-neighbours, inner ones with
+   * 3 of 4), E counts as 0 for this frame, so a clean hard edge isn't given a noise-sized kernel; noisy windows
+   * (penumbrae) keep E, so wide penumbrae stay as calm as before (the boil-free alternative to noiseCap). Applies
+   * to fresh pixels too (frame 0). Pipeline variant. Default false.
+   */
+  stepTest?: boolean;
+  /**
+   * Hard edges (own penumbra under clampEdgePx px, where the clamp window opens toward "no clamp"): also clamp the
+   * history to the min / max of the 3x3 raw samples, weighted like that widening, so a moving hard edge doesn't drag
+   * its old value along (results/SHADOWS-MOTION.md; TAA neighbourhood min / max clamping, Karis 2014, used on hard
+   * shadow edges: our design). Pipeline variant. Default false.
+   */
+  edgeBox?: boolean;
+  /**
+   * Self-shadowing terminators without an occluder (no occluded sample of their own, light partly below the horizon):
+   * output the analytic fraction of the light above the horizon (area of the light's disk above the tangent plane)
+   * instead of filtering with `terminatorRadius` (results/SHADOWS-MOTION.md). Heitz et al. 2018 Eq. 4 / 12 put the
+   * horizon-clipped light in the analytic unshadowed term, so there is nothing stochastic left to denoise there; the
+   * closed form is ours. Exact for a sphere light (per-pixel direction) and a directional light with the renderer's
+   * horizon rule (SH-7). Opaque path only (ignored with `translucency`). Pipeline variant. Default false.
+   */
+  terminatorAnalytic?: boolean;
+  /**
    * Pixels with the whole light below their horizon (n.l <= -sin of the light's angular radius) and no occluded
    * sample of their own pass their input through instead of taking the terminator radius (pipeline variant;
    * results/SHADOWS-LOOK.md). Default true (Dennis, q21 (a), 2026-10-26).
@@ -290,6 +314,9 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseYoung: o.noiseYoung ?? 0,
     noiseCap: o.noiseCap ?? 0,
     noiseCapSettled: o.noiseCapSettled ?? false,
+    stepTest: o.stepTest ?? false,
+    edgeBox: o.edgeBox ?? false,
+    terminatorAnalytic: o.terminatorAnalytic ?? false,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
@@ -463,6 +490,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
+    if (o.terminatorAnalytic && !tr) sv.terminatorAnalytic = true;
     this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
       // wide path: the v-only tiles run the opaque denoiser's own spatial passes (same code, same cost)
@@ -570,7 +598,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.timer?.begin();
     const cur = this.cur, prev = cur ^ 1;
     const kind = isDepthFormat(guides.depth.format) ? 'temporalDepth' : 'temporalFloat';
-    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr), this.layouts[kind]);
+    const tp = this.pipes[kind] ??= this.mkPipe(`shadows ${kind}`, shadowTemporalWgsl(kind === 'temporalDepth', o.youngMean > 0, o.youngRadius, this.withE, o.clampGeometry, tr, this.withE && o.stepTest, o.edgeBox), this.layouts[kind]);
     const depthView = kind === 'temporalDepth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
     const pass = (name: string, p: GPUComputePipeline, g: GPUBindGroup, x: number, y = 1, indirect = false, argsOffset = 0) => {
       const cp = enc.beginComputePass({ label: `shadows ${name}`, timestampWrites: this.timer?.pass(name) });

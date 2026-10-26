@@ -168,7 +168,7 @@ const TILE = 8;
  * over (2 youngRadius + 1)^2 pixels, depths loaded per young pixel; the shared visibility
  * tile's halo grows to max(2, youngRadius)).
  */
-export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant): string {
+export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
   const SW = TILE + 2 * HB;                            // shared tile width
   const YR = young ? youngRadius : 2;
@@ -304,7 +304,32 @@ fn noiseE(l: vec2u) -> f32 {
   return e / 24.0;
 }
 
-fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
+${stepTest ? `// (stepTest, our design, results/SHADOWS-MOTION.md) the raw 5x5 window is a clean step: both values present and no
+// sample disagrees with all of its in-window 4-neighbours (inner samples: with 3 of 4); 1-spp noise in a penumbra
+// leaves isolated samples, a hard edge (straight, curved or a thin line >= 1 px) leaves none
+fn cleanStep(l: vec2u) -> bool {
+  let c0 = i32((l.y + ${HB}u) * ${SW}u + l.x + ${HB}u);
+  var lo = 1.0;
+  var hi = 0.0;
+  var iso = false;
+  for (var dy = -2; dy <= 2; dy++) {
+    for (var dx = -2; dx <= 2; dx++) {
+      let c = c0 + dy * ${SW} + dx;
+      let s = ${eArr}[c];
+      lo = min(lo, s);
+      hi = max(hi, s);
+      var d = 0.0;
+      var k = 0.0;
+      if (dx > -2) { d += abs(s - ${eArr}[c - 1]); k += 1.0; }
+      if (dx < 2) { d += abs(s - ${eArr}[c + 1]); k += 1.0; }
+      if (dy > -2) { d += abs(s - ${eArr}[c - ${SW}]); k += 1.0; }
+      if (dy < 2) { d += abs(s - ${eArr}[c + ${SW}]); k += 1.0; }
+      iso = iso || d > min(k, 3.0) - 0.5;
+    }
+  }
+  return hi - lo > 0.5 && !iso;
+}
+` : ''}fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 ${packed ? `
 // packed history (rgba32uint, 8 f16): v from .x; Catmull-Rom from 16 loads (not filterable)
 fn histV(q: vec2i) -> f32 { return unpack2x16float(textureLoad(histPrev, clampPix(q), 0).x).x; }
@@ -523,7 +548,21 @@ ${nb.join('\n')}
       let win = SP.clampSigma * sigma${clampGeo ? ' * sqrt(25.0 / nS)' : ''} + SP.clampFloor
         + select(0.0, saturate(1.0 - wPx / SP.clampEdgePx), SP.clampEdgePx > 0.0);
       var vC = clamp(vH, mu - win, mu + win);
-      if (A >= 0.0) {
+${edgeBox ? `      // (edgeBox, results/SHADOWS-MOTION.md) at hard edges the window above opens toward no clamp; there clamp to the
+      // 3x3 raw min / max instead (TAA neighbourhood clamping): a pixel the edge has left sees one value only
+      if (SP.clampEdgePx > 0.0 && wPx < SP.clampEdgePx) {
+        var lo3 = 1.0;
+        var hi3 = 0.0;
+        for (var dy = 0u; dy < 3u; dy++) {
+          for (var dx = 0u; dx < 3u; dx++) {
+            let s3 = sV[(l.y + dy + ${HB - 1}u) * ${SW}u + l.x + dx + ${HB - 1}u];
+            lo3 = min(lo3, s3);
+            hi3 = max(hi3, s3);
+          }
+        }
+        vC = mix(vC, clamp(vC, lo3, hi3), saturate(1.0 - wPx / SP.clampEdgePx));
+      }
+` : ''}      if (A >= 0.0) {
         // anti-lag (our design): a history the clamp had to move is short-lived
         let c = saturate(abs(vC - vH) * SP.antiLag);
         A = mix(A, min(A, SP.antiLagHistory), c);
@@ -604,7 +643,7 @@ ${tbG.join('\n')}
       }
 ` : ''}${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
       // over at most maxWHistory + 1 frames and stored in the geometry's 8-bit roughness slot
-      let eCur = noiseE(l);
+      let eCur = ${stepTest ? 'select(noiseE(l), 0.0, cleanStep(l))' : 'noiseE(l)'};
       g.rough = select(eCur, mix(ePrev, eCur, 1.0 / (min(An, SP.maxWHistory) + 1.0)), An > 0.0);` : ''}
 ${young ? `      // young history (our design): on a fresh pixel the 1-spp sample is the noisiest input; a 5x5
       // mean of it (accurate for blue-noise samples, the same property the clamp relies on) is
@@ -749,7 +788,7 @@ export const SHADOW_TILES_WGSL = shadowTilesWgsl(false);
  * occluder estimate pass their input through (nothing reaches them; filtering only pulls light in);
  * `noiseCapSettled` (option noiseCapSettled): the cap only on pixels past their young frames (youngFrames).
  */
-export interface SpatialVariant { noiseCap?: boolean; noiseCapSettled?: boolean; backface?: boolean }
+export interface SpatialVariant { noiseCap?: boolean; noiseCapSettled?: boolean; backface?: boolean; terminatorAnalytic?: boolean }
 
 /**
  * pass 0 reads the temporal pass's unfiltered copy (`out`), pass 1 the previous pass's output (T).
@@ -904,7 +943,15 @@ ${sv.noiseCap ? `    // (noiseCap: at most noiseCap x the occluder-sized radius;
     : `    Rw = mix(Rw, f32(gc.y >> 24u) / 255.0 * SP.noiseScale * pix, bE);`}` : ''}${sv.backface ? `
     // (backfacePass: the whole light below the horizon, no occluded sample of its own: exact 0, keep it)
     if (h.w <= 0.0 && nl <= -sinL) {${passStore}}` : ''}
-    // self-shadowing terminator (part of the light below the horizon, occluder distance 0):
+${sv.terminatorAnalytic ? `    // (terminatorAnalytic: Heitz et al. 2018 Eq. 4 / 12, the horizon-clipped light belongs to the analytic term) no occluded
+    // sample of its own and the light partly below the horizon: the visible fraction of the light's disk above the
+    // tangent plane, t = elevation / angular radius in [-1, 1]: 1 - (acos t - t sqrt(1 - t^2)) / pi
+    if (h.w <= 0.0 && nl < sinL) {
+      let tA = clamp(asin(clamp(nl, -1.0, 1.0)) / asin(clamp(sinL, 1e-6, 1.0)), -1.0, 1.0);
+      textureStore(outTex, p, vec4f(1.0 - (acos(tA) - tA * sqrt(max(1.0 - tA * tA, 0.0))) * 0.31830989, 0.0, 0.0, 0.0));
+      return;
+    }
+` : ''}    // self-shadowing terminator (part of the light below the horizon, occluder distance 0):
     // visibility follows n.l, smooth on a flat receiver; the normal weight limits curved ones
     if (h.w <= 0.0 && nl < sinL) { Rw = SP.terminatorPx * pix; }
   }
