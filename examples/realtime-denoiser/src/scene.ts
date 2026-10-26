@@ -100,17 +100,120 @@
 import { bnWgsl } from './bluenoise';
 
 /** Scene builds (sceneWgsl): which geometry and which signal variants are compiled in. */
-export type SceneKind = 'standard' | 'bumpy' | 'glass';
+export type SceneKind = 'standard' | 'bumpy' | 'glass' | 'reflect';
 
 /** SPEC F-3 curve constants used for the test bed's ao / so signals (the denoisers' defaults). */
 export const OCC_A = 1.0;
 export const OCC_B = 0.05;
 
+/**
+ * reflect build (reflection-motion tests, docs/research/rt-denoiser/results/REFLECTION-MOTION.md; paths in
+ * src/paths-reflect.ts, CPU oracle in src/reflect-oracle.ts): a dark checker floor, a dim sky without the window
+ * band, two emissive marker spheres (marker 1 = the movable-sphere slot objPos / objPrevPos, marker 2 = m2Pos) and
+ * one metal reflector (f0 0.95, roughness reflRough) with its own pose (reflPos, rotation reflAngle about +y) and
+ * previous pose (motion vectors follow it). Reflector kinds (local frame, the mirror faces local +z):
+ *   0 plane   quad z = 0, |x| <= reflHalf.x, |y| <= reflHalf.y (back face: dark diffuse, id REFL_BACK_ID);
+ *             reflBump > 0 adds normal-mapped ripples (slope tan(reflBump) sin(2 pi x / 0.25 m) along local x; the
+ *             geometry, positions and hit distances stay flat; `normal` holds the detail normal, normal_geom the flat one)
+ *   1 convex  sphere of radius reflRadius around reflPos
+ *   2 concave the inside of a sphere of radius reflRadius centred at local (0, 0, R): the cap with local
+ *             z <= R (1 - cos t), sin t = reflHalf.x / R, vertex at reflPos (focal length R / 2)
+ */
+const REFLECT_HELPERS_WGSL = (hasRotY: boolean) => /* wgsl */ `// ---- reflect build: ids, marker radiance, the reflector
+const MARKER1_ID: u32 = 60u;
+const MARKER2_ID: u32 = 61u;
+const REFL_ID: u32 = 62u;
+const REFL_BACK_ID: u32 = 63u;
+const MARKER1_RADIANCE: vec3f = vec3f(1.0, 0.8, 0.55);
+const MARKER2_RADIANCE: vec3f = vec3f(0.45, 0.85, 1.0);
+const REFL_F0: vec3f = vec3f(0.95, 0.95, 0.95);
+const BUMP_PERIOD: f32 = 0.25;
+// the geometric normal of the current primary hit (set by primary(); the below-surface test)
+var<private> g_ng: vec3f;
+${hasRotY ? '' : 'fn rotY(v: vec3f, a: f32) -> vec3f { let c = cos(a); let s = sin(a); return vec3f(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }\n'}fn reflHit(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
+  var h = Hit(-1.0, vec3f(0.0), vec3f(0.0), REFL_F0, u.reflRough, REFL_ID);
+  let lo = rotY(ro - u.reflPos, -u.reflAngle);
+  let ld = rotY(rd, -u.reflAngle);
+  if (u.reflKind == 0u) {
+    if (abs(ld.z) < 1e-8) { return h; }
+    let t = -lo.z / ld.z;
+    let q = lo + ld * t;
+    if (t > 1e-4 && t < tmax && abs(q.x) <= u.reflHalf.x && abs(q.y) <= u.reflHalf.y) {
+      h.t = t;
+      if (ld.z < 0.0) { h.n = rotY(vec3f(0.0, 0.0, 1.0), u.reflAngle); }
+      else { h = Hit(t, rotY(vec3f(0.0, 0.0, -1.0), u.reflAngle), vec3f(0.2), vec3f(0.04), 1.0, REFL_BACK_ID); }
+    }
+    return h;
+  }
+  let R = u.reflRadius;
+  let c = select(vec3f(0.0), vec3f(0.0, 0.0, R), u.reflKind == 2u);
+  let oc = lo - c;
+  let b = dot(oc, ld);
+  let disc = b * b - (dot(oc, oc) - R * R);
+  if (disc < 0.0) { return h; }
+  let sq = sqrt(disc);
+  if (u.reflKind == 1u) {
+    var t = -b - sq;
+    if (t < 1e-4) { t = -b + sq; }
+    if (t >= 1e-4 && t < tmax) { h.t = t; h.n = rotY(normalize(oc + ld * t), u.reflAngle); }
+    return h;
+  }
+  // concave cap: the nearer root that lies on the cap
+  let sn = u.reflHalf.x / R;
+  let zMax = R * (1.0 - sqrt(max(1.0 - sn * sn, 0.0)));
+  for (var k = 0; k < 2; k++) {
+    let t = select(-b + sq, -b - sq, k == 0);
+    if (t < 1e-4 || t >= tmax) { continue; }
+    let q = lo + ld * t;
+    if (q.z > zMax) { continue; }
+    let nIn = normalize(c - q);
+    h.t = t;
+    if (dot(ld, nIn) < 0.0) { h.n = rotY(nIn, u.reflAngle); }
+    else { h = Hit(t, rotY(-nIn, u.reflAngle), vec3f(0.2), vec3f(0.04), 1.0, REFL_BACK_ID); }
+    return h;
+  }
+  return h;
+}
+// detail (shading) normal of a primary hit: ripples on the plane mirror (reflBump > 0); else the geometric normal
+fn reflDetailNormal(p: vec3f, h: Hit) -> vec3f {
+  if (h.id != REFL_ID || u.reflKind != 0u || u.reflBump <= 0.0) { return h.n; }
+  let q = rotY(p - u.reflPos, -u.reflAngle);
+  let s = tan(radians(u.reflBump)) * sin(6.28318530718 * q.x / BUMP_PERIOD);
+  return rotY(normalize(vec3f(-s, 0.0, 1.0)), u.reflAngle);
+}
+
+`;
+/** reflect build: trace()'s geometry (replaces the standard floor, spheres, boxes and fence) */
+const REFLECT_TRACE_WGSL = /* wgsl */ `  if (rd.y < 0.0) {
+    let t = -ro.y / rd.y;
+    if (t > 1e-4 && t < h.t) {
+      let p = ro + rd * t;
+      let checker = (i32(floor(p.x)) + i32(floor(p.z))) & 1;
+      h = Hit(t, vec3f(0.0, 1.0, 0.0), select(vec3f(0.3), vec3f(0.12), checker == 1) * u.floorDim, vec3f(0.04), 0.9, 1u);
+      found = true;
+    }
+  }
+  {
+    let t = sphereT(ro, rd, vec4f(u.objPos, u.markerRadius));
+    if (t > 0.0 && t < h.t) { h = Hit(t, normalize(ro + rd * t - u.objPos), vec3f(0.0), vec3f(0.04), 1.0, MARKER1_ID); found = true; }
+  }
+  if (u.m2Radius > 0.0) {
+    let t = sphereT(ro, rd, vec4f(u.m2Pos, u.m2Radius));
+    if (t > 0.0 && t < h.t) { h = Hit(t, normalize(ro + rd * t - u.m2Pos), vec3f(0.0), vec3f(0.04), 1.0, MARKER2_ID); found = true; }
+  }
+  {
+    let r = reflHit(ro, rd, h.t);
+    if (r.t > 0.0) { h = r; found = true; }
+  }
+`;
+
 /** The scene module for one build. 'standard' compiles the original entries unchanged. */
 export function sceneWgsl(kind: SceneKind = 'standard'): string {
-  const B = kind === 'bumpy', G = kind === 'glass';
-  /** the normal shadow rays use: the geometric one in the bumpy build */
-  const NS = B ? 'pr.ng' : 'pr.n';
+  const B = kind === 'bumpy', G = kind === 'glass', R = kind === 'reflect';
+  /** builds with a separate geometric normal (bumpy; reflect: the normal-mapped mirror) */
+  const NG = B || R;
+  /** the normal shadow rays use: the geometric one in the bumpy / reflect builds */
+  const NS = NG ? 'pr.ng' : 'pr.n';
   return /* wgsl */ `
 struct U {
   invViewProj: mat4x4f,
@@ -126,6 +229,12 @@ struct U {
   objPrevPos: vec3f, refSalt: u32, // refSalt: reference seed salt (0 = the standard references; E-1)
 ${G ? `  glassPos: vec3f, glassAngle: f32,
   glassPrevPos: vec3f, glassPrevAngle: f32,
+` : ''}${R ? `  reflPos: vec3f, reflAngle: f32,
+  reflPrevPos: vec3f, reflPrevAngle: f32,
+  reflKind: u32, reflRough: f32, reflRadius: f32, reflBump: f32,
+  reflHalf: vec2f, markerRadius: f32, markerGain: f32,
+  m2Pos: vec3f, m2Radius: f32,
+  m2PrevPos: vec3f, floorDim: f32,
 ` : ''}};
 // reference accumulation chunk: samples [start, start + count) of a g x g grid
 struct R { start: u32, count: u32, grid: u32, last: u32 };
@@ -273,10 +382,10 @@ fn groundRough(p: vec3f) -> f32 {
   return mix(0.05, 0.45, 0.5 + 0.5 * sin(p.x * 0.55 + 0.3 * p.z));
 }
 
-fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
+${R ? REFLECT_HELPERS_WGSL(G) : ''}fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
   var h = Hit(tmax, vec3f(0.0), vec3f(0.0), vec3f(0.04), 1.0, 0u);
   var found = false;
-  if (rd.y < 0.0) {
+${R ? REFLECT_TRACE_WGSL : `  if (rd.y < 0.0) {
     let t = -ro.y / rd.y;
     if (t > 1e-4 && t < h.t) {
       let p = ro + rd * t;
@@ -326,7 +435,7 @@ fn trace(ro: vec3f, rd: vec3f, tmax: f32) -> Hit {
       }
     }
   }
-${B ? `  for (var i = 0u; i < NUM_BW; i++) {
+`}${B ? `  for (var i = 0u; i < NUM_BW; i++) {
     var n = vec3f(0.0);
     let t = boxT(ro, rd, BW_MIN[i], BW_MAX[i], &n);
     if (t > 0.0 && t < h.t) {
@@ -391,7 +500,7 @@ fn sky(d: vec3f) -> vec3f {
   let t = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
   let base = mix(vec3f(0.45, 0.42, 0.4), vec3f(0.35, 0.55, 0.95), t);
   let band = smoothstep(0.85, 0.97, dot(d, normalize(vec3f(-0.6, 0.35, -0.7))));
-  return base + band * vec3f(6.0, 5.5, 5.0);
+  ${R ? 'return base * 0.25;   // reflect build: dim sky, no band (the markers carry the contrast)' : 'return base + band * vec3f(6.0, 5.5, 5.0);'}
 }
 
 // ---- sphere light: uniform cone sampling of its solid angle -> (visibility, occluder distance)
@@ -467,6 +576,8 @@ fn lightSample(p: vec3f, n: vec3f, xi: vec2f) -> vec2f {
 // sphere light with one shadow ray + a crude sky ambient (stands in for more bounces)
 fn hitRadiance(p: vec3f, h: Hit, xi: vec2f) -> vec3f {
 ${B ? `  if (h.id == EMIT_ID) { return EMIT_RADIANCE; }
+` : ''}${R ? `  if (h.id == MARKER1_ID) { return MARKER1_RADIANCE * u.markerGain; }
+  if (h.id == MARKER2_ID) { return MARKER2_RADIANCE * u.markerGain; }
 ` : ''}${G ? `  let sr = shadowRay(p, h.n, xi);
   let s = vec2f(sr.v, sr.h);` : `  let s = lightSample(p, h.n, xi);`}
   let toL = u.lightPos - p;
@@ -492,7 +603,7 @@ fn diffuseSample(p: vec3f, n: vec3f, xi: vec2f, xi2: vec2f) -> vec4f {
   let r = sqrt(xi.x);
   let phi = 2.0 * PI * xi.y;
   let dir = basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
-${B ? `  if (dot(dir, g_ng) <= 0.0) { return vec4f(0.0); }
+${NG ? `  if (dot(dir, g_ng) <= 0.0) { return vec4f(0.0); }
 ` : ''}  return incoming(p, n, dir, xi2);
 }
 
@@ -534,7 +645,7 @@ fn specularSample(p: vec3f, n: vec3f, v: vec3f, rough: f32, f0: vec3f, xi: vec2f
   var L = reflect(-v, H);
   var ndl = dot(n, L);
   if (ndl <= 0.0) { L = L - 2.0 * ndl * n; ndl = -ndl; }
-${B ? `  if (dot(L, g_ng) <= 0.0) { return vec4f(0.0); }
+${NG ? `  if (dot(L, g_ng) <= 0.0) { return vec4f(0.0); }
 ` : ''}  ndl = max(ndl, 1e-4);
   let vdh = clamp(dot(v, H), 0.0, 1.0);
   let F = f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
@@ -572,7 +683,7 @@ fn bumpNormal(p: vec3f, h: Hit) -> vec3f {
 struct Primary {
   hit: bool, p: vec3f, n: vec3f, rough: f32, albedo: vec3f, f0: vec3f,
   depth: f32, viewz: f32, motion: vec2f, motionz: f32, rd: vec3f,
-${B ? `  ng: vec3f,
+${NG ? `  ng: vec3f,
 ` : ''}};
 
 fn primary(pix: vec2u) -> Primary {
@@ -607,6 +718,13 @@ ${B ? `  // detail (shading) normal, bent toward the viewer where it would face 
   let cv = dot(nd, -rd);
   if (cv < 0.05) { nd = normalize(nd - (0.05 - cv) * rd); }
   o.n = nd;
+` : ''}${R ? `  // reflect build: the mirror's detail normal (ripples, reflBump > 0), bent toward the viewer like the bumpy build's
+  o.ng = h.n;
+  g_ng = h.n;
+  var nd = reflDetailNormal(o.p, h);
+  let cv = dot(nd, -rd);
+  if (cv < 0.05) { nd = normalize(nd - (0.05 - cv) * rd); }
+  o.n = nd;
 ` : ''}
   o.rough = h.rough;
   o.albedo = h.albedo;
@@ -615,6 +733,9 @@ ${B ? `  // detail (shading) normal, bent toward the viewer where it would face 
   var pPrev = o.p;
   if (h.id == MOVING_ID) { pPrev = o.p - (u.objPos - u.objPrevPos); }
 ${G ? `  if (h.id == FRAME_ID) { pPrev = u.glassPrevPos + rotY(rotY(o.p - u.glassPos, -u.glassAngle), u.glassPrevAngle); }
+` : ''}${R ? `  if (h.id == MARKER1_ID) { pPrev = o.p - (u.objPos - u.objPrevPos); }
+  if (h.id == MARKER2_ID) { pPrev = o.p - (u.m2Pos - u.m2PrevPos); }
+  if (h.id == REFL_ID || h.id == REFL_BACK_ID) { pPrev = u.reflPrevPos + rotY(rotY(o.p - u.reflPos, -u.reflAngle), u.reflPrevAngle); }
 ` : ''}
   let c = ndcOf(u.viewProj, o.p);
   o.depth = c.z;
@@ -739,7 +860,7 @@ fn diffuseHitT(p: vec3f, n: vec3f, xi: vec2f) -> f32 {
   let r = sqrt(xi.x);
   let phi = 2.0 * PI * xi.y;
   let dir = basis(n) * vec3f(r * cos(phi), r * sin(phi), sqrt(max(1.0 - xi.x, 0.0)));
-${B ? `  if (dot(dir, g_ng) <= 0.0) { return -1.0; }
+${NG ? `  if (dot(dir, g_ng) <= 0.0) { return -1.0; }
 ` : ''}  return trace(p + n * 1e-3, dir, 1e4).t;
 }
 // hit distance of a specular ray (same direction as specularSample), -1 = miss
@@ -750,7 +871,7 @@ fn specularHitT(p: vec3f, n: vec3f, v: vec3f, rough: f32, xi: vec2f) -> f32 {
   var L = reflect(-v, H);
   let ndl = dot(n, L);
   if (ndl <= 0.0) { L = L - 2.0 * ndl * n; }
-${B ? `  if (dot(L, g_ng) <= 0.0) { return -1.0; }
+${NG ? `  if (dot(L, g_ng) <= 0.0) { return -1.0; }
 ` : ''}  return trace(p + n * 1e-3, L, 1e4).t;
 }
 

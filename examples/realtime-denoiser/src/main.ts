@@ -63,6 +63,9 @@
 //   eval: &show=age puts the ground-truth history age in panel 1 (white = >= ageK frames)
 //         &dump=F&dumpRect=x,y,w,h  read back that crop of frame F's noisy / denoised / reference
 //         (channel .r for scalar signals, rgb otherwise) into results.dumps (occlusion-crops.mjs)
+//   reflect build (rm-* paths, src/paths-reflect.ts; results/REFLECTION-MOTION.md): eval on signal=specular adds
+//         results.reflect (src/reflect-eval.ts: oracle-located marker ROIs, position error, trail, ghosts, recovery,
+//         geometry checks); &rmCrops=24,41,44,71 frames kept as 8-bit ROI crops; &rmHalf=<px> ROI half size
 //   view only: &show=<texture> [&dscale=] puts a SceneSignals texture in panel 1;
 //              &err=<gain> error heat map in panel 2; &stopAt=N freezes at frame N
 //
@@ -78,6 +81,9 @@ import { defaultDenoisers, denoiserById, DENOISERS, toCaptureSignal, type Denois
 import { flipMean, prepareFlip, unpackLdr, type FlipPrepared } from './flip';
 import { DetailBand, HistoryAge, LdrPacker, REGIONS, Scorer, ShResolve, V1_REGIONS, type FrameScore } from './metrics';
 import { pathById, PATHS, type PathDef } from './paths';
+import type { ReflectPathDef } from './paths-reflect';   // registers the rm-* paths (reflect build) into PATHS
+import './paths-reflect';
+import { ReflectEval } from './reflect-eval';
 import {
   ALL_SIGNALS, DEMODULATION, isOccSignal, isShSignal, isV1Signal, SceneSignals, SIGNALS, V1_SIGNALS, type Sampling, type Signal, type TexName,
 } from './signals';
@@ -111,7 +117,7 @@ const CAPTURE = mode === 'capture'
 // URL keys the test bed reads itself; every other key is a denoiser setting (registry `settings`)
 const TESTBED_KEYS = new Set(['signal', 'signals', 'denoiser', 'path', 'mode', 'preset', 'w', 'h', 'frames', 'start', 'refspp', 'refs',
   'noise', 'k', 'ffRate', 'ffGain', 'flip', 'flipEvery', 'ppd', 'ageK', 'n', 'show', 'dscale', 'err', 'stopAt', 'name', 'sampling', 'dump', 'dumpRect',
-  'refsalt', 'ref2spp', 'ref2salt', 'flip2', 'refK', 'refS', 'v1']);
+  'refsalt', 'ref2spp', 'ref2salt', 'flip2', 'refK', 'refS', 'v1', 'rmCrops', 'rmHalf']);
 // v1: guard k and sharpening s of the SPEC M7-8 / M7-9 resolve applied to diffuse_sh_ref (vsShRef)
 const REF_K = Number(q.get('refK') ?? 1);
 const REF_S = Number(q.get('refS') ?? 0);
@@ -332,6 +338,12 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     for (const p of pairs) p.scorer2 = new Scorer(device, W, H, scorePipe);
   }
   const FLIP2 = REF2SPP > 0 && q.get('flip2') !== '0';
+  // reflect build: oracle-located reflection metrics on the specular pairs (src/reflect-eval.ts)
+  const reflectEval = path.scene === 'reflect' && refs.includes('specular') && pairs.some((p) => p.signal === 'specular')
+    ? new ReflectEval({ device, width: W, height: H, path: path as ReflectPathDef, start: START,
+      half: q.has('rmHalf') ? Number(q.get('rmHalf')) : undefined,
+      cropFrames: (q.get('rmCrops') ?? '24,41,44,71').split(',').filter(Boolean).map(Number) })
+    : undefined;
   const packer = FLIP ? new LdrPacker(device, W, H) : undefined;
   const view = new PanelView(device, [...document.querySelectorAll<HTMLCanvasElement>('canvas.panel')], W, H);
   const t0 = performance.now();
@@ -394,6 +406,11 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
         if (!dumps[p.signal]) { await dump(p.signal, 'noisy', sig.noisy); await dump(p.signal, 'ref', sig.ref); }
         await dump(p.signal, p.key, den);
       }
+    }
+    if (reflectEval) {
+      const sp = scene.signal('specular');
+      await reflectEval.frame(f, reset, { ref: sp.ref, noisy: sp.noisy, viewz: T.viewz, normalGeom: T.normalGeom, motion: T.motion, hit: T.specularHitT, rough: T.roughness },
+        new Map(pairs.filter((p) => p.signal === 'specular').map((p) => [p.key, p.lastOut!] as const)));
     }
     if (packer && f % FLIP_EVERY === FLIP_EVERY - 1) {
       const tf = performance.now();
@@ -554,8 +571,9 @@ async function runEval(device: GPUDevice, scene: SceneSignals, pairs: Pair[], re
     demodulation: DEMODULATION, seconds: +((performance.now() - t0) / 1000).toFixed(1), flipSeconds: +(flipMs / 1000).toFixed(1),
     results,
     ...(DUMP >= 0 ? { dumps: { frame: DUMP, rect: dumpRect, data: dumps } } : {}),
+    ...(reflectEval ? { reflect: reflectEval.summary() } : {}),
   };
-  const brief = JSON.parse(JSON.stringify(summary, (k, v) => (k === 'perFrame' || k === 'dumps' ? undefined : v)));
+  const brief = JSON.parse(JSON.stringify(summary, (k, v) => (k === 'perFrame' || k === 'dumps' || k === 'crops' ? undefined : v)));
   log(JSON.stringify(brief, null, 1));
   out.results = summary;
   out.ready = true;

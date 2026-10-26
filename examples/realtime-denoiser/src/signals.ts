@@ -44,6 +44,7 @@ import type { FrameState } from './paths';
 import { OBJ_RADIUS } from './paths';
 import { loadBlueNoise } from './bluenoise';
 import { INJECT_WGSL, OCC_WGSL, sceneWgsl, type SceneKind } from './scene';
+import type {} from './paths-reflect';   // FrameState.reflect (module augmentation)
 
 export type Signal = 'diffuse' | 'specular' | 'shadows' | 'ao' | 'so' | 'sh-diffuse' | 'sh-specular' | 'shadow-rgb';
 /** The three rendered signals (`signal=all`, captures, `refs=all`). */
@@ -228,6 +229,15 @@ export class SceneSignals {
     if (this.scene === 'glass') {
       const g = cur.glass ?? { pos: [0, -100, 0], angle: 0 }, pg = prev.glass ?? g;
       f.set(g.pos, 104); f[107] = g.angle; f.set(pg.pos, 108); f[111] = pg.angle;
+    }
+    if (this.scene === 'reflect') {
+      // reflect build (paths-reflect.ts): reflector pose (+ previous), kind / roughness / size, markers
+      const r = cur.reflect, pr = prev.reflect ?? r;
+      if (!r || !pr) throw new Error('reflect build needs FrameState.reflect (paths-reflect.ts)');
+      f.set(r.refl.pos, 104); f[107] = r.refl.angle; f.set(pr.refl.pos, 108); f[111] = pr.refl.angle;
+      u[112] = r.refl.kind; f[113] = r.refl.rough; f[114] = r.refl.radius; f[115] = r.refl.bump;
+      f[116] = r.refl.half[0]; f[117] = r.refl.half[1]; f[118] = r.markerRadius; f[119] = r.markerGain;
+      f.set(r.m2.pos, 120); f[123] = r.m2.radius; f.set(pr.m2.pos, 124); f[127] = r.floorDim;
     }
     d.queue.writeBuffer(this.u, 0, b);
 
