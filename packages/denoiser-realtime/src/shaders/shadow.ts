@@ -190,6 +190,11 @@ export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, y
     nbG.push(`        { let s = sV[${idx}]; let w = select(0.0, 1.0, dot(cN, unpack4x8snorm(sN[${idx}])) >= cCos); m0 += w; m1 += w * s; m2 += w * s * s; }`);
     tbG.push(`          { let w = sV[${idx}] * select(0.0, 1.0, dot(tN, unpack4x8snorm(sN[${idx}])) >= tCos); let t = sT[${idx}]; t0 += w; t1 += w * t; t2 += w * t * t; }`);
   }
+  // stepTest: the 5x5 window as 25 bits (opaque raw visibility > 0.5), unrolled
+  const stepBits: string[] = [];
+  for (let y = 0; y < 5; y++) for (let x = 0; x < 5; x++) {
+    stepBits.push(`  if (sV[(l.y + ${y + HB - 2}u) * ${SW}u + l.x + ${x + HB - 2}u] > 0.5) { m |= ${1 << (y * 5 + x)}u; }`);
+  }
   // translucency: history taps (wide: own tau history; packed: z / w of the packed history)
   const histDecl = packed ? 'texture_2d<u32>' : 'texture_2d<f32>';
   const histOutFmt = packed ? 'rgba32uint' : 'rgba16float';
@@ -306,29 +311,23 @@ fn noiseE(l: vec2u) -> f32 {
 
 ${stepTest ? `// (stepTest, our design, results/SHADOWS-MOTION.md) the raw 5x5 window is a clean step: both values present and no
 // sample disagrees with all of its in-window 4-neighbours (inner samples: with 3 of 4); 1-spp noise in a penumbra
-// leaves isolated samples, a hard edge (straight, curved or a thin line >= 1 px) leaves none
+// leaves isolated samples, a hard edge (straight, curved or a thin line >= 1 px) leaves none. Bit-sliced on the
+// window's samples thresholded at 0.5 (exact for 1-ray visibility): bit y*5 + x, a / b / c / d = disagrees with the
+// right / left / lower / upper neighbour (missing neighbours agree)
 fn cleanStep(l: vec2u) -> bool {
-  let c0 = i32((l.y + ${HB}u) * ${SW}u + l.x + ${HB}u);
-  var lo = 1.0;
-  var hi = 0.0;
-  var iso = false;
-  for (var dy = -2; dy <= 2; dy++) {
-    for (var dx = -2; dx <= 2; dx++) {
-      let c = c0 + dy * ${SW} + dx;
-      let s = ${eArr}[c];
-      lo = min(lo, s);
-      hi = max(hi, s);
-      var d = 0.0;
-      var k = 0.0;
-      if (dx > -2) { d += abs(s - ${eArr}[c - 1]); k += 1.0; }
-      if (dx < 2) { d += abs(s - ${eArr}[c + 1]); k += 1.0; }
-      if (dy > -2) { d += abs(s - ${eArr}[c - ${SW}]); k += 1.0; }
-      if (dy < 2) { d += abs(s - ${eArr}[c + ${SW}]); k += 1.0; }
-      iso = iso || d > min(k, 3.0) - 0.5;
-    }
-  }
-  return hi - lo > 0.5 && !iso;
+  var m = 0u;
+${stepBits.join('\n')}
+  if (m == 0u || m == 0x1FFFFFFu) { return false; }
+  let a = (m ^ (m >> 1u)) & 0xF7BDEFu;       // x < 4
+  let b = (m ^ (m << 1u)) & 0x1EF7BDEu;      // x > 0
+  let c = (m ^ (m >> 5u)) & 0xFFFFFu;        // y < 4
+  let d = (m ^ (m << 5u)) & 0x1FFFFE0u;      // y > 0
+  let three = (a & b & (c | d)) | (c & d & (a | b));
+  let two = (a & b) | (a & c) | (a & d) | (b & c) | (b & d) | (c & d);
+  return (three | (two & 0x1100011u)) == 0u;   // corners (2 neighbours) are isolated with both
 }
+// E of this frame: 0 at a clean step (E = 0 already in uniform windows: no test there)
+fn stepE(e: f32, l: vec2u) -> f32 { if (e > 0.0 && cleanStep(l)) { return 0.0; } return e; }
 ` : ''}fn rawVis(p: vec2i) -> f32 { return clamp(textureLoad(visTex, clampPix(p), 0).r, 0.0, 1.0); }
 ${packed ? `
 // packed history (rgba32uint, 8 f16): v from .x; Catmull-Rom from 16 loads (not filterable)
@@ -643,7 +642,7 @@ ${tbG.join('\n')}
       }
 ` : ''}${withE ? `      // H18 noise estimate E for the radius blend (noiseBlend / noiseYoung), accumulated like g
       // over at most maxWHistory + 1 frames and stored in the geometry's 8-bit roughness slot
-      let eCur = ${stepTest ? 'select(noiseE(l), 0.0, cleanStep(l))' : 'noiseE(l)'};
+      let eCur = ${stepTest ? 'stepE(noiseE(l), l)' : 'noiseE(l)'};
       g.rough = select(eCur, mix(ePrev, eCur, 1.0 / (min(An, SP.maxWHistory) + 1.0)), An > 0.0);` : ''}
 ${young ? `      // young history (our design): on a fresh pixel the 1-spp sample is the noisiest input; a 5x5
       // mean of it (accurate for blue-noise samples, the same property the clamp relies on) is
