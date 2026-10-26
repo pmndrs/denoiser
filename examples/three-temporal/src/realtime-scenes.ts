@@ -45,12 +45,13 @@ const OURS: Record<Signal, string> = {
   lit: 'realtimeDiffuseSpecular() + realtimeShadows()', diffuse: 'realtimeDiffuseSpecular().diffuse',
   specular: 'realtimeDiffuseSpecular().specular', ao: 'realtimeOcclusion()', shadow: 'realtimeShadows()',
 };
-/** Shadow option presets for reviewing the open shadow decisions live (Shadow options buttons, keys 1-4; ?shp=<key>). */
+/** Shadow option presets for reviewing the open shadow decisions live (Shadow options buttons, keys 1-5; ?shp=<key>). */
 const SH_PRESETS = {
   shipped: { label: 'shipped (q21 flip in)', opts: {} },
   q23: { label: 'q23: stepTest + edgeBox + rotationStep 0', opts: { stepTest: true, edgeBox: true, rotationStep: 0 } },
-  q24: { label: 'q24: terminatorAnalytic', opts: { terminatorAnalytic: true } },
-  both: { label: 'q23 + q24', opts: { stepTest: true, edgeBox: true, rotationStep: 0, terminatorAnalytic: true } },
+  q24: { label: 'q24: terminatorAnalytic + horizonSnap', opts: { terminatorAnalytic: true, horizonSnap: true } },
+  all: { label: 'q23 + q24 + floorE 0.05 (q29)', opts: { stepTest: true, edgeBox: true, rotationStep: 0, terminatorAnalytic: true, horizonSnap: true, floorE: 0.05 } },
+  light: { label: 'q30: lightMotion 1 (moving lights)', opts: { lightMotion: 1 } },
 } as const;
 type ShPreset = keyof typeof SH_PRESETS;
 
@@ -511,7 +512,7 @@ export async function main(log: (m: string) => void) {
   document.querySelector('#seg-view')?.closest('.dn-group')?.insertAdjacentHTML('afterend', `
     <div class="dn-group"><span class="dn-label">Shadow options (ours)</span><div class="dn-row">
       <div class="dn-seg" id="seg-shp">${(Object.keys(SH_PRESETS) as ShPreset[]).map((k, i) => `<button data-v="${k}" aria-pressed="false" title="key ${i + 1}">${i + 1} ${SH_PRESETS[k].label}</button>`).join('')}</div>
-      <span class="hint">keys 1-4; applies to the shadow and lit signals</span></div></div>
+      <span class="hint">keys 1-5; applies to the shadow and lit signals</span></div></div>
     <div class="dn-group"><span class="dn-label">Split left side</span><div class="dn-row">
       <div class="dn-seg" id="seg-shleft"><button data-v="ffx" aria-pressed="false">FFX</button><button data-v="shipped" aria-pressed="false">ours, shipped</button></div>
       <span class="hint">key L; "ours, shipped" A/Bs the selected preset against today's default (shadow / lit)</span></div></div>`);
