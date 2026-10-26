@@ -1,5 +1,7 @@
 # Consumer report: the `disocclusion` guide, measured against exact ground truth
 
+_Filed as https://github.com/pmndrs/upscaler/issues/102 (2026-10-26)._
+
 _From the `denoiser/realtime` project (feat/rt-denoiser-cleanroom), 2026-10-26. For the `@pmndrs/upscaler` maintainers.
 Measured on fsr3 57eac72 (= the published 0.2.0), read-only, nothing modified. Full method, tables and raw data:
 `docs/research/rt-denoiser/results/UPSCALER-GUIDES.md` in the denoiser repo (commit 217a0a4)._
