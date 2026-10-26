@@ -203,7 +203,7 @@ function svgfJoint(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
 
 registerDenoiser({
   id: 'svgf', description: 'denoiser/realtime SVGF (diffuse + specular, joint dispatch)', signals: ['diffuse', 'specular'],
-  create: svgfJoint({ antiLag: 'off' }), // pinned: the package default is 'auto' since Dennis's q02
+  create: svgfJoint({ antiLag: 'off', youngNormalPower: 0 }), // pinned: package defaults are 'auto' (q02) and youngNormalPower 16 (q18)
 });
 registerDenoiser({
   id: 'svgf-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), diffuse + specular", signals: ['diffuse', 'specular'],
@@ -211,11 +211,11 @@ registerDenoiser({
 });
 registerDenoiser({
   id: 'svgf-diffuse', description: 'denoiser/realtime SVGF DiffuseDenoiser', signals: ['diffuse'],
-  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st, { antiLag: 'off' }))),
+  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st, { antiLag: 'off', youngNormalPower: 0 }))),
 });
 registerDenoiser({
   id: 'svgf-specular', description: 'denoiser/realtime SVGF SpecularDenoiser (needs roughness)', signals: ['specular'],
-  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st, { antiLag: 'off' }))),
+  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st, { antiLag: 'off', youngNormalPower: 0 }))),
 });
 
 /**

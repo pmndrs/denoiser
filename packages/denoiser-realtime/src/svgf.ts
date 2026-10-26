@@ -87,11 +87,14 @@ export interface SvgfOptions {
    */
   youngLuminanceWeight?: number;
   /**
-   * Target 1 candidate (results/T1-recovery.md; our design, default 0 = off): exponent of the normal
+   * Target 1 (results/T1-recovery.md, E1b; our design): exponent of the normal
    * edge-stopping weight (the power form: diffuse, or specularNormalWeight 'power') for a pixel's first frame,
    * ramping geometrically to sigmaNormal over varianceRampFrames frames. A low value (e.g. 8-16) lets young
    * pixels on curved surfaces average over the full a-trous footprint (with 128 a sphere stops it within a few
-   * pixels), while creases (n.n' <= 0) still stop. Aims at the post-reset blotches. 0 = today's, bit-identical.
+   * pixels), while creases (n.n' <= 0) still stop. Removes the post-reset blotches. Default 16 for the radiance
+   * payload (Dennis q18 (a), 2026-10-26: rule 9 passed at 256 and 4096 spp, +0.31 ms native-GPU cost at 1080p);
+   * 0 = the previous behaviour (sigmaNormal from the first frame), still the default for payload 'sh' and for
+   * OcclusionDenoiser (unmeasured there).
    */
   youngNormalPower?: number;
   /**
@@ -248,7 +251,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     spatialVarianceRadius: o.spatialVarianceRadius === undefined ? -1 : Math.max(0, Math.round(o.spatialVarianceRadius)),
     spatialHistoryWeight: Math.max(0, o.spatialHistoryWeight ?? 0),
     youngLuminanceWeight: Math.max(0, o.youngLuminanceWeight ?? 1),
-    youngNormalPower: Math.max(0, o.youngNormalPower ?? 0),
+    youngNormalPower: Math.max(0, o.youngNormalPower ?? (o.payload === 'sh' ? 0 : 16)), // 16: Dennis q18 (a), 2026-10-26
     antiLag,
     antiLagNoiseFloor: o.antiLagNoiseFloor ?? -1,
     antiLagVersion,

@@ -72,7 +72,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 /** One TemporalDenoiser per sh-* signal, fed the plain sample; `smooth` swaps the filter normal to normal_geom. */
 function plainSh(h: Helpers, smooth: boolean): DenoiserEntry['create'] {
   return (device, { width, height, signals, settings }) => {
-    const opts = h.svgfOptions(settings, { antiLag: 'off' }); // pinned: package default is 'auto'
+    const opts = h.svgfOptions(settings, { antiLag: 'off', youngNormalPower: 0 }); // pinned: package defaults are 'auto' and youngNormalPower 16
     const dens = new Map(signals.map((s) => {
       const d: TemporalDenoiser<object> = s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts);
       d.configure({ width, height });
