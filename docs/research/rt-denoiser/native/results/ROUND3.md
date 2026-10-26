@@ -2,8 +2,8 @@
 
 _Harness builder, 2026-10-26. Ours at `feat/rt-denoiser-cleanroom` @ `9b20263`; native NRD v4.18.0
 (`e06852b`); one RTX 3060 Laptop GPU (driver 592.00). Images, metrics, timings and settings names
-only. Steps are pushed as they finish: 1. REBLUR hit-distance sweep (done), 2. cost re-run at HEAD,
-3. P6 / P7._
+only. Steps are pushed as they finish: 1. REBLUR hit-distance sweep (done), 2. cost re-run at HEAD
+(done), 3. P6 / P7._
 
 ## 1. REBLUR hit-distance sweep
 
@@ -64,3 +64,49 @@ Specular (pooled PSNR, dB):
 **Which REBLUR numbers to use:** the round 1–2 tables use defaults, as briefed. For "native at its
 best on our scenes", read REBLUR diffuse at A = 0.01 and specular at (0.1, 0.1, 1); the rankings
 don't change. SIGMA and RELAX don't take these parameters.
+
+## 2. Cost re-run at HEAD: same GPU, `std1080-orbit`, clocks locked
+
+Same method as round 1 ([PHASE4-5.md](PHASE4-5.md#cost-same-gpu-std1080-orbit-clocks-locked)).
+Ours was built from `9b20263` and replayed in headless Chrome; native NRD ran in the same session.
+Each item started below 82 °C, with nothing else running on the GPU. Each side ran the same 50 ms
+ALU warm-up before every frame. The value is the median of frames 1–7, then the median of 3 runs.
+The range across runs is in brackets. Data, per-run `timings.csv` and the clock summary:
+[std1080-orbit/cost-r3/](std1080-orbit/cost-r3/).
+
+**Clock state:** all 1,118 samples (every 200 ms) taken during timed items held **1200 MHz graphics /
+7151 MHz memory**, with no hardware or software thermal slowdown, at 60–68 °C. The memory clock
+reads 7151 MHz this session against 7001 in round 1, with the same `-lmc 7001` request. Native
+times moved < 0.2 % between rounds (RELAX aside, below), so the difference doesn't matter here.
+
+| signals | ours | GPU ms | steady (frames 4–7) | native | GPU ms | ours / native |
+|---|---|---|---|---|---|---|
+| diffuse + specular | `svgf` (antiLag off) | 5.330 [5.325–5.337] | 5.308 | `REBLUR_DIFFUSE_SPECULAR` | 5.370 [5.370–5.371] | **0.99×** (RELAX: 0.77×) |
+| | `svgf-auto` | 6.346 [6.051–6.369] | 6.041 | | | **1.18×** (0.91×); steady 1.14× |
+| | `svgf-auto`, `youngNormalPower` = 16 | 6.363 [6.357–6.657] | 6.347 | | | **1.18×** (0.91×); steady 1.20× |
+| | | | | `RELAX_DIFFUSE_SPECULAR` | 6.966 [6.966–6.967] | |
+| shadows | `shadows` (v2.2, `uniformSnap` 'change') | 1.147 [1.147–1.150] | 1.147 | `SIGMA_SHADOW` | 0.960 [0.957–0.960] | **1.19×** |
+| AO + SO | `occlusion-svgf` | 4.124 [4.117–4.127] | 4.109 | `REBLUR_DIFFUSE_SPECULAR_OCCLUSION` | 3.350 [3.349–3.355] | **1.23×** |
+| | `occlusion-svgf-auto` | 4.591 [4.587–4.924] | 4.577 | | | **1.37×** |
+
+Fastest run, each against native's fastest run: `svgf` 0.99×, `svgf-auto` 1.13×, ynp16 1.18×,
+`shadows` 1.20×, `occlusion-svgf` 1.23×, `occlusion-svgf-auto` 1.37×. Fastest single frame:
+[cost-r3/cost.json](std1080-orbit/cost-r3/cost.json) (`min`).
+
+- **Everything is within the 2× target** (worst: `occlusion-svgf-auto`, 1.37×). REBLUR occlusion
+  was not in the brief's native list. I re-timed it in the same session so the AO + SO rows compare
+  same-session numbers.
+- **`svgf-auto` range [6.05–6.37] is a median artifact, not a cost change.** Its per-pass times are
+  identical across the three runs and match round 1 to within 0.01 ms. In every run, frames 1–3
+  cost 7.0–7.6 ms and frames 4–7 cost ~6.05. So the median of frames 1–7 lands on the boundary,
+  and a single 6.35 ms frame moves it. Read the steady column: 6.04 ms, against round 1's 6.09.
+  The same applies to `occlusion-svgf-auto` (one run at 4.92, steady 4.58).
+- **`youngNormalPower` = 16 costs +0.31 ms steady (+5 %).** All of it is in the five `atrous_*`
+  passes (+0.045 to +0.068 ms each). Every other pass is unchanged.
+- **`shadows` is +0.076 ms over round 1 (1.071 → 1.147).** That is exactly the new `stabilize` pass
+  (0.075 ms). The `temporal`, `tiles` and `spatial*` passes match round 1 to 0.001 ms.
+- **Native is unchanged from round 1** (REBLUR 5.377 → 5.370, SIGMA 0.959 → 0.960, REBLUR occlusion
+  3.356 → 3.350), except RELAX. Round 1 had RELAX at 7.241 with one run at 6.975; all three runs now
+  give 6.966. That moves the RELAX ratios up by ~0.03×.
+- Wall time (submit to done) still adds 2–3.5 ms per frame on our side (`svgf` 7.7 ms wall, against
+  REBLUR's 5.5 ms). It is not in the ratios.
