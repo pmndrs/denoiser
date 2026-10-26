@@ -185,6 +185,38 @@ for (const [lk, lf, about] of [['hard', smHard, 'hard local light (r 4 cm)'], ['
   );
 }
 
+// ---- reveal paths (T1b, results/T1b-spatial-repair.md; audit priority 4 / review target 1): a static camera on
+// the fence side (patterned, indirectly lit background: slats, their shadows and sky occlusion on the floor, boxes and
+// spheres behind) and the movable sphere as a foreground occluder 2 m in front of it. Nothing else moves, so a
+// revealed pixel keeps showing the same surface until the path ends: recovery can be scored on fixed pixel sets.
+//   rv-narrow  static 0-15, slides right 0.7 cm / frame 16-47 (~4 px / frame at 1080p: narrow strips), hold 48-79
+//   rv-medium  static 0-15, slides right 4 cm / frame 16-31 (~23 px / frame: wide strips), hold 32-79
+//   rv-wide    static 0-31, gone at frame 32 (one wide reveal, ~45 % of the image height; the sphere moves below the
+//              floor, where no ray reaches it), hold 32-79
+export const RV_FRAMES = 80;
+const RV_EYE: V3 = [2.0, 1.0, 6.4];
+const RV_TARGET: V3 = [3.0, 0.45, 3.6];
+const RV_HIDDEN: V3 = [0, -10, 0];
+/** sphere centre 2 m along the view axis, `x` m along the camera's right vector, `y` m up */
+const rvObj = (x: number, y = 0.12): V3 => {
+  const d = [RV_TARGET[0] - RV_EYE[0], RV_TARGET[1] - RV_EYE[1], RV_TARGET[2] - RV_EYE[2]];
+  const l = Math.hypot(d[0], d[1], d[2]);
+  const r = [-d[2], 0, d[0]], lr = Math.hypot(r[0], r[2]);
+  return [RV_EYE[0] + (2 * d[0]) / l + (x * r[0]) / lr, RV_EYE[1] + (2 * d[1]) / l + y, RV_EYE[2] + (2 * d[2]) / l + (x * r[2]) / lr];
+};
+const rvState = (obj: V3): FrameState => state(RV_EYE, RV_TARGET, DEFAULT_LIGHT, obj);
+PATHS.push(
+  { id: 'rv-narrow', label: 'reveal: narrow strips', frames: RV_FRAMES, resets: [],
+    about: 'T1b reveal: static camera, foreground sphere slides right ~4 px/frame (1080p) over the fence / floor pattern (frames 16-47), then holds',
+    at: (f) => rvState(rvObj(-0.25 + 0.007 * (Math.min(Math.max(f, 15), 47) - 15))) },
+  { id: 'rv-medium', label: 'reveal: wide strips', frames: RV_FRAMES, resets: [],
+    about: 'T1b reveal: static camera, foreground sphere slides right ~23 px/frame (1080p) over the fence / floor pattern (frames 16-31), then holds',
+    at: (f) => rvState(rvObj(-0.25 + 0.04 * (Math.min(Math.max(f, 15), 31) - 15))) },
+  { id: 'rv-wide', label: 'reveal: one wide reveal', frames: RV_FRAMES, resets: [],
+    about: 'T1b reveal: static camera, the foreground sphere vanishes at frame 32 (one wide reveal of the fence / floor pattern), then holds',
+    at: (f) => rvState(f < 32 ? rvObj(0.05) : RV_HIDDEN) },
+);
+
 export const pathById = (id: string) => PATHS.find((p) => p.id === id);
 
 /** frame f of path p is a history reset (first frame or a camera cut) */

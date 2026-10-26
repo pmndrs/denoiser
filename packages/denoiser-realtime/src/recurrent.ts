@@ -19,7 +19,7 @@ import { makeBindGroup, makeLayout, makePipeline, runPass, storageTex, type Res 
 import type { GuidePass } from './guides';
 import type { PassDef } from './shaders/bindings';
 import {
-  blurPass, formatOf, historyFixPass, isOccKind, isSpecKind, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG,
+  blurPass, formatOf, historyFixPass, type SpatialFixConfig, isOccKind, isSpecKind, mipsPass, preBlurPass, RF_SIZE, RP_HAS_HIT, RP_NO_ANTILAG,
   RP_NO_FIREFLY, RP_NO_HISTORY_FIX, RP_NO_STABILIZE, RP_NO_VIRTUAL, RP_REMODULATE, RP_SIZE, stabilizePass, temporalPass,
   trivialPass, type RecurrentKind,
 } from './shaders/recurrent';
@@ -64,6 +64,44 @@ export interface RecurrentOptions {
   historyFix?: 'mips' | 'spatial';
   /** 'spatial' history fix: tap radius in pixels at A = 0, halving per frame (not scaled with resolution, like the mips). Default 8 (results/T1-recovery.md: 4 / 6 / 8 / 12 / 16 / 24 measured; 8 is best for specular, within 0.1 dB of best for diffuse). */
   historyFixRadius?: number;
+  /**
+   * 'spatial' history fix, T1b extension (results/T1b-spatial-repair.md; option, default 0 = off): each tap's weight is
+   * multiplied by 1 + k · min(A_tap, fastFrames), so older (less noisy) neighbours count more. Structural.
+   */
+  historyFixAgeWeight?: number;
+  /**
+   * 'spatial' history fix, T1b extension (default 0 = off): a second 16-tap ring at this multiple of the radius where
+   * the young fraction (share of the first ring's geometry weight on taps with A = 0) is ≥ historyFixYoungThreshold,
+   * i.e. inside full resets and wide reveals. Structural.
+   */
+  historyFixWideRing?: number;
+  /** Number of wide rings (ring k at (1 + k · (historyFixWideRing − 1)) × the radius). Default 1. Structural. */
+  historyFixWideRings?: number;
+  /** What the wide ring rebuilds: 'all' (rgb and ĥ, default) or 'hit' (ĥ only; occlusion: same as 'all'). Structural. */
+  historyFixWideUse?: 'all' | 'hit';
+  /**
+   * 'spatial' history fix, T1b extension (default 'off'): fall back to the mip repair (SPEC D7; builds the mips pass and
+   * depth atlas again) where the young fraction is ≥ historyFixYoungThreshold ('young') or on frames flagged reset
+   * ('reset'); 'hit' takes ĥ from the mip repair everywhere and rgb from the taps (diagnostic); 'clamp' takes the mip
+   * repair where the young fraction is high, its luminance clamped to the taps' mean ± historyFixMipsClamp standard
+   * errors. Structural.
+   */
+  historyFixMips?: 'off' | 'young' | 'reset' | 'hit' | 'clamp';
+  /** historyFixMips 'clamp': window half-width in standard errors of the taps' weighted mean luminance. Default 1. Structural. */
+  historyFixMipsClamp?: number;
+  /**
+   * T1b option (default 0 = off): blur taps added on pixels with A = 0 (resets and reveals): 8 = 8 more taps (the disk
+   * turned by π/8). Structural.
+   */
+  youngBlurTaps?: number;
+  /**
+   * 'spatial' history fix, T1b extension (default 0 = off): pixels with A = 0 average every pixel within this many px
+   * (geometry / normal weighted; a shared-memory tile loaded only by workgroups that hold an A = 0 pixel) instead of
+   * the 16 disk taps. Structural; at most 7 (workgroup memory).
+   */
+  historyFixDense?: number;
+  /** Young-fraction threshold of historyFixWideRing / historyFixMips 'young' (0..1). Default 0.9. Structural. */
+  historyFixYoungThreshold?: number;
   /** Anti-firefly: centre luminance ≤ k × second-largest neighbour (SPEC D9); 0 disables. Default 1.5. */
   fireflyThreshold?: number;
   /**
@@ -183,6 +221,15 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     historyFixMinWeight: o.historyFixMinWeight ?? 0.25,
     historyFix: o.historyFix ?? 'spatial',   // Dennis q19 (a), 2026-10-26 (was 'mips')
     historyFixRadius: o.historyFixRadius ?? 8,
+    historyFixAgeWeight: o.historyFixAgeWeight ?? 0,
+    historyFixWideRing: o.historyFixWideRing ?? 0,
+    historyFixWideRings: o.historyFixWideRings ?? 1,
+    historyFixWideUse: o.historyFixWideUse ?? 'all',
+    historyFixMips: o.historyFixMips ?? 'off',
+    historyFixYoungThreshold: o.historyFixYoungThreshold ?? 0.9,
+    historyFixMipsClamp: o.historyFixMipsClamp ?? 1,
+    youngBlurTaps: o.youngBlurTaps ?? 0,
+    historyFixDense: Math.min(Math.max(Math.round(o.historyFixDense ?? 0), 0), 7),
     fireflyThreshold: o.fireflyThreshold ?? 1.5,
     historyAntiLag: o.historyAntiLag ?? (typeof o.antiLag === 'boolean' ? o.antiLag : undefined) ?? true,
     antiLagSigma: o.antiLagSigma ?? 1,
@@ -253,7 +300,18 @@ function flagsOf(o: ResolvedRecurrent, hasHit: boolean) {
 export function recurrentStructuralKey(o: ResolvedRecurrent) {
   const k: (string | boolean)[] = ['recurrent', o.remodulate, o.skeleton];
   if (o.historyFix !== 'mips') k.push(o.historyFix);
+  const x = spatialFixOf(o);
+  if (o.historyFix === 'spatial' && (x.ageWeight || x.wide || x.mips !== 'off' || x.dense)) k.push(JSON.stringify(x));
+  if (o.youngBlurTaps) k.push(`ybt${o.youngBlurTaps}`);
   return k.join('|');
+}
+
+/** T1b extensions of the 'spatial' history fix (compiled in). */
+function spatialFixOf(o: ResolvedRecurrent): SpatialFixConfig {
+  return {
+    ageWeight: o.historyFixAgeWeight, wide: o.historyFixWideRing, rings: o.historyFixWideRings, wideUse: o.historyFixWideUse,
+    mips: o.historyFixMips, clampK: o.historyFixMipsClamp, youngT: o.historyFixYoungThreshold, dense: o.historyFixDense,
+  };
 }
 
 /** Per-signal tap counts are compiled in (each signal of a joint pipeline keeps its own). */
@@ -308,10 +366,11 @@ export class RecurrentPipeline {
     const T = (k: 'preBlurTaps' | 'blurTaps' | 'postBlurTaps') => signals.map((s) => taps(s.opts, k, s.kind));
     if (!this.occ) make('pre_blur', preBlurPass(kinds, T('preBlurTaps')));
     make('temporal', temporalPass(kinds));
-    this.spatialFix = this.opts.historyFix === 'spatial';
+    const fx = spatialFixOf(this.opts);
+    this.spatialFix = this.opts.historyFix === 'spatial' && fx.mips === 'off';
     if (!this.spatialFix) make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton
-    make('history_fix', historyFixPass(kinds, this.opts.historyFix));
-    make('blur', blurPass(kinds, false, T('blurTaps')));
+    make('history_fix', historyFixPass(kinds, this.opts.historyFix, fx));
+    make('blur', blurPass(kinds, false, T('blurTaps'), this.opts.youngBlurTaps));
     make('post_blur', blurPass(kinds, true, T('postBlurTaps')));
     make('stabilize', stabilizePass(kinds, this.opts.remodulate));
   }
@@ -443,6 +502,7 @@ export class RecurrentPipeline {
       run('history_fix', per((sg) => ({ acc: sg.buf[s], outFix: sg.buf[r] }), { fastCur: this.fast[c], dataRW: this.data[c] }));
     } else {
       run('mips', per((sg) => ({ acc: sg.buf[s], outMip: sg.buf[p] }), { outMipZ: this.mipZ! }), Math.ceil(W / 16), Math.ceil(H / 16));
+      // (also the 'spatial' fix with a mip fallback, T1b: historyFixMips)
       run('history_fix', per((sg) => ({ acc: sg.buf[s], mip: sg.buf[p], outFix: sg.buf[r] }),
         { fastCur: this.fast[c], mipZ: this.mipZ!, dataRW: this.data[c] }));
     }

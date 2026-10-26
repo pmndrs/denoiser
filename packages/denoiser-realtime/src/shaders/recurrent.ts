@@ -963,6 +963,158 @@ fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} 
 }
 
 /**
+ * T1b extensions of the 'spatial' history fix (results/T1b-spatial-repair.md; our design). All off by default: with
+ * the default config historyFixPass emits exactly the T1 code.
+ *   ageWeight  k > 0: each tap's weight x (1 + k min(A_tap, A_fast)) (an older tap's accumulated value is less noisy;
+ *              min(., A_fast) is race-free: history fix rewrites A in place only where A > A_fast, never below A_fast)
+ *   wide       f > 0: `rings` extra 16-tap rings (ring k at (1 + k (f - 1)) x the radius) where the young fraction y
+ *              (share of the first ring's geometry weight on taps with A_tap = 0) is >= youngT, i.e. inside full
+ *              resets and wide reveals (Mara et al. 2017 widen their last filter where temporal confidence is low);
+ *              wideUse 'all' (rgb + ĥ) or 'hit' (ĥ only)
+ *   mips       'young': the mip repair (D7) where y >= youngT; 'reset': on frames flagged reset; 'hit': ĥ always from
+ *              the mip repair, rgb from the taps (diagnostic); 'clamp': where y >= youngT, the mip repair's value with
+ *              its luminance clamped to the taps' weighted mean +- clampK standard errors (variance clipping, SAL16:
+ *              the wide mip average is kept where it agrees with the local taps within their noise, the taps win
+ *              where the mip average is biased by detail). The last three need the mips pass and depth atlas.
+ */
+export interface SpatialFixConfig {
+  ageWeight: number;
+  wide: number;
+  rings: number;
+  wideUse: 'all' | 'hit';
+  mips: 'off' | 'young' | 'reset' | 'hit' | 'clamp';
+  clampK: number;
+  youngT: number;
+  /** dense > 0: pixels with A = 0 average every pixel within `dense` px (a shared-memory tile, loaded only by
+   *  workgroups that hold an A = 0 pixel) with the same geometry / normal weights instead of the disk taps */
+  dense: number;
+}
+export const SPATIAL_FIX_DEFAULT: SpatialFixConfig = { ageWeight: 0, wide: 0, rings: 1, wideUse: 'all', mips: 'off', clampK: 1, youngT: 0.9, dense: 0 };
+const isDefaultFix = (c: SpatialFixConfig) => c.ageWeight === 0 && c.wide === 0 && c.mips === 'off' && !c.dense;
+const lit = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
+
+/** 'spatial' repair with the T1b extensions (only generated for a non-default config). */
+function spatialRepairWgslX(kinds: RecurrentKind[], c: SpatialFixConfig): string {
+  const needA = c.ageWeight > 0 || c.wide > 0 || c.mips === 'young' || c.mips === 'clamp';
+  const mom = c.mips === 'clamp';
+  const GA = 1.1999816148643266;   // half the golden angle: each extra ring falls between the previous one's taps
+  const ring = (k: RecurrentKind, i: number, r: number) => FIX_DISK.map(([x0, y0]) => {
+    const ca = Math.cos(r * GA), sa = Math.sin(r * GA);
+    const [x, y] = [ca * x0 - sa * y0, sa * x0 + ca * y0];
+    const hitOnly = r > 0 && c.wideUse === 'hit';
+    return `{
+    let o = rot * vec2f(${x.toFixed(6)}, ${y.toFixed(6)}) * ${r > 0 ? `R * ${lit(1 + r * (c.wide - 1))}` : 'R'};
+    let qq = vec2i(floor(vec2f(p) + 0.5 + o));
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let v = ${LD(k, `acc${i}`, 'q')};
+    let xg = planeDist(pl, q, gq.z) / P${i}.geoTolLo;
+    let xn = sqrt(max(0.0, 1.0 - dot(g.n, gq.n)) / 0.1);
+    var w = select(0.0, Wt(xg) * Wt(xn), inside(qq) && gq.z > 0.0 && any(qq != p));${needA ? `
+    let aq = min(unpackA(textureLoad(dataRW, q).r, ${slotOf(k)}u), P${i}.aFast);` : ''}${r === 0 && needA ? `
+    sumG += w;
+    sumY += select(0.0, w, aq < 0.5);` : ''}${c.ageWeight > 0 ? `
+    w *= 1.0 + ${lit(c.ageWeight)} * aq;` : ''}
+    ${hitOnly ? `sumWh += w;
+    sumH += ${hOf(k, 'v')} * w;` : `sumW += w;
+    sumC += v * w;`}${mom && !hitOnly ? `
+    { let l = ${isOccKind(k) ? 'v' : 'luma(v.rgb)'}; sumL2 += w * l * l; sumWW += w * w; }` : ''}
+  }`;
+  }).join('\n  ');
+  return `var<private> fixYoung: f32;
+var<private> fixSE: f32;
+` + kinds.map((k, i) => /* wgsl */ `
+fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} {
+  let s = clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho;
+  let R = P${i}.pad7 * exp2(3.0 * (s - 1.0));
+  fixYoung = 0.0;
+  fixSE = 0.0;
+  if (s <= 0.0 || R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let rot = blurRotation(p);
+  let own = ${LD(k, `acc${i}`, 'p')};
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};${needA ? `
+  var sumG = 0.0;
+  var sumY = 0.0;` : ''}${mom ? `
+  var sumL2 = 0.0;
+  var sumWW = 0.0;` : ''}${c.wide > 0 && c.wideUse === 'hit' ? `
+  var sumWh = 0.0;
+  var sumH = 0.0;` : ''}
+  ${ring(k, i, 0)}${needA ? `
+  fixYoung = sumY / max(sumG, 1e-6);` : ''}
+  if (sumW < 0.5) { return ${BIG(k, '-1.0')}; }${c.wide > 0 ? `
+  if (fixYoung >= ${lit(c.youngT)}) {
+  ${[...Array(c.rings).keys()].map((r) => ring(k, i, r + 1)).join('\n  ')}
+  }` : ''}${mom ? `
+  {
+    let lo = ${isOccKind(k) ? 'own' : 'luma(own.rgb)'};
+    let W = 1.0 + sumW;
+    let mu = ${isOccKind(k) ? '(own + sumC) / W' : 'luma((own.rgb + sumC.rgb) / W)'};
+    let vr = max((lo * lo + sumL2) / W - mu * mu, 0.0);
+    let ne = W * W / (1.0 + sumWW);
+    fixSE = sqrt(vr / ne);
+  }` : ''}${c.wide > 0 && c.wideUse === 'hit' ? (isOccKind(k) ? `
+  return (own + sumC + sumH) / (1.0 + sumW + sumWh);` : `
+  let m = (own + sumC) / (1.0 + sumW);
+  return vec4f(m.rgb, (own.a + sumC.a + sumH) / (1.0 + sumW + sumWh));`) : `
+  return (own + sumC) / (1.0 + sumW);`}
+}`).join('\n');
+}
+
+/** T1b `historyFixDense`: shared tile of z, normal and acc around the workgroup, and the dense A = 0 repair. */
+function denseRepairWgsl(kinds: RecurrentKind[], r: number): string {
+  const D = 8 + 2 * r, T = D * D;
+  return /* wgsl */ `
+const DR: i32 = ${r};
+const DD: i32 = ${D};
+var<workgroup> dflag: atomic<u32>;
+var<workgroup> dneed: u32;
+var<workgroup> dt_z: array<f32, ${T}>;
+var<workgroup> dt_n: array<u32, ${T}>;
+${kinds.map((k, i) => `var<workgroup> dt_c${i}: array<${isOccKind(k) ? 'f32' : 'vec2u'}, ${T}>;`).join('\n')}
+var<private> denseOn: bool;
+fn loadDense(lid: vec3u, wid: vec3u) {
+  let origin = vec2i(wid.xy) * 8 - DR;
+  for (var k = lid.y * 8u + lid.x; k < ${T}u; k += 64u) {
+    let q = clampPix(origin + vec2i(i32(k % u32(DD)), i32(k / u32(DD))));
+    let gq = geoTap(geoCur, q);
+    dt_z[k] = gq.z;
+    dt_n[k] = pack4x8snorm(vec4f(gq.n, 0.0));
+    ${kinds.map((k, i) => (isOccKind(k) ? `dt_c${i}[k] = textureLoad(acc${i}, q, 0).r;` : `{ let v = textureLoad(acc${i}, q, 0); dt_c${i}[k] = vec2u(pack2x16float(v.xy), pack2x16float(v.zw)); }`)).join('\n    ')}
+  }
+  workgroupBarrier();
+}
+${kinds.map((k, i) => `
+fn denseRepair${i}(p: vec2i, lid: vec3u, g: Geo, pl: Plane, rho: f32) -> ${VT(k)} {
+  // the disk taps' radius at A = 0 (r0 2^(3 (rho - 1)): small on glossy specular), capped by the tile
+  let R = min(P${i}.pad7 * exp2(3.0 * (rho - 1.0)), f32(DR));
+  if (R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let R2 = R * R;
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};
+  for (var dy = -DR; dy <= DR; dy++) {
+    for (var dx = -DR; dx <= DR; dx++) {
+      if (f32(dx * dx + dy * dy) > R2 || (dx == 0 && dy == 0)) { continue; }
+      let qq = p + vec2i(dx, dy);
+      let ti = u32((i32(lid.y) + DR + dy) * DD + i32(lid.x) + DR + dx);
+      let z = dt_z[ti];
+      if (!inside(qq) || z <= 0.0) { continue; }
+      let n = unpack4x8snorm(dt_n[ti]).xyz;
+      let xg = planeDist(pl, qq, z) / P${i}.geoTolLo;
+      let xn = sqrt(max(0.0, 1.0 - dot(g.n, n)) / 0.1);
+      let w = Wt(xg) * Wt(xn);
+      ${isOccKind(k) ? `let v = dt_c${i}[ti];` : `let c = dt_c${i}[ti];
+      let v = vec4f(unpack2x16float(c.x), unpack2x16float(c.y));`}
+      sumW += w;
+      sumC += v * w;
+    }
+  }
+  return (${LD(k, `acc${i}`, 'p')} + sumC) / (1.0 + sumW);
+}`).join('\n')}
+`;
+}
+
+/**
  * History-fix repair of young pixels (A < A_fix): 'mips' (SPEC D7, the default) or 'spatial' (target 1
  * candidate, results/T1-recovery.md; our design from SVGF sec. 4.2-4.3 and RTG II sec. 49.5.4 prose: the
  * young pixel is rebuilt from a depth / normal guided full-resolution neighbourhood of this frame's
@@ -976,25 +1128,65 @@ export const FIX_DISK = Array.from({ length: 16 }, (_, k) => {
   return [r * Math.cos(t), r * Math.sin(t)] as [number, number];
 });
 
-export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips'): PassDef {
+export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips', fix: SpatialFixConfig = SPATIAL_FIX_DEFAULT): PassDef {
   const spatial = mode === 'spatial';
+  const X = spatial && !isDefaultFix(fix);   // T1b extensions
+  const withMips = !spatial || (X && fix.mips !== 'off');
   const b = base(kinds);
   b.add('fastCur', 'texture_2d<f32>', 'f');
-  if (!spatial) b.add('mipZ', 'texture_2d<f32>', 'f');
+  if (withMips) b.add('mipZ', 'texture_2d<f32>', 'f');
   b.add('dataRW', 'texture_storage_2d<r32uint, read_write>', 'rw-r32uint');
   kinds.forEach((k, i) => {
     b.add(`acc${i}`, 'texture_2d<f32>', 'f');
-    if (!spatial) b.add(`mip${i}`, 'texture_2d<f32>', 'f');
+    if (withMips) b.add(`mip${i}`, 'texture_2d<f32>', 'f');
     b.add(`outFix${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
   });
   const I = kinds.map((_, i) => i);
   const slot = (i: number) => slotOf(kinds[i]);
   const nb: [number, number][] = [];
   for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
+  // T1b: the repaired value `m` (radiance: `let m`; occlusion: an expression) with the mip fallbacks
+  const xRepair = (i: number, rho: string, occ: boolean) => {
+    const sp = `spatialRepair${i}(p, g, pl, a, ${rho})`, mp = `mipRepair${i}(p, g.z, a, ${rho})`;
+    const useMip = fix.mips === 'young' || fix.mips === 'clamp' ? `fixYoung >= ${lit(fix.youngT)}` : fix.mips === 'reset' ? 'hasFlag(FRAME_RESET)' : '';
+    if (fix.dense) {
+      if (occ) return `select(${sp}, denseRepair${i}(p, lid, g, pl, ${rho}), denseOn && a < 0.5)`;
+      return `var m = ${sp};
+      if (denseOn && a < 0.5) { m = denseRepair${i}(p, lid, g, pl, ${rho}); }`;
+    }
+    if (occ) {
+      if (fix.mips === 'off' || fix.mips === 'hit') return sp;
+      return `xRepairOcc${i}(p, g, pl, a, ${rho})`;
+    }
+    if (fix.mips === 'off') return `let m = ${sp};`;
+    if (fix.mips === 'hit') return `var m = ${sp};
+      if (m.a >= 0.0) { let mh = ${mp}; if (mh.a >= 0.0) { m.a = mh.a; } }`;
+    if (fix.mips === 'clamp') return `var m = ${sp};
+      if (m.a >= 0.0 && ${useMip}) {
+        let mm = ${mp};
+        if (mm.a >= 0.0) {
+          let mu = luma(m.rgb);
+          let lm = luma(mm.rgb);
+          let lc = clamp(lm, mu - ${lit(fix.clampK)} * fixSE, mu + ${lit(fix.clampK)} * fixSE);
+          m = vec4f(select(vec3f(lc), mm.rgb * (lc / lm), lm > 1e-6), mm.a);
+        }
+      }`;
+    return `var m = ${sp};
+      if (${useMip}) { let mm = ${mp}; if (mm.a >= 0.0) { m = mm; } }`;
+  };
+  const xOccFns = X && (fix.mips === 'young' || fix.mips === 'reset' || fix.mips === 'clamp') ? I.filter((i) => isOccKind(kinds[i])).map((i) => /* wgsl */ `
+fn xRepairOcc${i}(p: vec2i, g: Geo, pl: Plane, a: f32, rho: f32) -> f32 {
+  var m = spatialRepair${i}(p, g, pl, a, rho);
+  if (${fix.mips === 'reset' ? 'hasFlag(FRAME_RESET)' : `m >= 0.0 && fixYoung >= ${lit(fix.youngT)}`}) {
+    let mm = mipRepair${i}(p, g.z, a, rho);
+    if (mm >= 0.0) { m = ${fix.mips === 'clamp' ? `clamp(mm, m - ${lit(fix.clampK)} * fixSE, m + ${lit(fix.clampK)} * fixSE)` : 'mm'}; }
+  }
+  return m;
+}`).join('\n') : '';
   const code = /* wgsl */ `
-${head(b, ATLAS)}
+${head(b, ATLAS)}${xOccFns}
 
-${spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
+${X ? `${spatialRepairWgslX(kinds, fix)}${withMips ? mipRepairWgsl(kinds) : ''}${fix.dense ? denseRepairWgsl(kinds, fix.dense) : ''}` : spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
 ${tileWgsl([
   { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
   { name: 'f', type: 'vec4f', load: (q) => `textureLoad(fastCur, ${q}, 0)` },
@@ -1004,7 +1196,20 @@ ${tileWgsl([
 
 @compute @workgroup_size(8, 8)
 fn main(${TILE_MAIN}) {
-  loadTile(lid, wid);
+  loadTile(lid, wid);${X && fix.dense ? `
+  // T1b dense repair: the tile is loaded only by workgroups holding an A = 0 pixel (uniform branch)
+  {
+    let p0 = vec2i(gid.xy);
+    if (inside(p0)) {
+      let d0 = textureLoad(dataRW, p0).r;
+      if (bitcast<f32>(textureLoad(geoCur, p0, 0).x) > 0.0 && (${[...new Set(kinds.map(slotOf))].map((sl) => `unpackA(d0, ${sl}u) < 0.5`).join(' || ')})) { atomicOr(&dflag, 1u); }
+    }
+    workgroupBarrier();
+    if (lid.x == 0u && lid.y == 0u) { dneed = atomicLoad(&dflag); }
+    let need = workgroupUniformLoad(&dneed);
+    denseOn = need != 0u;
+    if (need != 0u) { loadDense(lid, wid); }
+  }` : ''}
   let p = vec2i(gid.xy);
   if (!inside(p)) { return; }
   let g = geoTap(geoCur, p);
@@ -1044,13 +1249,13 @@ fn main(${TILE_MAIN}) {
   let fMean = fSum / nValid;
   // window from the spread of the fast history; optionally its standard error (our variant)
   let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0))) / mix(1.0, sqrt(nValid), P0.lagStdErr);
-  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i), ...(spatial ? [`spatialRepair${i}(p, g, pl, a, ${isSpecKind(kinds[i]) ? 'g.rough' : '1.0'})`] : [])) : /* wgsl */ `
+  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i), ...(X ? [xRepair(i, isSpecKind(kinds[i]) ? 'g.rough' : '1.0', true)] : spatial ? [`spatialRepair${i}(p, g, pl, a, ${isSpecKind(kinds[i]) ? 'g.rough' : '1.0'})`] : [])) : /* wgsl */ `
   {
     var c = textureLoad(acc${i}, p, 0);
     var a = A[${slot(i)}];
     // (a) mip repair where history is young (replaces rgb and ĥ)
     if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
-      let m = ${spatial ? `spatialRepair${i}(p, g, pl, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})` : `mipRepair${i}(p, g.z, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})`};
+      ${X ? xRepair(i, kinds[i] === 'specular' ? 'g.rough' : '1.0', false) : `let m = ${spatial ? `spatialRepair${i}(p, g, pl, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})` : `mipRepair${i}(p, g.z, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})`};`}
       if (m.a >= 0.0) { c = m; }
     }
     // (b) anti-firefly: centre luminance <= k * second-largest of >= 4 valid neighbours
@@ -1090,7 +1295,12 @@ fn main(${TILE_MAIN}) {
 
 // ---- R5 blur / R6 post-blur (SPEC §5.10, R-5, R-6) --------------------------------
 
-export function blurPass(kinds: RecurrentKind[], post: boolean, taps: number[] = kinds.map(() => 8)): PassDef {
+/**
+ * R5 blur / R6 post-blur. youngTaps (T1b option `youngBlurTaps`, blur only; 0 = off, the default): pixels with
+ * A = 0 (a reset or a reveal: the history fix had only this frame's signal) take 8 more taps, the same disk turned
+ * by pi/8, so the first frame after a reset averages twice as many samples (our design).
+ */
+export function blurPass(kinds: RecurrentKind[], post: boolean, taps: number[] = kinds.map(() => 8), youngTaps = 0): PassDef {
   const b = base(kinds);
   b.add('dataTex', 'texture_2d<u32>', 'i');
   kinds.forEach((k, i) => {
@@ -1135,7 +1345,13 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     var sw${i} = 1.0;
     ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
       rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => LD(kinds[i], `src${i}`, q),
-    })).join('')}
+    })).join('')}${!post && youngTaps > 0 ? `
+    if (A < 0.5) {
+      let rot2 = rot * mat2x2f(0.92388, 0.382683, -0.382683, 0.92388);
+      ${[0, 1, 2, 3, 4, 5, 6, 7].map((t) => tapWgsl(kinds[i], i, t, {
+        rotate: true, hitWeight: true, rgbOnly: false, load: (q) => LD(kinds[i], `src${i}`, q),
+      }).replace(`rot * DISK[${t}]`, `rot2 * DISK[${t}]`)).join('')}
+    }` : ''}
     textureStore(outBlur${i}, p, ${ST(kinds[i], `sum${i} / sw${i}`)});
   }`).join('')}
 }
