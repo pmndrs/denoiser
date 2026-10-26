@@ -21,7 +21,7 @@ import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, temporalPass, variancePass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
+  PARAMS_SIZE, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -222,8 +222,34 @@ export interface SvgfOptions {
    * cosine between this pixel and its 3x3 neighbours on the same surface (minus 0.02), so detailed geometry (dense
    * tessellation, normal maps) doesn't fail its own sub-pixel resampling while smooth surfaces keep the full test.
    * Payload 'radiance' only; shared geometry test (first signal's value).
+   * 'soft' (our design, results/SVGF-FOLLOWUPS.md): the full test as 'center', but where it would reset the pixel (no
+   * footprint tap and no 3x3 fallback texel passes), the 2x2 footprint is retried at `normalSoftThreshold`, and the taps
+   * that pass give a short history: its length is capped at 1 + (normalSoftHistory - 1) x their mean normal agreement
+   * (0 at normalSoftThreshold, 1 at normalThreshold). Aimed at normal-mapped / densely tessellated surfaces, whose
+   * sub-pixel resampling fails the full test and restarts as noise every few frames.
    */
   normalTest?: NormalTest;
+  /** normalTest 'soft': the looser normal cosine of the retried footprint. Default 0.5. */
+  normalSoftThreshold?: number;
+  /**
+   * normalTest 'soft': history-length cap (frames) of a footprint at full normal agreement, per signal (1 keeps that
+   * signal's reset exactly). Default (-1 = per kind): 3 for diffuse-kind signals (diffuse, AO), 1 for specular-kind ones
+   * (specular, SO), the configuration measured in results/SVGF-FOLLOWUPS.md §3.
+   */
+  normalSoftHistory?: number;
+  /**
+   * The normal of the history's geometry test (normal agreement, backface, plane distance). 'normal' (default): the
+   * filter normal `guides.normal`; 'geometric' (results/SVGF-FOLLOWUPS.md): `guides.geometricNormal`, the renderer's
+   * interpolated vertex normal without the normal map, so normal-map detail doesn't fail its own sub-pixel resampling;
+   * the edge-stopping weights keep `guides.normal`. +8 B / px (two r32uint), one small pass. Payload 'radiance' only;
+   * shared geometry test (first signal's value).
+   */
+  historyNormal?: 'normal' | 'geometric';
+  /**
+   * 'auto' / 'gradient' anti-lag: after the alpha boost, the history length becomes max(1, (1 - lambda) n) instead of
+   * A-SVGF's n = 1 / alpha (our design, results/SVGF-FOLLOWUPS.md). Per signal; default false.
+   */
+  antiLagHistoryScale?: boolean;
 }
 
 /** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
@@ -355,6 +381,10 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     reflectionHitTest: o.reflectionHitTest ?? false,
     historyFallback: o.historyFallback ?? '3x3',
     normalTest: o.normalTest ?? 'center',
+    normalSoftThreshold: o.normalSoftThreshold ?? 0.5,
+    normalSoftHistory: o.normalSoftHistory === undefined || o.normalSoftHistory < 0 ? -1 : Math.max(1, o.normalSoftHistory),
+    historyNormal: o.historyNormal ?? 'normal',
+    antiLagHistoryScale: o.antiLagHistoryScale ?? false,
   };
 }
 
@@ -386,6 +416,8 @@ export interface ShGuides {
   /** The caller's filter normal (`guides.normal`): stands in for the detail normal when there is none. */
   normal: GPUTexture;
   detailNormal?: GPUTexture;
+  /** historyNormal 'geometric' (radiance payload): the renderer's geometric normal, world space. */
+  geometricNormal?: GPUTexture;
 }
 
 /** Per-signal GPU state. */
@@ -420,6 +452,8 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.antiLagChroma) k.push('alc');
   if (o.outputAliasing) k.push('alias');
   if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
+  if (o.normalTest === 'soft') k.push(o.normalSoftThreshold);
+  if (o.historyNormal !== 'normal') k.push(`hn-${o.historyNormal}`);
   return k.join('|');
 }
 
@@ -450,6 +484,8 @@ export class SvgfPipeline {
   private youngTex?: GPUTexture;
   /** review target 3 'auto' anti-lag variant (antiLagChroma / antiLagGain), undefined at the defaults */
   private gradVariant?: GradientVariant;
+  /** historyNormal 'geometric': packed geometric normals, ping-pong (current = gn[cur]) */
+  private gn: GPUTexture[] = [];
 
   constructor(private device: GPUDevice, signals: { kind: SignalKind; opts: ResolvedOptions }[], private label: string) {
     const d = device;
@@ -482,6 +518,7 @@ export class SvgfPipeline {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
       if (signals.some((s) => reflVariant(s.kind, s.opts))) throw new Error(`${label}: reflectionReprojection / reflectionHitTest need payload 'radiance'`);
       if (o.historyFallback !== '3x3' || o.normalTest !== 'center') throw new Error(`${label}: historyFallback / normalTest need payload 'radiance'`);
+      if (o.historyNormal !== 'normal' || signals.some((s) => s.opts.antiLagHistoryScale)) throw new Error(`${label}: historyNormal / antiLagHistoryScale need payload 'radiance'`);
       for (const s of signals) {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
       }
@@ -502,7 +539,11 @@ export class SvgfPipeline {
       const rr = signals.map((s) => (s.kind === 'specular' ? s.opts.reflectionReprojection : 'surface'));
       const ht = signals.map((s) => s.kind === 'specular' && s.opts.reflectionHitTest);
       // T6 variants (compiled in only when not default)
-      const fb = { ...(o.historyFallback !== '3x3' ? { fallback: o.historyFallback } : {}), ...(o.normalTest !== 'center' ? { normalTest: o.normalTest } : {}) };
+      const fb = { ...(o.historyFallback !== '3x3' ? { fallback: o.historyFallback } : {}), ...(o.normalTest !== 'center' ? { normalTest: o.normalTest } : {}),
+        ...(o.normalTest === 'soft' ? { soft: { tol: o.normalSoftThreshold, frames: signals.map((s) => (s.opts.normalSoftHistory >= 1 ? s.opts.normalSoftHistory : s.kind === 'specular' ? 1 : 3)) } } : {}),
+        ...(o.historyNormal === 'geometric' ? { geoNormal: true } : {}),
+        ...(signals.some((s) => s.opts.antiLagHistoryScale) ? { lamScale: signals.map((s) => s.opts.antiLagHistoryScale) } : {}) };
+      if (o.historyNormal === 'geometric') make('gnpack', geoNormalPackPass());
       make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht, ...fb })
         : Object.keys(fb).length ? temporalPass(kinds, fb) : temporalPass(kinds));
       const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
@@ -561,6 +602,10 @@ export class SvgfPipeline {
     const d = this.device;
     this.gw = Math.ceil(width / GRADIENT_DOWNSAMPLE);
     this.gh = Math.ceil(height / GRADIENT_DOWNSAMPLE);
+    for (const t of this.gn) t.destroy();
+    this.gn = this.opts.historyNormal === 'geometric' && !this.sh ? [0, 1].map((k) => d.createTexture({
+      label: `${this.label} geometric normal ${k}`, size: [width, height], format: 'r32uint', usage: storageTex(),
+    })) : [];
     this.youngTex?.destroy();
     this.youngTex = this.youngTiles ? d.createTexture({
       label: `${this.label} young tiles`, size: [Math.ceil(width / 8), Math.ceil(height / 8)], format: 'r32uint', usage: storageTex(),
@@ -720,6 +765,11 @@ export class SvgfPipeline {
       this.sigs.forEach((s, i) => { gradResult[i] = s.grad[2]; });
     }
 
+    if (this.gn.length) {
+      if (!shGuides?.geometricNormal) throw new Error(`${this.label}: historyNormal 'geometric' needs guides.geometricNormal`);
+      runPass(enc, timer, name('geometric_normal'), this.pipes.gnpack, this.group('gnpack', { F: gp.frame, gnIn: shGuides.geometricNormal, gnOut: this.gn[c] }), gx, gy);
+      Object.assign(shared, { gnCur: this.gn[c], gnPrev: this.gn[c ^ 1] });
+    }
     runPass(enc, timer, name('temporal'), this.pipes.temporal, this.group('temporal', per((s, f, i) => ({
       input: f.radiance, colorHist: o.feedback ? s.hist! : s.accum[c ^ 1],
       momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
@@ -827,5 +877,6 @@ export class SvgfPipeline {
     for (const s of this.sigs) { s.destroyTargets(); s.params.destroy(); }
     for (const b of this.iterParams) b.destroy();
     this.youngTex?.destroy();
+    for (const t of this.gn) t.destroy();
   }
 }

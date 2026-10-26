@@ -173,8 +173,9 @@ registerDenoiser({
 const SVGF_NUM = ['temporalAlpha', 'momentsAlpha', 'maxHistory', 'planeDistance', 'normalThreshold', 'atrousIterations',
   'sigmaDepth', 'sigmaNormal', 'sigmaLuminance', 'varianceRampFrames', 'spatialVarianceBoost', 'antiLagNoiseFloor',
   'antiLagRadius', 'gradientIterations', 'specularHistoryScale', 'specularHistoryCurve', 'lobeFraction', 'radiusScale',
-  'spatialVarianceRadius', 'spatialHistoryWeight', 'youngLuminanceWeight', 'youngNormalPower', 'antiLagGain'] as const;
-const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight', 'f16Rounding', 'reflectionReprojection', 'historyFallback', 'normalTest'] as const;
+  'spatialVarianceRadius', 'spatialHistoryWeight', 'youngLuminanceWeight', 'youngNormalPower', 'antiLagGain',
+  'normalSoftThreshold', 'normalSoftHistory'] as const;
+const SVGF_STR = ['historyFilter', 'kernel', 'luminanceVariance', 'antiLag', 'specularNormalWeight', 'f16Rounding', 'reflectionReprojection', 'historyFallback', 'normalTest', 'historyNormal'] as const;
 
 /** SVGF options from replay / test-bed settings (`feedback=0|1`; outputs stay demodulated). */
 export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOptions = {}): SpecularSvgfOptions {
@@ -184,6 +185,7 @@ export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOp
   if (st.feedback !== undefined) o.feedback = !['0', 'false', 'off'].includes(st.feedback);
   if (st.reflectionHitTest !== undefined) o.reflectionHitTest = !['0', 'false', 'off'].includes(st.reflectionHitTest);
   if (st.antiLagChroma !== undefined) o.antiLagChroma = !['0', 'false', 'off'].includes(st.antiLagChroma);
+  if (st.antiLagHistoryScale !== undefined) o.antiLagHistoryScale = !['0', 'false', 'off'].includes(st.antiLagHistoryScale);
   if (st.outputAliasing !== undefined) o.outputAliasing = !['0', 'false', 'off'].includes(st.outputAliasing);
   return o as SpecularSvgfOptions;
 }
@@ -194,9 +196,16 @@ export function svgfOptions(st: Record<string, string>, defaults: SpecularSvgfOp
  */
 function svgfJoint(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
   return (device, ctx) => {
-    const opts = svgfOptions(ctx.settings, defaults);
+    const opts: SpecularSvgfOptions & { diffuse?: SpecularSvgfOptions; specular?: SpecularSvgfOptions } = svgfOptions(ctx.settings, defaults);
+    // per-signal SVGF settings `d.<key>` / `s.<key>` (joint pipeline only; e.g. s.normalSoftHistory=1)
+    const pre = (p: string) => Object.fromEntries(Object.entries(ctx.settings).filter(([k]) => k.startsWith(p)).map(([k, v]) => [k.slice(p.length), v]));
+    const dSt = pre('d.'), sSt = pre('s.');
+    if (Object.keys(dSt).length) opts.diffuse = svgfOptions(dSt);
+    if (Object.keys(sSt).length) opts.specular = svgfOptions(sSt);
     if (!(ctx.signals.includes('diffuse') && ctx.signals.includes('specular'))) {
-      return perSignal((d, s) => (s === 'diffuse' ? new DiffuseDenoiser(d, opts) : new SpecularDenoiser(d, opts)))(device, ctx);
+      // single signal (the test bed creates one instance per signal): fold that signal's d. / s. settings in
+      const { diffuse: dO, specular: sO, ...shared } = opts;
+      return perSignal((d, s) => (s === 'diffuse' ? new DiffuseDenoiser(d, { ...shared, ...dO }) : new SpecularDenoiser(d, { ...shared, ...sO })))(device, ctx);
     }
     const den = new DiffuseSpecularDenoiser(device, opts);
     den.configure({ width: ctx.width, height: ctx.height });

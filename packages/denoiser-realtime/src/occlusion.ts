@@ -241,7 +241,9 @@ export class OcclusionDenoiser implements TemporalDenoiser<OcclusionInputs> {
         camera.projection, camera.prevProjection, '');
     } else {
       const frames = hits.map((h, i) => ({ radiance: this.norm!.encode(enc, this.timer, hits.length > 1 ? `normalize_${i}` : 'normalize', h, this.gp.geoCur, i) }));
-      this.svgf!.encode(enc, this.timer, this.gp, frames, guides.motion, guides.motionZ, '');
+      this.svgf!.encode(enc, this.timer, this.gp, frames, guides.motion, guides.motionZ, '',
+        // historyNormal 'geometric' reads the extra guide (results/SVGF-FOLLOWUPS.md); undefined otherwise
+        { normal: guides.normal, geometricNormal: (guides as { geometricNormal?: GPUTexture }).geometricNormal });
     }
     const after = this.timer?.end(enc);
     this.device.queue.submit([enc.finish()]);

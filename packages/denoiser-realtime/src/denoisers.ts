@@ -126,7 +126,8 @@ function makePipe(device: GPUDevice, signals: { kind: Kind; r: Resolved }[], lab
     get outputs() { return p.outputs; },
     configure: (w, h) => p.configure(w, h),
     encode: (enc, timer, gp, frames, guides, _camera, prefix) => p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, prefix,
-      { normal: guides.normal, detailNormal: guides.detailNormal }),
+      // geometricNormal: SVGF option historyNormal 'geometric' (an extra guide beyond FrameGuides, world space like `normal`)
+      { normal: guides.normal, detailNormal: guides.detailNormal, geometricNormal: (guides as { geometricNormal?: GPUTexture }).geometricNormal }),
     endFrame: () => p.endFrame(),
     debugTexture: (n) => p.debugTexture(n as 'accum' | 'gradient'),
     dispose: () => p.dispose(),

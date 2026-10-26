@@ -193,9 +193,107 @@ export type ReflectionReprojection = 'surface' | 'virtual' | 'dual';
  * the bilinear weight is valid (resets the silhouette band; our design). Compiled in only when not '3x3'.
  */
 export type HistoryFallback = '3x3' | 'off' | 'strict';
-/** `normalTest` (option normalTest, T6): 'relative' relaxes the normal threshold to the pixel's neighbourhood (common.ts REL_NORMAL_WGSL). */
-export type NormalTest = 'center' | 'relative';
-export interface TemporalVariant { reflection?: ReflectionReprojection[]; hitTest?: boolean[]; fallback?: HistoryFallback; normalTest?: NormalTest }
+/**
+ * `normalTest` (option normalTest): 'relative' (T6) relaxes the normal threshold to the pixel's neighbourhood (common.ts
+ * REL_NORMAL_WGSL); 'soft' (results/SVGF-FOLLOWUPS.md) keeps a short history where the full test would reset the pixel.
+ */
+export type NormalTest = 'center' | 'relative' | 'soft';
+/**
+ * `soft` (normalTest 'soft', our design, results/SVGF-FOLLOWUPS.md): where neither the 2x2 footprint nor the 3x3 fallback
+ * passes the full normal test (today a reset), retry the 2x2 footprint with the normal threshold `tol`; the taps that pass
+ * it give the history, with the history length capped at 1 + (frames[i] - 1) s, s = the bilinear-weighted mean over those
+ * taps of clamp((n . n_q - tol) / (normalTol - tol), 0, 1). So history shaded at a nearby normal counts for a few frames
+ * (s -> 1 near the full threshold), and one shaded far away counts for almost nothing (s -> 0 = the reset). frames[i] = 1
+ * keeps signal i's reset exactly (n = 1 takes this frame's sample and moments). Constants baked into the code; `tol` is
+ * the shared geometry test's (first signal's), `frames` per signal.
+ */
+export interface TemporalVariant {
+  reflection?: ReflectionReprojection[]; hitTest?: boolean[]; fallback?: HistoryFallback; normalTest?: NormalTest;
+  soft?: { tol: number; frames: number[] };
+  /**
+   * Option `historyNormal: 'geometric'` (results/SVGF-FOLLOWUPS.md): the history's geometry test (normal agreement,
+   * backface and the plane distance) uses the renderer's geometric normal (`gnCur` / `gnPrev`, octahedral 16 + 16 bits,
+   * GEO_NORMAL_PACK_WGSL) instead of the shading normal, so normal-map detail doesn't fail its own resampling. The
+   * edge-stopping weights keep the shading normal.
+   */
+  geoNormal?: boolean;
+  /**
+   * Per signal (option `antiLagHistoryScale`, our design; results/SVGF-FOLLOWUPS.md): after the anti-lag boost, the history
+   * length becomes max(1, (1 - lambda) n) instead of A-SVGF's n = 1 / alpha (min(n, 1 / mix(1 / n, 1, lambda))). The boost
+   * of this frame is the same; a small lambda no longer leaves the pixel with a short history (and a raised alpha) for the
+   * next frames.
+   */
+  lamScale?: boolean[];
+}
+
+/** Octahedral 16 + 16-bit packing of the geometric normal (historyNormal 'geometric'); (0, 0) = no surface. */
+export const GEO_NORMAL_PACK_WGSL = /* wgsl */ `
+fn packGN(n: vec3f) -> u32 {
+  let e = vec2u(round(clamp(octEncode(n) * 0.5 + 0.5, vec2f(0.0), vec2f(1.0)) * 65535.0));
+  return e.x | (e.y << 16u);
+}
+fn unpackGN(v: u32) -> vec3f { return octDecode(vec2f(f32(v & 65535u), f32(v >> 16u)) / 65535.0 * 2.0 - 1.0); }
+`;
+
+/** historyNormal 'geometric': packs the renderer's geometric normal (world space, like `guides.normal`) for the temporal pass. */
+export function geoNormalPackPass(): PassDef {
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  b.add('gnIn', 'texture_2d<f32>', 'f');
+  b.add('gnOut', 'texture_storage_2d<r32uint, write>', 'r32uint');
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${b.wgsl}
+${GEO_NORMAL_PACK_WGSL}
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let n = textureLoad(gnIn, p, 0).xyz;
+  textureStore(gnOut, p, vec4u(select(0u, packGN(normalize(n)), dot(n, n) >= 0.01), 0u, 0u, 0u));
+}
+`;
+  return { code, entries: b.entries };
+}
+
+/** Geometry test and reprojection on the geometric normal (TemporalVariant.geoNormal); needs gnCur / gnPrev. */
+const GEO_NORMAL_REPROJECT_WGSL = /* wgsl */ `
+fn tapValidG(q: vec2i, nC: vec3f, expPrev: vec3f, planeTol: f32, normalTol: f32) -> bool {
+  if (!inside(q)) { return false; }
+  let zq = bitcast<f32>(textureLoad(geoPrev, q, 0).x);
+  if (zq <= 0.0) { return false; }
+  let nq = unpackGN(textureLoad(gnPrev, q, 0).x);
+  let ndn = dot(nC, nq);
+  if (ndn <= 0.0 || ndn < normalTol) { return false; }
+  let Q = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -zq);
+  let nAvg = normalize((F.prevView * vec4f(nC + nq, 0.0)).xyz);
+  return abs(dot(nAvg, Q - expPrev)) <= planeTol * length(expPrev);
+}
+fn reprojectG(p: vec2i, g: Geo, nC: vec3f, planeTol: f32, normalTol: f32) -> Reproj {
+  var r: Reproj;
+  let uv = uvOf(p);
+  let mv = textureLoad(motionTex, p, 0).xy;
+  r.prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+  let viewPos = unprojectZ(F.projInv, ndcOf(uv), -g.z);
+  r.world = (F.viewInv * vec4f(viewPos, 1.0)).xyz;
+  r.expPrev = expectedPrev(p, g, r.prevUV, r.world);
+  let pp = r.prevUV * F.dims - 0.5;
+  r.base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  let bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  var valid = vec4f(0.0);
+  if (tapValidG(r.base, nC, r.expPrev, planeTol, normalTol)) { valid.x = 1.0; }
+  if (tapValidG(r.base + vec2i(1, 0), nC, r.expPrev, planeTol, normalTol)) { valid.y = 1.0; }
+  if (tapValidG(r.base + vec2i(0, 1), nC, r.expPrev, planeTol, normalTol)) { valid.z = 1.0; }
+  if (tapValidG(r.base + vec2i(1, 1), nC, r.expPrev, planeTol, normalTol)) { valid.w = 1.0; }
+  r.w = bil * valid;
+  r.bil = bil;
+  r.valid = valid;
+  r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  r.allValid = all(valid > vec4f(0.5));
+  return r;
+}
+`;
 
 /** WGSL shared by every signal with a reflection reprojection variant (needs F, geoCur, geoPrev, REPROJECT_WGSL). */
 const VIRTUAL_WGSL = /* wgsl */ `
@@ -308,6 +406,14 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
   const fallback = tv.fallback ?? '3x3';
   const rel = tv.normalTest === 'relative';
   const NT = rel ? 'nTol' : 'P0.normalTol';
+  const soft = tv.normalTest === 'soft' ? tv.soft ?? { tol: 0.5, frames: kinds.map((k) => (k === 'specular' ? 1 : 3)) } : undefined;
+  const geoN = !!tv.geoNormal;
+  if (geoN && (rel || kinds.some((_, i) => refl(i) !== 'surface'))) throw new Error("temporalPass: historyNormal 'geometric' doesn't combine with normalTest 'relative' or reflectionReprojection");
+  // reprojection / tap test calls of the shared geometry test (geometric-normal variant: the G forms)
+  const RP = (tol: string) => (geoN ? `reprojectG(p, g, gnC, P0.planeTol, ${tol})` : `reproject(p, g, P0.planeTol, ${tol})`);
+  const TV = (q: string, tol: string) => (geoN ? `tapValidG(${q}, gnC, r.expPrev, P0.planeTol, ${tol})` : `tapValid(${q}, g, r.expPrev, P0.planeTol, ${tol})`);
+  const softN = (i: number) => (soft ? `
+        if (sAgree <= 1.0) { n = min(n, 1.0 + ${((soft.frames[i] ?? 1) - 1).toFixed(6)} * sAgree); }   // normalTest 'soft'` : '');
   const b = new Bindings();
   b.uniform('F', 'Frame');
   kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
@@ -316,6 +422,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
   b.add('motionTex', 'texture_2d<f32>', 'f');
   b.add('motionZTex', 'texture_2d<f32>', 'f');
   b.add('smp', 'sampler', 's');
+  if (geoN) { b.add('gnCur', 'texture_2d<u32>', 'i'); b.add('gnPrev', 'texture_2d<u32>', 'i'); }
   kinds.forEach((_, i) => {
     b.add(`input${i}`, 'texture_2d<f32>', 'f');
     b.add(`colorHist${i}`, 'texture_2d<f32>', 'F');
@@ -450,14 +557,14 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
       } else if (sumW > 0.0) {
         n = nS;
       }`}
-      if (sumW > 0.0 || okV) {
+      if (sumW > 0.0 || okV) {${softN(i)}
         var a = max(${P}.alpha, 1.0 / n);
         var am = max(${P}.momentsAlpha, 1.0 / n);
         if ((${P}.flags & P_ANTILAG) != 0u) {
           let lam = antilagLambda${i}(p);
           a = mix(a, 1.0, lam);
           am = mix(am, 1.0, lam);
-          n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
+          ${tv.lamScale?.[i] ? `n = max(1.0, n * (1.0 - lam));   // antiLagHistoryScale` : 'n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));'}
         }
         col = mix(finite3(hist), cur, a);
         mom = mix(mHist, mCur, am);
@@ -519,7 +626,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
       if (sumW > 0.0) {
         nPrev /= sumW;
         mHist /= sumW;
-        n = min(nPrev + 1.0, historyCap${i}(g, r.world, r.expPrev));
+        n = min(nPrev + 1.0, historyCap${i}(g, r.world, r.expPrev));${softN(i)}
         var a = max(${P}.alpha, 1.0 / n);
         var am = max(${P}.momentsAlpha, 1.0 / n);
         if ((${P}.flags & P_ANTILAG) != 0u) {
@@ -530,7 +637,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
           // n ~ 1/sqrt(lambda), so it only stays long where lambda is exactly 0 (v2's noise
           // floor); a residual lambda of a real drift (view-dependent specular) keeps
           // shortening it, which the test bed rewards (results/M1.md §12).
-          n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));
+          ${tv.lamScale?.[i] ? `n = max(1.0, n * (1.0 - lam));   // antiLagHistoryScale` : 'n = min(n, 1.0 / mix(1.0 / n, 1.0, lam));'}
         }
         col = mix(finite3(hist), cur, a);
         mom = mix(mHist, mCur, am);
@@ -544,7 +651,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
 ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
-${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}
+${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}${geoN ? GEO_NORMAL_PACK_WGSL + GEO_NORMAL_REPROJECT_WGSL : ''}
 ${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i, refl(i) !== 'surface') : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
@@ -561,9 +668,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let reset = hasFlag(FRAME_RESET);
   var r: Reproj;
   var fbMask = 0u;
-  var fb0 = vec2i(0);
-  if (!reset) {
-    r = reproject(p, g, P0.planeTol, P0.normalTol);${rel ? `
+  var fb0 = vec2i(0);${soft ? `
+  var sAgree = 2.0;   // normalTest 'soft': normal agreement of a soft-accepted footprint (2: not soft)` : ''}
+  if (!reset) {${geoN ? `
+    let gnC = unpackGN(textureLoad(gnCur, p, 0).x);   // historyNormal 'geometric'` : ''}
+    r = ${RP('P0.normalTol')};${rel ? `
     // normalTest 'relative' (T6): the normal threshold relaxed to this pixel's own neighbourhood, computed only where a
     // tap failed (a relaxed threshold keeps every tap the full one passed, so this equals testing with it everywhere)
     var nTol = P0.normalTol;
@@ -575,14 +684,29 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
       // SVGF sec. 4.1: 3x3 fallback (thin geometry), equal weights.
       fb0 = vec2i(floor(r.prevUV * F.dims));
       for (var k = 0u; k < 9u; k++) {
-        if (tapValid(fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1), g, r.expPrev, P0.planeTol, ${NT})) {
+        if (${TV('fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1)', NT)}) {
           fbMask |= 1u << k;
         }
       }
     }` : fallback === 'strict' ? `
     // historyFallback 'strict' (T6): no 3x3 fallback; restart unless at least half the bilinear weight is valid
     if (r.sumW < 0.5) { r.sumW = 0.0; }` : `
-    // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}
+    // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}${soft ? /* wgsl */ `
+    // normalTest 'soft' (results/SVGF-FOLLOWUPS.md): where the full test resets the pixel, the footprint retried at a
+    // looser normal threshold gives a short history, its length capped by the taps' normal agreement
+    if (r.sumW <= 0.01 && fbMask == 0u) {
+      let rs = ${RP(soft.tol.toFixed(6))};
+      if (rs.sumW > 0.01) {
+        var sa = 0.0;
+        for (var k = 0; k < 4; k++) {
+          if (rs.w[k] <= 0.0) { continue; }
+          let c = ${geoN ? 'dot(gnC, unpackGN(textureLoad(gnPrev, rs.base + TAP_OFFS[k], 0).x))' : 'dot(g.n, geoTap(geoPrev, rs.base + TAP_OFFS[k]).n)'};
+          sa += rs.w[k] * clamp((c - ${soft.tol.toFixed(6)}) / max(P0.normalTol - ${soft.tol.toFixed(6)}, 1e-4), 0.0, 1.0);
+        }
+        r = rs;
+        sAgree = sa / rs.sumW;
+      }
+    }` : ''}
   }
 ${kinds.map((_, i) => (rv(i) ? perSignalVirt(i, refl(i), hitT(i)) : perSignal(i))).join('\n')}
 }

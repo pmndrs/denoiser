@@ -124,8 +124,15 @@ results/SVGF-COST.md]. Specular only:
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
 History tests (review target 6, results `T6-boundaries.md`; measured, not adopted): `historyFallback` ['3x3' |
 'off' | 'strict'] (the SVGF paper's 3×3 fallback when the 2×2 footprint fails; 'off' wins on the test bed but loses
-on Bistro / Sponza AO), `normalTest` ['center' | 'relative'] (relaxing the cos 0.95 normal test to the pixel's own
-neighbourhood resets far less on dense geometry but loses Bistro AO / specular).
+on Bistro / Sponza AO), `normalTest` ['center' | 'relative' | 'soft'] (relaxing the cos 0.95 normal test to the pixel's own
+neighbourhood resets far less on dense geometry but loses Bistro AO / specular; 'soft' keeps today's test but, where it
+would reset the pixel, retries the footprint at `normalSoftThreshold` [0.5] and keeps a history of at most
+1 + (`normalSoftHistory` [per signal; default 3 for diffuse / AO, 1 = today's reset for specular / SO] − 1) × the taps' normal agreement: with 3 for diffuse / AO and 1
+for specular, Bistro / Sponza diffuse +0.15 dB, AO +0.18, boil −9 / −11 %, specular unchanged; proposed, results
+`SVGF-FOLLOWUPS.md`), `historyNormal` ['normal' | 'geometric'] (the history test on `guides.geometricNormal`, +8 B/px;
+loses diffuse / specular on normal-mapped surfaces). `antiLagHistoryScale` [false, per signal] (after the anti-lag boost
+the history length becomes (1 − λ)·n instead of 1/α: halves the boil next to a light change but slows the reaction by
+4–5 frames; measured, not adopted).
 
 ## Passes (per signal)
 
