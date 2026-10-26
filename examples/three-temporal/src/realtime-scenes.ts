@@ -45,6 +45,14 @@ const OURS: Record<Signal, string> = {
   lit: 'realtimeDiffuseSpecular() + realtimeShadows()', diffuse: 'realtimeDiffuseSpecular().diffuse',
   specular: 'realtimeDiffuseSpecular().specular', ao: 'realtimeOcclusion()', shadow: 'realtimeShadows()',
 };
+/** Shadow option presets for reviewing the open shadow decisions live (Shadow options buttons, keys 1-4; ?shp=<key>). */
+const SH_PRESETS = {
+  shipped: { label: 'shipped', opts: {} },
+  fix: { label: 'q21: snapHardPx 2 + backfacePass', opts: { snapHardPx: 2, backfacePass: true } },
+  snap: { label: 'q21 (b): uniformSnap true', opts: { uniformSnap: true } },
+  noisecap: { label: 'q22: q21 + noiseCap 2 (settled)', opts: { snapHardPx: 2, backfacePass: true, noiseCap: 2, noiseCapSettled: true } },
+} as const;
+type ShPreset = keyof typeof SH_PRESETS;
 
 export async function main(log: (m: string) => void) {
   const q = new URLSearchParams(location.search);
@@ -320,7 +328,14 @@ export async function main(log: (m: string) => void) {
   const lightOpt = () => (shadowLight === 'sun'
     ? { type: 'directional' as const, direction: [sunDir.x, sunDir.y, sunDir.z] as [number, number, number], angularRadius: cfg.sun.angularRadius }
     : { type: 'sphere' as const, position: [uLPos.value.x, uLPos.value.y, uLPos.value.z] as [number, number, number], radius: cfg.local.radius });
-  const shadows = realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: shOptions });
+  // One shadow denoiser per preset; all run every frame (kept in the output graph at weight 0), so switching presets
+  // is instant and each keeps its own history. `shadows` (shipped) also lights the SSR input.
+  const shNodes = Object.fromEntries((Object.keys(SH_PRESETS) as ShPreset[]).map((k) => [k,
+    realtimeShadows(shRTT, { ...guides, hitDistance: shDistRTT, light: lightOpt, denoiser: { ...shOptions, ...SH_PRESETS[k].opts } as N })])) as Record<ShPreset, ReturnType<typeof realtimeShadows>>;
+  const shadows = shNodes.shipped;
+  let shPreset: ShPreset = (q.get('shp') ?? '') in SH_PRESETS ? q.get('shp') as ShPreset : 'shipped';
+  /** What the split view's left side shows for the shadow / lit signals: FFX, or our shipped preset (A/B a candidate). */
+  let shLeft: 'ffx' | 'shipped' = q.get('shleft') === 'shipped' ? 'shipped' : 'ffx';
   const ffxSh = ffxShadows(shRTT, guides);
   const albedoD = () => { const a = dTex.sample(uv()); return a.rgb.mul(float(1).sub(a.a)); };
   /** direct irradiance of one light times its visibility */
@@ -389,10 +404,12 @@ export async function main(log: (m: string) => void) {
     };
   })() : null;
 
-  const colorOf = (sig: Signal, side: 'ours' | 'other' | 'noisy' | 'ref'): N => {
+  const colorOf = (sig: Signal, sideIn: 'ours' | 'other' | 'noisy' | 'ref'): N => {
+    const leftShipped = sideIn === 'other' && shLeft === 'shipped' && (sig === 'shadow' || sig === 'lit');
+    const side = leftShipped ? 'ours' : sideIn;
     const dif = side === 'ours' ? gi.diffuse.rgb : side === 'ref' ? (difRef as N).rgb : difRTT.sample(uv()).rgb;
     const spec = side === 'ours' ? gi.specular.rgb : side === 'other' ? ffxRefl.rgb : side === 'ref' ? (specRef as N).rgb : ssrNode.rgb;
-    const vis = side === 'ours' ? shadows.r : side === 'other' ? ffxSh.r : side === 'ref' ? (visRef as N).r : shRTT.sample(uv()).r;
+    const vis = side === 'ours' ? (leftShipped ? shadows : shNodes[shPreset]).r : side === 'other' ? ffxSh.r : side === 'ref' ? (visRef as N).r : shRTT.sample(uv()).r;
     switch (sig) {
       case 'diffuse': return dif;
       case 'specular': return spec.mul(side === 'ref' ? float(1) : ssrMask);
@@ -420,6 +437,7 @@ export async function main(log: (m: string) => void) {
         .add((visRef as N).r).add((difRef as N).r).add((specRef as N).r).add(ssrNode.a);
       col = (difRef as N).rgb.add(vec3(keep.mul(0)));
     }
+    col = col.add(vec3((Object.values(shNodes) as N[]).reduce((acc: N, n: N) => acc.add(n.r), float(0) as N).mul(0)));
     pipeline.outputNode = (sig === 'ao' || sig === 'shadow'
       ? renderOutput(vec4(col, 1), THREE.NoToneMapping, THREE.SRGBColorSpace)
       : renderOutput(vec4(col, 1), THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace)) as N;
@@ -445,7 +463,7 @@ export async function main(log: (m: string) => void) {
     camera.updateMatrixWorld();
     (bvh as N).updateTransforms();
   };
-  const resetAll = () => { for (const n of [gi, ao, ffxRefl, shadows, ffxSh]) n.resetHistory(); };
+  const resetAll = () => { for (const n of [gi, ao, ffxRefl, ffxSh, ...Object.values(shNodes)]) n.resetHistory(); };
   const animate = () => {
     uSeed.value = frame;
     if (capturing) return;
@@ -488,6 +506,25 @@ export async function main(log: (m: string) => void) {
   document.querySelectorAll<HTMLButtonElement>('#seg-view button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.v as View)));
   document.querySelectorAll<HTMLButtonElement>('#seg-motion button').forEach((b) => b.addEventListener('click', () => setMoving(b.dataset.v === 'on')));
   document.querySelector('#cut')?.addEventListener('click', resetAll);
+  // Shadow options (review of the open shadow decisions): presets for our side, and what the split's left side shows
+  document.querySelector('#seg-view')?.closest('.dn-group')?.insertAdjacentHTML('afterend', `
+    <div class="dn-group"><span class="dn-label">Shadow options (ours)</span><div class="dn-row">
+      <div class="dn-seg" id="seg-shp">${(Object.keys(SH_PRESETS) as ShPreset[]).map((k, i) => `<button data-v="${k}" aria-pressed="false" title="key ${i + 1}">${i + 1} ${SH_PRESETS[k].label}</button>`).join('')}</div>
+      <span class="hint">keys 1-4; applies to the shadow and lit signals</span></div></div>
+    <div class="dn-group"><span class="dn-label">Split left side</span><div class="dn-row">
+      <div class="dn-seg" id="seg-shleft"><button data-v="ffx" aria-pressed="false">FFX</button><button data-v="shipped" aria-pressed="false">ours, shipped</button></div>
+      <span class="hint">key L; "ours, shipped" A/Bs the selected preset against today's default (shadow / lit)</span></div></div>`);
+  const setShPreset = (k: ShPreset) => { shPreset = k; press('#seg-shp', k); buildOutput(); };
+  const setShLeft = (v: 'ffx' | 'shipped') => { shLeft = v; press('#seg-shleft', v); buildOutput(); };
+  document.querySelectorAll<HTMLButtonElement>('#seg-shp button').forEach((b) => b.addEventListener('click', () => setShPreset(b.dataset.v as ShPreset)));
+  document.querySelectorAll<HTMLButtonElement>('#seg-shleft button').forEach((b) => b.addEventListener('click', () => setShLeft(b.dataset.v as 'ffx' | 'shipped')));
+  addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = (Object.keys(SH_PRESETS) as ShPreset[])[Number(e.key) - 1];
+    if (k) setShPreset(k);
+    else if (e.key === 'l' || e.key === 'L') setShLeft(shLeft === 'ffx' ? 'shipped' : 'ffx');
+  });
+  press('#seg-shp', shPreset); press('#seg-shleft', shLeft);
   document.querySelector('#roughness')?.closest('.dn-group')?.setAttribute('hidden', '');
   const splitIn = document.querySelector<HTMLInputElement>('#split');
   splitIn?.addEventListener('input', () => { uSplit.value = parseFloat(splitIn.value); });
@@ -501,8 +538,11 @@ export async function main(log: (m: string) => void) {
   setInterval(() => {
     if (!cap) return;
     const { signal: sig, view } = modes;
-    cap.textContent = view === 'split' ? `left: ${OTHER[sig]} | right: ${OURS[sig]}`
-      : view === 'ours' ? OURS[sig] : view === 'other' ? OTHER[sig] : view === 'noisy' ? 'raw 1-ray signals'
+    const shTagged = sig === 'shadow' || sig === 'lit';
+    const ours = shTagged ? `${OURS[sig]} [${SH_PRESETS[shPreset].label}]` : OURS[sig];
+    const other = shTagged && shLeft === 'shipped' ? `${OURS[sig]} [shipped]` : OTHER[sig];
+    cap.textContent = view === 'split' ? `left: ${other} | right: ${ours}`
+      : view === 'ours' ? ours : view === 'other' ? other : view === 'noisy' ? 'raw 1-ray signals'
         : `reference - ${Math.min(difRef.count.value, difRef.max)} frames accumulated (camera held still)`;
   }, 400);
   buildOutput();
