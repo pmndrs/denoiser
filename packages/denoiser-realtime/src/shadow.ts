@@ -331,7 +331,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     youngTaper: o.youngTaper ?? 0.25,
     youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
     pass1Phase: o.pass1Phase ?? 0.3819660113,
-    rotationStep: o.rotationStep ?? 0, // q23 (a); was 0.6180339887
+    rotationStep: o.rotationStep ?? (o.translucency ? 0.6180339887 : 0), // q23 (a); was 0.6180339887 (kept with translucency: its static-penumbra boil +6.4 %, results/DEFAULTS-2026-10-27.md)
     stabilize: o.stabilize ?? 0.25,
     stabilizeBox: o.stabilizeBox ?? 0.05,
     stabilizeAntiLag: o.stabilizeAntiLag ?? 64,
@@ -358,8 +358,8 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseYoung: o.noiseYoung ?? 0,
     noiseCap: o.noiseCap ?? 0,
     noiseCapSettled: o.noiseCapSettled ?? false,
-    stepTest: o.stepTest ?? true, // q23 (a)
-    edgeBox: o.edgeBox ?? true, // q23 (a)
+    stepTest: o.stepTest ?? !o.translucency, // q23 (a); off with translucency until its boil is resolved
+    edgeBox: o.edgeBox ?? !o.translucency, // q23 (a); off with translucency until its boil is resolved
     normalThreshold: o.normalThreshold ?? 0,
     normalTest: o.normalTest ?? 'center',
     terminatorAnalytic: o.terminatorAnalytic ?? true, // q24 (a): needs the exact light (option docs)

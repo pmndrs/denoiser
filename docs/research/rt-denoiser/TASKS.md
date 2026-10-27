@@ -1009,7 +1009,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       +1.97, 1080p `light` +0.44, still lights unchanged, cost +0.002…0.004 ms; but noisier while the light moves (edge boil
       +47 % there; std540-light static-penumbra boil +6.5 %: fails the boil clause). Tracking vs noise under moving lights.
       Evidence results/SHADOWS-FOLLOWUPS.md §3 — found by shadows, owner Dennis
-- [ ] Coloured shadows after the q23 flip (results/DEFAULTS-2026-10-27.md "Coloured shadows"): `shadows-translucent` on
+- [ ] (orchestrator, interim: q23's three options default off with `translucency: true`, so the coloured path is back to its previous output (byte check on m8-glass-moving: default = explicit old values, 42 files; opaque std540-orbit unchanged); still open: find which of the three causes the +6.4 % and re-enable the others there) Coloured shadows after the q23 flip (results/DEFAULTS-2026-10-27.md "Coloured shadows"): `shadows-translucent` on
       `m8-glass-moving` gains +0.08 / +0.09 dB (visibility / shadow-rgb) but its static-penumbra boil rises +6.4 / +6.5 %
       (above the reference's and the old default's; the opaque path showed −1 %); `m8-glass-still` +0.16 / +0.11 dB, boil
       +2.6 %. Only `stepTest` / `edgeBox` / `rotationStep: 0` reach the translucency path. Split which one, and pin it off
