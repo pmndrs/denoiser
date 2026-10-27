@@ -19,10 +19,33 @@ pass cites its public source in the shader header and in
 > [!WARNING]
 > **Experimental.** The API, the option names and the defaults may still change. The
 > defaults were decided on 2026-10-25 (SVGF for every signal, with `antiLag: 'auto'`; the
-> recurrent filter is opt-in) and will be re-checked on more scenes. Every quality number
+> recurrent filter is opt-in), revised on 2026-10-27 ([what changed](#defaults-changed-on-2026-10-27)), and will be
+> re-checked on more scenes. Every quality number
 > below was measured on our own analytic test bed and one three.js scene, and the defaults
 > were tuned on the same scenes, so treat the numbers as provisional. GPU times are from an
 > Apple M5 Pro unless noted; the comparison with native NRD ran on an RTX 3060 Laptop GPU.
+
+## Defaults changed on 2026-10-27
+
+Each change below was an option first and was measured against the project's regression rule (no loss beyond −0.1
+dB pooled PSNR, +5 % FLIP, +5 % boil or flicker in any region, +10 % cost, on the test bed's 7 paths **and** 11
+captures of real scenes). All pass it except `floorE`, which misses the boil clause narrowly on two captures and was
+approved for its look. Every old behaviour is still one option away.
+
+| denoiser | change | why | the old behaviour |
+|---|---|---|---|
+| SVGF (diffuse, specular, AO, SO) and recurrent | `f16Rounding: 'nearest'` | Metal truncates `rgba16float` stores toward zero, so every history sat 0.2–0.7 % dark; rounding first removes that bias (diffuse +0.07 dB, AO +0.19, FLIP up to −17 %, free). Outputs get 0.2–0.5 % brighter on Metal; no change where the GPU already rounds | `f16Rounding: 'store'` (shadows and the occlusion recurrent mode keep it) |
+| SVGF `antiLag: 'auto'` | `antiLagChroma: true` | the anti-lag gradient was luminance-only, so a light changing colour at constant brightness left its old tint for ~20 frames; now 4–8 frames, level elsewhere, +2–4 % cost | `antiLagChroma: false` |
+| SVGF (diffuse, AO) | `normalTest: 'soft'` | the hard cos 0.95 normal test reset dense or normal-mapped geometry every few frames under camera motion (boil); where it would reset, a cos 0.5 retry now keeps up to 3 frames of history (Bistro / Sponza diffuse +0.15 dB, AO +0.18, boil −9 / −11 %; specular / SO unchanged) | `normalTest: 'center'` (the hard test; see the README for its pros and cons) |
+| `ShadowDenoiser` | `stepTest`, `edgeBox`, `rotationStep: 0` | crisper hard edges and contacts, no trailing behind moving hard occluders, and the kernel no longer animates (real scenes +0.43 dB, boil −15 %) | `stepTest: false, edgeBox: false, rotationStep: 0.618` |
+| `ShadowDenoiser` | `terminatorAnalytic`, `horizonSnap` | terminators without an occluder get the exact visible fraction of the light instead of a blur, and surfaces turning away from a moving light drop their lit history (1080p +1.5 dB, FLIP −27 %). **Needs the exact light** ([Shadows](#shadows)) | `terminatorAnalytic: false, horizonSnap: false` |
+| `ShadowDenoiser` | `floorE: 0.05` | contacts and sub-pixel penumbrae keep their sharpness instead of a 1-px blur (contacts above the raw input; real scenes +0.40 dB); slightly more boil on crisp edges under a moving camera | `floorE: 0` |
+
+Measured but kept as options: the SH payload's `shDetailNormalPower` (crisper bumps, shimmer on still views), the
+recurrent filter's plain normal test (`normalThreshold: 0.8, normalTest: 'center'`: sharper on dense geometry, more
+boil), and the shadows' `lightMotion` (moving lights tracked, noisier while they move). The
+[package README](https://github.com/pmndrs/denoiser/blob/main/packages/denoiser-realtime/README.md) has the numbers and
+when to use each.
 
 ## Where it fits
 
@@ -341,6 +364,13 @@ const mask = shadows.dispatch(
   `false` never, best PSNR), `antiLagGain` (64; formerly `antiLag`, still accepted with a
   deprecation warning), `maxRadius` (48 px at 1080p), `timestamps` (true). Every option is
   documented on `ShadowDenoiserOptions`.
+- **Give it the exact light, or turn off the analytic terminator.** `terminatorAnalytic` and `horizonSnap` (defaults
+  since 2026-10-27) compute the visible fraction of the light near the horizon from `light` and `guides.normal` rather
+  than from the samples. That is exact, and the biggest quality gain we have measured on shadows (+1.5 dB at 1080p),
+  when `light` is the light your renderer sampled and your shadow rays are clipped at the horizon of the same normal you
+  pass as `guides.normal`. With an approximate light (a directional stand-in for a nearby sphere: −0.6 to −0.8 dB on
+  our sun captures instead of +1) or a horizon test on another normal (bump-mapped shading normal vs geometric), set
+  `{ terminatorAnalytic: false, horizonSnap: false }`.
 
 Cost at 1080p: **0.55–0.72 ms** over the 7 test-bed paths (FFX shadows: 0.48–0.61 ms on
 the same bench), 48 B/px, about 100 MB. See

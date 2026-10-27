@@ -109,11 +109,20 @@ specular with anti-lag v2], `luminanceVariance`
 `varianceRampFrames`; removes the blotches on curved surfaces in the first frames after a reset, +5 % cost on the RTX
 bench; 0 = the previous behaviour; SPEC §4.4; payload 'sh' honours an explicit value since review target 5 (before, it
 was ignored there; results/T5-normal-detail.md)], `spatialHistoryWeight` [0; measured null], `youngLuminanceWeight`
-[1 = off; measured a loss], `f16Rounding` ['store' | 'nearest': round to nearest before every f16 store, since Metal
-truncates; `'nearest'` proposed as the default, SPEC §3.8 / §12 item 19],
-`antiLagChroma` [false; true: `'auto'` also detects colour changes (YCoCg chroma gradients through the same
-reconstruction), so a light that changes colour at constant luminance no longer leaves its old tint for ~20 frames;
-neutral elsewhere, +0.06–0.09 ms per signal at 1080p; proposed as the default, results/T3-light-changes.md],
+[1 = off; measured a loss], `f16Rounding` ['nearest' since 2026-10-27 (Dennis q25 (a)); 'store' for payload 'sh':
+`'nearest'` rounds to nearest-even before every rgba16float store; `'store'` leaves it to the platform, and Metal
+truncates toward zero, so every history sat 0.2–0.7 % dark. Gains: diffuse +0.07 dB, AO +0.19 (at 4096 spp +0.22 /
++0.42), FLIP −4 / −17 %, no cost; loss: none measured; look: SVGF outputs 0.2–0.5 % brighter on Metal, contacts that
+were a little bright get a little brighter. A no-op on GPUs whose f16 stores already round to nearest. Shadows keep
+`'store'` (−0.05 dB there); results/DISTANCE-LONG.md §6],
+`antiLagChroma` [true with `antiLag: 'auto'` (v2) on payload 'radiance' since 2026-10-27 (Dennis q26 (a)); false
+elsewhere (it needs 'auto' v2) and in `OcclusionDenoiser` (grey signal, not measured there): `'auto'` also detects
+colour changes (YCoCg chroma gradients through the same reconstruction), so a light that changes colour at constant
+luminance no longer leaves its old tint for ~20 frames (diffuse 21 → 8 frames, specular 17 → 4; transition +3.8 / +3.3
+dB). Level everywhere else (±0.01 dB). Cost +0.06–0.11 ms per signal at 1080p (+2–4 %), ≈ 1.8 B/px per signal. Known
+property, not a regression: during a colour change, constant-light pixels within ~2 px of a changing one boil +44 %, the
+same leak A-SVGF's luminance gradient already shows on a brightness change (its 3×3 strata, results/SVGF-FOLLOWUPS.md
+§2). false = A-SVGF's luminance-only gradient; results/T3-light-changes.md],
 `antiLagGain` [1, per signal; λ = min(1, gain × the A-SVGF ratio): faster reaction, more boil on still views, fails
 rule 9 at 2 and 1.5],
 `remodulate` [false], `timestamps` [true], `outputAliasing` [true for the radiance payload since 2026-10-27 (false for 'sh' and OcclusionDenoiser); the last à-trous iteration writes into the
@@ -122,17 +131,42 @@ same values and cost, output valid until the next dispatch as for every output; 
 results/SVGF-COST.md]. Specular only:
 `specularHistoryScale` [1], `specularHistoryCurve` [0.5], `lobeFraction`
 [0.75], `specularNormalWeight` ['lobe' | 'power'], `radiusScale` [1].
-History tests (review target 6, results `T6-boundaries.md`; measured, not adopted): `historyFallback` ['3x3' |
+History tests (review target 6, results `T6-boundaries.md`): `historyFallback` ['3x3' |
 'off' | 'strict'] (the SVGF paper's 3×3 fallback when the 2×2 footprint fails; 'off' wins on the test bed but loses
-on Bistro / Sponza AO), `normalTest` ['center' | 'relative' | 'soft'] (relaxing the cos 0.95 normal test to the pixel's own
-neighbourhood resets far less on dense geometry but loses Bistro AO / specular; 'soft' keeps today's test but, where it
-would reset the pixel, retries the footprint at `normalSoftThreshold` [0.5] and keeps a history of at most
-1 + (`normalSoftHistory` [per signal; default 3 for diffuse / AO, 1 = today's reset for specular / SO] − 1) × the taps' normal agreement: with 3 for diffuse / AO and 1
-for specular, Bistro / Sponza diffuse +0.15 dB, AO +0.18, boil −9 / −11 %, specular unchanged; proposed, results
-`SVGF-FOLLOWUPS.md`), `historyNormal` ['normal' | 'geometric'] (the history test on `guides.geometricNormal`, +8 B/px;
-loses diffuse / specular on normal-mapped surfaces). `antiLagHistoryScale` [false, per signal] (after the anti-lag boost
+on Bistro / Sponza AO; measured, not adopted), `normalTest` ['soft' since 2026-10-27 (Dennis q31 (a)) | 'center' |
+'relative'; payload 'sh': 'center' only] (see [History normal test](#history-normal-test-soft-default-or-center-hard)
+below), `normalSoftThreshold` [0.5], `normalSoftHistory` [per signal; 3 for diffuse / AO, 1 = the hard reset for
+specular / SO], `historyNormal` ['normal' | 'geometric'] (the history test on `guides.geometricNormal`, +8 B/px;
+loses diffuse / specular on normal-mapped surfaces; measured, not adopted). `antiLagHistoryScale` [false, per signal] (after the anti-lag boost
 the history length becomes (1 − λ)·n instead of 1/α: halves the boil next to a light change but slows the reaction by
 4–5 frames; measured, not adopted).
+
+### History normal test: `'soft'` (default) or `'center'` (hard)
+
+Every SVGF history tap must pass a plane test and a normal test (cos ≥ `normalThreshold`, 0.95, the SVGF paper's
+§4.1). Where no tap of the 2×2 footprint and no texel of the 3×3 fallback passes, the pixel **resets**: it restarts
+from this frame's 1-spp sample. On smooth geometry that is rare and right (a real edge). On densely tessellated or
+normal-mapped surfaces (Bistro's façades, Sponza's columns) a pixel's own sub-pixel resampling fails the cos 0.95 test
+every few frames under camera motion, so those surfaces restart as noise again and again: boil. On Bistro the shipped
+hard test left AO boiling at 2.6× the reference's own level and diffuse at 2.1×.
+
+- **`'soft'`** (default since 2026-10-27): the hard test runs first, unchanged. Only where it would reset, the footprint
+  is retried at `normalSoftThreshold` (cos 0.5), and the taps that pass give a **short** history, at most
+  1 + (`normalSoftHistory` − 1) × their mean normal agreement (0 at cos 0.5, 1 at cos 0.95): a history shaded at a
+  nearby normal counts for up to 3 frames, one shaded far away for almost nothing. Specular and SO keep the hard
+  reset (`normalSoftHistory` 1): a reflection shaded at another normal is wrong even for 2 frames.
+  Measured (11 real captures; results `SVGF-FOLLOWUPS.md` §3.3): diffuse +0.15 dB, AO +0.18, boil −9 % / −11 % and lower
+  in every region of every capture (Bistro orbit AO 26.20 → 26.46 dB, boil 2.6× → 2.1× the reference's), specular
+  byte-identical; test bed and 4096-spp references level (worst −0.017 dB, SO on `object`); cost ±0 (the retry runs
+  only on pixels that would reset, ≈ 1.7 % on Bistro), no memory.
+- **`'center'`** (the hard test, the default until 2026-10-27; still available): pros: the SVGF paper's test, the
+  strictest guard against history shaded at another normal, slightly cheaper code (no retry branch); cons: restart
+  noise (boil) on dense or normal-mapped geometry under camera motion. It may come back if a better reset rule lands:
+  the remaining Bistro AO boil (still 2.1× the reference's) is not yet attributed (plane-test resets the soft retry
+  can't keep, normals beyond cos 0.5, 3×3-fallback pixels), and a per-cause fix could make `'soft'` unnecessary or
+  replace it.
+- `'relative'` (option): relaxes the threshold to the pixel's own neighbourhood and keeps a full-length history at
+  another normal: fewer resets but it smears (Bistro AO −1.6 dB, specular −1.1); not recommended.
 
 ## Passes (per signal)
 
@@ -265,6 +299,18 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   a moving object's floor contact; 0 / 'center' = the previous plane test only) and `virtualHitTest` [true] (drops
   virtual-motion history whose hit distance disagrees: removes the duplicate images on clean mirrors). The occlusion
   pipeline keeps 0 / 'center' / false (not measured there).
+  **Opt-in: a plain per-tap normal test** (`normalThreshold: 0.8, normalTest: 'center'`; Dennis q28 (b), 2026-10-27:
+  stays an option). What it does: every history tap whose normal is more than ~37° from the pixel's is dropped, with no
+  relaxation to the neighbourhood, so dense or normal-mapped geometry resets more often and the `'spatial'` history fix
+  rebuilds those pixels from this frame's same-normal neighbours instead of keeping history shaded at another normal.
+  Gains (9 real captures, results `T6-boundaries.md` §6.3): diffuse +0.39 dB, specular +0.29 (Bistro up to +0.8, bistro-orbit
+  specular +1.2 with cos 0.95), FLIP −1.6…−2.4 %; test bed level. Losses: the extra resets boil like young pixels
+  (real boil diffuse +27 %, specular +9 %), above the reference's own level on `bistro-pan` diffuse and `sponza-orbit`
+  specular (fails rule 9's boil clause). Use it when the scene is dominated by dense or normal-mapped geometry and
+  sharpness matters more than a calm image under camera motion; keep the default otherwise.
+  `f16Rounding` ['nearest' since 2026-10-27 (Dennis q25 (a)): round to nearest before every rgba16float store (Metal
+  truncates); diffuse +0.13 dB, specular +0.03, FLIP −10 / −3 %, no cost, results `DISTANCE-LONG.md` §6;
+  `OcclusionDenoiser`'s recurrent mode keeps 'store' (not in that A/B)].
 
 | pass | reads → writes | formats |
 |---|---|---|
@@ -349,7 +395,9 @@ const { diffuse, specular } = both.dispatchBoth(
 - `filter: 'svgf'` (default): SVGF (unchanged `SvgfPipeline`) on ĥ written as a gray image by a
   normalization pass. Occlusion defaults: `sigmaLuminance` 1.5, `atrousIterations` 3, SO
   `temporalAlpha` 0.3 (the radiance defaults 4 / 5 / 0.2 over-blur ĥ: −0.5 dB AO, −1.8 dB SO at
-  1080p). `antiLag` as for radiance (`'auto'` by default). `'off'` is the cheaper option (AO + SO −0.2 ms on the
+  1080p). `antiLag` as for radiance (`'auto'` by default). SVGF's 2026-10-27 defaults `f16Rounding: 'nearest'` and
+  `normalTest: 'soft'` apply here too (both were A/B'd on AO / SO: AO +0.19 dB / +0.18 dB on the real captures);
+  `antiLagChroma` is pinned false (ĥ is grey; not measured). `'off'` is the cheaper option (AO + SO −0.2 ms on the
   M5 Pro, −0.8 ms on the RTX bench, 4 B/px less per signal) at AO contact −0.6 dB, AO flicker +15 % and SO −0.9 dB
   on the test bed; it was briefly the default and was reverted (`docs/research/rt-denoiser/results/OCCLUSION-ANTILAG.md`).
 - `HitDistanceNormalizer`: the normalization pass alone (noisy AO / SO as a gray image). It
@@ -421,20 +469,20 @@ const out = shadows.dispatch(
   on blue-noise samples (its window is about 2 standard errors of the 5×5 mean).
 - Options (defaults): `maxHistory` [15], `historyScale` [1] (history cap ≈ W_px²), `minHistory`
   [1], `clampSigma` [0.4], `clampFloor` [0.05], `clampGeometry` [true] (normal-tested 5×5 window), `clampMinTaps` [3], `clampEdgePx` [2], `antiLagGain` [64] (old name `antiLag` still accepted, deprecated), `antiLagHistory` [0],
-  `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0.618],
+  `stabilize` [0.25] (0 = off: no pass, 40 B/px), `stabilizeBox` [0.05 @1080p], `stabilizeAntiLag` [64], `stabilizeYoung` [0], `rotationStep` [0 since 2026-10-27, q23; was 0.618: the kernel's rotation then changes every frame],
   `uniformSnap` ['change'], `snapHardPx` [2] ('change' also snaps uniform windows where the own penumbra is under 2 px:
   crisp hard edges on a moving camera), `backfacePass` [true] (surfaces with the whole light below their horizon keep
   their input: stay black), `noiseCap` [0] / `noiseCapSettled` [false] (cap the H18 noise radius at k × the
-  occluder-sized radius: sharper near-hard shadows, but more boil in wide penumbrae), `stepTest` [false] (no noise-sized
-  kernel where the raw 5×5 is a clean step: crisper hard edges and contacts, wide penumbrae unchanged), `edgeBox` [false]
-  (hard edges: history clamped to the 3×3 raw min / max, no trailing behind moving hard shadows), `terminatorAnalytic`
-  [false] (occluder-free terminators get the analytic above-horizon fraction of the light instead of a 16 px kernel;
-  needs the renderer's horizon rule, SH-7) — results/SHADOWS-MOTION.md, `horizonSnap` [false] (whole light below the
-  horizon and a 0 sample: the history is 0, so a surface turning away from a moving light doesn't keep its lit history;
-  pairs with `terminatorAnalytic`), `floorE` [0] (the 1-px `minRadius` floor scaled by the noise estimate E, down to half
-  where E is 0: with `stepTest`, contacts and sub-pixel penumbrae are no longer blurred), `lightMotion` [0] (history capped
-  at k penumbra widths of the light's motion, dropped at moving edges: sharper shadows of a moving light, more noise while
-  it moves) — results/SHADOWS-FOLLOWUPS.md, `normalThreshold` [0] / `normalTest`
+  occluder-sized radius: sharper near-hard shadows, but more boil in wide penumbrae), `stepTest` [true since 2026-10-27,
+  q23] (no noise-sized kernel where the raw 5×5 is a clean step: crisper hard edges and contacts, wide penumbrae
+  unchanged), `edgeBox` [true since 2026-10-27, q23] (hard edges: history clamped to the 3×3 raw min / max, no trailing
+  behind moving hard shadows), `terminatorAnalytic` [true since 2026-10-27, q24] (occluder-free terminators get the
+  analytic above-horizon fraction of the light instead of a 16 px kernel) — results/SHADOWS-MOTION.md, `horizonSnap`
+  [true since 2026-10-27, q24] (whole light below the horizon and a 0 sample: the history is 0, so a surface turning
+  away from a moving light doesn't keep its lit history; pairs with `terminatorAnalytic`; both **need the exact light**,
+  see below), `floorE` [0.05 since 2026-10-27, q29] (the 1-px `minRadius` floor scaled by the noise estimate E, down to
+  half where E is 0: with `stepTest`, contacts and sub-pixel penumbrae are no longer blurred; 0 = the fixed 1-px floor),
+  `lightMotion` [0; opt-in, see below] — results/SHADOWS-FOLLOWUPS.md, `normalThreshold` [0] / `normalTest`
   ['center'] (a history normal test as on the recurrent filter: passes rule 9 but gains only +0.004…+0.010 dB for
   +5.8 % cost, results/T6-boundaries.md), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
@@ -445,6 +493,48 @@ const out = shadows.dispatch(
   `anisotropyMax` [4], `freshBoost` [0], `timestamps` [true]; `uniformSnap` takes `true` (snap
   wherever the 5×5 samples agree: best FLIP), `'change'` (default: only after a change) or `false` (+0.18 dB pooled on v2). Every one is documented in `src/shadow.ts`; M4.md has
   the measurements behind them.
+
+### Shadow defaults since 2026-10-27, and the exact-light requirement
+
+Dennis approved three measured changes together (q23, q24, q29; results `SHADOWS-MOTION.md`, `SHADOWS-FOLLOWUPS.md`):
+
+| change | what it does | gains | losses |
+|---|---|---|---|
+| `stepTest` + `edgeBox` + `rotationStep: 0` (q23) | no noise-sized kernel at clean hard steps; hard edges clamp their history to the 3×3 raw range; the spatial kernel's rotation no longer changes per frame | real captures +0.43 dB, motion-compensated boil −15 % (edges −16 %, contacts −19 %); moving hard occluder: changing region 10.0 → 12.0 dB, lag 0.6 → 0 frames; 1080p +0.07 | +0.01 / +0.03 ms (+2 / +5 %); contact boil +7 % on one test-bed capture (not a rule-9 region) |
+| `terminatorAnalytic` + `horizonSnap` (q24) | on terminators without an occluder, the analytic fraction of the light above the tangent plane replaces the 16 px kernel; where the whole light is below the horizon and the sample is 0, the history is set to 0 | the largest gain measured on shadows: 1080p +1.51 dB (worst path +0.95), FLIP −27 %, flicker −25 %; real +0.90 dB, FLIP −11 %; no cost (−0.01 ms) | trusts the light and the renderer's horizon rule exactly (below); static-penumbra boil rises on moving-camera Bistro / Sponza captures but stays below the references' own |
+| `floorE: 0.05` (q29) | the 1-px radius floor shrinks to half (no filtering) where the accumulated noise estimate is 0: contacts and sub-pixel penumbrae stay sharp | hard-light contacts 17.9 → 22.6 dB (above the raw input's 21.9), real +0.40 dB, FLIP −5 %; no cost | crisper edges resampled on a moving camera boil a little more (`bistro-move` dynamic +5.6 %, `sponza-orbit` changing +7 %); 540p frame 0 −0.15…−0.8 dB |
+
+All three together: 1080p 40.10 dB vs 38.49, real captures 30.88 vs 28.86 (+2.0 dB), FLIP −18…−24 %, `bistro-move`
+24.38 dB (the raw 1-ray input: 24.42). The previous look is one option object away:
+`{ stepTest: false, edgeBox: false, rotationStep: 0.618, terminatorAnalytic: false, horizonSnap: false, floorE: 0 }`.
+With `translucency: true` only q23 applies (`terminatorAnalytic`, `horizonSnap` and `floorE` are opaque-path only), so
+its visibility output is no longer exactly the opaque denoiser's.
+
+**`terminatorAnalytic` and `horizonSnap` need the exact light.** Both compute the visible fraction of the light from
+`light` and `guides.normal` instead of from the samples, so they are only right when (1) `light` is the light the
+renderer sampled (same position or direction and the same radius / angular radius), and (2) the renderer clips shadow
+rays at the horizon of the same normal as `guides.normal`. Turn both off (`{ terminatorAnalytic: false, horizonSnap:
+false }`) when:
+
+- the light is an approximation: e.g. a directional stand-in for a nearby sphere light (on the test bed's sun captures,
+  whose stand-in direction is off by up to 0.4 θ, the analytic terminator loses 0.6–0.8 dB instead of gaining 0.9–1.1);
+- the renderer's horizon rule uses another normal (shadow rays cast from the bump-mapped shading normal while
+  `guides.normal` is the geometric one, or the reverse): the analytic band and the snapped back faces then sit where
+  the renderer's own terminator is not;
+- the visibility is not a single light's (a baked or screen-space mask, an area light given to the denoiser as a point).
+
+Real directional lights (Sponza, Bistro sun) are exact: +0.02…+0.39 dB there. Without `light` (noise-driven fallback)
+both do nothing.
+
+**Opt-in: `lightMotion`** (Dennis q30 (b), 2026-10-27: stays an option). A moving light moves every penumbra by
+(light displacement / light size) penumbra widths per frame, whatever its size; the history (≈ W_px² frames) assumes a
+still shadow, so it drags. `lightMotion: k` caps the history at k such widths and drops it at edges where that is under
+one frame. Gains (results `SHADOWS-FOLLOWUPS.md` §3): a fast-moving hard light 27.7 → 30.4 dB (trail 0.142 → 0.040),
+std540-light +1.97 dB, 1080p `light` +0.44; still lights byte-for-byte unaffected in practice (≤ 2·10⁻⁶), cost +0.002…0.004
+ms. Losses: noisier while the light moves (edge boil +47 % on that capture, static-penumbra boil +6.5 % on
+std540-light: fails rule 9's boil clause). Use `1` (or `0.5`, sharper and noisier) for scenes where a hard-shadowing light
+moves a large fraction of its size per frame (a swinging lantern, a flashlight) and trailing shadows are the bigger
+problem; keep 0 for still or slow lights.
 
 | pass | threads | reads → writes |
 |---|---|---|
@@ -570,19 +660,30 @@ const rgb = gi.dispatch(
 - **Options.** `shSharpen` (1 since review target 5, was 0.75; diffuse resolve: blend toward ambient + one extracted light; SPEC said 0),
   `shGuard` (1, ringing guard on |b|), `shEncoding` ('normal-exact' | 'textbook'); specular:
   `shSpecularRatio` ('sg' | 'l1'), `shLightSharpness` (2), `shMaxRatio` (4), `shFadeRoughness` (0.2);
-  `shPingPacking` ('f16' | 'u8'); `shDetailNormalPower` (0 = off; review target 5: an extra spatial weight
-  max(0, n_d·n_d')^p on the detail normals, so payloads sampled around similar hemispheres are averaged together: p 16
-  is +0.8…+2.9 dB and FLIP −8…−19 % on normal-mapped diffuse, more bump contrast, but more residual shimmer on still
-  views; results/T5-normal-detail.md) and `shDetailNormalStride` (1: apply it only in à-trous iterations with at least
-  this stride; measured worse).
+  `shPingPacking` ('f16' | 'u8'); `shDetailNormalPower` (0 = off; opt-in, Dennis q27 (b), 2026-10-27; below) and
+  `shDetailNormalStride` (1: apply it only in à-trous iterations with at least this stride; measured worse).
+- **Opt-in: `shDetailNormalPower`** (review target 5, results `T5-normal-detail.md` §3, §5). What it does: an extra spatial
+  weight max(0, n_d·n_d')^p on the **detail** normals in the variance and à-trous passes, so a pixel's payload is
+  averaged mostly with payloads sampled around similar hemispheres (extrapolating an L1 payload to a far-off normal is
+  what flattens the bumps). Gains at p 16 on normal-mapped diffuse: bump contrast 0.62–0.73 → 0.68–0.80 of the
+  reference's, +0.8…+2.9 dB, FLIP −8…−19 % on all six normal-mapped captures; under camera motion it then beats the
+  plain filter on every pattern (+1.0…+4.6 dB, bump boil −46…−76 %). Losses: shimmer comes back with the contrast on
+  still views (bump flicker +15…+45 %, boil +24…+75 % against a still reference that has none: fails rule 9), smooth
+  surfaces −0.02…−0.07 dB, +0.3 ms per signal at 1080p (+9 %; one more guide read per tap). p 8 gives half the gain
+  with still-view boil +13…+25 %. Use it when normal-mapped surfaces are mostly seen in motion (games, walkthroughs) and
+  crisp bumps matter; keep 0 for still or slowly orbiting views (product shots), where the calmer flat look wins.
   `payload` is structural; `filter: 'recurrent'` with `payload: 'sh'` throws (not built);
   `historyFilter: 'catmull-rom'` is ignored in SH mode (the history is unfilterable; bilinear).
 - **three.js:** `realtimeDiffuse(radiance, { direction, detailNormal, denoiser: { payload: 'sh' } })`
   returns the resolved rgb (fused by default; with `resolve: 'none'` the node resolves with
   `ShResolver` at `shResolve.normal`).
 - **Equal to the plain filter where the normals agree:** resolved at the guide normal the SH
-  filter scores like plain SVGF (test bed, 7 paths: within 0.04 dB at equal f16 rounding; results/M7.md). A fixed difference: SH packs f16 by rounding to
-  nearest, the plain buffers' `rgba16float` stores truncate on Metal, so SH reads ~0.1 dB better.
+  filter scores like plain SVGF (test bed, 7 paths: within 0.04 dB at equal f16 rounding; results/M7.md). SH packs f16
+  by rounding to nearest; the plain filter does too since `f16Rounding: 'nearest'` became its default (2026-10-27;
+  before, its `rgba16float` stores truncated on Metal and SH read ~0.1 dB better).
+- **The 2026-10-27 SVGF default flips don't apply to `'sh'`**: `antiLagChroma` and `normalTest` other than 'center' need
+  the radiance payload, and `f16Rounding` stays 'store' (SH's own packing already rounds to nearest; the fused output's
+  store was not measured).
 
 ### Results (provisional; full tables in `docs/research/rt-denoiser/results/M7.md`)
 

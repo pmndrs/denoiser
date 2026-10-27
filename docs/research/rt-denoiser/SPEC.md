@@ -493,6 +493,9 @@ recommendation"; reported here):**
   the plain flip's young-pixel gain elsewhere (+0.26 ms, +8 %), and +0.06 … +0.08 bump contrast for free. Registry
   `svgf-sh` pins the old values (`'off'`, 0, 0.75); `svgf-sh-auto` follows the package. Byte check on `v1-bumpy`.
 
+**Decided 2026-10-27 (Dennis, decisions page; applied d2f3a0f (shadows) / bfd20b2 (SVGF, recurrent), docs in the commit after bfd20b2; folding into this
+section pending):** 17 (a), 18 (a) with `horizonSnap`, 19 (a), 20 (a), 21 and 22 no default change (decisions page (b)); also q29 (a) shadows `floorE: 0.05`,
+q30 (b) `lightMotion` stays an option, q31 (a) SVGF `normalTest: 'soft'` (§12 note).
 **Open (v0.7, §12 items 17–22 = decisions page q23–q28):** 17. shadows `stepTest` + `edgeBox` + `rotationStep: 0` as
 defaults (q23; passes rule 9, changes the look; +0.02 ms). 18. shadows `terminatorAnalytic` (q24; +1.47 dB at 1080p,
 fails the boil clause on one region of one capture, trusts the renderer's horizon rule and light direction).
@@ -3383,6 +3386,11 @@ _M8 (translucent shadows, §7.10)_
 
 ## 12. Open for Dennis's review
 
+**2026-10-27 (apply-decisions, one line per item; the spec author folds the rest):** items 17–22 decided (below);
+outside the numbered items q29 (a) shadows `floorE: 0.05` default (d2f3a0f), q30 (b) shadows `lightMotion` stays an option,
+q31 (a) SVGF `normalTest: 'soft'` default (bfd20b2; OcclusionDenoiser's SVGF inherits it, payload 'sh' keeps 'center').
+Combined SVGF A/B of the three SVGF flips and the byte checks: results/DEFAULTS-2026-10-27.md.
+
 **v0.7:** items 20–22 are new and open (decisions page q26–q28: T3, T5, T6); items 17–19 (q23–q25) stay open with
 their M5 Pro costs re-timed (RM26). Mapping: **17 = q23, 18 = q24, 19 = q25, 20 = q26, 21 = q27, 22 = q28.** Applied
 since v0.6 at config level, under the standing "go with the recommendation" (§0.3): the recurrent T6 tests (f649a50)
@@ -3676,7 +3684,7 @@ measured):**
 **v0.6 items (open; decisions page q23–q25):**
 
 17. **Shadows: `stepTest: true` + `edgeBox: true` + `rotationStep: 0` as defaults** (q23; TASKS "Proposed default flip";
-    SM). Changes the look, so Dennis decides. The code defaults are false / false / 0.618 today.
+    SM). **Decided 2026-10-27: (a), flipped** (q23 (a); d2f3a0f, with 18 and q29 as measured together). Changes the look, so Dennis decides. The code defaults are false / false / 0.618 today.
     - *Evidence* (§7.4–7.5, SM "Rule 9 A/B", against the q21 defaults). 1080p 7 paths 38.49 → 38.56 dB (worst path
       −0.00), FLIP / flicker equal, tPSNR +0.08; 11 real captures 28.86 → 29.29 (every capture +0.28 … +0.53), FLIP −3 %,
       motion-compensated boil −15 % (edges −16 %, contacts −19 %), sharpness 0.753 → 0.766; std540 35.66 → 35.68 (worst
@@ -3691,7 +3699,8 @@ measured):**
     - *Recommendation:* (a): passes every rule-9 clause, and each part fixes a measured cause (SM cause table).
     - Live A/B: the `q23` preset on `realtime-shadows.html` / `realtime-gi.html` (shadow options buttons).
 
-18. **Shadows: `terminatorAnalytic: true`** (q24; TASKS "Question for Dennis"; SM).
+18. **Shadows: `terminatorAnalytic: true`** (q24; TASKS "Question for Dennis"; SM). **Decided 2026-10-27: (a) as amended,
+    `terminatorAnalytic` + `horizonSnap` default on** (d2f3a0f); the exact-light requirement is documented (README, guide).
     - *Evidence* (§7.5). Occluder-free terminators take the analytic above-horizon fraction of the light (H18 Eq. 4 /
       12; closed form ours) instead of the 16 px kernel. 1080p 38.49 → 39.96 dB (every path +0.87 … +2.67), FLIP −24 %,
       flicker −25 %; real captures +0.63 (knot +1.5, Bistro +0.02 … +0.25); sun captures +0.9 … 1.1 with the exact light
@@ -3707,7 +3716,8 @@ measured):**
       `q24` preset.
 
 19. **`f16Rounding: 'nearest'` as the default of the SVGF and recurrent pipelines** (q25; TASKS "Proposed default flip";
-    DL §6; §3.8). `ShadowDenoiser` stays `'store'`.
+    DL §6; §3.8). `ShadowDenoiser` stays `'store'`. **Decided 2026-10-27: (a), flipped** (bfd20b2; OcclusionDenoiser's
+    recurrent mode and payload 'sh' keep `'store'`, not in DL's A/B).
     - *Evidence.* Passes rule 9 for A-SVGF diffuse / specular / AO / SO and recurrent: diffuse +0.07 dB (+0.22 at 4096
       spp), AO +0.19 (+0.42), FLIP −1 … −17 %, worst pooled −0.001 (SO), boil / flicker ≤ +0.5 %, cost within noise; real
       captures ±0.03 dB. Shadows −0.05 dB (`thin` −0.14), so they keep `'store'`. **v0.7:** free on the M5 Pro bench
@@ -3721,7 +3731,8 @@ measured):**
 **v0.7 items (open; decisions page q26–q28):**
 
 20. **SVGF `antiLagChroma: true` as the default** (q26; TASKS "Proposal for Dennis"; T3 §6.5; §4.6 v0.7). Changes what
-    colour changes look like, so Dennis decides. The code default is false.
+    colour changes look like, so Dennis decides. The code default is false. **Decided 2026-10-27: (a), default on** with
+    `antiLag: 'auto'` v2 on payload 'radiance' (bfd20b2; OcclusionDenoiser pins false).
     - *Evidence.* The shipped `'auto'` is luminance only, so a light that changes hue at constant luminance leaves its
       old tint 21 frames (diffuse) / 17 (specular), longer than `'off'`'s 10. With chroma gradients: lc-hue 21 → **8**
       / 17 → **4** frames, transition window +3.8 / +3.3 dB, FLIP −22 / −32 %, held window +1.7 / +0.5 dB. Level
@@ -3739,7 +3750,9 @@ measured):**
       call.
 
 21. **`shDetailNormalPower: 16` as the default of `payload: 'sh'`** (q27; TASKS "Proposal for Dennis"; T5 §3, §5;
-    §8.5 v0.7). SH stays opt-in either way; changes its look.
+    §8.5 v0.7). SH stays opt-in either way; changes its look. **Decided 2026-10-27: decisions page q27 (b) = no default
+    change, kept as an option** (option (c) below; default 0; documented for normal-mapped surfaces under a moving camera,
+    docs commit after bfd20b2).
     - *Evidence.* Normal-mapped diffuse through SH keeps more of its bumps: contrast 0.62–0.73 → 0.68–0.80, +0.8 … +2.9 dB
       (+0.5 … +1.2 while the light sweeps), FLIP −8 … −19 % on all six normal-mapped captures; it then beats the plain
       default under camera motion on every pattern (+1.0 … +4.6 dB, bump boil −46 … −76 %) and is level on still views
@@ -3756,7 +3769,9 @@ measured):**
       which is what SH is for; rule 9's letter says (c).
 
 22. **The recurrent filter with a plain per-tap normal test** (q28; TASKS "Questions for Dennis: recurrent normal
-    test"; T6 §6.3; §3.2 v0.7). The recurrent filter is opt-in, so this changes only that option's config.
+    test"; T6 §6.3; §3.2 v0.7). The recurrent filter is opt-in, so this changes only that option's config. **Decided
+    2026-10-27: decisions page q28 (b) = no default change** (option (c) below); the plain test stays an opt-in config,
+    documented (docs commit after bfd20b2).
     - *Evidence.* With the full test (no `'relative'` relaxation) the recurrent filter resets more often on normal-mapped
       Bistro / Sponza, and its spatial history fix rebuilds those pixels from this frame's same-normal neighbours instead
       of keeping history shaded at another normal: real captures diffuse +0.44 dB (cos 0.95) / +0.39 (cos 0.8), specular

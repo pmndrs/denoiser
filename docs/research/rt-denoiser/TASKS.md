@@ -978,7 +978,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (kernel rotation, anti-lag restarts); the "ripple" behind a moving hard occluder was trailing, fixed by the q21 flip,
       the rest by `edgeBox`; blur is spatial and present before history (H18 radius at clean steps, terminator kernel,
       contacts below raw). Options `stepTest`, `edgeBox`, `terminatorAnalytic` (default off, byte-identical) — owner shadows
-- [ ] **Proposed default flip (Dennis approves, changes the look): shadows `stepTest: true` + `edgeBox: true` + `rotationStep: 0`.** (Decisions page q23; SPEC v0.7 §12 item 17; re-timed 0.64 / 0.74 ms, RM26.)
+- [x] (apply-decisions, d2f3a0f: **Dennis q23 (a), 2026-10-27: flipped**, with q24 and q29 (measured together, SHADOWS-FOLLOWUPS §4); new default = old explicit options byte for byte, 248 files 0 differ (results/DEFAULTS-2026-10-27.md); README / guide) **Proposed default flip (Dennis approves, changes the look): shadows `stepTest: true` + `edgeBox: true` + `rotationStep: 0`.** (Decisions page q23; SPEC v0.7 §12 item 17; re-timed 0.64 / 0.74 ms, RM26.)
       Passes rule 9 against the new defaults (results/SHADOWS-MOTION.md "Rule 9 A/B"): 1080p 7 paths 38.56 vs 38.49 dB, worst
       path −0.00, FLIP / flicker equal, tPSNR +0.08; 11 real captures 29.29 vs 28.86 (every capture +0.28…+0.53), FLIP −3 %,
       motion-compensated boil −15 % (edges −16 %, contacts −19 %); std540 35.68 vs 35.66, worst −0.05, boil ±0; cost +2 / +5 %
@@ -986,7 +986,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       hard-light edges 21.8 → 23.2 dB, contacts +2.0. Look: crisper hard edges and contacts, calmer edges, the kernel
       rotation no longer animates. Caveat: contact boil +7 % on std540-orbit (not a rule-9 region) — found by shadows, owner
       Dennis → shadows (`resolveShadowOptions`, README, SPEC §7.4 / §7.5)
-- [ ] (shadows follow-ups, 52d37cb, results/SHADOWS-FOLLOWUPS.md §4: **the boil exception is legitimate change plus a back-face lag**: 105 % of the +8 % sits where the reference itself changes; where it is steady q24 lowers boil, and its error boil is lower. The jump: surfaces turning away from the moving lantern go from the exact analytic ≈ 0 to `backfacePass`'s lagging lit *history* (~15 frames). New option `horizonSnap` (whole light below the horizon and a 0 sample: history 0) removes it: **q24 + `horizonSnap` passes rule 9 on every clause** — 1080p 40.00 vs 38.49 dB (worst path +0.95), real +0.90 (worst +0.38), std540 +1.36, FLIP −27 / −11 / −23 %, `bistro-move` dynamic boil +1.4 % (was +8.1 %), every counting boil increase ≤ +2.7 %, cost −0.01 / −0.02 ms. Proposed amendment for Dennis: q24 = `terminatorAnalytic` + `horizonSnap`; the SH-7 trust question stays) **Question for Dennis: shadows `terminatorAnalytic: true`** (q24; SPEC v0.7 §12 item 18) (occluder-free terminators get the analytic
+- [x] (shadows follow-ups, 52d37cb, results/SHADOWS-FOLLOWUPS.md §4: **the boil exception is legitimate change plus a back-face lag**: 105 % of the +8 % sits where the reference itself changes; where it is steady q24 lowers boil, and its error boil is lower. The jump: surfaces turning away from the moving lantern go from the exact analytic ≈ 0 to `backfacePass`'s lagging lit *history* (~15 frames). New option `horizonSnap` (whole light below the horizon and a 0 sample: history 0) removes it: **q24 + `horizonSnap` passes rule 9 on every clause** — 1080p 40.00 vs 38.49 dB (worst path +0.95), real +0.90 (worst +0.38), std540 +1.36, FLIP −27 / −11 / −23 %, `bistro-move` dynamic boil +1.4 % (was +8.1 %), every counting boil increase ≤ +2.7 %, cost −0.01 / −0.02 ms. Proposed amendment for Dennis: q24 = `terminatorAnalytic` + `horizonSnap`; the SH-7 trust question stays) (apply-decisions, d2f3a0f: **Dennis q24 (a), 2026-10-27: `terminatorAnalytic` + `horizonSnap` default on**; the exact-light requirement (turn both off for an approximate light or another horizon normal) and the gains / losses documented in the README "Shadow defaults since 2026-10-27" and the guide) **Question for Dennis: shadows `terminatorAnalytic: true`** (q24; SPEC v0.7 §12 item 18) (occluder-free terminators get the analytic
       above-horizon fraction of the light, H18 Eq. 4 / 12): 1080p +1.47 dB, FLIP −24 %, flicker −25 %, every path +0.87…+2.67;
       real +0.63 (knot +1.5, Bistro +0.02…+0.25), FLIP −4 %; sun +0.9…1.1 with an exact light direction; no cost. Fails the
       boil clause on one region of one capture (`bistro-move` dynamic +8 %, above reference and shipped), and it trusts the
@@ -996,19 +996,24 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       21.9, temporal-only 29.5): the 1-px floor and the 3×3-tile minimum next to the contact; `minRadius: 0.5` lost 0.16 dB at
       1080p before (SHADOWS-LOOK). Also on a moving hard light the no-history control beats the full denoiser (29.2 vs 27.7):
       history costs more than it gains where hard edges move ~1 px/frame — found by shadows, owner shadows
-- [ ] **Question for Dennis: shadows `floorE: 0.05` on top of q23** (shadows follow-ups, 52d37cb; new, decisions page number
+- [x] (apply-decisions, d2f3a0f: **Dennis q29 (a), 2026-10-27: `floorE: 0.05` default**, on top of q23 as measured) **Question for Dennis: shadows `floorE: 0.05` on top of q23** (shadows follow-ups, 52d37cb; new, decisions page number
       to assign): the 1-px radius floor scaled by the noise estimate, so contacts and sub-pixel shadows stay sharp. Hard-light
       contacts 17.88 → 22.62 dB (raw 21.88), real captures +0.83 dB over shipped / +0.40 over q23 (every capture up), FLIP −7 %,
       1080p level (+0.01 over q23, worst path −0.02), no cost. **Fails the boil clause narrowly**: `bistro-move` dynamic boil
       +5.6 % and `sponza-orbit` motion-compensated changing boil +7 % above shipped and the references (crisper edges
       resampled on a moving camera); 540p frame 0 −0.15 … −0.8 dB vs q23. Evidence results/SHADOWS-FOLLOWUPS.md §1; image
       `results/img/shadows-followups-contacts.png` — found by shadows, owner Dennis
-- [ ] **Question for Dennis: shadows `lightMotion: 1`** (shadows follow-ups, 52d37cb; new): a moving light moves every penumbra
+- [x] (apply-decisions, docs commit after bfd20b2: **Dennis q30 (b), 2026-10-27: stays an option** (default 0); README documents what it does, gains / losses and when to use it) **Question for Dennis: shadows `lightMotion: 1`** (shadows follow-ups, 52d37cb; new): a moving light moves every penumbra
       by (light displacement / light size) widths per frame; the option caps the history at one such width and drops it at
       moving edges. Moving hard light 27.68 → 30.44 dB (above the no-history control with 0.5), trail 0.142 → 0.040, std540-light
       +1.97, 1080p `light` +0.44, still lights unchanged, cost +0.002…0.004 ms; but noisier while the light moves (edge boil
       +47 % there; std540-light static-penumbra boil +6.5 %: fails the boil clause). Tracking vs noise under moving lights.
       Evidence results/SHADOWS-FOLLOWUPS.md §3 — found by shadows, owner Dennis
+- [ ] Coloured shadows after the q23 flip (results/DEFAULTS-2026-10-27.md "Coloured shadows"): `shadows-translucent` on
+      `m8-glass-moving` gains +0.08 / +0.09 dB (visibility / shadow-rgb) but its static-penumbra boil rises +6.4 / +6.5 %
+      (above the reference's and the old default's; the opaque path showed −1 %); `m8-glass-still` +0.16 / +0.11 dB, boil
+      +2.6 %. Only `stepTest` / `edgeBox` / `rotationStep: 0` reach the translucency path. Split which one, and pin it off
+      for `translucency: true` if it is one of them — found by apply-decisions, owner shadows
 - [ ] Shadows: move the history along the shadow's motion under a moving light instead of dropping it (`lightMotion`'s
       better form): shadow motion vectors from the blocker and light positions (Zeng et al. 2021, TRMV §4.1 Eq. 3); we have h
       and the light per occluded sample, so the blocker point is known for a sphere or directional light. Measure on
@@ -1247,7 +1252,7 @@ harness builder runs them and returns images/metrics only.)_
       for SVGF diffuse / specular / AO / SO and recurrent (+0.07 / +0.02 / +0.19 / 0.00 dB at 256 spp, diffuse +0.22 and
       AO +0.42 at 4096 spp, FLIP −1 … −17 %), loses slightly on shadows (−0.05 pooled, thin −0.14): flip proposed for SVGF
       + recurrent only (below, Questions for Dennis). Follow-ups below._
-- [ ] **Proposed default flip: `f16Rounding: 'nearest'` for the SVGF and recurrent pipelines** (q25; SPEC v0.7 §12 item 19) (DiffuseDenoiser,
+- [x] (apply-decisions, bfd20b2: **Dennis q25 (a), 2026-10-27: flipped** for SVGF (DiffuseDenoiser, SpecularDenoiser, DiffuseSpecularDenoiser, OcclusionDenoiser 'svgf') and the radiance recurrent pipeline, as DISTANCE-LONG §6 proposed; OcclusionDenoiser 'recurrent' pinned 'store' (not in that A/B), payload 'sh' keeps 'store' (unmeasured), shadows 'store'; combined SVGF A/B and byte checks in results/DEFAULTS-2026-10-27.md) **Proposed default flip: `f16Rounding: 'nearest'` for the SVGF and recurrent pipelines** (q25; SPEC v0.7 §12 item 19) (DiffuseDenoiser,
       SpecularDenoiser, DiffuseSpecularDenoiser, OcclusionDenoiser 'svgf' and 'recurrent'; ShadowDenoiser stays 'store').
       Rule 9 passed (results/DISTANCE-LONG.md §6: 7 paths at 1080p, 4096-spp refs on orbit / light / glossy, 6 real-scene
       captures, cost within noise); look change: SVGF outputs 0.2–0.5 % brighter (Metal's truncation darkening removed).
@@ -1310,7 +1315,7 @@ harness builder runs them and returns images/metrics only.)_
       (3) constant-light pixels boil +25…38 % during an event (λ leaks through the reconstruction); (4) shadows switch at
       once. Options (default off, byte-identical default WGSL + replays): `antiLagChroma` (passes rule 9, proposed below)
       and `antiLagGain` (per signal; specular +0.41 dB under camera motion but fails boil on still views)._
-- [ ] **Proposal for Dennis: SVGF `antiLagChroma: true`** (results/T3-light-changes.md §6.5; decisions page q26; SPEC v0.7 §12 item 20, §4.6; M5 Pro joint +0.15 ms → 4.55, RM26; **since cffb00e: 3.81 → 3.97 ms, under the 4 ms guide**, results/SVGF-COST.md §2). Fixes the lingering tint
+- [x] (apply-decisions, bfd20b2: **Dennis q26 (a), 2026-10-27: default on** where it can run (`antiLag: 'auto'` v2, payload 'radiance'); OcclusionDenoiser pins false (T3 didn't measure AO / SO; ĥ is grey); combined A/B and byte checks in results/DEFAULTS-2026-10-27.md) **Proposal for Dennis: SVGF `antiLagChroma: true`** (results/T3-light-changes.md §6.5; decisions page q26; SPEC v0.7 §12 item 20, §4.6; M5 Pro joint +0.15 ms → 4.55, RM26; **since cffb00e: 3.81 → 3.97 ms, under the 4 ms guide**, results/SVGF-COST.md §2). Fixes the lingering tint
       after a light colour change (lc-hue 21 → 8 frames diffuse, 17 → 4 specular; transition window +3.8 / +3.3 dB, FLIP
       −22 / −32 %); level everywhere else (1080p 7 paths +0.002 / +0.009 dB, FLIP ±0.0 / −0.2 %, flicker equal; 4096 spp
       −0.001 / +0.009; 11 real captures +0.000 / +0.001, boil ≤ +1.1 % in every region); +0.06…0.11 ms per signal
@@ -1328,7 +1333,7 @@ harness builder runs them and returns images/metrics only.)_
       reconstruction (up to 24 px) plus the 3×3 max carry it. `antiLagRadius: 0` only trims it (+23 %) and slows the
       reaction. Idea (ours, untested): confine the reconstructed λ per pixel, e.g. only where the pixel's own 3×3 change
       agrees in sign with δ̂. — found by t3, owner `packages/denoiser-realtime`
-- [ ] **Proposal for Dennis: SVGF `normalTest: 'soft'` as the default** (its defaults = the measured configuration:
+- [x] (apply-decisions, bfd20b2: **Dennis q31 (a), 2026-10-27: default 'soft'** (OcclusionDenoiser's SVGF inherits it, its A/B covered AO / SO; payload 'sh' keeps 'center', the only test it supports); 'center' (hard) stays available, why soft and the pros / cons of hard in the README "History normal test") **Proposal for Dennis: SVGF `normalTest: 'soft'` as the default** (its defaults = the measured configuration:
       `normalSoftThreshold` 0.5, `normalSoftHistory` 3 for diffuse / AO, 1 = today's reset for specular / SO;
       results/SVGF-FOLLOWUPS.md §3.3, §6). Passes every rule-9
       clause: 11 real captures diffuse +0.150 dB / AO +0.183 (Bistro orbit AO +0.26, boil 0.0103 → 0.0082), boil −8.7 / −11 %
@@ -1360,7 +1365,7 @@ harness builder runs them and returns images/metrics only.)_
       default replays byte-identical): `shDetailNormalPower` (+0.8…+2.9 dB over SH, FLIP −8…−19 %, beats plain under
       motion on every pattern; fails the flicker / boil clauses on still views; proposed below), `shDetailNormalStride`
       (dead end), `youngNormalPower` honoured by SH (passes, flip below); `shSharpen: 1` passes (flip below)._
-- [ ] **Proposal for Dennis: `shDetailNormalPower: 16` as the default of `payload: 'sh'`** (results/T5-normal-detail.md §3, §5; decisions page q27; SPEC v0.7 §12 item 21, §8.5).
+- [x] (apply-decisions, docs commit after bfd20b2: **Dennis q27 (b), 2026-10-27: stays an option** (default 0); README documents what it does, gains / losses and when to use it) **Proposal for Dennis: `shDetailNormalPower: 16` as the default of `payload: 'sh'`** (results/T5-normal-detail.md §3, §5; decisions page q27; SPEC v0.7 §12 item 21, §8.5).
       Normal-mapped diffuse through the SH payload keeps more of its bumps: contrast 0.62–0.73 → 0.68–0.80, +0.8…+2.9 dB
       (+0.5…+1.2 while the light sweeps), FLIP −8…−19 % on all six normal-mapped captures (M7 domes, held-out grooves and fine cells, the coloured corridor,
       still views under a moving light); it then beats the plain default under camera motion on every pattern (+1.0…+4.6
@@ -1424,35 +1429,35 @@ The entries that used to be here (joint default for `filter: 'recurrent'` — re
 review list — spec-author; SVGF feedback default — svgf / results, now settled; default occlusion
 filter and AO look — occlusion) are merged into SPEC §12 items 1, 6 and the "settled" note.
 
-- **Recurrent normal test (2026-10-26, t6):** the recurrent option with a plain per-tap normal test (`normalThreshold`
+- ~~**Recurrent normal test (2026-10-26, t6):**~~ (answered 2026-10-27: q28 (b), stays an option; documented in the README's recurrent section, docs commit after bfd20b2) the recurrent option with a plain per-tap normal test (`normalThreshold`
   0.8) gains +0.39 / +0.29 dB diffuse / specular on the 9 real captures (Bistro up to +0.8 dB, FLIP −1.6…−2.4 %) and is
   level on the test bed, but its extra resets boil above the reference's level on `bistro-pan` diffuse and
   `sponza-orbit` specular (rule 9 boil clause). Offer it as the recurrent config anyway? (The relaxed form that passes is
   proposed above.) Evidence results/T6-boundaries.md §6.3. (Decisions page q28; SPEC v0.7 §12 item 22.)
-- **f16 rounding (2026-10-26, distance-long):** approve `f16Rounding: 'nearest'` as the default of the SVGF and recurrent
+- ~~**f16 rounding (2026-10-26, distance-long):**~~ (answered 2026-10-27: q25 (a), flipped, bfd20b2) approve `f16Rounding: 'nearest'` as the default of the SVGF and recurrent
   pipelines (passes rule 9: diffuse +0.07 dB, AO +0.19, at 4096 spp +0.22 / +0.42, FLIP −4 / −17 %; outputs 0.2–0.5 %
   brighter on Metal, a no-op where f16 stores already round to nearest); shadows stay `'store'`. Item under target D;
   evidence results/DISTANCE-LONG.md §6. (Decisions page q25; SPEC v0.7 §12 item 19, §3.8.)
-- **Normal-mapped detail (2026-10-26, t5):** approve `shDetailNormalPower: 16` as the SH payload's default (crisper bumps,
+- ~~**Normal-mapped detail (2026-10-26, t5):**~~ (answered 2026-10-27: q27 (b), stays an option, docs commit after bfd20b2) approve `shDetailNormalPower: 16` as the SH payload's default (crisper bumps,
   +0.8…+2.9 dB, FLIP −8…−19 %; fails the boil / flicker clauses on still views: a little shimmer comes back with the
   contrast). Item under "Found along the way"; evidence results/T5-normal-detail.md §5. (Decisions page q27; SPEC v0.7
   §12 item 21.)
-- **Normal-test resets (2026-10-27, svgf-followups):** approve `normalTest: 'soft'` (diffuse / AO 3 frames, specular / SO 1) as
+- ~~**Normal-test resets (2026-10-27, svgf-followups):**~~ (answered 2026-10-27: q31 (a), flipped, bfd20b2) approve `normalTest: 'soft'` (diffuse / AO 3 frames, specular / SO 1) as
   the SVGF default: passes rule 9 on the 11 real captures, the test bed and 4096 spp; less boil on moving views of dense
   geometry (Bistro AO boil −21 %, +0.26 dB). Item under "Found along the way"; evidence results/SVGF-FOLLOWUPS.md §3.
-- **q26 follow-up (2026-10-27, svgf-followups):** the constant-light leak that q26's exception names is the shipped
+- ~~**q26 follow-up (2026-10-27, svgf-followups):**~~ (answered with q26 (a)) the constant-light leak that q26's exception names is the shipped
   default's per-stratum boost within 2 px of a light change (results/SVGF-FOLLOWUPS.md §2); every fix measured slows the
   reaction q26 buys. Recommendation: judge q26 with the exception as a property of A-SVGF.
-- **Light colour changes (2026-10-26, t3):** approve `antiLagChroma: true` as the SVGF default (passes rule 9 on the test
+- ~~**Light colour changes (2026-10-26, t3):**~~ (answered 2026-10-27: q26 (a), flipped, bfd20b2) approve `antiLagChroma: true` as the SVGF default (passes rule 9 on the test
   bed, 4096-spp windows and the 11 real captures; fixes the ~20-frame tint lag after a colour change; one by-construction
   exception on constant-light pixels during a colour event). Item under "Found along the way"; evidence
   results/T3-light-changes.md §6. (Decisions page q26; SPEC v0.7 §12 item 20.)
-- **Shadows follow-ups (2026-10-27, shadows):** (1) amend q24 to `terminatorAnalytic` + `horizonSnap`: the boil exception
+- ~~**Shadows follow-ups (2026-10-27, shadows):**~~ (answered 2026-10-27: q24 amended and (a), q29 (a), q30 (b); d2f3a0f) (1) amend q24 to `terminatorAnalytic` + `horizonSnap`: the boil exception
   was a back-face lag, the pair passes every rule-9 clause (1080p +1.51 dB, FLIP −27 %); (2) `floorE: 0.05` on top of q23
   (contacts above the raw input, real +0.40 dB over q23; boil +5.6 / +7 % on two captures); (3) `lightMotion: 1` (moving
   lights tracked, +2.8 dB on a moving hard light, but noisier while the light moves). Items under "Found along the way";
   evidence results/SHADOWS-FOLLOWUPS.md.
-- **Shadows in motion (2026-10-26, shadows):** approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
+- ~~**Shadows in motion (2026-10-26, shadows):**~~ (answered 2026-10-27: q23 (a), q24 (a), flipped, d2f3a0f) approve the flip `stepTest` + `edgeBox` + `rotationStep: 0` (passes rule 9,
   changes the look), and decide on `terminatorAnalytic` (+1.47 dB at 1080p, one boil exception, trusts the renderer's
   horizon rule). Both under "Found along the way"; evidence results/SHADOWS-MOTION.md. (Decisions page q23 / q24; SPEC
   v0.7 §12 items 17 / 18, §7.4–7.5.)

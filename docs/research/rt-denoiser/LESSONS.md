@@ -1177,3 +1177,17 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - **Pure refactors of a page: byte-compare its manual-stepped screenshots.** `run-realtime.mjs gi` (corner and Sponza)
   writes byte-identical PNGs run to run on this Mac, so moving the ray WGSL into `src/realtime/rays.ts` was verified by
   `cmp` over all 28 screenshots before / after. — review-bench
+
+## Applying decisions (2026-10-27)
+
+- **An option with prerequisites can't become a plain default.** `antiLagChroma` throws unless `antiLag` is `'auto'` v2 on
+  the radiance payload, and `normalTest` other than `'center'` throws on payload `'sh'`: a bare `?? true` / `?? 'soft'` would
+  have broken every `antiLag: 'off'` / `'gradient'` / SH user. Make the default conditional on what it needs (as
+  `outputAliasing` already was) and smoke-test the combinations (antiLag off / v1, SH, reflection variants,
+  historyFallback / historyNormal) before the byte checks. — apply-decisions
+- **Decision letters differ between the decisions page and SPEC §12.** "q28 (b)" on the page meant "no default change",
+  while SPEC item 22's (b) is "cos 0.8 'center'". Write the meaning, not just the letter, when recording a decision.
+  — apply-decisions
+- **The test bed can't byte-check `normalTest: 'soft'`**: its smooth geometry never trips the hard normal test, so the
+  soft branch never runs there. Include a dense real capture (bistro-orbit) in any byte check of history-test defaults.
+  — apply-decisions

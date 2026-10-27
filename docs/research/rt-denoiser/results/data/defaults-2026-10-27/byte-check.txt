@@ -1,0 +1,23 @@
+REPLAYS_DONE Tue Oct 27 12:58:44 JST 2026
+svgfauto std540-orbit svgf-auto: 32 old files, 32 new files, 0 differ
+svgfauto std540-thin svgf-auto: 32 old files, 32 new files, 0 differ
+svgfauto bistro-orbit svgf-auto: 96 old files, 96 new files, 0 differ
+occauto std540-orbit occlusion-svgf-auto: 32 old files, 32 new files, 0 differ
+occauto bistro-orbit occlusion-svgf-auto: 96 old files, 96 new files, 0 differ
+rec std540-orbit recurrent: 32 old files, 32 new files, 0 differ
+rec bistro-orbit recurrent: 96 old files, 96 new files, 0 differ
+recd std540-thin recurrent-diffuse: 16 old files, 16 new files, 0 differ
+occrec std540-orbit occlusion-recurrent: 32 old files, 32 new files, 0 differ
+svgf std540-orbit svgf: 32 old files, 32 new files, 0 differ
+svgf bistro-orbit svgf: 96 old files, 96 new files, 0 differ
+svgfd std540-thin svgf-diffuse: 16 old files, 16 new files, 0 differ
+occsvgf bistro-orbit occlusion-svgf: 96 old files, 96 new files, 0 differ
+sh std540-orbit shadows: 16 old files, 16 new files, 0 differ
+sh std540-light shadows: 24 old files, 24 new files, 0 differ
+sh bistro-move shadows: 48 old files, 48 new files, 0 differ
+sh sm-hard-object shadows: 80 old files, 80 new files, 0 differ
+shsun sm-sun-light shadows: 80 old files, 80 new files, 0 differ
+svgfsh v1-bumpy svgf-sh-auto: 64 old files, 64 new files, 0 differ
+plain v1-bumpy svgf-plain: 64 old files, 64 new files, 0 differ
+plaindef v1-bumpy svgf-plain-default: 64 old files, 64 new files, 0 differ
+ALLDONE
