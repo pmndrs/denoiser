@@ -67,6 +67,12 @@ to it before you finish._
    brief). Release it between batches so others can interleave; never hold it while you write code. If the owner file is
    older than 3 h and its processes are gone, it's stale: remove it and say so in your report. Timing runs also need
    the GPU otherwise idle, so take the lock and check no other headless Chrome is running.
+12. **Every proposal gets a toggle on the review bench** (Dennis, 2026-10-27: "I hate url driven params so a UI is best").
+   Anything proposed to Dennis (or flipped as a default) must be registered in the review bench's option registry
+   (`examples/three-temporal/src/review/options.ts`, see results/REVIEW-BENCH.md) with a label, the decision id (q-number),
+   one plain sentence on what to look for, and the scene / path / signal where it shows best, so Dennis can A/B it with a
+   click (left vs right side, draggable divider, swap key). URL settings are fine for scripts and captures, never as the
+   way Dennis is asked to judge something. Decision cards on the decisions page name the bench preset to open.
 
 ## Milestones
 
