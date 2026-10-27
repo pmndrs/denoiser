@@ -145,8 +145,10 @@ export interface ShadowDenoiserOptions {
    */
   pass1Phase?: number;
   /**
-   * Per-frame step of the spatial passes' disk rotation, in turns. Default 0.618 (the golden ratio,
-   * SPEC D3b); 0 = a fixed per-pixel rotation (no frame-to-frame change of the kernel).
+   * Per-frame step of the spatial passes' disk rotation, in turns. 0 = a fixed per-pixel rotation (no frame-to-frame
+   * change of the kernel): default since Dennis q23 (a), 2026-10-27 (motion-compensated boil −13 % on the real captures at
+   * ±0.02 dB, results/SHADOWS-MOTION.md). 0.618 (the golden ratio, SPEC D3b) was the default before: the kernel's
+   * residual pattern then changes every frame (it averages out over the history but animates).
    */
   rotationStep?: number;
   /**
@@ -201,14 +203,14 @@ export interface ShadowDenoiserOptions {
    * clean step (both values present, no sample disagreeing with all of its in-window 4-neighbours, inner ones with
    * 3 of 4), E counts as 0 for this frame, so a clean hard edge isn't given a noise-sized kernel; noisy windows
    * (penumbrae) keep E, so wide penumbrae stay as calm as before (the boil-free alternative to noiseCap). Applies
-   * to fresh pixels too (frame 0). Pipeline variant. Default false.
+   * to fresh pixels too (frame 0). Pipeline variant. Default true since Dennis q23 (a), 2026-10-27.
    */
   stepTest?: boolean;
   /**
    * Hard edges (own penumbra under clampEdgePx px, where the clamp window opens toward "no clamp"): also clamp the
    * history to the min / max of the 3x3 raw samples, weighted like that widening, so a moving hard edge doesn't drag
    * its old value along (results/SHADOWS-MOTION.md; TAA neighbourhood min / max clamping, Karis 2014, used on hard
-   * shadow edges: our design). Pipeline variant. Default false.
+   * shadow edges: our design). Pipeline variant. Default true since Dennis q23 (a), 2026-10-27.
    */
   edgeBox?: boolean;
   /**
@@ -230,7 +232,11 @@ export interface ShadowDenoiserOptions {
    * instead of filtering with `terminatorRadius` (results/SHADOWS-MOTION.md). Heitz et al. 2018 Eq. 4 / 12 put the
    * horizon-clipped light in the analytic unshadowed term, so there is nothing stochastic left to denoise there; the
    * closed form is ours. Exact for a sphere light (per-pixel direction) and a directional light with the renderer's
-   * horizon rule (SH-7). Opaque path only (ignored with `translucency`). Pipeline variant. Default false.
+   * horizon rule (SH-7). Opaque path only (ignored with `translucency`). Pipeline variant. Default true since Dennis q24
+   * (a), 2026-10-27 (with horizonSnap). **Needs the exact light**: the light direction / position and size the renderer
+   * sampled, and a renderer whose shadow rays are clipped at the horizon of the same normal as `guides.normal`. Turn it
+   * (and horizonSnap) off for an approximate light (e.g. a directional stand-in for a nearby sphere: the test bed's sun
+   * captures lose 0.6–0.8 dB with it) or a renderer whose horizon rule uses another normal (bump-mapped shading normal).
    */
   terminatorAnalytic?: boolean;
   /**
@@ -238,7 +244,7 @@ export interface ShadowDenoiserOptions {
    * clamp(E / floorE, 0.5, 1) with E the accumulated H18 noise estimate, so where E is 0 (with `stepTest`: clean hard
    * steps; contacts and small lights, whose penumbra is narrower than a pixel) the floor halves and the kernel's taps all
    * land on the pixel, while noisy penumbrae keep the 1-px floor. 0 = off (pipeline variant when > 0; needs
-   * `noiseBlend` > 0). Default 0.
+   * `noiseBlend` > 0). Default 0.05 since Dennis q29 (a), 2026-10-27 (with stepTest; contacts above the raw input).
    */
   floorE?: number;
   /**
@@ -246,7 +252,8 @@ export interface ShadowDenoiserOptions {
    * set to 0 (results/SHADOWS-FOLLOWUPS.md, our design from the renderer contract SH-7 / Heitz et al. 2018 Eq. 4 / 12: the
    * horizon-clipped light is known exactly). Without it a surface turning away from a moving light keeps its lit history
    * for up to maxHistory frames where the 5x5 window isn't uniform (and `backfacePass` passes that history on).
-   * Pipeline variant. Default false.
+   * Pipeline variant. Default true since Dennis q24 (a), 2026-10-27 (with terminatorAnalytic; same exact-light
+   * requirement).
    */
   horizonSnap?: boolean;
   /**
@@ -324,7 +331,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     youngTaper: o.youngTaper ?? 0.25,
     youngRadius: Math.max(1, Math.min(4, Math.round(o.youngRadius ?? 2))),
     pass1Phase: o.pass1Phase ?? 0.3819660113,
-    rotationStep: o.rotationStep ?? 0.6180339887,
+    rotationStep: o.rotationStep ?? 0, // q23 (a); was 0.6180339887
     stabilize: o.stabilize ?? 0.25,
     stabilizeBox: o.stabilizeBox ?? 0.05,
     stabilizeAntiLag: o.stabilizeAntiLag ?? 64,
@@ -351,13 +358,13 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     noiseYoung: o.noiseYoung ?? 0,
     noiseCap: o.noiseCap ?? 0,
     noiseCapSettled: o.noiseCapSettled ?? false,
-    stepTest: o.stepTest ?? false,
-    edgeBox: o.edgeBox ?? false,
+    stepTest: o.stepTest ?? true, // q23 (a)
+    edgeBox: o.edgeBox ?? true, // q23 (a)
     normalThreshold: o.normalThreshold ?? 0,
     normalTest: o.normalTest ?? 'center',
-    terminatorAnalytic: o.terminatorAnalytic ?? false,
-    floorE: o.floorE ?? 0,
-    horizonSnap: o.horizonSnap ?? false,
+    terminatorAnalytic: o.terminatorAnalytic ?? true, // q24 (a): needs the exact light (option docs)
+    floorE: o.floorE ?? 0.05, // q29 (a)
+    horizonSnap: o.horizonSnap ?? true, // q24 (a)
     lightMotion: o.lightMotion ?? 0,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
