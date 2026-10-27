@@ -15,7 +15,9 @@
 //   accumulate-8       the same, 8 frames
 //   svgf               denoiser/realtime SVGF with antiLag 'off' (pinned; the package default is
 //                      'auto' since 2026-10-25), diffuse + specular (DiffuseSpecularDenoiser,
-//                      dispatchBoth; a single requested signal runs that signal's class)
+//                      dispatchBoth; a single requested signal runs that signal's class); the paper
+//                      filter's other choices pinned too: youngNormalPower 0 (q18), normalTest 'center'
+//                      (q31), f16Rounding 'store' (q25); svgf-diffuse / svgf-specular the same
 //   svgf-auto          the same with A-SVGF anti-lag 'auto' (renderer-free gradients)
 //   svgf-diffuse       DiffuseDenoiser alone;  svgf-specular  SpecularDenoiser alone
 //   (svgf settings from the URL: see svgfOptions(); antiLag 'gradient' needs renderer
@@ -223,9 +225,16 @@ function svgfJoint(defaults: SpecularSvgfOptions): DenoiserEntry['create'] {
   };
 }
 
+/**
+ * The plain SVGF ids (`svgf`, `svgf-diffuse`, `svgf-specular`, the M7 `svgf-plain*` baselines, `occlusion-svgf`): the
+ * package defaults that changed since M1 are pinned to their M1 values, so these ids keep meaning "the paper's SVGF"
+ * (antiLagChroma needs antiLag 'auto', so it is off here anyway). URL settings still override.
+ */
+export const SVGF_PINNED: SpecularSvgfOptions = { antiLag: 'off', youngNormalPower: 0, normalTest: 'center', f16Rounding: 'store' };
+
 registerDenoiser({
   id: 'svgf', description: 'denoiser/realtime SVGF (diffuse + specular, joint dispatch)', signals: ['diffuse', 'specular'],
-  create: svgfJoint({ antiLag: 'off', youngNormalPower: 0 }), // pinned: package defaults are 'auto' (q02) and youngNormalPower 16 (q18)
+  create: svgfJoint(SVGF_PINNED), // pinned: package defaults are 'auto' (q02), youngNormalPower 16 (q18), normalTest 'soft' (q31), f16Rounding 'nearest' (q25)
 });
 registerDenoiser({
   id: 'svgf-auto', description: "denoiser/realtime A-SVGF (antiLag 'auto'), diffuse + specular", signals: ['diffuse', 'specular'],
@@ -233,11 +242,11 @@ registerDenoiser({
 });
 registerDenoiser({
   id: 'svgf-diffuse', description: 'denoiser/realtime SVGF DiffuseDenoiser', signals: ['diffuse'],
-  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st, { antiLag: 'off', youngNormalPower: 0 }))),
+  create: perSignal((device, _s, st) => new DiffuseDenoiser(device, svgfOptions(st, SVGF_PINNED))),
 });
 registerDenoiser({
   id: 'svgf-specular', description: 'denoiser/realtime SVGF SpecularDenoiser (needs roughness)', signals: ['specular'],
-  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st, { antiLag: 'off', youngNormalPower: 0 }))),
+  create: perSignal((device, _s, st) => new SpecularDenoiser(device, svgfOptions(st, SVGF_PINNED))),
 });
 
 /**
@@ -403,7 +412,7 @@ registerDenoiser({
 registerOcclusionDenoisers({ register: registerDenoiser, perSignal, recurrentOptions, svgfOptions });
 
 // ---- CAPTURE-FORMAT v1 signals (sh-diffuse, sh-specular, shadow-rgb): src/v1-entries.ts -------------
-registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, recurrentOptions, shadowOptions, shadowLightOf });
+registerV1Denoisers({ register: registerDenoiser, get: (id) => DENOISERS.get(id), svgfOptions, recurrentOptions, shadowOptions, shadowLightOf, svgfPinned: SVGF_PINNED });
 
 // ---- M7: SVGF with the SH payload (owner m7-sh) ----------------------------------------------
 function shOptions(st: Record<string, string>, defaults: SpecularSvgfOptions): SpecularSvgfOptions {

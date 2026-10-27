@@ -39,6 +39,8 @@ interface Helpers {
   recurrentOptions(st: Record<string, string>, signal?: 'diffuse' | 'specular'): RecurrentOptions;
   shadowOptions(st: Record<string, string>): ShadowDenoiserOptions;
   shadowLightOf(lights: readonly CaptureLight[] | undefined): ShadowLight | undefined;
+  /** denoisers.ts SVGF_PINNED: the plain-SVGF ids' pinned M1 options */
+  svgfPinned: SpecularSvgfOptions;
 }
 
 /** r32float scalar -> rgba16float (x, x, x, 1), for scalar baselines scored as rgb. */
@@ -77,7 +79,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 /** Plain-sample filter of one sh-* signal (SVGF with the pinned M7 options by default). */
 type MakePlain = (device: GPUDevice, s: string, settings: Record<string, string>) => TemporalDenoiser<object>;
 const svgfPinned = (h: Helpers): MakePlain => (device, s, settings) => {
-  const opts = h.svgfOptions(settings, { antiLag: 'off', youngNormalPower: 0 }); // pinned: package defaults are 'auto' and youngNormalPower 16
+  const opts = h.svgfOptions(settings, h.svgfPinned); // pinned (denoisers.ts SVGF_PINNED): package defaults are 'auto', youngNormalPower 16, normalTest 'soft', f16Rounding 'nearest'
   return s === 'sh-diffuse' ? new DiffuseDenoiser(device, opts) : new SpecularDenoiser(device, opts);
 };
 

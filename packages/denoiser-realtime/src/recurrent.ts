@@ -191,9 +191,10 @@ export interface RecurrentOptions {
   /** @internal Replace every pass by a trivial kernel with the same bindings (SPEC §10.3 skeleton timing). */
   skeleton?: boolean;
   /**
-   * Rounding of values written to the rgba16float buffers: 'store' (default) leaves it to the platform
-   * (Metal truncates toward zero), 'nearest' rounds to nearest-even before every store (src/f16.ts;
-   * diagnostic / candidate option, results/DISTANCE-LONG.md).
+   * Rounding of values written to the rgba16float buffers: 'nearest' rounds to nearest-even before every store
+   * (src/f16.ts), 'store' leaves it to the platform (Metal truncates toward zero). Default 'nearest' since Dennis q25 (a),
+   * 2026-10-27 (rule 9 passed, results/DISTANCE-LONG.md §6); OcclusionDenoiser's recurrent mode keeps 'store' (not in
+   * that A/B).
    */
   f16Rounding?: F16Rounding;
   /** @internal Weight tolerance overrides (sweeps): [geometry A=0, A=1], normal tightening, hit [r=0, r=1, tightening], post-blur [lo, hi, delta], stabilization γ [lo, hi], β. */
@@ -291,7 +292,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
     skeleton: o.skeleton ?? false,
-    f16Rounding: o.f16Rounding ?? 'store',
+    f16Rounding: o.f16Rounding ?? 'nearest', // q25 (a); OcclusionDenoiser's recurrent mode pins 'store'
     tune: {
       geoTolLo: 0.02, geoTolHi: 0.005, normalTight: 0.25,
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,

@@ -77,8 +77,9 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
   if (filter === 'recurrent') {
     const r = rest as Partial<RecurrentOptions>;
     // occlusion defaults (test bed, T5): minimum blur radius 2 px (radiance: 1)
-    // T6's normal test and virtualHitTest were measured on the radiance pipeline only: occlusion keeps the previous values
-    return { filter, signals, o: resolveRecurrent({ normalThreshold: 0, normalTest: 'center', virtualHitTest: false, ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
+    // T6's normal test and virtualHitTest were measured on the radiance pipeline only: occlusion keeps the previous values;
+    // f16Rounding likewise (q25's A/B covered the occlusion SVGF filter, not this mode)
+    return { filter, signals, o: resolveRecurrent({ normalThreshold: 0, normalTest: 'center', virtualHitTest: false, f16Rounding: 'store', ...r, minBlurRadius: r.minBlurRadius ?? 2, remodulate: false }) };
   }
   if (filter !== 'svgf') throw new Error(`OcclusionDenoiser: unknown filter '${filter}'`);
   const { hitDistanceScale = DEFAULT_A, hitDistanceViewScale = DEFAULT_B, ...svgf } = rest as OcclusionCommon & SpecularSvgfOptions;
@@ -87,7 +88,9 @@ function resolveOcclusion(options: OcclusionDenoiserOptions): ResolvedOcclusion 
   // defaults 4 / 5), and a shorter SO history (temporalAlpha 0.3: SO +0.9 dB; AO prefers the default).
   // antiLag inherits SVGF's default 'auto': 'off' was tried as the occlusion default and reverted
   // (results/OCCLUSION-ANTILAG.md: AO contact -0.6 dB, AO flicker +15 %, SO -0.9 dB for -0.2 / -0.8 ms)
-  const base = { sigmaLuminance: 1.5, atrousIterations: 3, youngNormalPower: 0, outputAliasing: false, ...svgf, remodulate: false }; // youngNormalPower: unmeasured on occlusion (TASKS T1 follow-ups)
+  // youngNormalPower: unmeasured on occlusion (TASKS T1 follow-ups); antiLagChroma: q26's A/B (T3) didn't cover AO / SO, and ĥ is
+  // grey. Inherited from SVGF's defaults (measured on AO / SO too): f16Rounding 'nearest' (q25), normalTest 'soft' (q31)
+  const base = { sigmaLuminance: 1.5, atrousIterations: 3, youngNormalPower: 0, antiLagChroma: false, outputAliasing: false, ...svgf, remodulate: false };
   const perSignal = signals.map((k) => resolveOptions(k === 'specular' && svgf.temporalAlpha === undefined ? { ...base, temporalAlpha: 0.3 } : base));
   return { filter, signals, o: perSignal[0], perSignal, hitDistanceScale, hitDistanceViewScale };
 }

@@ -128,7 +128,11 @@ export interface SvgfOptions {
    * 'auto' anti-lag (v2) also detects colour changes (review target 3, results/T3-light-changes.md): the stratum's YCoCg
    * chroma change goes through the same reconstruction, and lambda takes the larger of the luminance and chroma terms.
    * A-SVGF (Schied et al. 2018, sec. 3.1) works with the luminance only, so a light that changes colour at constant
-   * luminance never shortens the history. Default false (luminance only). +4 B / px per signal at 1/9 resolution.
+   * luminance never shortens the history. Default true with antiLag 'auto' (v2) on payload 'radiance' since Dennis q26 (a),
+   * 2026-10-27 (rule 9 passed, results/T3-light-changes.md §6: a colour change clears in 8 / 4 frames instead of 21 / 17,
+   * level elsewhere, +0.06…0.11 ms per signal); false otherwise (it needs 'auto' v2 and payload 'radiance';
+   * OcclusionDenoiser pins false: AO / SO are grey, unmeasured). false = luminance only (A-SVGF). +16 B per 3x3 stratum
+   * (≈ 1.8 B / px) per signal.
    */
   antiLagChroma?: boolean;
   /**
@@ -202,9 +206,11 @@ export interface SvgfOptions {
   /** @internal Test only: f16 packing rounds toward zero (as rgba16float stores do on Metal), for the plain-vs-SH regression. */
   shPackTruncate?: boolean;
   /**
-   * Rounding of values written to the rgba16float textures (history, à-trous ping-pong, output): 'store'
-   * (default) leaves it to the platform (Metal truncates toward zero), 'nearest' rounds to nearest-even
-   * before every store (src/f16.ts; diagnostic / candidate option, results/DISTANCE-LONG.md).
+   * Rounding of values written to the rgba16float textures (history, à-trous ping-pong, output): 'nearest' rounds to
+   * nearest-even before every store (src/f16.ts), 'store' leaves it to the platform (Metal truncates toward zero: every
+   * history sits 0.2–0.7 % dark). Default 'nearest' for payload 'radiance' since Dennis q25 (a), 2026-10-27 (rule 9
+   * passed, results/DISTANCE-LONG.md §6; a no-op where f16 stores already round to nearest); 'store' for payload 'sh'
+   * (unmeasured).
    */
   f16Rounding?: F16Rounding;
   /**
@@ -227,6 +233,9 @@ export interface SvgfOptions {
    * that pass give a short history: its length is capped at 1 + (normalSoftHistory - 1) x their mean normal agreement
    * (0 at normalSoftThreshold, 1 at normalThreshold). Aimed at normal-mapped / densely tessellated surfaces, whose
    * sub-pixel resampling fails the full test and restarts as noise every few frames.
+   * Default 'soft' since Dennis q31 (a), 2026-10-27 (rule 9 passed, results/SVGF-FOLLOWUPS.md §3.3: less boil on moving
+   * views of dense geometry, specular / SO unchanged at normalSoftHistory 1); 'center' is the hard test (payload 'sh'
+   * keeps 'center', the only test it supports).
    */
   normalTest?: NormalTest;
   /** normalTest 'soft': the looser normal cosine of the retried footprint. Default 0.5. */
@@ -353,7 +362,8 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     antiLagVersion,
     antiLagRadius: o.antiLagRadius ?? 1,
     gradientIterations: o.gradientIterations ?? (antiLagVersion === 1 ? 5 : 4),
-    antiLagChroma: o.antiLagChroma ?? false,
+    // q26 (a): on where it can run ('auto' v2, radiance payload; it throws elsewhere)
+    antiLagChroma: o.antiLagChroma ?? (antiLag === 'auto' && antiLagVersion === 2 && o.payload !== 'sh'),
     antiLagGain: Math.max(0, o.antiLagGain ?? 1),
     remodulate: o.remodulate ?? false,
     timestamps: o.timestamps ?? true,
@@ -370,7 +380,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     shDetailNormalStride: Math.max(1, o.shDetailNormalStride ?? 1),
     shSharpen: o.shSharpen ?? 1, // T5 (results/T5-normal-detail.md): 1 passed rule 9 (was 0.75)
     shPackTruncate: o.shPackTruncate ?? false,
-    f16Rounding: o.f16Rounding ?? 'store',
+    f16Rounding: o.f16Rounding ?? (o.payload === 'sh' ? 'store' : 'nearest'), // q25 (a); SH unmeasured
     shPingPacking: o.shPingPacking ?? 'f16',
     specularHistoryScale: o.specularHistoryScale ?? 1,
     specularHistoryCurve: o.specularHistoryCurve ?? 0.5,
@@ -380,7 +390,7 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     reflectionReprojection: o.reflectionReprojection ?? 'surface',
     reflectionHitTest: o.reflectionHitTest ?? false,
     historyFallback: o.historyFallback ?? '3x3',
-    normalTest: o.normalTest ?? 'center',
+    normalTest: o.normalTest ?? (o.payload === 'sh' ? 'center' : 'soft'), // q31 (a); SH supports 'center' only
     normalSoftThreshold: o.normalSoftThreshold ?? 0.5,
     normalSoftHistory: o.normalSoftHistory === undefined || o.normalSoftHistory < 0 ? -1 : Math.max(1, o.normalSoftHistory),
     historyNormal: o.historyNormal ?? 'normal',

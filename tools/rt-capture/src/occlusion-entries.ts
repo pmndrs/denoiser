@@ -7,7 +7,7 @@
 //   occlusion-recurrent        OcclusionDenoiser, recurrent occlusion-only mode (ao + so in shared
 //                              dispatches when both are requested)
 //   occlusion-svgf             OcclusionDenoiser, SVGF on ĥ, antiLag 'off' (pinned: SVGF's default is 'auto' since
-//                              2026-10-25);  occlusion-svgf-auto  the same, antiLag 'auto' (= OcclusionDenoiser's default,
+//                              2026-10-25; normalTest 'center' and f16Rounding 'store' pinned too, q31 / q25);  occlusion-svgf-auto  the same, antiLag 'auto' (= OcclusionDenoiser's default,
 //                              byte-checked; an 'off' default was tried and reverted, results/OCCLUSION-ANTILAG.md)
 //   occlusion-radiance-alpha   AO / SO "for free": the recurrent RADIANCE denoiser (DiffuseDenoiser /
 //                              SpecularDenoiser on radiance + hit distance) and its output alpha (ĥ)
@@ -133,7 +133,9 @@ export function registerOcclusionDenoisers(h: OcclusionRegistryHelpers): void {
   });
   h.register({
     id: 'occlusion-svgf', description: "denoiser/realtime OcclusionDenoiser, SVGF (antiLag 'off') on the normalized hit distance", signals: OCC,
-    create: occlusionEntry({ filter: 'svgf', antiLag: 'off' }, h),
+    // pinned like `svgf` (denoisers.ts SVGF_PINNED minus youngNormalPower, which OcclusionDenoiser pins to 0 itself);
+    // these base keys win over plain URL keys (as antiLag always did here): override with o.normalTest=soft etc.
+    create: occlusionEntry({ filter: 'svgf', antiLag: 'off', normalTest: 'center', f16Rounding: 'store' }, h),
   });
   h.register({
     id: 'occlusion-svgf-auto', description: "denoiser/realtime OcclusionDenoiser, A-SVGF (antiLag 'auto') on the normalized hit distance", signals: OCC,
