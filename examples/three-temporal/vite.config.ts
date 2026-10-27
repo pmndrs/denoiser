@@ -15,8 +15,9 @@ export default defineConfig({
   esbuild: { target: 'esnext' }, // three / TSL use top-level await
   build: {
     target: 'esnext',
-    // pages: the SSR comparison (index), the shadows + SSR scene, and its static/dynamic split experiment
-    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html', 'reflections-rooms': 'reflections-rooms.html', 'realtime-shadows': 'realtime-shadows.html', 'realtime-gi': 'realtime-gi.html', 'realtime-glass': 'realtime-glass.html' } },
+    // pages: the SSR comparison (index), the shadows + SSR scene, and its static/dynamic split experiment; review.html is the
+    // review bench (`yarn review` serves it against the packages' source: vite.review.config.ts)
+    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html', 'reflections-rooms': 'reflections-rooms.html', 'realtime-shadows': 'realtime-shadows.html', 'realtime-gi': 'realtime-gi.html', 'realtime-glass': 'realtime-glass.html', review: 'review.html' } },
   },
   resolve: { dedupe: ['three'] },
   server: { fs: { allow: ['../..'] } },

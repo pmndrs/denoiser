@@ -12,6 +12,11 @@
 //   node run-realtime.mjs bench --page=realtime-gi --signal=specular --view=ours|other   (joint / FFX reflections)
 //        one denoiser per page load, per-pass ms (median / min of 120 frames)
 //   node run-realtime.mjs smoke --page=shadows.html     load any page, report errors only
+//   node run-realtime.mjs review [--port=5262] [--scenes=corner,sponza]
+//        review.html (the review bench; serve it with `yarn review`, port 5262): per scene one page load; screenshots
+//        of every signal and view, options toggled on side B (incl. filter switches and the SH payload) with side A's
+//        nodes checked untouched, a decision preset (q23 / q29 flip tests) with A != B on screen, NaN checks, and the
+//        registry defaults the package resolved differently (reported, not a failure)
 //   node run-realtime.mjs path [--page=realtime-shadows|realtime-gi] [--at=0,20,39,48,63] [--view=split]
 //        screenshots along the scripted camera path (?path=orbit)
 //   node run-realtime.mjs capture [--set=moving] [--windows=name:start:frames,...] [--refShadow=1024]
@@ -271,6 +276,68 @@ async function runPathShots(cdp) {
   }
 }
 
+// The review bench (review.html): one page per scene (the caller loops), see the header.
+async function runReview(cdp, sceneName) {
+  const T = makeT(cdp);
+  const info = await T('window.__t.info');
+  console.log('  ', JSON.stringify(info));
+  results.data[`info-${sceneName}`] = info;
+  check(`${sceneName}: registry loaded`, info.options >= 30 && info.decisions >= 10, `${info.options} options, ${info.decisions} decisions`);
+  const tag = `review-${sceneName}`;
+  await T('window.__t.setModes({ moving: true, view: "split", signal: "lit" })');
+  await T('window.__t.step(30)');
+  savePng(`${tag}-lit-split.png`, await cdp.evalJs('window.__t.capture()'));
+  const fin0 = await T('window.__t.finiteCheck()');
+  check(`${sceneName}: no NaN/Inf, both sides at shipped defaults`, Object.values(fin0).every((r) => r.bad === 0), JSON.stringify(fin0));
+  // side B: options of every filter, the two filter switches and the SH payload; side A must keep its nodes (history)
+  const keysA0 = (await T('window.__t.state()')).keys.A;
+  const toggles = [
+    ['shadows.stepTest', false], ['shadows.floorE', 0], ['shadows.lightMotion', 1], ['svgf.normalTest', 'center'], ['svgf.antiLagChroma', false],
+    ['ao.filter', 'recurrent'], ['gi.filter', 'recurrent'], ['recurrent.historyFix', 'mips'], ['gi.filter', 'svgf'], ['gi.payload', 'sh'], ['sh.shDetailNormalPower', 16],
+  ];
+  for (const [id, v] of toggles) {
+    await T(`window.__t.setOption('B', ${JSON.stringify(id)}, ${JSON.stringify(v)})`);
+    await T('window.__t.step(8)');
+  }
+  const st = await T('window.__t.state()');
+  check(`${sceneName}: B toggles rebuilt only side B`, JSON.stringify(st.keys.A) === JSON.stringify(keysA0), `B = ${JSON.stringify(st.B)}`);
+  for (const sig of ['lit', 'diffuse', 'specular', 'ao', 'shadow']) {
+    await T(`window.__t.setModes({ signal: '${sig}', view: 'split' })`);
+    await T('window.__t.step(20)');
+    savePng(`${tag}-${sig}-split.png`, await cdp.evalJs('window.__t.capture()'));
+  }
+  const fin1 = await T('window.__t.finiteCheck()');
+  check(`${sceneName}: no NaN/Inf after the B toggles (recurrent AO, SH diffuse)`, Object.values(fin1).every((r) => r.bad === 0), JSON.stringify(fin1));
+  for (const v of ['diff', 'A', 'B', 'noisy', 'ref']) {
+    await T(`window.__t.setModes({ view: '${v}' })`);
+    await T(`window.__t.step(${v === 'ref' ? 64 : 10})`);
+    savePng(`${tag}-shadow-${v}.png`, await cdp.evalJs('window.__t.capture()'));
+  }
+  // a decision preset: the q23 / q29 flip tests (A = without, B = with) must show a difference in the shadow signal
+  await T('window.__t.setOption("B", "gi.payload", undefined)');
+  for (const d of ['q23', 'q29']) {
+    await T(`window.__t.loadDecision('${d}', true)`);
+    await T('window.__t.setModes({ signal: "shadow", view: "split", moving: true })');
+    await T('window.__t.step(24)');
+    const diff = await T('window.__t.abDifference()');
+    const s2 = await T('window.__t.state()');
+    results.data[`${sceneName}-${d}`] = { A: s2.A, B: s2.B, meanAbsDiff: diff };
+    // Sponza's free view has almost no sun on screen and no hard contacts: q29 (floorE) can be pixel-identical there
+    const detail = `mean |A - B| ${diff.toFixed(3)} / 255; A ${JSON.stringify(s2.A)} B ${JSON.stringify(s2.B)}`;
+    if (d === 'q23' || sceneName !== 'sponza') check(`${sceneName}: ${d} flip test differs on screen`, diff > 0, detail);
+    else console.log(`  (info) ${sceneName}: ${d} ${detail}`);
+    savePng(`${tag}-${d}-split.png`, await cdp.evalJs('window.__t.capture()'));
+  }
+  await T('window.__t.swap()');
+  await T('window.__t.flip()');
+  await T('window.__t.step(4)');
+  const fin2 = await T('window.__t.finiteCheck()');
+  check(`${sceneName}: no NaN/Inf after swap / flip`, Object.values(fin2).every((r) => r.bad === 0));
+  const live = await T('window.__t.liveDefaults()');
+  results.data[`${sceneName}-liveDefaults`] = live;
+  console.log(live.length ? `  registry defaults the package resolved differently: ${live.map((r) => `${r.id} registry ${r.registry} / package ${r.live}`).join('; ')}` : '  registry defaults match the package');
+}
+
 // The moving-camera capture set (CAPTURES.md): name:start:frames on the 64-frame path of src/realtime/path.ts
 export const CAPTURE_SETS = { moving: 'three-orbit:0:40,three-pan:32:32', 'knot-static': 'three-knot-static:0:48', 'knot-orbit': 'three-knot-orbit:0:40', 'knot-still': 'three-knot-still:0:32' };
 // scripted path (src/realtime/path.ts) of each set; one page load per path
@@ -387,13 +454,33 @@ async function runChunkedCapture(url) {
 
 async function main() {
   setTimeout(() => { console.error('FAILED: timed out'); process.exit(3); }, Number(opt('timeout', 1_800_000))).unref();
-  const page = scenario === 'smoke' ? opt('page', 'shadows.html') : `${opt('page', scenario === 'gi' || scenario === 'capture' ? 'realtime-gi' : 'realtime-shadows').replace(/\.html$/, '')}.html`;
+  const page = scenario === 'smoke' ? opt('page', 'shadows.html') : `${opt('page', scenario === 'gi' || scenario === 'capture' ? 'realtime-gi' : scenario === 'review' ? 'review' : 'realtime-shadows').replace(/\.html$/, '')}.html`;
   const pathQ = `path=${opt('path', SET_PATHS[opt('set', 'moving')] ?? 'orbit')}${SET_SCENES[opt('set', 'moving')] ? `&scene=${SET_SCENES[opt('set', 'moving')]}` : ''}`;
   const extra = [scenario === 'capture' ? `${pathQ}&ref=1` : scenario === 'path' ? pathQ : '', opt('query', '')].filter(Boolean).join('&');
   const url = `http://127.0.0.1:${PORT}/${page}?manual=1${extra ? '&' + extra : ''}`;
   console.log(url);
   if (scenario === 'capture' && opt('chunk')) {
     await runChunkedCapture(url);
+    const json = opt('json');
+    if (json) fs.writeFileSync(json, JSON.stringify(results, null, 1));
+    const failed = results.checks.filter((c) => !c.ok);
+    console.log(failed.length ? `\n${failed.length} check(s) FAILED` : '\nall checks passed');
+    process.exit(failed.length ? 1 : 0);
+  }
+  if (scenario === 'review') {
+    // one page load per scene: a scene switch reloads the bench anyway
+    for (const sc of opt('scenes', 'corner,sponza').split(',')) {
+      const { cdp, close } = await openPage(`${url}&scene=${sc}`);
+      try {
+        const state = await waitReady(cdp);
+        if (!state?.ready) throw new Error(`page not ready (${sc}): ${JSON.stringify(state)}\n${results.logs.join('\n')}`);
+        console.log(`page ${page} ready (scene ${sc})`);
+        await runReview(cdp, sc);
+        const validation = await validationOf(cdp);
+        check(`${sc}: no WebGPU validation errors / exceptions`, validation.length === 0, validation.slice(0, 3).join(' | '));
+      } finally { close(); await sleep(1000); }
+    }
+    if (results.logs.length) console.log('console warnings/errors:\n  ' + [...new Set(results.logs)].slice(0, 12).join('\n  '));
     const json = opt('json');
     if (json) fs.writeFileSync(json, JSON.stringify(results, null, 1));
     const failed = results.checks.filter((c) => !c.ok);

@@ -111,6 +111,12 @@
       "tags": ["real-time (ours)", "three.js"], "deployed": false
     },
     {
+      "id": "three-temporal-review", "section": "realtime", "href": "three-temporal/review.html",
+      "title": "Realtime review bench (internal)",
+      "description": "A/B flip tests of denoiser/realtime options on the corner, the knot, Sponza and Bistro: two configurations side by side, draggable divider, blink, |A - B|, reference; every reviewable option and decision from one registry.",
+      "tags": ["real-time (ours)", "three.js"], "deployed": false
+    },
+    {
       "id": "three-temporal", "section": "realtime", "href": "three-temporal/",
       "title": "three.js SSR: FidelityFX vs recurrentDenoise",
       "description": "three's SSR denoise example with the ffxReflections() TSL node swapped in, split-screen against three's own denoiser.",

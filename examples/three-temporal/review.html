@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - realtime review bench (internal)</title>
+    <style>
+      .dn-page { max-width: 1240px; }
+      h2 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      .rv-stage { position: relative; max-width: 960px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; touch-action: none; cursor: ew-resize; }
+      .rv-tag { position: absolute; top: .5rem; font: 600 1rem var(--dn-mono); padding: .15rem .55rem; border-radius: 6px; background: #000a; color: #fff; pointer-events: none; border: 1px solid #fff4; }
+      .rv-tag.a { left: .5rem; } .rv-tag.b { right: .5rem; }
+      .rv-tag.big { font-size: 2.2rem; padding: .1rem .8rem; }
+      .rv-tag.center { left: 50%; transform: translateX(-50%); right: auto; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: .8rem; box-sizing: border-box; }
+      .caption span { color: var(--dn-accent); }
+      .hint { color: var(--dn-muted); font-size: .82rem; }
+      .rv-keys { color: var(--dn-muted); font-size: .8rem; margin: .4rem 0 0; }
+      .rv-keys kbd { font: .75rem var(--dn-mono); border: 1px solid var(--dn-border-strong); border-radius: 4px; padding: 0 .3em; color: var(--dn-text); }
+      .dn-panel { max-width: 960px; }
+      select { background: var(--dn-inset); color: var(--dn-text); border: 1px solid var(--dn-border); border-radius: 6px; padding: .25rem .4rem; font-size: .85rem; max-width: 100%; }
+      .rv-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: .8rem; }
+      .rv-card { background: var(--dn-panel); border: 2px solid var(--dn-warn); border-radius: 10px; padding: .8rem 1rem; font-size: .9rem; }
+      .rv-card h3 { margin: 0 0 .3rem; font-size: 1rem; }
+      .rv-card .answer { color: var(--dn-muted); font-size: .82rem; margin: 0 0 .5rem; }
+      .rv-card p { margin: .3rem 0; }
+      .rv-card .rv-btns { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+      .rv-card .rv-opts { display: flex; flex-wrap: wrap; gap: .3rem .9rem; margin-top: .5rem; font-size: .85rem; }
+      .rv-card .rv-opts label { display: inline-flex; gap: .35rem; align-items: center; cursor: pointer; }
+      .dn-btn.small { font-size: .8rem; padding: .2rem .55rem; }
+      .rv-sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; margin: .4rem 0 .6rem; }
+      .rv-side { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .55rem .8rem; font-size: .85rem; display: flex; flex-direction: column; gap: .35rem; }
+      .rv-side .row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+      .rv-side .sum { color: var(--dn-muted); font-family: var(--dn-mono); font-size: .75rem; word-break: break-word; }
+      .rv-side b.ms { color: var(--dn-accent); font-family: var(--dn-mono); font-weight: 500; }
+      table.rv-opts { width: 100%; border-collapse: collapse; font-size: .84rem; table-layout: fixed; }
+      table.rv-opts col.c-opt { width: 19%; } table.rv-opts col.c-ab { width: 15%; } table.rv-opts col.c-def { width: 10%; } table.rv-opts col.c-look { width: 41%; }
+      table.rv-opts select { width: 100%; }
+      table.rv-opts th, table.rv-opts td { border-bottom: 1px solid var(--dn-border); padding: .3rem .4rem; text-align: left; vertical-align: top; }
+      table.rv-opts thead th { position: sticky; top: var(--dn-bar-h, 0); background: var(--dn-bg); z-index: 1; color: var(--dn-muted); font-weight: 600; }
+      table.rv-opts tr.group td { background: var(--dn-inset); font-weight: 600; color: var(--dn-accent); padding-top: .55rem; }
+      table.rv-opts tr.differ td { background: #f0b86614; }
+      table.rv-opts tr.differ td.ab { box-shadow: inset 3px 0 0 var(--dn-warn); }
+      table.rv-opts td.key code { font-size: .82rem; }
+      table.rv-opts td { overflow-wrap: anywhere; }
+      table.rv-opts td.ab.override select, table.rv-opts td.ab.override label { outline: 1px solid var(--dn-accent); border-radius: 4px; }
+      table.rv-opts td.look { color: var(--dn-muted); }
+      table.rv-opts td.look .note { color: var(--dn-warn); display: block; margin-top: .15rem; }
+      table.rv-opts .na { color: var(--dn-muted); font-style: italic; font-size: .78rem; display: block; }
+      .badge { display: inline-block; font-size: .7rem; padding: 0 .4rem; border-radius: 999px; border: 1px solid var(--dn-border-strong); color: var(--dn-muted); margin-left: .25rem; white-space: nowrap; }
+      .badge.q { border-color: var(--dn-accent); color: var(--dn-accent); cursor: pointer; }
+      .badge.default { border-color: var(--dn-good); color: var(--dn-good); }
+      .badge.opt-in { border-color: var(--dn-muted); }
+      .badge.open { border-color: var(--dn-warn); color: var(--dn-warn); }
+      .warn { color: var(--dn-warn); font-size: .75rem; display: block; }
+      a.jump, button.jump { color: var(--dn-accent); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; text-decoration: underline; }
+      table.rv-dec { width: 100%; border-collapse: collapse; font-size: .84rem; }
+      table.rv-dec td, table.rv-dec th { border-bottom: 1px solid var(--dn-border); padding: .3rem .4rem; text-align: left; vertical-align: top; }
+      table.rv-dec th { color: var(--dn-muted); }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .8rem 1rem; font-size: .88rem; margin-top: 1rem; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      .tag { display: inline-block; font-size: .75rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--dn-accent); color: var(--dn-accent); vertical-align: middle; }
+      .rv-show { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; font-size: .85rem; margin: .2rem 0 .4rem; }
+      @media (max-width: 760px) { .rv-sidebar { grid-template-columns: 1fr; } table.rv-opts col.c-look { width: 0; } table.rv-opts td.look, table.rv-opts th.look { display: none; } }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+        <h1>Review bench <span class="tag">internal</span></h1>
+        <p class="dn-lede">
+          Two configurations of the real-time denoisers on the same 1-ray inputs: <b>A</b> on the left of the divider,
+          <b>B</b> on the right. Every option below comes from the registry (<code>src/review/options.ts</code>); changing one
+          rebuilds only that side's node and keeps the other side's history. Flip the whole view between A and B with
+          <kbd>F</kbd>, swap the sides with <kbd>X</kbd>, see |A − B| with <kbd>D</kbd>.
+        </p>
+      </header>
+
+      <div class="rv-stage">
+        <canvas id="view" width="960" height="540"></canvas>
+        <span class="rv-tag a" id="tag-a">A</span><span class="rv-tag b" id="tag-b">B</span>
+      </div>
+      <div class="caption"><span id="cap-view">...</span><span id="cap-cost"></span></div>
+
+      <section class="dn-panel" aria-label="view controls" id="rv-controls">
+        <div class="dn-group"><span class="dn-label">Scene</span><div class="dn-seg" id="seg-scene">
+          <button data-v="corner" aria-pressed="false">corner</button><button data-v="knot" aria-pressed="false">knot</button><button data-v="sponza" aria-pressed="false">Sponza</button><button data-v="bistro" aria-pressed="false">Bistro</button>
+        </div></div>
+        <div class="dn-group"><label class="dn-label" for="sel-path">Camera path</label><select id="sel-path"></select></div>
+        <div class="dn-group"><span class="dn-label">Signal</span><div class="dn-seg" id="seg-signal">
+          <button data-v="lit" aria-pressed="false">lit</button><button data-v="diffuse" aria-pressed="false">diffuse</button><button data-v="specular" aria-pressed="false">specular</button><button data-v="ao" aria-pressed="false">AO</button><button data-v="shadow" aria-pressed="false">shadow</button>
+        </div></div>
+        <div class="dn-group"><span class="dn-label">View</span><div class="dn-seg" id="seg-view">
+          <button data-v="split" aria-pressed="false" title="S">split A | B</button><button data-v="A" aria-pressed="false" title="F flips A / B">A</button><button data-v="B" aria-pressed="false" title="F flips A / B">B</button><button data-v="diff" aria-pressed="false" title="D">|A − B|</button><button data-v="ref" aria-pressed="false" title="R">reference</button><button data-v="noisy" aria-pressed="false" title="N">raw</button>
+        </div></div>
+        <div class="dn-group"><label class="dn-label" for="split">Divider</label><input id="split" type="range" min="0" max="1" step="0.005" value="0.5" /></div>
+        <div class="dn-group"><label class="dn-label" for="gain">Difference gain</label><div class="dn-row"><input id="gain" type="range" min="0" max="8" step="1" value="4" /><output class="dn-value" id="gain-v"></output></div></div>
+        <div class="dn-group"><span class="dn-label">Motion &amp; events</span><div class="dn-row">
+          <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="false">moving</button><button data-v="off" aria-pressed="false">paused</button></div>
+          <button class="dn-btn" id="btn-cut" title="K">camera cut</button>
+          <button class="dn-btn" id="btn-colour" title="C">light colour</button>
+          <button class="dn-btn" id="btn-bright" title="L">light step</button>
+          <button class="dn-btn" id="btn-reset" title="0">reset both histories</button>
+          <label class="dn-check"><input type="checkbox" id="chk-blink" /> blink A / B</label>
+        </div></div>
+        <div id="rv-scene-controls" style="display: contents"></div>
+      </section>
+      <p class="rv-keys">Keys: <kbd>F</kbd> flip A / B · <kbd>X</kbd> swap sides · <kbd>S</kbd> split · <kbd>D</kbd> difference · <kbd>R</kbd> reference · <kbd>N</kbd> raw · <kbd>Space</kbd> pause · <kbd>K</kbd> camera cut · <kbd>C</kbd> light colour · <kbd>L</kbd> light step · <kbd>0</kbd> reset histories · <kbd>←</kbd> <kbd>→</kbd> divider · <kbd>B</kbd> blink</p>
+
+      <h2>Flip tests</h2>
+      <div class="rv-cards" id="rv-cards"></div>
+
+      <h2>Options</h2>
+      <div class="rv-sidebar">
+        <div class="rv-side" id="side-A"></div>
+        <div class="rv-side" id="side-B"></div>
+      </div>
+      <div class="rv-show">
+        <label>Show <select id="sel-show"><option value="all">all options</option><option value="differ">only where A and B differ</option><option value="decided">options with a decision id</option><option value="live">options that apply on either side</option></select></label>
+        <label>Decision preset <select id="sel-decision"></select></label>
+        <span class="hint">sets A = without, B = with that change, and jumps to where it shows best</span>
+      </div>
+      <table class="rv-opts" id="rv-table"></table>
+
+      <h2>Decisions</h2>
+      <table class="rv-dec" id="rv-decisions"></table>
+
+      <div class="box">
+        <b>Notes</b>
+        <ul>
+          <li>Both sides denoise the same inputs. SSR (the specular input) reflects the image lit by side A's diffuse and shadows of the previous frame.</li>
+          <li>Every denoiser of both sides runs every frame (so switching signal keeps all histories); the caption shows each side's GPU ms per node.</li>
+          <li>Run with <code>yarn workspace three-temporal review</code>: the bench then uses the denoiser packages' <b>source</b>, so the "package default" checks see today's code. Adding an option: one entry in <code>src/review/options.ts</code> (see <code>docs/research/rt-denoiser/results/REVIEW-BENCH.md</code>).</li>
+          <li>The URL mirrors the state for sharing; the page never needs it. A scene switch reloads the page with the state carried over.</li>
+        </ul>
+      </div>
+
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/review/main.ts"></script>
+  </body>
+</html>

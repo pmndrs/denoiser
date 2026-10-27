@@ -1161,3 +1161,19 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - **A graded history length can win where a relaxed accept test loses.** Keeping full history at another normal (T6
   `'relative'`) smeared Bistro AO by 1.6 dB; keeping 2–4 frames of it where the strict test resets removes the restart noise
   (+0.2 dB, boil −11 %) and smears nothing for long. For reflections even 2 frames lose, so make the cap per signal. — svgf-followups
+
+## Review bench (2026-10-27)
+
+- **The three.js example pages run `packages/denoiser/dist`, which goes stale.** On 2026-10-27 the dist built at 01:31 lacked every later
+  package commit (outputAliasing by default, normalTest 'soft') until the apply-decisions agent rebuilt it at 12:50. The review bench is served by `vite.review.config.ts` (source aliases, `yarn workspace three-temporal
+  review`) and compares the registry's defaults with what each denoiser resolved; for other pages check the dist's mtime
+  against `git log -1 -- packages/denoiser-realtime/src` before trusting a "default" seen on screen. — review-bench
+- **TSL: a `Fn` call used in several `select()` branches can be emitted only in the first branch's scope.** The bench's
+  split view (`select(left, aces(a), aces(b))`, with the same nodes also in the A / B selects) came out black while the A view
+  was fine. `.toVar()` on the tone-mapped values evaluates them once up front. — review-bench
+- **Read a WebGPU canvas back inside the frame callback that drew it.** `drawImage(canvas)` after
+  `await device.queue.onSubmittedWorkDone()` returned an all-zero image (the frame was already presented); drawing right
+  when the render loop resolves the frame promise (as the pages' `capture()` does) works. — review-bench
+- **Pure refactors of a page: byte-compare its manual-stepped screenshots.** `run-realtime.mjs gi` (corner and Sponza)
+  writes byte-identical PNGs run to run on this Mac, so moving the ray WGSL into `src/realtime/rays.ts` was verified by
+  `cmp` over all 28 screenshots before / after. — review-bench

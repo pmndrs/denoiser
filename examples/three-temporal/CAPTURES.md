@@ -205,3 +205,12 @@ path frame, and its reference seeds start at path frame × 4000).
 - While a pose is held for its references the 1-ray signals (already read back) skip their rays, ~20 % of a frame.
 - Missing as on the corner: jitter, `so_ref`, a demodulated / traced specular. New: textures are dropped, so the
   `albedo` guide is flat per material.
+
+## Review bench (`review.html`)
+
+Not a capture tool: the page Dennis A/B-reviews denoiser options on (TASKS rule 12). The same scenes as above (the
+corner, its knot close-ups, Bistro, Sponza) and the same 1-ray inputs (`src/realtime/rays.ts`, shared with
+`realtime-gi.html` and its asset scenes), denoised twice: side A left of the divider, side B right, each with its own
+options from the registry `src/review/options.ts`. `yarn workspace three-temporal review` serves it on port 5262
+against the packages' source; `node run-realtime.mjs review --port=5262` is its headless smoke test. How to use it
+and how to add an option: [results/REVIEW-BENCH.md](../../docs/research/rt-denoiser/results/REVIEW-BENCH.md).
