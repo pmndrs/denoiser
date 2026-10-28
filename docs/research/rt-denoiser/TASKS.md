@@ -1177,6 +1177,16 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       test. Stopped (rule 8). Open: Dennis to decide whether to keep it as an SSR-only opt-in; workbench motion review
       (orbit, guard on vs off) since nothing measures SSR ghosting.
 
+- [ ] (orchestrator, 2026-10-28, Dennis) **Restart reflections from the reflection bench; match FFX first.** Ben's PR #35228
+      work is paused: his scene's boil is three's stochastic SSR march (per-frame step noise + thickness gate 0.03),
+      not our setup, and we tuned against it. On the bench (`reflect-bench.html`, `feat/interior-lab` 9b41e63: Ben's model,
+      environment light only, SSR / traced / hybrid, FSR3), FFX beats our recurrent and SVGF on every input, e.g. model
+      defaults, hybrid, still camera: FFX 0.38, recurrent 0.61, SVGF 0.64, raw 1.17; ours is also ~3 luma brighter (bias).
+      **dropoutGuard paused** (opt-in, default off, tuned on Ben's scene: don't build on it). Findings, the "taint" check
+      (no default changed this session) and the phased plan (0: bench into this branch + headless runner + metrics +
+      timings; 1: find the gap to FFX on traced input; 2: hybrid-aware input contract; 3: beat FFX) are in
+      [results/REFLECT-BENCH.md](results/REFLECT-BENCH.md).
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

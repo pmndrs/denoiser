@@ -1,0 +1,25 @@
+# reflect-bench 9b41e63, still camera, 1400x757 headless, 16 frames ~100 ms apart after 5 s settle; sigma = mean per-pixel temporal std of luma (0-255), crop [40:720, 0:1090]
+## roughness 0 (Ben), FSR3 1.5x unless -nofsr; hyb10/ssr10 = SSR thickness 0.1, 03 = 0.03
+f-rt-raw                   n=16 sigma=  0.24 p99=  3.11 luma=  93.6
+f-rt-ffx                   n=16 sigma=  0.17 p99=  2.20 luma=  94.5
+f-rt-rec                   n=16 sigma=  0.25 p99=  3.47 luma=  94.2
+f-rt-raw-nofsr             n=16 sigma=  0.70 p99= 18.67 luma=  93.7
+f-hyb10-raw                n=16 sigma=  0.69 p99=  7.20 luma=  92.9
+f-hyb10-ffx                n=16 sigma=  0.35 p99=  3.64 luma=  93.5
+f-hyb10-rec                n=16 sigma=  0.60 p99=  6.27 luma=  93.6
+f-ssr10-ffx                n=16 sigma=  0.38 p99=  4.35 luma=  95.9
+f-ssr10-rec                n=16 sigma=  0.68 p99=  7.84 luma=  96.0
+f-hyb03-raw                n=16 sigma=  0.58 p99=  6.26 luma=  93.1
+f-hyb03-ffx                n=16 sigma=  0.33 p99=  3.70 luma=  94.2
+f-hyb03-rec                n=16 sigma=  0.59 p99=  6.35 luma=  93.8
+f-ssr03-ffx                n=16 sigma=  0.30 p99=  3.26 luma= 101.0
+f-ssr03-rec                n=16 sigma=  0.66 p99=  7.79 luma= 100.7
+## model defaults (file roughness), FSR3 1.5x, thickness 0.03
+m-hyb-raw                  n=16 sigma=  1.17 p99= 10.85 luma=  96.1
+m-hyb-ffx                  n=16 sigma=  0.38 p99=  3.67 luma=  95.8
+m-hyb-rec                  n=16 sigma=  0.61 p99=  5.52 luma=  98.7
+m-hyb-svgf                 n=16 sigma=  0.64 p99=  6.31 luma=  98.7
+m-rt-raw                   n=16 sigma=  1.38 p99= 11.62 luma=  94.9
+m-rt-ffx                   n=16 sigma=  0.40 p99=  4.05 luma=  94.8
+m-rt-rec                   n=16 sigma=  0.52 p99=  4.58 luma=  98.3
+m-rt-svgf                  n=16 sigma=  0.59 p99=  6.06 luma=  98.5
