@@ -1155,6 +1155,23 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the contiguous workgroup tiles and the shared depth weight should carry over byte-identically (packed colours are already
       u32 there). Not done (the SH payload is not a shipped default). — found by svgf-cost, owner `packages/denoiser-realtime`
 
+- [x] (shadow-bench, worktree `Denoiser-shadow-bench`, branch `feat/shadow-bench`; results/SHADOW-BENCH.md) **Shadow bench**
+      (Dennis, 2026-10-27: the rotating knot's shadow "isn't solid", FFX's is): `three-temporal/shadow-bench.html` (`yarn
+      workspace three-temporal shadow-bench`, port 5266) pauses the knot scene and compares each frame with a 4096-ray
+      ground truth (common random numbers, cached on disk by what it depends on); variant B takes any ShadowDenoiser option
+      and replays to the paused frame; `shadow-bench.mjs` runs / lists / compares headless. Runs are byte-identical run to
+      run. First numbers: ours 3–4× lower umbra RMSE (FFX's umbra is the greyer one), but per-pixel penumbra boil +9…+76 %
+      over FFX in every view (largest at 4× knot speed and with a small light). — found by shadow-bench
+- [ ] Shadows: visible flicker on still / slow scenes (results/SHADOW-BENCH.md, 2026-10-28). On realtime-shadows' paused
+      wide shot ours flickers 4–6× FFX (pixels changing ≥ 4 display levels per frame: 0.091 % vs 0.016 %) though its
+      per-pixel boil RMS is lower, which is why compare.mjs never flagged it. Candidates: A `historyScale 0, clampSigma 0.8,
+      antiLagGain 0, maxHistory 31` (FFX's flicker, lags on the moving knot's surface), B `historyScale 0, clampSigma 1.2`
+      (half the flicker, no loss in the shadow, knot surface +12…43 %). Next: rule 9 A/B with a flicker-share column added to compare.mjs, moving-camera
+      captures above all, then review-bench entries (rule 12) — found by shadow-bench, owner shadows
+- [ ] Shadow bench: moving-camera mode (a camera path in the timeline + motion-compensated boil, compare.mjs' reprojected
+      history). realtime-shadows' default view orbits, so camera-motion boil may be what Dennis sees there; the bench scores
+      a still camera only — found by shadow-bench, owner tooling
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

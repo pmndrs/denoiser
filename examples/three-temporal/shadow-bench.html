@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - shadow bench (internal)</title>
+    <style>
+      .dn-page { max-width: 1240px; }
+      h2 { font-size: 1.05rem; margin: 1.2rem 0 .4rem; }
+      h3 { font-size: .95rem; margin: 1rem 0 .4rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      .sb-muted { color: var(--dn-muted); font-size: .82rem; }
+      .sb-stage { position: relative; max-width: 960px; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; background: #000; }
+      .sb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      #frozen { display: none; image-rendering: pixelated; cursor: zoom-in; transition: transform .08s; }
+      .sb-stage.frozen #frozen { display: block; }
+      .sb-stage.zoom #frozen { transform: scale(4); cursor: zoom-out; }
+      #stage-tag { display: none; position: absolute; top: .5rem; left: .5rem; font: 600 .95rem var(--dn-mono); padding: .15rem .55rem; border-radius: 6px; background: #000b; color: #fff; pointer-events: none; border: 1px solid #fff4; }
+      .sb-stage.frozen #stage-tag { display: block; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: .6rem; box-sizing: border-box; }
+      .caption span { color: var(--dn-accent); }
+      #frozen-bar { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; margin: 0 0 .5rem; max-width: 960px; }
+      .sb-cols { display: grid; grid-template-columns: minmax(0, 960px) minmax(260px, 1fr); gap: 1rem; align-items: start; }
+      @media (max-width: 1100px) { .sb-cols { grid-template-columns: 1fr; } }
+      .dn-panel { max-width: none; }
+      select, input[type=number], .sb-label-in, textarea { background: var(--dn-inset); color: var(--dn-text); border: 1px solid var(--dn-border); border-radius: 6px; padding: .2rem .35rem; font-size: .82rem; max-width: 100%; box-sizing: border-box; }
+      input[type=number] { width: 5.5rem; }
+      .sb-num { display: inline-flex; flex-direction: column; gap: .1rem; margin-right: .3rem; }
+      .sb-tune-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .3rem .5rem; margin-top: .4rem; }
+      .sb-tune-grid label { display: flex; flex-direction: column; font-size: .75rem; color: var(--dn-muted); }
+      .sb-tune-grid select, .sb-tune-grid input { width: 100%; }
+      .sb-json { display: flex; flex-direction: column; font-size: .75rem; color: var(--dn-muted); margin-top: .4rem; }
+      .sb-json textarea { font: .78rem var(--dn-mono); width: 100%; }
+      .sb-table { border-collapse: collapse; font-size: .82rem; margin: .3rem 0 .6rem; font-variant-numeric: tabular-nums; }
+      .sb-table th, .sb-table td { border: 1px solid var(--dn-border); padding: .2rem .45rem; text-align: right; }
+      .sb-table thead th { font-weight: 600; cursor: help; }
+      .sb-table tbody th { text-align: left; font-weight: 600; }
+      .sb-table .sb-best { color: #6fdc8c; font-weight: 700; }
+      .sb-table .sb-floor td, .sb-table .sb-floor th, .sb-table .sb-noisy td, .sb-table .sb-noisy th { color: var(--dn-muted); }
+      .sb-table .sb-sep td, .sb-table .sb-sep th { border-top: 2px solid var(--dn-border-strong); }
+      .sb-small { font-size: .76rem; }
+      .sb-variants { font: .78rem var(--dn-mono); margin: .2rem 0 .6rem; padding-left: 1.1rem; }
+      .sb-viewer-bar { display: flex; flex-wrap: wrap; gap: .4rem .8rem; align-items: center; margin: .3rem 0 .5rem; }
+      .sb-viewer { position: relative; max-width: 960px; overflow: hidden; border: 1px solid var(--dn-border); border-radius: 8px; background: #000; cursor: zoom-in; }
+      .sb-viewer img { display: block; width: 100%; image-rendering: pixelated; }
+      .sb-viewer.zoom img { transform: scale(4); }
+      .sb-viewer.zoom { cursor: zoom-out; }
+      .sb-tag { position: absolute; top: .5rem; left: .5rem; font: 600 .9rem var(--dn-mono); padding: .15rem .55rem; border-radius: 6px; background: #000b; color: #fff; pointer-events: none; border: 1px solid #fff4; }
+      details summary { cursor: pointer; font-size: .88rem; margin: .4rem 0; }
+      body.sb-report-mode .sb-live { display: none; }
+      #status { white-space: pre-wrap; font-size: .8rem; color: var(--dn-muted); margin: .4rem 0; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+        <h1>Shadow bench <span class="sb-muted">(internal)</span></h1>
+        <p class="dn-lede sb-live">
+          The torus knot of <a href="realtime-shadows.html?path=knot-static">realtime-shadows</a> turns under the big soft area light;
+          its 1-ray shadow goes to FidelityFX's <code>ffxShadows()</code> and our <code>realtimeShadows()</code> (and an optional variant B with your options).
+          <b>Pause</b> and the frame is compared with its ground truth. <b>Run bench</b> scores a warmed-up sequence: umbra solidity,
+          per-pixel and blotchy boil, temporal error. How-to: <code>docs/research/rt-denoiser/results/SHADOW-BENCH.md</code>.
+        </p>
+      </header>
+      <pre id="status">loading…</pre>
+      <div class="sb-live">
+        <div class="sb-cols">
+          <div>
+            <div id="frozen-bar"></div>
+            <div class="sb-stage"><canvas id="view" width="960" height="540"></canvas><canvas id="frozen"></canvas><span id="stage-tag"></span></div>
+            <div class="caption"><span id="cap-frame">…</span><span id="cap-cost"></span></div>
+            <div id="frozen-stats"></div>
+          </div>
+          <section class="dn-panel" id="panel" aria-label="controls"></section>
+        </div>
+      </div>
+      <section id="report"></section>
+    </div>
+    <script type="module" src="./src/shadow-bench/main.ts"></script>
+  </body>
+</html>

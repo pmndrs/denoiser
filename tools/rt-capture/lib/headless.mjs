@@ -160,9 +160,10 @@ export async function waitForState(cdp, stateVar, { timeoutMs = 45 * 60_000, int
 /**
  * Make sure a Vite dev server answers at `base`. If it doesn't, start one for `root`
  * (`node <vite>/bin/vite.js <root> --port <port> --strictPort --host 127.0.0.1`, no shell)
- * and return { base, stop } (stop() kills only a server this call started).
+ * and return { base, stop } (stop() kills only a server this call started). `args`: more vite CLI arguments
+ * (e.g. ['--config', 'vite.bench.config.ts']).
  */
-export async function ensureVite({ root, base, timeoutMs = 60000, log = console.log }) {
+export async function ensureVite({ root, base, timeoutMs = 60000, log = console.log, args = [] }) {
   const up = async () => { try { return (await fetch(base)).ok; } catch { return false; } };
   if (await up()) return { base, started: false, stop: async () => {} };
   const u = new URL(base);
@@ -171,7 +172,7 @@ export async function ensureVite({ root, base, timeoutMs = 60000, log = console.
   const pkg = JSON.parse(readFileSync(pkgFile, 'utf8'));
   const bin = path.join(path.dirname(pkgFile), typeof pkg.bin === 'string' ? pkg.bin : pkg.bin.vite);
   log(`starting vite for ${root} on ${base}`);
-  const child = spawn(process.execPath, [bin, path.resolve(root), '--port', u.port || '80', '--strictPort', '--host', u.hostname], {
+  const child = spawn(process.execPath, [bin, path.resolve(root), '--port', u.port || '80', '--strictPort', '--host', u.hostname, ...args], {
     stdio: ['ignore', 'pipe', 'pipe'], env: process.env,
   });
   let out = '';

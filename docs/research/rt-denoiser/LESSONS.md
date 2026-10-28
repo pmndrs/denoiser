@@ -1191,3 +1191,24 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
 - **The test bed can't byte-check `normalTest: 'soft'`**: its smooth geometry never trips the hard normal test, so the
   soft branch never runs there. Include a dense real capture (bistro-orbit) in any byte check of history-test defaults.
   — apply-decisions
+
+## Shadow bench (2026-10-27)
+
+- **three advances per-frame nodes only when the node frame does.** `TemporalDenoiseNode` dispatch and `AccumulateNode`
+  are `FRAME` updates, and the node frame advances in `renderer.setAnimationLoop`'s tick, not per `render()`. Calling
+  `pipeline.render()` twice in one tick runs them once. A bench that wants N frames fast ticks by hand:
+  `renderer._nodes.nodeFrame.update(); renderer.info.reset(); pipeline.render()` (src/shadow-bench/engine.ts). Separate
+  `RenderPipeline`s sharing the scene pass decide per tick what dispatches. — shadow-bench
+- **A converged reference whose jitter depends on the frame has its own temporal noise.** The pages' references seed
+  with the frame, so two consecutive 4096-ray references differ by their noise, which looks like boil. Seeding with
+  (pixel, stratum) only gives every frame the same samples: a static pixel's reference is then bit-for-bit constant and
+  temporal metrics measure the denoiser. Also mask the moving object's own pixels (velocity ≠ 0): before that mask the
+  reference "boiled" as much as the denoisers. — shadow-bench
+- **Keep a GPU pass near 64 shadow rays per pixel at 960×540**, one pass in flight at a time: 256 rays / pixel per pass
+  with two passes queued lost the device. — shadow-bench
+- **A slow shadow changes by less than any per-burst threshold.** The knot's wall shadow moves ~0.0005 per frame at the
+  page's rate, so "moving = changed by > 0.01 within 3 frames" found 290 pixels, all on the pedestal's grazing top edge.
+  Classify motion by rate per frame. — shadow-bench
+- **zsh doesn't word-split `$var`.** `for a in "--x=1 --y=2"; do node … $a; done` passes one argument, and the bench
+  then read `knotRate` as NaN. Use `${=a}`. The bench's config now rejects non-finite numbers. — shadow-bench
+

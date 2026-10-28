@@ -117,6 +117,12 @@
       "tags": ["real-time (ours)", "three.js"], "deployed": false
     },
     {
+      "id": "three-temporal-shadow-bench", "section": "realtime", "href": "three-temporal/shadow-bench.html",
+      "title": "Shadow bench (internal)",
+      "description": "The rotating knot's soft shadow, paused and compared with a 4096-ray ground truth: realtimeShadows() vs ffxShadows() (plus a tuned variant), umbra solidity, per-pixel and blotchy boil, temporal error; headless runs and saved reports. Serve with `yarn workspace three-temporal shadow-bench` for the ground-truth cache.",
+      "tags": ["real-time (ours)", "real-time FFX", "three.js"], "deployed": false
+    },
+    {
       "id": "three-temporal", "section": "realtime", "href": "three-temporal/",
       "title": "three.js SSR: FidelityFX vs recurrentDenoise",
       "description": "three's SSR denoise example with the ffxReflections() TSL node swapped in, split-screen against three's own denoiser.",

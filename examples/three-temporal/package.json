@@ -8,7 +8,8 @@
     "dev": "vite --port 5220 --strictPort --host 127.0.0.1",
     "build": "vite build",
     "check": "node run-headless.mjs",
-    "review": "vite --config vite.review.config.ts --port 5262 --strictPort --host 127.0.0.1"
+    "review": "vite --config vite.review.config.ts --port 5262 --strictPort --host 127.0.0.1",
+    "shadow-bench": "vite --config vite.bench.config.ts --port 5266 --strictPort --host 127.0.0.1"
   },
   "dependencies": {
     "@pmndrs/upscaler": "0.5.0",
