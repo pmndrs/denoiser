@@ -177,6 +177,7 @@ async function main() {
   });
   const tags = {} as Record<Name, HTMLElement>;
   const cards = {} as Record<Name, HTMLElement>;
+  const collapsed: Record<Name, boolean> = { A: false, B: false, C: false };
   for (const n of NAMES) {
     tags[n] = Object.assign(document.createElement('div'), { className: 'tag' });
     cards[n] = Object.assign(document.createElement('div'), { className: 'card' });
@@ -215,11 +216,13 @@ async function main() {
       const c = panes[n].cfg;
       const combined = c.spec.startsWith('combined');
       const res = c.resolve === 'fsr' ? `FSR3 ${c.ratio === 1 ? 'native' : `${c.ratio}×`}${c.jitter ? '' : ', no jitter'}` : c.resolve === 'traa' ? 'Ben TRAA' : 'no resolver';
-      tags[n].textContent = `${n} · ${c.tracer === 'ben' ? 'Ben SSR → ' : ''}${SPEC[c.spec].label}${combined ? '' : ` · GI: ${DIFF[c.diff].label}`} · AO: ${c.aoDenoise} · ${res}`;
+      tags[n].textContent = `${n} · ${c.tracer === 'ben' ? 'Ben SSR → ' : ''}${SPEC[c.spec].label}${combined ? '' : ` · GI: ${shared.ssgi ? DIFF[c.diff].label : 'off'}`} · AO: ${c.aoDenoise} · ${res}`;
       const block = (title: string, b: { label: string; text: string; watch?: string }) =>
         `<h4>${esc(title)}: ${esc(b.label)}</h4><div>${esc(b.text)}</div>${b.watch ? `<div class="watch">${esc(b.watch)}</div>` : ''}`;
-      cards[n].innerHTML = `<span class="ms" data-ms></span>${block('Tracer', TRACER[c.tracer])}${block('SSR', SPEC[c.spec])}${combined ? '' : block('SSGI', DIFF[c.diff])}${block('Resolver', RESOLVE[c.resolve])}`
-        + (c.resolve === 'fsr' ? `<div class="watch">render ${Math.round(100 / c.ratio)} % · denoisers ${c.jitterAware ? 'see' : 'do not see'} the jitter · SSGI pattern ${c.ssgiRotate ? 'rotating' : 'static'}</div>` : '');
+      cards[n].classList.toggle('collapsed', collapsed[n]);
+      cards[n].innerHTML = `<button data-act="hide">${collapsed[n] ? 'show' : 'hide'}</button><span class="ms" data-ms></span><div class="body">${block('Tracer', TRACER[c.tracer])}${block('SSR', SPEC[c.spec])}${combined ? '' : shared.ssgi ? block('SSGI', DIFF[c.diff]) : block('SSGI', { label: 'off', text: 'SSGI (and its AO) is off in this scene; turn it on under Scene.' })}${block('Resolver', RESOLVE[c.resolve])}`
+        + (c.resolve === 'fsr' ? `<div class="watch">render ${Math.round(100 / c.ratio)} % · denoisers ${c.jitterAware ? 'see' : 'do not see'} the jitter · SSGI pattern ${c.ssgiRotate ? 'rotating' : 'static'}</div>` : '') + '</div>';
+      cards[n].querySelector('[data-act=hide]')!.addEventListener('click', () => { collapsed[n] = !collapsed[n]; renderCards(); });
     }
     renderTimings();
     layout();
@@ -241,6 +244,7 @@ async function main() {
     else if (k === 'f') ui.show = v[(v.indexOf(ui.show as Name) + 1) % v.length];
     else if (['1', '2', '3'].includes(k) && +k <= v.length) ui.show = v[+k - 1];
     else if (k === 'o') ui.orbit = !ui.orbit;
+    else if (k === 'i') ui.cards = !ui.cards;
     else if (k === '0') resetAll();
     else return;
     refreshGUI();
@@ -293,7 +297,7 @@ async function main() {
   cmp.add(shared, 'view', inv(VIEWS)).name('view').onChange(rebuildAll);
   cmp.add(ui, 'orbit').name('auto orbit (O)');
   cmp.add(ui, 'orbitSpeed', 0.1, 6, 0.1).name('orbit speed');
-  cmp.add(ui, 'cards').name('explainer cards').onChange(layout);
+  cmp.add(ui, 'cards').name('explainer cards (I)').onChange(layout);
   cmp.add(ui, 'pixelRatio', { '1 (CSS pixels)': 1, 'device': window.devicePixelRatio }).name('canvas resolution').onChange((v: string | number) => { ui.pixelRatio = +v; resize(); });
   cmp.add({ resetAll }, 'resetAll').name('reset all histories (0)');
 
@@ -322,7 +326,9 @@ async function main() {
       Off: DebugView.None, 'Motion vectors': DebugView.MotionVectors, Disocclusion: DebugView.Disocclusion,
       'Accumulation age': DebugView.AccumulationAge, Locks: DebugView.Locks, 'Shading change': DebugView.ShadingChange,
     }).name('FSR3 debug view');
-    f.add(live, 'dropoutGuard').name('recurrent: SSR dropout guard').onChange(changed);
+    const missCtl = f.add(live, 'missZero').name('SSR misses pass hit distance 0').onChange(changed);
+    // the guard tells a miss from a hit by hit distance 0, so ticking it ticks that too
+    f.add(live, 'dropoutGuard').name('recurrent: SSR dropout guard').onChange((v: boolean) => { if (v && !live.missZero) { live.missZero = true; missCtl.updateDisplay(); } changed(); });
     f.add(live, 'benTraversal', { 'Hi-Z adaptive (his default)': 'adaptive', 'Hi-Z conservative': 'conservative', 'linear march': 'linear' }).name('Ben tracer traversal');
     const cov = f.addFolder('Ben CoverageDenoiseNode').close();
     cov.add(live, 'covRadius', 0, 3, 0.05).name('SSR radius (texels)');

@@ -71,6 +71,8 @@ Per-pane options:
 | Resolver | FSR3 (ratio 1 / 1.5 / 2, jitter on / off) · Ben's TRAA · none |
 | Denoisers see the jitter | `TemporalDenoiseNode` `ignoreViewOffset`. On (the default): reproject without the FSR3 jitter. Off: the #10 setup. |
 | SSGI pattern | rotating or static (three's `useTemporalFiltering`) |
+| SSR misses pass hit distance 0 | Probe / environment fills reach the denoisers as hit distance 0 (denoiser-realtime's miss) instead of 100. Ben's tracer: a miss below coverage 0.5. The recurrent `dropoutGuard` needs it (ticking the guard ticks this). |
+| recurrent: SSR dropout guard | The recurrent specular filter's opt-in `dropoutGuard` (experimental, `results/DROPOUT-GUARD.md` on the cleanroom branch). |
 | FSR3 | RCAS denoise, debug views |
 
 Views: beauty (resolved), and the denoised specular / GI / AO or their noisy inputs before the resolver.

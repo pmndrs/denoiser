@@ -164,10 +164,10 @@ export interface RecurrentOptions {
   virtualHitTest?: boolean;
   /**
    * Specular low-roughness dropout guard (our design; shaders/recurrent.ts `DropoutGuard`). The detector, its floor
-   * and the history-fix window treat a mirror as clean input; where the 3x3 mixes screen-space hits with far fills
-   * (probe / environment misses, wide ĥ spread) they act as for a rough surface instead, so the history survives the
-   * hit/miss flicker. Neighbourhoods without that mix compute exactly as before. Default false (rule 9: an option until
-   * its A/B); compiled in only when true. Radiance specular only.
+   * and the history-fix window treat a mirror as clean input; where a pixel keeps flipping between a screen-space hit
+   * and a miss (pass probe / environment fills as hit distance 0) inside a 3x3 that holds both, they act as for a rough
+   * surface instead, so the history survives the hit/miss flicker. Elsewhere it computes exactly as before. Default
+   * false (rule 9: an option until its A/B); compiled in only when true. Radiance specular only.
    */
   dropoutGuard?: boolean;
   /**
@@ -229,7 +229,7 @@ export interface RecurrentTune {
   /** virtualHitTest tolerance: a × the virtual ĥ tolerance + b × the 3x3 ĥ spread (compiled in) */
   virtHitTestA: number;
   virtHitTestB: number;
-  /** dropoutGuard: smoothstep edges on the 3x3 ĥ spread (compiled in) */
+  /** dropoutGuard: smoothstep edges on the per-pixel hit / miss flip EMA (compiled in) */
   dropoutLo: number;
   dropoutHi: number;
 }
@@ -310,7 +310,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
       postLo: 0.5, postHi: 2.0, postDelta: 0.3,
       stabGammaLo: 1, stabGammaHi: 3, stabBeta: 0.02,
-      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1, virtHitTestA: 2, virtHitTestB: 1, dropoutLo: 0.05, dropoutHi: 0.15,
+      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1, virtHitTestA: 2, virtHitTestB: 1, dropoutLo: 0.1, dropoutHi: 0.3,
       ...o.tune,
     },
   };

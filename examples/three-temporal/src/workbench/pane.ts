@@ -55,6 +55,12 @@ export interface PaneConfig {
   fsrDebug: number;
   /** Our recurrent specular filter's dropoutGuard option (hit / far-fill flicker on low-roughness surfaces). */
   dropoutGuard: boolean;
+  /**
+   * Hit distance the probe / environment fills pass to the denoisers: false = 100 (a far hit, as reflections-rooms),
+   * true = 0 (denoiser-realtime's miss convention, which dropoutGuard needs to tell a miss from a hit).
+   * Ben's tracer: a pixel counts as a miss below coverage 0.5.
+   */
+  missZero: boolean;
   /** Extra options for our specular denoiser (scripts and ablations only; not in the GUI). */
   specExtra?: Record<string, unknown>;
   /** Ben's tracer: his Hi-Z traversal ('adaptive', his examples' default), 'conservative', or linear marching. */
@@ -67,7 +73,7 @@ export interface PaneConfig {
 
 export const defaultPane = (o: Partial<PaneConfig> = {}): PaneConfig => ({
   tracer: 'three', spec: 'recurrent', diff: 'svgf', aoDenoise: 'svgf', resolve: 'fsr', ratio: 1.5, jitter: true, jitterAware: true,
-  ssgiRotate: true, rcasDenoise: true, fsrDebug: DebugView.None, covRadius: 3, covGiRadius: 1.5, covMaxFrames: 16, benTraversal: 'adaptive', dropoutGuard: false, ...o,
+  ssgiRotate: true, rcasDenoise: true, fsrDebug: DebugView.None, covRadius: 3, covGiRadius: 1.5, covMaxFrames: 16, benTraversal: 'adaptive', dropoutGuard: false, missZero: false, ...o,
 });
 
 /** Settings every pane shares (uniforms, so changing them rebuilds nothing). */
@@ -217,7 +223,7 @@ export class Pane {
         const g = ggxLobeSample(s.N, V, rough(), alb.a, alb.rgb, pixelSeed(sh.frame, 0));
         If(traced(), () => {
           If(ssrNode.a.greaterThan(0).and(ssrNode.a.lessThan(1e3)), () => { o.assign(ssrNode); })
-            .Else(() => { o.assign(clampSample(vec4(sampleReflectionProbes(ws.probes, s.P, g.dir, float(0)).mul(g.weight), 100), rough())); });
+            .Else(() => { o.assign(clampSample(vec4(sampleReflectionProbes(ws.probes, s.P, g.dir, float(0)).mul(g.weight), cfg.missZero ? 0 : 100), rough())); });
         });
         return o;
       })());
@@ -260,7 +266,8 @@ export class Pane {
         If(traced(), () => {
           const c = covIn.sample(uv());
           const d = covHit.sample(uv());
-          o.assign(vec4(c.rgb.mul(specBRDF()).mul(c.a).add(probeSpec().mul(c.a.oneMinus())), d.lessThan(1e3).select(d, float(100))));
+          const h = cfg.missZero ? c.a.greaterThanEqual(0.5).and(d.lessThan(1e3)).select(d, float(0)) : d.lessThan(1e3).select(d, float(100));
+          o.assign(vec4(c.rgb.mul(specBRDF()).mul(c.a).add(probeSpec().mul(c.a.oneMinus())), h));
         });
         return o;
       })());
