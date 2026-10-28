@@ -122,3 +122,18 @@ no reason to turn it on.
 
 **Untested:** SSR under camera or object motion (the workbench has no reference). That needs a visual review with
 orbit on, guard on vs off.
+
+### v2 with a resolver (workbench, Ben's mirrors, his tracer with conservative Hi-Z, still camera)
+The tables above have the resolver off, to show the denoiser alone. With the workbench's resolvers on:
+
+| | resolver off | FSR3 1.5× | Ben's TRAA |
+|---|---|---|---|
+| raw | 3.71 | 0.68 | – |
+| recurrent | 2.50 | 0.58 | 0.56 |
+| recurrent + dropoutGuard v2 | 1.03 | 0.42 | 0.36 |
+| FFX port | 0.72 | 0.36 | – |
+| Ben's CoverageDenoiseNode | 0.38 | – | 0.28 |
+
+- **The resolver does most of the work:** raw input goes from 3.71 to 0.68 with FSR3 alone.
+- **The denoiser sets the residual:** without the guard, recurrent adds little over raw under FSR3 (0.68 → 0.58). The
+  guard closes about half of the remaining gap to FFX.
