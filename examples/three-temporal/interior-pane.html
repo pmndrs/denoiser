@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Denoiser Lab pane</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<!-- one pane of interior-lab.html (opened on its own it runs Ben's preset). example.css is served from the
+		     three.js checkout (vite.interior.config.ts: publicDir) -->
+		<link type="text/css" rel="stylesheet" href="example.css">
+	</head>
+	<body>
+		<div id="info">
+			<a href="https://threejs.org/" target="_blank" rel="noopener" class="logo-link"></a>
+			<div class="title-wrapper"><a href="https://threejs.org/" target="_blank" rel="noopener">three.js</a><span>Interior · Denoiser Lab</span></div>
+			<small>Ben Houston's interior example (SSGI, SSR, probes, GTAO).<br />Scene by <a href="https://ben3d.ca" target="_blank" rel="noopener">Ben Houston</a><br /><span id="status"></span></small>
+		</div>
+		<script type="module" src="./src/interior-lab/interior.js"></script>
+	</body>
+</html>

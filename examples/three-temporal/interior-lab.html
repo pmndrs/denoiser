@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Denoiser Lab</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<style>
+			html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+			/* every pane fills the window; a clip-path reveals its part (src/interior-lab/shell.ts) */
+			#stage, .pane { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
+			.divider { position: fixed; top: 0; bottom: 0; width: 0; border-left: 1px solid rgba(255,255,255,.7); z-index: 5; pointer-events: none; }
+			.divider .grip { position: absolute; top: 50%; left: -16px; width: 32px; height: 44px; margin-top: -22px; border-radius: 6px;
+				background: rgba(20,20,24,.85); border: 1px solid rgba(255,255,255,.5); cursor: ew-resize; pointer-events: auto;
+				color: #fff; font: 600 11px/44px system-ui, sans-serif; text-align: center; user-select: none; touch-action: none; }
+			.tag { position: fixed; top: 96px; z-index: 5; transform: translateX(-50%); max-width: 30vw; overflow: hidden; text-overflow: ellipsis;
+				white-space: nowrap; padding: 3px 8px; border-radius: 4px; background: rgba(20,20,24,.85); color: #fff;
+				font: 600 12px system-ui, sans-serif; pointer-events: none; }
+			.card { position: fixed; bottom: 8px; z-index: 6; max-height: 36vh; overflow: auto; padding: 10px 12px; box-sizing: border-box;
+				border-radius: 8px; background: rgba(16,16,20,.88); color: #ddd; font: 12px/1.45 system-ui, sans-serif;
+				border: 1px solid rgba(255,255,255,.15); }
+			.card h3 { margin: 0 0 2px; font-size: 13px; color: #fff; }
+			.card h4 { margin: 8px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #9ab; }
+			.card ol, .card ul { margin: 0; padding-left: 18px; }
+			.card .origin { color: #999; font-size: 11px; }
+			.card .ms { display: block; color: #9c9; font-size: 11px; font-variant-numeric: tabular-nums; }
+			.card .pro li::marker { content: '+  '; color: #7c7; }
+			.card .con li::marker { content: '−  '; color: #d77; }
+			.card.collapsed .body { display: none; }
+			.card button { float: right; margin-left: 6px; background: none; border: 1px solid #555; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 11px; }
+			#lesson { position: fixed; left: 50%; transform: translateX(-50%); top: 128px; z-index: 7; width: min(560px, 90vw); box-sizing: border-box;
+				padding: 10px 14px; border-radius: 8px; background: rgba(30,40,60,.92); color: #eef; font: 12px/1.5 system-ui, sans-serif; }
+			#lesson h3 { margin: 0 0 4px; font-size: 13px; }
+			#lesson button { position: absolute; right: 8px; top: 8px; background: none; border: 0; color: #ccd; cursor: pointer; font-size: 14px; }
+			.lil-gui.root { z-index: 8; --width: 330px; max-height: 100vh; overflow: auto; }
+			.lil-gui.root.left { right: auto; left: 15px; top: 120px; max-height: calc(100vh - 130px); }
+			.lil-gui .controller.function button { height: auto; min-height: var(--widget-height); }
+			.lil-gui .controller.function button .name { white-space: normal; line-height: 1.3; padding: 3px 0; }
+		</style>
+	</head>
+	<body>
+		<!-- panes: Ben Houston's interior example, one copy per denoiser setup (interior-pane.html) -->
+		<div id="stage"></div>
+		<div id="lesson" style="display: none"></div>
+		<script type="module" src="./src/interior-lab/shell.ts"></script>
+	</body>
+</html>
