@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - workbench: SSR + SSGI + probes + FSR3</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #ddd; font: 12px/1.45 system-ui, sans-serif; }
+      /* every pane's canvas fills the stage; a clip-path reveals its part (src/workbench/main.ts) */
+      #stage { position: fixed; inset: 0; }
+      canvas.pane, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      #overlay { touch-action: none; cursor: grab; }
+      #overlay:active { cursor: grabbing; }
+      .divider { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid #ffffffb0; pointer-events: none; z-index: 2; }
+      .divider .grip { position: absolute; top: 50%; left: -16px; width: 32px; height: 40px; margin-top: -20px; border-radius: 6px; background: #141418e0;
+        border: 1px solid #ffffff80; cursor: ew-resize; pointer-events: auto; color: #fff; font: 600 11px/40px system-ui; text-align: center; user-select: none; touch-action: none; }
+      .tag { position: absolute; top: 10px; transform: translateX(-50%); max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2;
+        padding: 3px 8px; border-radius: 4px; background: #141418e0; color: #fff; font-weight: 600; pointer-events: none; }
+      .card { position: absolute; bottom: 8px; max-height: 32vh; overflow: auto; box-sizing: border-box; padding: 8px 11px; border-radius: 8px; z-index: 2;
+        background: #101014e0; border: 1px solid #ffffff26; }
+      .card h4 { margin: 6px 0 1px; font-size: 11px; color: #9ab; text-transform: uppercase; letter-spacing: .03em; }
+      .card .watch { color: #c9b98a; margin-top: 2px; }
+      .card .ms { color: #9c9; font-variant-numeric: tabular-nums; }
+      #status { position: fixed; left: 10px; bottom: 6px; z-index: 3; color: #aaa; pointer-events: none; white-space: pre; }
+      .lil-gui.root { z-index: 4; --width: 300px; max-height: 100vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><div id="overlay"></div></div>
+    <div id="status">loading...</div>
+    <script type="module" src="./src/workbench/main.ts"></script>
+  </body>
+</html>
