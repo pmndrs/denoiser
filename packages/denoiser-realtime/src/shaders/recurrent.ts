@@ -512,7 +512,9 @@ export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?:
  * history is capped at 0 (lobe half-angle 0), so the virtual footprint is the only history, and the hit test dropping
  * it under dropout is what costs the most. w = 0 leaves the arithmetic unchanged.
  */
-export interface DropoutGuard { lo: number; hi: number }
+/** parts (ablation; default 15 = all): 1 detector (f_r), 2 virtual hit test, 4 virtual confidence, 8 history fix */
+export interface DropoutGuard { lo: number; hi: number; parts?: number }
+const dgOn = (dg: DropoutGuard | undefined, bit: number) => !!dg && ((dg.parts ?? 15) & bit) !== 0;
 const dropW = (dg: DropoutGuard, phi: string) => `smoothstep(${dg.lo.toFixed(6)}, ${dg.hi.toFixed(6)}, ${phi})`;
 /** ĥ of a miss is exactly 1 (hNorm); any finite hit is below this */
 const DG_MISS = '0.9999';
@@ -544,7 +546,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
         if (onScreen(uvV)) {${vht ? `
           // virtualHitTest (T6): this frame's pre-blurred ĥ and its 3x3 spread; taps whose stored fast ĥ disagrees drop out
           let hMu${i} = m1_${i}.y / nn;
-          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * ${dg && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
+          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * ${dgOn(dg, 2) && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
           let v = virt${i}(g, r.expPrev, uvV, ${hOf(kind, 'pre')}, hTol${i});` : `
           let v = virt${i}(g, r.expPrev, uvV);`}
           if (v.vg > 0.0) {
@@ -558,7 +560,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
             let thL = thetaL(alpha, P${i}.lobeFraction);
             cv = v.vg * Wt(angN / (P${i}.virtAngle * thL + 0.0174533))
                * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
-               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * ${dg && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}));${isOccKind(kind) ? `
+               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * ${dgOn(dg, 4) && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}));${isOccKind(kind) ? `
             // occlusion: ĥ is the signal and history fix clamps it to the fast ĥ, so the fast ĥ
             // follows the virtual reprojection as far as it is trusted (hF above is already sized)
             fPrev.y = mix(fPrev.y, v.Fv[${2 * sl + 1}], m * cv);` : ''}
@@ -577,7 +579,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
       // low-roughness input is nearly noise-free: on a mismatch drop history further (our addition)
       // and compare against the pixel's own value rather than the 3x3 mean as roughness -> 0
       // (a clean mirror's 3x3 mean is a blur of its reflected edges; our addition)
-      ${dg && kind === 'specular' ? `let fr = max(sqrt(clamp(alpha / 0.25, 0.0, 1.0)), dW${i});` : `let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));`}
+      ${dgOn(dg, 1) && kind === 'specular' ? `let fr = max(sqrt(clamp(alpha / 0.25, 0.0, 1.0)), dW${i});` : `let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));`}
       ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`, kind)}
       // R-8 surface cap (parallax), R-12 blend in alpha space
       let aSurf = min(aD, specCap${i}(g, r.world, r.expPrev));
@@ -1333,9 +1335,9 @@ fn main(${TILE_MAIN}) {
     if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
       ${kinds[i] === 'specular' ? `// window centred on the pixel's own fast value as roughness -> 0 (clean mirror input:
       // the 3x3 mean would blur reflected edges; our addition)
-      ${dg ? `// dropoutGuard: this pixel's flip persistence (data's m bits, written by the temporal pass)
+      ${dgOn(dg, 8) ? `// dropoutGuard: this pixel's flip persistence (data's m bits, written by the temporal pass)
       let cw = max(mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre),
-                   ${dropW(dg, 'f32((dv >> 21u) & 127u) / 127.0')});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
+                   ${dropW(dg!, 'f32((dv >> 21u) & 127u) / 127.0')});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
       let mu = mix(fc[${2 * slot(i)}], fMean[${2 * slot(i)}], cw);
       let muH = mix(fc[${2 * slot(i) + 1}], fMean[${2 * slot(i) + 1}], cw);` : `let mu = fMean[${2 * slot(i)}];
       let muH = fMean[${2 * slot(i) + 1}];`}
