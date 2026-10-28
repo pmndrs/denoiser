@@ -494,9 +494,22 @@ const temporalDiffuse = (i: number, sl: number, kind: RecurrentKind = 'diffuse')
  * spread of this frame's ĥ), else the tap is dropped (a reflected-world disocclusion, our design after the SVGF
  * option reflectionHitTest).
  */
-export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?: boolean; virtualHitTest?: { a: number; b: number } }
+export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?: boolean; virtualHitTest?: { a: number; b: number }; dropoutGuard?: DropoutGuard }
 
-const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular', vht?: { a: number; b: number }) => /* wgsl */ `
+/**
+ * Option dropoutGuard (our design): the specular filter's low-roughness rules assume clean mirror input (the detector
+ * and the history-fix window centre on the pixel and the detector floor goes to 0 as roughness -> 0). Screen-space
+ * tracing breaks that where a pixel flips between an SSR hit and a far fill (probe / environment) from frame to frame.
+ * Such a neighbourhood has a wide 3x3 spread of ĥ; w = smoothstep(lo, hi, that spread) raises the mirror factor f_r to
+ * at least w in the detector (floor and centring) and the history-fix window, and the roughness in the virtual hit
+ * test's and the virtual confidence's ĥ tolerances to at least w; never the kernels' weights or radii. On a perfect
+ * mirror the surface history is capped at 0 (lobe half-angle 0), so the virtual footprint is the only history, and the
+ * hit test dropping it under dropout is what costs the most. w = 0 leaves the arithmetic unchanged.
+ */
+export interface DropoutGuard { lo: number; hi: number }
+const dropW = (dg: DropoutGuard, spread: string) => `smoothstep(${dg.lo.toFixed(6)}, ${dg.hi.toFixed(6)}, ${spread})`;
+
+const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular', vht?: { a: number; b: number }, dg?: DropoutGuard) => /* wgsl */ `
   {
     let pre = pc${i};
     var a = 0.0;
@@ -505,7 +518,10 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
     if (hasHist) {
       let aS = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // A_s after the +1 of C-9 (D12d)
       let alpha = g.rough * g.rough;
-      let fdom = domFactor(alpha);
+      let fdom = domFactor(alpha);${dg && kind === 'specular' ? `
+      // dropoutGuard: a hit / far-fill mix in the 3x3 (wide ĥ spread) is noise, not a clean mirror (our design)
+      let dMu${i} = m1_${i}.y / nn;
+      let dW${i} = ${dropW(dg, `sqrt(max(m2_${i}.y / nn - dMu${i} * dMu${i}, 0.0))`)};` : ''}
       var Hv = H${i};
       var cv = 0.0;
       var m = 0.0;
@@ -521,7 +537,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
         if (onScreen(uvV)) {${vht ? `
           // virtualHitTest (T6): this frame's pre-blurred ĥ and its 3x3 spread; taps whose stored fast ĥ disagrees drop out
           let hMu${i} = m1_${i}.y / nn;
-          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * g.rough) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
+          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * ${dg && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
           let v = virt${i}(g, r.expPrev, uvV, ${hOf(kind, 'pre')}, hTol${i});` : `
           let v = virt${i}(g, r.expPrev, uvV);`}
           if (v.vg > 0.0) {
@@ -535,7 +551,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
             let thL = thetaL(alpha, P${i}.lobeFraction);
             cv = v.vg * Wt(angN / (P${i}.virtAngle * thL + 0.0174533))
                * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
-               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * g.rough));${isOccKind(kind) ? `
+               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * ${dg && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}));${isOccKind(kind) ? `
             // occlusion: ĥ is the signal and history fix clamps it to the fast ĥ, so the fast ĥ
             // follows the virtual reprojection as far as it is trusted (hF above is already sized)
             fPrev.y = mix(fPrev.y, v.Fv[${2 * sl + 1}], m * cv);` : ''}
@@ -554,7 +570,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
       // low-roughness input is nearly noise-free: on a mismatch drop history further (our addition)
       // and compare against the pixel's own value rather than the 3x3 mean as roughness -> 0
       // (a clean mirror's 3x3 mean is a blur of its reflected edges; our addition)
-      let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));
+      ${dg && kind === 'specular' ? `let fr = max(sqrt(clamp(alpha / 0.25, 0.0, 1.0)), dW${i});` : `let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));`}
       ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`, kind)}
       // R-8 surface cap (parallax), R-12 blend in alpha space
       let aSurf = min(aD, specCap${i}(g, r.world, r.expPrev));
@@ -802,7 +818,7 @@ fn main(${TILE_MAIN}) {
       }` : ''}
     }`).join('')}
   }
-  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
+  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest, tv.dropoutGuard) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
   textureStore(outFast, p, fastOut);
   var mask = 0u;
   if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
@@ -1156,7 +1172,7 @@ export const FIX_DISK = Array.from({ length: 16 }, (_, k) => {
   return [r * Math.cos(t), r * Math.sin(t)] as [number, number];
 });
 
-export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips', fix: SpatialFixConfig = SPATIAL_FIX_DEFAULT): PassDef {
+export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips', fix: SpatialFixConfig = SPATIAL_FIX_DEFAULT, dg?: DropoutGuard): PassDef {
   const spatial = mode === 'spatial';
   const X = spatial && !isDefaultFix(fix);   // T1b extensions
   const withMips = !spatial || (X && fix.mips !== 'off');
@@ -1297,7 +1313,9 @@ fn main(${TILE_MAIN}) {
     if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
       ${kinds[i] === 'specular' ? `// window centred on the pixel's own fast value as roughness -> 0 (clean mirror input:
       // the 3x3 mean would blur reflected edges; our addition)
-      let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);
+      ${dg ? `// dropoutGuard: the same test on the fast history's ĥ spread (the raw spread, not the clamp's standard error)
+      let cw = max(mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre),
+                   ${dropW(dg, `sqrt(max(fSq[${2 * slot(i) + 1}] / nValid - fMean[${2 * slot(i) + 1}] * fMean[${2 * slot(i) + 1}], 0.0))`)});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
       let mu = mix(fc[${2 * slot(i)}], fMean[${2 * slot(i)}], cw);
       let muH = mix(fc[${2 * slot(i) + 1}], fMean[${2 * slot(i) + 1}], cw);` : `let mu = fMean[${2 * slot(i)}];
       let muH = fMean[${2 * slot(i) + 1}];`}
