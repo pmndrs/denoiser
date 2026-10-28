@@ -35,7 +35,7 @@ export default defineConfig({
     target: 'esnext',
     // pages: the SSR comparison (index), the shadows + SSR scene, and its static/dynamic split experiment; review.html is the
     // review bench (`yarn review` serves it against the packages' source: vite.review.config.ts)
-    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html', 'reflections-rooms': 'reflections-rooms.html', 'realtime-shadows': 'realtime-shadows.html', 'realtime-gi': 'realtime-gi.html', 'realtime-glass': 'realtime-glass.html', review: 'review.html', workbench: 'workbench.html' } },
+    rollupOptions: { input: { index: 'index.html', shadows: 'shadows.html', 'shadows-split': 'shadows-split.html', 'reflections-hybrid': 'reflections-hybrid.html', 'reflection-probes': 'reflection-probes.html', 'reflections-rooms': 'reflections-rooms.html', 'realtime-shadows': 'realtime-shadows.html', 'realtime-gi': 'realtime-gi.html', 'realtime-glass': 'realtime-glass.html', review: 'review.html', workbench: 'workbench.html', 'reflect-bench': 'reflect-bench.html' } },
   },
   resolve: { dedupe: ['three'], alias: upscalerAlias },
   server: { fs: { allow: ['../..', ...(upscalerSrc ? [upscalerRepo] : [])] } },
