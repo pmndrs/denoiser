@@ -18,7 +18,8 @@
 import * as THREE from 'three/webgpu';
 import {
   EnvironmentBRDF, Fn, If, context, diffuseColor, float, getViewPosition, materialMetalness, materialRoughness, mix, mrt,
-  normalView, output, packNormalToRGB, pass, renderOutput, rtt, sample, uniform, unpackRGBToNormal, uv, vec3, vec4,
+  normalView, output, packNormalToRGB, pass, reflector, renderOutput, rtt, sample, texture, uniform, unpackRGBToNormal, uv,
+  vec2, vec3, vec4,
 } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js';
@@ -61,6 +62,13 @@ export interface PaneConfig {
    * Ben's tracer: a pixel counts as a miss below coverage 0.5.
    */
   missZero: boolean;
+  /**
+   * The scene's flat mirror (WorkbenchScene.mirror, the table in Ben's SSR example): 'ssr' = as configured;
+   * 'reflector' = three's planar reflector (the scene re-rendered from the mirrored camera), the exact reflection
+   * times the same BRDF, in place of the traced / denoised specular on the mirror's pixels. A reference, not a technique
+   * for curved or rough surfaces.
+   */
+  table: 'ssr' | 'reflector';
   /** Extra options for our specular denoiser (scripts and ablations only; not in the GUI). */
   specExtra?: Record<string, unknown>;
   /** Ben's tracer: his Hi-Z traversal ('adaptive', his examples' default), 'conservative', or linear marching. */
@@ -73,7 +81,7 @@ export interface PaneConfig {
 
 export const defaultPane = (o: Partial<PaneConfig> = {}): PaneConfig => ({
   tracer: 'three', spec: 'recurrent', diff: 'svgf', aoDenoise: 'svgf', resolve: 'fsr', ratio: 1.5, jitter: true, jitterAware: true,
-  ssgiRotate: true, rcasDenoise: true, fsrDebug: DebugView.None, covRadius: 3, covGiRadius: 1.5, covMaxFrames: 16, benTraversal: 'adaptive', dropoutGuard: false, missZero: false, ...o,
+  ssgiRotate: true, rcasDenoise: true, fsrDebug: DebugView.None, covRadius: 3, covGiRadius: 1.5, covMaxFrames: 16, benTraversal: 'adaptive', dropoutGuard: false, missZero: false, table: 'ssr', ...o,
 });
 
 /** Settings every pane shares (uniforms, so changing them rebuilds nothing). */
@@ -121,6 +129,8 @@ export class Pane {
   ssr: N = null;
   /** Ben's nodes in the current graph (history resets, his uniforms). */
   private ben: { spec: N; gi: N; ao: N; traa: N } = { spec: null, gi: null, ao: null, traa: null };
+  /** Table option 'reflector': three's reflector, driven by hand before each render (see render()). */
+  private mirror: { node: N; mesh: THREE.Mesh; scene: THREE.Scene } | null = null;
 
   constructor(readonly name: string, readonly canvas: HTMLCanvasElement, private readonly renderer: THREE.WebGPURenderer, public cfg: PaneConfig) {
     this.target = new THREE.CanvasTarget(canvas);
@@ -332,6 +342,32 @@ export class Pane {
       aoOut = ben.ao.getTextureNode();
     }
 
+    // ---- table reference: three's planar reflector ----------------------------------------------------------------------------
+    // Its node updates itself before the draws of a material it is in; in this post graph that would be the quad's
+    // camera, so render() drives its base node with this pane's camera and the graph samples the render target directly
+    // (screen uv mirrored in x, as the node's default uv).
+    let mirrorSpec: N = null;
+    this.mirror = null;
+    if (cfg.table === 'reflector' && ws.mirror) {
+      const { mesh, radius } = ws.mirror;
+      const node = reflector({ resolutionScale: 1 }) as N;
+      node.target.matrixAutoUpdate = false;
+      this.mirror = { node, mesh, scene: ws.scene };
+      const rt = node.reflector.getRenderTarget(node.reflector.getVirtualCamera(cam));
+      const refl = texture(rt.texture, vec2(uv().x.oneMinus(), uv().y));
+      mesh.updateMatrixWorld();
+      const c = new THREE.Vector3().setFromMatrixPosition(mesh.matrixWorld);
+      const n = new THREE.Vector3(0, 0, 1).transformDirection(mesh.matrixWorld);
+      const centre = uniform(c), normal = uniform(n);
+      // the mirror's pixels: on its plane (2 % of the scene size, depth reconstruction), facing its way, inside the disc
+      mirrorSpec = (otherwise: N) => {
+        const s = surface();
+        const d = s.P.sub(centre);
+        const on = d.dot(normal).abs().lessThan(0.02 * ws.size).and(s.N.dot(normal).greaterThan(0.99)).and(d.length().lessThan(radius));
+        return on.select(refl.rgb.mul(specBRDF()), otherwise);
+      };
+    }
+
     // ---- composite -------------------------------------------------------------------------------------------------------
     const alb = () => dTex.sample(uv());
     const diffuseAlbedo = () => alb().rgb.mul(alb().a.oneMinus());
@@ -342,7 +378,8 @@ export class Pane {
     const traceSpec = covOut === null ? specOut.rgb
       : (covWeighted ? covOut.rgb : covOut.rgb.mul(specBRDF())).mul(covOut.a).add(probeSpec().mul(covOut.a.oneMinus()));
     // (sky: none; Ben's denoiser leaves background texels undefined)
-    const spec: N = sky().select(vec3(0), rough().greaterThan(sh.roughCut).or(!sh.ssr).select(probeSpec(), traceSpec));
+    const spec0: N = sky().select(vec3(0), rough().greaterThan(sh.roughCut).or(!sh.ssr).select(probeSpec(), traceSpec));
+    const spec: N = mirrorSpec ? sky().select(vec3(0), mirrorSpec(spec0)) : spec0;
     let out: N;
     let resolved = true; // the beauty goes through the resolver; the debug views show the render-resolution signal
     switch (sh.view) {
@@ -370,7 +407,7 @@ export class Pane {
     this.pipeline.needsUpdate = true;
     this.ssr = ssrNode;
     this.disposables = [scenePass, ssrNode, hiZNode, giPass, litRTT, specIn, covIn, giIn, aoIn, colorTex, ...this.ours,
-      ben.spec, ben.gi, ben.ao, ben.traa];
+      ben.spec, ben.gi, ben.ao, ben.traa, this.mirror?.node];
   }
 
   /** Renders one frame with `pose` (the shared camera's). */
@@ -396,6 +433,18 @@ export class Pane {
       u.settings.debugView = this.cfg.fsrDebug;
     }
     this.renderer.setCanvasTarget(this.target);
+    const m = this.mirror;
+    if (m) {
+      // as ReflectorBaseNode.updateBefore in the mirror's own material: this pane's camera, the mirror hidden
+      m.mesh.updateMatrixWorld();
+      m.node.target.matrixWorld.copy(m.mesh.matrixWorld);
+      // the mirror's sky: the scene's environment (what the probe fill and the panes' misses use), not its display
+      // background (Ben's scene: a gradient behind the model)
+      const sc = m.scene, bg = sc.background, bgNode = sc.backgroundNode;
+      if (sc.environment) { sc.background = sc.environment; sc.backgroundNode = null; }
+      try { m.node.reflector.updateBefore({ scene: sc, camera: cam, renderer: this.renderer, material: m.mesh.material }); }
+      finally { sc.background = bg; sc.backgroundNode = bgNode; }
+    }
     this.pipeline.render();
   }
 
@@ -420,6 +469,7 @@ export class Pane {
     this.fsr?.dispose();
     this.fsr = null;
     for (const d of this.disposables) d?.dispose?.();
+    this.mirror = null;
     this.disposables = [];
     this.ours = [];
     this.ben = { spec: null, gi: null, ao: null, traa: null };

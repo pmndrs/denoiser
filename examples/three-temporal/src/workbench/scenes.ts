@@ -38,6 +38,11 @@ export interface WorkbenchScene {
   defaults?: { ssgi?: boolean; roughCut?: number };
   /** Roughness sliders the GUI shows for this scene, by name. */
   roughness?: Record<string, THREE.MeshStandardMaterial[]>;
+  /**
+   * A flat mirror (a disc in its local xy plane, normal +z) that panes can render exactly with three's planar
+   * reflector, as a reference for what SSR + denoiser should converge to there (pane option `table`).
+   */
+  mirror?: { mesh: THREE.Mesh; radius: number };
 }
 
 // three.js examples assets: the local checkout through the dev server (/__three-examples/, threeExamples() in
@@ -198,6 +203,7 @@ async function benSSRExample(renderer: THREE.WebGPURenderer): Promise<WorkbenchS
     ssr: { maxDistance: 5, thickness: 0.03 },
     defaults: { ssgi: false, roughCut: 0.8 },
     roughness: { 'model roughness': [...materials], 'floor roughness': [floorMaterial] },
+    mirror: { mesh: floor, radius: 2 },
     animate: () => false,
   };
 }

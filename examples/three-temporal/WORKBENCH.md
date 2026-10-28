@@ -44,7 +44,7 @@ The denoiser packages are used from their `dist/`, so run `yarn build:lib` first
   are placed in a row along the corridor.
 - **Ben's SSR example (steampunk camera):** his `webgpu_postprocessing_ssr.html` scene. The model and floor are at
   roughness 0 (sliders under Scene materials). RoomEnvironment is the only light and fills the probes' environment
-  slot. SSR distance is 5, thickness 0.03, cutoff 0.8, and SSGI starts off.
+  slot. SSR distance is 5, thickness 0.03, cutoff 0.8, and SSGI starts off. Its table is a flat mirror, so a pane can show the exact planar reflection as a reference (option "table / flat mirror").
 - **Ben's branch models:** listed only when a local three.js checkout has them.
 
 Assets are served from a local checkout (`threeExamples()` in `vite.config.ts`, `$THREE_EXAMPLES` or
@@ -72,6 +72,7 @@ Per-pane options:
 | Denoisers see the jitter | `TemporalDenoiseNode` `ignoreViewOffset`. On (the default): reproject without the FSR3 jitter. Off: the #10 setup. |
 | SSGI pattern | rotating or static (three's `useTemporalFiltering`) |
 | SSR misses pass hit distance 0 | Probe / environment fills reach the denoisers as hit distance 0 (denoiser-realtime's miss) instead of 100. Ben's tracer: a miss below coverage 0.5. The recurrent `dropoutGuard` needs it (ticking the guard ticks this). |
+| table / flat mirror | Scenes with a flat mirror (Ben's SSR example: the table). 'planar reflector': three's reflector re-renders the scene from this pane's mirrored camera, and that exact reflection (times the same BRDF) replaces the traced and denoised specular on the mirror's pixels. The mirror's sky is the scene environment (what the fills use). It is the reference for the table. It also shows what SSR cannot see: the model's underside, where SSR returns the visible top surfaces or the fill. |
 | recurrent: SSR dropout guard | The recurrent specular filter's opt-in `dropoutGuard` (experimental, `results/DROPOUT-GUARD.md` on the cleanroom branch). |
 | FSR3 | RCAS denoise, debug views |
 

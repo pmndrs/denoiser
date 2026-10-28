@@ -221,6 +221,7 @@ async function main() {
         `<h4>${esc(title)}: ${esc(b.label)}</h4><div>${esc(b.text)}</div>${b.watch ? `<div class="watch">${esc(b.watch)}</div>` : ''}`;
       cards[n].classList.toggle('collapsed', collapsed[n]);
       cards[n].innerHTML = `<button data-act="hide">${collapsed[n] ? 'show' : 'hide'}</button><span class="ms" data-ms></span><div class="body">${block('Tracer', TRACER[c.tracer])}${block('SSR', SPEC[c.spec])}${combined ? '' : shared.ssgi ? block('SSGI', DIFF[c.diff]) : block('SSGI', { label: 'off', text: 'SSGI (and its AO) is off in this scene; turn it on under Scene.' })}${block('Resolver', RESOLVE[c.resolve])}`
+        + (c.table === 'reflector' ? (ws?.mirror ? block('Table', { label: 'planar reflector', text: "three's reflector re-renders the scene from the mirrored camera: the exact reflection on the flat mirror, in place of the traced and denoised one. It also shows what SSR cannot see (the model's underside), which the probe fill stands in for. The mirror's sky is the scene's environment (what the fills use), not the display background." }) : '<div class="watch">table: this scene has no flat mirror</div>') : '')
         + (c.resolve === 'fsr' ? `<div class="watch">render ${Math.round(100 / c.ratio)} % · denoisers ${c.jitterAware ? 'see' : 'do not see'} the jitter · SSGI pattern ${c.ssgiRotate ? 'rotating' : 'static'}</div>` : '') + '</div>';
       cards[n].querySelector('[data-act=hide]')!.addEventListener('click', () => { collapsed[n] = !collapsed[n]; renderCards(); });
     }
@@ -326,6 +327,7 @@ async function main() {
       Off: DebugView.None, 'Motion vectors': DebugView.MotionVectors, Disocclusion: DebugView.Disocclusion,
       'Accumulation age': DebugView.AccumulationAge, Locks: DebugView.Locks, 'Shading change': DebugView.ShadingChange,
     }).name('FSR3 debug view');
+    f.add(live, 'table', { 'SSR (as configured)': 'ssr', 'planar reflector (exact reference)': 'reflector' }).name('table / flat mirror').onChange(changed);
     const missCtl = f.add(live, 'missZero').name('SSR misses pass hit distance 0').onChange(changed);
     // the guard tells a miss from a hit by hit distance 0, so ticking it ticks that too
     f.add(live, 'dropoutGuard').name('recurrent: SSR dropout guard').onChange((v: boolean) => { if (v && !live.missZero) { live.missZero = true; missCtl.updateDisplay(); } changed(); });
