@@ -312,7 +312,8 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   0.72 / 1.19); roughness 0.25: 0.72 → 0.54. On the 12 ray-traced reflection paths it leaves the tracked reflection
   unchanged and gains up to 2.5 dB at reflected sky edges, but loses 1.5 dB on a turning mirror and on a convex one
   (results `DROPOUT-GUARD.md`). Experimental. Tuning: `tune.dropoutLo` / `dropoutHi` [0.1 / 0.3], the smoothstep on
-  the flip rate.
+  the flip rate; `tune.dropoutParts` [15] is an ablation mask (1 detector, 2 virtual hit test, 4 virtual confidence,
+  8 history fix).
   **Opt-in: a plain per-tap normal test** (`normalThreshold: 0.8, normalTest: 'center'`; Dennis q28 (b), 2026-10-27:
   stays an option). What it does: every history tap whose normal is more than ~37° from the pixel's is dropped, with no
   relaxation to the neighbourhood, so dense or normal-mapped geometry resets more often and the `'spatial'` history fix

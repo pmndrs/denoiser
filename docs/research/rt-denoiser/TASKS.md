@@ -1172,7 +1172,10 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       - rm paths, marker 1: unchanged on all 12.
       - rm paths, marker 2: settled +0.2 … +2.5 on 10 paths. Regressions on rm-refl-turn (moving −1.6 dB, ghost +0.09,
         duplicate frames 24 → 27) and rm-obj-convex (−1.5).
-      Still opt-in. Next: keep the virtual tolerances strict (results/DROPOUT-GUARD.md "v2").
+      Still opt-in. Ablation (tune `dropoutParts`): keeping the virtual tolerances strict does not remove the two
+      losses (−1.48 / −1.25 dB); they come from the detector / history fix, while the SSR gain needs the relaxed hit
+      test. Stopped (rule 8). Open: Dennis to decide whether to keep it as an SSR-only opt-in; workbench motion review
+      (orbit, guard on vs off) since nothing measures SSR ghosting.
 
 ## Probes for the Windows harness
 

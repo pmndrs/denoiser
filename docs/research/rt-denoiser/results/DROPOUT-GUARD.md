@@ -94,3 +94,31 @@ There the virtual reprojection is least exact, and relaxing the virtual hit test
 **Next candidate:** relax only the detector and the history fix, not the two virtual tolerances; or use the
 persistence alone, without relaxing the hit test where the reflector moves. Test on rm-refl-turn and rm-obj-convex
 plus the workbench first.
+
+### v2 ablation: which effect costs the two paths (tune `dropoutParts`)
+`dropoutParts` is a compile-time mask: 1 detector, 2 virtual hit test, 4 virtual confidence, 8 history fix. The
+default 15 is byte-identical to v2. Marker 2 deltas against guard off (table:
+[data/dropout-guard/rm-v2-parts-marker.md](data/dropout-guard/rm-v2-parts-marker.md)):
+
+| path | all (15) | no virtual (9) | no confidence (11) | no hit test (13) |
+|---|---|---|---|---|
+| rm-refl-turn, moving dB | −1.59 | −1.48 | −1.47 | −1.42 |
+| rm-refl-turn, position error px | +1.72 | +1.56 | +1.66 | +1.44 |
+| rm-obj-convex, settled dB | −1.52 | −1.58 | −1.70 | −1.41 |
+| rm-cam-concave, moving dB | −0.50 | +0.16 | −0.19 | +0.10 |
+| rm-cam-plane, settled dB | +1.80 | +1.67 | +1.73 | +1.75 |
+
+- **The virtual tolerances are not the cause.** Keeping both strict still loses about 1.5 dB on the two paths, so the
+  losses come from the detector floor/centring or the history-fix window.
+- **The SSR gain does need the relaxed hit test.** The v1 ablation showed the hit test is what drops a perfect
+  mirror's history.
+- **No combination of the four removes the losses.**
+
+Stopped here (rule 8: the second miss of the same kind). Recorded.
+
+**Scope as it stands:** an opt-in for screen-space reflection input (its target). On ray-traced input the tracked
+reflection is unaffected, and the cost sits at reflected sky edges of moving or curved mirrors. Ray-traced apps have
+no reason to turn it on.
+
+**Untested:** SSR under camera or object motion (the workbench has no reference). That needs a visual review with
+orbit on, guard on vs off.
