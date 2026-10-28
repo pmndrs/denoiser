@@ -299,6 +299,19 @@ gi.dispatch({ radiance: diffuseDemod, hitDistance /* optional, world units, 0 = 
   a moving object's floor contact; 0 / 'center' = the previous plane test only) and `virtualHitTest` [true] (drops
   virtual-motion history whose hit distance disagrees: removes the duplicate images on clean mirrors). The occlusion
   pipeline keeps 0 / 'center' / false (not measured there).
+  **Opt-in (2026-10-28, not yet A/B'd under rule 9): `dropoutGuard` [false]**, specular only. The low-roughness rules
+  treat a mirror as clean input: the anti-lag detector and the history-fix window centre on the pixel, the detector
+  floor goes to 0, and the virtual hit test and virtual confidence use a hit-distance tolerance of about 0.05, while
+  a perfect mirror's only history is the virtual one. Screen-space tracing breaks that where a pixel flips between an
+  SSR hit and a far fill (probe or environment) from frame to frame: those rules then discard the history every frame
+  and the flicker passes straight through. With `dropoutGuard`, a 3×3 neighbourhood whose hit-distance spread (ĥ) is
+  wide is handled as a rough surface in those four places only (never in the kernels' weights or radii); a
+  neighbourhood without that mix computes exactly as before. Workbench, still camera, mirror scene without local
+  probes: flicker 2.50 → 0.70 (three's tracer 4.16 → 1.17, about the FFX port's level); roughness 0.25: 0.72 → 0.47.
+  Use it with SSR input whose misses are filled from a source that differs from what SSR sees; it does nothing for
+  ray-traced input. **It fails the reflection-path check** (results `DROPOUT-GUARD.md`): its trigger, a wide 3×3 hit-
+  distance spread, also fires on clean mirrors with depth variation, where it costs up to −8 dB. Experimental; a
+  more specific trigger is the next step. Tuning: `tune.dropoutLo` / `dropoutHi` [0.05 / 0.15], the smoothstep on the ĥ spread.
   **Opt-in: a plain per-tap normal test** (`normalThreshold: 0.8, normalTest: 'center'`; Dennis q28 (b), 2026-10-27:
   stays an option). What it does: every history tap whose normal is more than ~37° from the pixel's is dropped, with no
   relaxation to the neighbourhood, so dense or normal-mapped geometry resets more often and the `'spatial'` history fix

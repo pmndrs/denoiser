@@ -1155,6 +1155,18 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the contiguous workgroup tiles and the shared depth weight should carry over byte-identically (packed colours are already
       u32 there). Not done (the SH payload is not a shipped default). — found by svgf-cost, owner `packages/denoiser-realtime`
 
+- [ ] (dropout-guard, 2026-10-28, uncommitted: Dennis asked for a mirror fix that leaves clean input alone) **Option
+      `dropoutGuard` (recurrent, specular), default false, built.** Default WGSL byte-identical to HEAD (temporal and history-fix
+      passes, 4 kind sets × variants: 495,629 bytes). Workbench (examples/three-temporal workbench, `feat/interior-lab`), Ben's
+      mirror scene, still camera, flicker: his tracer 2.50 → 0.70, three's 4.16 → 1.17, roughness 0.25 0.72 → 0.47 / 1.83 → 1.48
+      (FFX port 0.72 / 1.22 / 0.24 / 0.50). Ablation: the virtual hit test is the main cost (a perfect mirror's surface history is
+      capped at 0, so dropping the virtual footprint drops all history). Review bench entry `recurrent.dropoutGuard` (rule 12).
+      **Fails the reflection paths (results/DROPOUT-GUARD.md):** settled ROI −2.4 … −8.4 dB on marker 1 of 10 of 12 `rm-*`
+      paths, +0.4 … +4.0 on marker 2. The 3×3 ĥ spread also fires on clean traced mirrors with depth variation (bumps,
+      curvature, reflected silhouettes). Stays opt-in, not proposed. Next design (miss mix and/or flip persistence) in that
+      doc; SVGF specular has the same mirror pass-through (its history cap is 1 frame at r = 0) and waits for a signature
+      that passes. Coverage input mode: issue #23.
+
 ## Probes for the Windows harness
 
 _(black-box questions for native NRD: the capture, the denoiser, what to compare. The

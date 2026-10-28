@@ -163,6 +163,14 @@ export interface RecurrentOptions {
    */
   virtualHitTest?: boolean;
   /**
+   * Specular low-roughness dropout guard (our design; shaders/recurrent.ts `DropoutGuard`). The detector, its floor
+   * and the history-fix window treat a mirror as clean input; where the 3x3 mixes screen-space hits with far fills
+   * (probe / environment misses, wide ĥ spread) they act as for a rough surface instead, so the history survives the
+   * hit/miss flicker. Neighbourhoods without that mix compute exactly as before. Default false (rule 9: an option until
+   * its A/B); compiled in only when true. Radiance specular only.
+   */
+  dropoutGuard?: boolean;
+  /**
    * Review target 6 candidate (results/T6-boundaries.md): minimum cosine between this pixel's normal and a history tap's
    * normal (SVGF sec. 4.1's normal test, on top of the plane test). Default 0.95 since T6 (with normalTest 'relative';
    * rule 9 passed); 0 = backfacing taps only (the previous test). OcclusionDenoiser keeps 0. Geometry tolerances are shared: the first signal's value applies to a joint pipeline.
@@ -221,6 +229,9 @@ export interface RecurrentTune {
   /** virtualHitTest tolerance: a × the virtual ĥ tolerance + b × the 3x3 ĥ spread (compiled in) */
   virtHitTestA: number;
   virtHitTestB: number;
+  /** dropoutGuard: smoothstep edges on the 3x3 ĥ spread (compiled in) */
+  dropoutLo: number;
+  dropoutHi: number;
 }
 
 export type ResolvedRecurrent = Required<Omit<RecurrentOptions, 'filter' | 'tune' | 'preBlurRadius' | 'blurRadius' | 'antiLag'>> & {
@@ -282,6 +293,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
     postBlurTaps: o.postBlurTaps ?? 4,
     virtualMotion: o.virtualMotion ?? true,
     virtualHitTest: o.virtualHitTest ?? true, // T6: default on (rule 9 passed)
+    dropoutGuard: o.dropoutGuard ?? false,
     normalThreshold: o.normalThreshold ?? 0.95, // T6: 0.95 + 'relative' by default (rule 9 passed)
     normalTest: o.normalTest ?? 'relative',
     virtualClampSigma: o.virtualClampSigma ?? 1,
@@ -298,7 +310,7 @@ export function resolveRecurrent(o: Partial<RecurrentOptions> = {}): ResolvedRec
       hitTolLo: 0.1, hitTolHi: 0.5, hitTolTight: 0.5,
       postLo: 0.5, postHi: 2.0, postDelta: 0.3,
       stabGammaLo: 1, stabGammaHi: 3, stabBeta: 0.02,
-      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1, virtHitTestA: 2, virtHitTestB: 1,
+      virtCurv: 1, virtWiden: 2, detRough: 1, specCentre: 1, elong: 0.75, occClamp: 1, virtHitTestA: 2, virtHitTestB: 1, dropoutLo: 0.05, dropoutHi: 0.15,
       ...o.tune,
     },
   };
@@ -346,6 +358,7 @@ export function recurrentStructuralKey(o: ResolvedRecurrent) {
   if (o.normalThreshold > 0) k.push(`nt${o.normalThreshold}`);
   if (o.normalTest !== 'center') k.push(`ntest-${o.normalTest}`);
   if (o.virtualHitTest) k.push(`vht${o.tune.virtHitTestA},${o.tune.virtHitTestB}`);
+  if (o.dropoutGuard) k.push(`dg${o.tune.dropoutLo},${o.tune.dropoutHi}`);
   return k.join('|');
 }
 
@@ -415,12 +428,14 @@ export class RecurrentPipeline {
       ...(o.normalThreshold > 0 ? { normalCos: o.normalThreshold } : {}),
       ...(o.normalTest === 'relative' ? { normalRelative: true } : {}),
       ...(signals.some((s) => s.opts.virtualHitTest) ? { virtualHitTest: { a: o.tune.virtHitTestA, b: o.tune.virtHitTestB } } : {}),
+      ...(signals.some((s) => s.opts.dropoutGuard) ? { dropoutGuard: { lo: o.tune.dropoutLo, hi: o.tune.dropoutHi } } : {}),
     };
     make('temporal', Object.keys(tv).length ? temporalPass(kinds, tv) : temporalPass(kinds));
     const fx = spatialFixOf(this.opts);
     this.spatialFix = this.opts.historyFix === 'spatial' && fx.mips === 'off';
     if (!this.spatialFix) make('mips', mipsPass(kinds), false);   // no taps: the real pass is its own skeleton
-    make('history_fix', historyFixPass(kinds, this.opts.historyFix, fx));
+    make('history_fix', historyFixPass(kinds, this.opts.historyFix, fx,
+      signals.some((s) => s.opts.dropoutGuard) ? { lo: o.tune.dropoutLo, hi: o.tune.dropoutHi } : undefined));
     make('blur', blurPass(kinds, false, T('blurTaps'), this.opts.youngBlurTaps));
     make('post_blur', blurPass(kinds, true, T('postBlurTaps')));
     make('stabilize', stabilizePass(kinds, this.opts.remodulate));

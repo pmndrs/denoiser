@@ -1178,6 +1178,15 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   writes byte-identical PNGs run to run on this Mac, so moving the ray WGSL into `src/realtime/rays.ts` was verified by
   `cmp` over all 28 screenshots before / after. — review-bench
 
+## Dropout guard (2026-10-28)
+
+- **A spatial hit-distance spread is not a dropout detector.** It fires on clean mirrors wherever the reflected geometry
+  varies in depth (bumps, curved reflectors, silhouettes), and treating those as rough cost up to −8.4 dB on the `rm-*`
+  paths. Run the 12 reflection paths first for any low-roughness change: ~10 min, and they caught this before the
+  rule-9 set. Workbench stills of one SSR scene can't show it.
+- **On a perfect mirror the recurrent filter's only history is virtual.** The surface cap is 0 at lobe half-angle 0, so
+  whatever drops the virtual footprint (the T6 hit test) drops all history.
+
 ## Applying decisions (2026-10-27)
 
 - **An option with prerequisites can't become a plain default.** `antiLagChroma` throws unless `antiLag` is `'auto'` v2 on

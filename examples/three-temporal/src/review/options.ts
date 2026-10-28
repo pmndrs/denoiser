@@ -253,6 +253,13 @@ export const OPTIONS: ReviewOption[] = [
     look: 'Clean mirrors: false keeps duplicates of reflected objects after they move; true drops that reflected-world history.',
     where: { scene: 'corner', path: 'knot-orbit', signal: 'specular' },
   },
+  {
+    id: 'recurrent.dropoutGuard', filter: 'recurrent', key: 'dropoutGuard', targets: ['gi.specular'],
+    values: [false, true], default: false, status: 'opt-in',
+    look: 'Near-mirror reflections that flip between a screen-space hit and a far fill keep their history with true; check that reflected objects leave no duplicates after they move (the virtualHitTest case).',
+    where: { scene: 'corner', path: 'knot-orbit', signal: 'specular' },
+    benchNote: "Experimental: it fails the reflection-path check (results/DROPOUT-GUARD.md). Its trigger also fires on clean mirrors with depth variation, which this ray-traced view shows. The SSR dropout case it was built for is the three-temporal workbench's Ben's SSR example scene.",
+  },
 
   // ---- SH payload (directional diffuse, opt-in) --------------------------------------------------------------
   {
