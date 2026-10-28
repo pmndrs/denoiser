@@ -115,6 +115,9 @@ function atPassResolution<T>(effect: T, scale: number): T {
   return effect;
 }
 
+/** The materials' environment specular (main.ts): 0 everywhere except the table reference's mirrored render. */
+export const materialEnvSpecular = uniform(0);
+
 export class Pane {
   readonly camera = new THREE.PerspectiveCamera();
   readonly target: THREE.CanvasTarget;
@@ -442,8 +445,9 @@ export class Pane {
       // background (Ben's scene: a gradient behind the model)
       const sc = m.scene, bg = sc.background, bgNode = sc.backgroundNode;
       if (sc.environment) { sc.background = sc.environment; sc.backgroundNode = null; }
+      materialEnvSpecular.value = 1;
       try { m.node.reflector.updateBefore({ scene: sc, camera: cam, renderer: this.renderer, material: m.mesh.material }); }
-      finally { sc.background = bg; sc.backgroundNode = bgNode; }
+      finally { sc.background = bg; sc.backgroundNode = bgNode; materialEnvSpecular.value = 0; }
     }
     this.pipeline.render();
   }

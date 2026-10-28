@@ -17,7 +17,7 @@ import { DebugView } from 'upscaler-src';
 import { reflectionProbes } from '../probes/ReflectionProbesNode';
 import { AO, DEFAULT_PRESETS, DIFF, PRESETS, RESOLVE, SPEC, TRACER, VIEWS, type View } from './catalog';
 import { loadFASTNoise } from './ben/index.js';
-import { Pane, defaultPane, type PaneConfig, type Shared } from './pane';
+import { Pane, defaultPane, materialEnvSpecular, type PaneConfig, type Shared } from './pane';
 import { availableScenes, loadScene, type WorkbenchScene } from './scenes';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,10 +29,12 @@ const statusEl = document.getElementById('status')!;
 const log = (m: string) => { statusEl.textContent = m; console.log('[workbench]', m); };
 
 // The materials' own environment specular is off: each pane's composite supplies the specular (probes, SSR, the
-// denoisers), as on the reflection pages. Their diffuse ambient still comes from the probes.
+// denoisers), as on the reflection pages. Their diffuse ambient still comes from the probes. The table reference
+// (pane option `table`) turns it on (materialEnvSpecular = 1) for its mirrored render only, so that render shows the
+// lit frame plus the probes' specular, as SSR traces it.
 const _indirectSpecular = THREE.PhysicalLightingModel.prototype.indirectSpecular;
 THREE.PhysicalLightingModel.prototype.indirectSpecular = function (this: N, builder: N) {
-  builder.context.radiance = builder.context.radiance.mul(0);
+  builder.context.radiance = builder.context.radiance.mul(materialEnvSpecular);
   _indirectSpecular.call(this, builder);
 };
 
