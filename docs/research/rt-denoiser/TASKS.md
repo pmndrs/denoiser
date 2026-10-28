@@ -1155,7 +1155,7 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       the contiguous workgroup tiles and the shared depth weight should carry over byte-identically (packed colours are already
       u32 there). Not done (the SH payload is not a shipped default). — found by svgf-cost, owner `packages/denoiser-realtime`
 
-- [ ] (dropout-guard, 2026-10-28, uncommitted: Dennis asked for a mirror fix that leaves clean input alone) **Option
+- [ ] (dropout-guard, 2026-10-28, v1 bd8110a: Dennis asked for a mirror fix that leaves clean input alone) **Option
       `dropoutGuard` (recurrent, specular), default false, built.** Default WGSL byte-identical to HEAD (temporal and history-fix
       passes, 4 kind sets × variants: 495,629 bytes). Workbench (examples/three-temporal workbench, `feat/interior-lab`), Ben's
       mirror scene, still camera, flicker: his tracer 2.50 → 0.70, three's 4.16 → 1.17, roughness 0.25 0.72 → 0.47 / 1.83 → 1.48
@@ -1166,6 +1166,13 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       curvature, reflected silhouettes). Stays opt-in, not proposed. Next design (miss mix and/or flip persistence) in that
       doc; SVGF specular has the same mirror pass-through (its history cap is 1 frame at r = 0) and waits for a signature
       that passes. Coverage input mode: issue #23.
+      **v2 (2026-10-28):** the trigger is per-pixel flip persistence × a hit/miss mix in the 3×3. Apps pass 0 for fills
+      (workbench option `missZero`). Results:
+      - Ben's mirrors: 2.51 → 1.03 (three's tracer 4.06 → 1.36).
+      - rm paths, marker 1: unchanged on all 12.
+      - rm paths, marker 2: settled +0.2 … +2.5 on 10 paths. Regressions on rm-refl-turn (moving −1.6 dB, ghost +0.09,
+        duplicate frames 24 → 27) and rm-obj-convex (−1.5).
+      Still opt-in. Next: keep the virtual tolerances strict (results/DROPOUT-GUARD.md "v2").
 
 ## Probes for the Windows harness
 

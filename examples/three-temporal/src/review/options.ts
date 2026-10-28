@@ -256,9 +256,9 @@ export const OPTIONS: ReviewOption[] = [
   {
     id: 'recurrent.dropoutGuard', filter: 'recurrent', key: 'dropoutGuard', targets: ['gi.specular'],
     values: [false, true], default: false, status: 'opt-in',
-    look: 'Near-mirror reflections that flip between a screen-space hit and a far fill keep their history with true; check that reflected objects leave no duplicates after they move (the virtualHitTest case).',
+    look: 'Near-mirror reflections that keep flipping between a screen-space hit and a miss (hit distance 0) keep their history with true; check that reflected objects leave no duplicates after they move (the virtualHitTest case).',
     where: { scene: 'corner', path: 'knot-orbit', signal: 'specular' },
-    benchNote: "Experimental: it fails the reflection-path check (results/DROPOUT-GUARD.md). Its trigger also fires on clean mirrors with depth variation, which this ray-traced view shows. The SSR dropout case it was built for is the three-temporal workbench's Ben's SSR example scene.",
+    benchNote: "Experimental (v2: flip persistence x hit/miss mix): the tracked reflection is unchanged on the reflection paths, sky edges gain, but a turning mirror and a convex one lose ~1.5 dB (results/DROPOUT-GUARD.md). Pass fills as hit distance 0. The SSR case it targets is the three-temporal workbench's Ben's SSR example scene.",
   },
 
   // ---- SH payload (directional diffuse, opt-in) --------------------------------------------------------------

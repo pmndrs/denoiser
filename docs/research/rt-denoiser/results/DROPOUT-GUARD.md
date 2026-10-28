@@ -1,4 +1,4 @@
-# Recurrent `dropoutGuard` (2026-10-28): built, fails rule 9 on clean mirrors
+# Recurrent `dropoutGuard` (2026-10-28): v1 failed on clean mirrors; v2 keeps marker 1 exact, two marker-2 regressions
 
 Dennis asked for a mirror improvement that leaves clean input alone, after the three-temporal workbench showed the
 recurrent specular filter passing SSR hit/miss flicker straight through on Ben Houston's mirror scene (three.js
@@ -42,7 +42,7 @@ Settled ROI dB per marker, guard on minus off:
 clean mirrors wherever the reflected geometry varies in depth: bumps, curved reflectors, reflected silhouettes.
 There, treating the mirror as rough keeps history the strict tests rightly dropped.
 
-## Next design (not built)
+## v1 next design (built as v2 below)
 The signature has to be specific to hit/miss flicker, not to hit-distance variation. Candidates:
 1. **Miss mix.** Count real misses only (ĥ = 1, i.e. hit distance 0, the library's miss convention) and fire where a
    3×3 holds both misses and hits. This needs apps to pass 0 for probe or environment fills; the workbench and
@@ -52,3 +52,45 @@ The signature has to be specific to hit/miss flicker, not to hit-distance variat
    m bits are written but read by no pass.
 3. **Both:** a miss mix gated by persistence.
 Then rerun the 12 rm paths first (the cheap test this design failed), then the full rule-9 set.
+
+## v2: flip persistence × hit/miss mix (built 2026-10-28)
+Trigger (shaders/recurrent.ts `DropoutGuard`):
+- **Persistence:** φ, a per-pixel EMA (rate 1/8) of hit/miss state changes. It is kept with the last state in data's m bits,
+  which no other pass reads, and reprojected from the nearest valid tap.
+- **Mix:** the geometry-valid 3×3 holds both misses (ĥ = 1, hit distance 0) and hits.
+- **Weight:** w = smoothstep(0.1, 0.3, φ) × mix. It is applied in the same four places as v1. The history fix uses
+  smoothstep(0.1, 0.3, φ).
+- **Default WGSL** is byte-identical to HEAD (495,629 bytes).
+
+Apps must pass 0 for probe or environment fills. The workbench's new pane option `missZero` does that:
+- three's tracer: probe samples.
+- Ben's tracer: a pixel counts as a miss below coverage 0.5.
+
+On its own, `missZero` changes nothing visible: 2.51 → 2.52 and 4.06 → 4.03.
+
+### Workbench, Ben's mirror scene (same measure as above)
+| | off | v2 on | v1 on | FFX |
+|---|---|---|---|---|
+| mirrors, Ben's tracer | 2.51 | 1.03 | 0.70 | 0.72 |
+| mirrors, three's tracer | 4.06 | 1.36 | 1.17 | 1.19 |
+| roughness 0.25, Ben's tracer | 0.72 | 0.54 | 0.47 | 0.24 |
+| roughness 0.25, three's tracer | 1.82 | 1.50 | 1.48 | 0.50 |
+
+### Reflection paths (same run as v1; table: [data/dropout-guard/rm-v2-marker.md](data/dropout-guard/rm-v2-marker.md))
+- **Marker 1:** unchanged on all 12 paths (|Δ| ≤ 0.03 dB on every metric; v1 lost up to 8.4 dB).
+- **Marker 2, settled:** +0.2 … +2.5 dB on 10 paths. Duplicate frames on rm-graze-plane fall from 9 to 3.
+- **Regressions:**
+  - **rm-refl-turn marker 2** (the mirror turns): moving −1.59 dB, hold −0.84; position error +1.7 px, trail +2.2 px,
+    ghost +0.09, duplicate frames 24 → 27 of 40. Settled +1.48.
+  - **rm-obj-convex marker 2:** moving −1.47 dB, settled −1.52.
+  - **rm-cam-concave marker 2:** moving −0.50 dB (settled +2.48).
+
+**Reading:** where these traced mirrors gain, the reflected sky edges flip hit/miss under sampling. Keeping history
+there anti-aliases them, which is the intended effect. The losses are on a moving reflector and on a convex mirror.
+There the virtual reprojection is least exact, and relaxing the virtual hit test lets mismatched history through.
+
+**Verdict:** much closer than v1, but not clean. It stays opt-in and experimental.
+
+**Next candidate:** relax only the detector and the history fix, not the two virtual tolerances; or use the
+persistence alone, without relaxing the hit test where the reflector moves. Test on rm-refl-turn and rm-obj-convex
+plus the workbench first.

@@ -499,15 +499,23 @@ export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?:
 /**
  * Option dropoutGuard (our design): the specular filter's low-roughness rules assume clean mirror input (the detector
  * and the history-fix window centre on the pixel and the detector floor goes to 0 as roughness -> 0). Screen-space
- * tracing breaks that where a pixel flips between an SSR hit and a far fill (probe / environment) from frame to frame.
- * Such a neighbourhood has a wide 3x3 spread of ĥ; w = smoothstep(lo, hi, that spread) raises the mirror factor f_r to
- * at least w in the detector (floor and centring) and the history-fix window, and the roughness in the virtual hit
- * test's and the virtual confidence's ĥ tolerances to at least w; never the kernels' weights or radii. On a perfect
- * mirror the surface history is capped at 0 (lobe half-angle 0), so the virtual footprint is the only history, and the
- * hit test dropping it under dropout is what costs the most. w = 0 leaves the arithmetic unchanged.
+ * tracing breaks that where a pixel keeps flipping between an SSR hit and a miss (a probe / environment fill, which
+ * the app passes as hit distance 0, ĥ = 1) from frame to frame.
+ * v2 trigger (v1, the 3x3 ĥ spread, also fired on clean mirrors with depth variation: results/DROPOUT-GUARD.md):
+ * - persistence: a per-pixel EMA phi of hit/miss state changes (rate 1/8), kept with the last state in data's m bits
+ *   (written but read by no other pass), nearest-tap reprojected. A one-off change (a moving edge, a disocclusion)
+ *   adds one event; dropout keeps adding them.
+ * - mix: the 3x3 (geometry-valid taps) holds both hits and misses.
+ * w = smoothstep(lo, hi, phi) x mix raises the mirror factor f_r to at least w in the detector (floor and centring)
+ * and the roughness in the virtual hit test's and the virtual confidence's ĥ tolerances to at least w; the history
+ * fix window uses smoothstep(lo, hi, phi). Never the kernels' weights or radii. On a perfect mirror the surface
+ * history is capped at 0 (lobe half-angle 0), so the virtual footprint is the only history, and the hit test dropping
+ * it under dropout is what costs the most. w = 0 leaves the arithmetic unchanged.
  */
 export interface DropoutGuard { lo: number; hi: number }
-const dropW = (dg: DropoutGuard, spread: string) => `smoothstep(${dg.lo.toFixed(6)}, ${dg.hi.toFixed(6)}, ${spread})`;
+const dropW = (dg: DropoutGuard, phi: string) => `smoothstep(${dg.lo.toFixed(6)}, ${dg.hi.toFixed(6)}, ${phi})`;
+/** ĥ of a miss is exactly 1 (hNorm); any finite hit is below this */
+const DG_MISS = '0.9999';
 
 const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular', vht?: { a: number; b: number }, dg?: DropoutGuard) => /* wgsl */ `
   {
@@ -519,9 +527,8 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
       let aS = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // A_s after the +1 of C-9 (D12d)
       let alpha = g.rough * g.rough;
       let fdom = domFactor(alpha);${dg && kind === 'specular' ? `
-      // dropoutGuard: a hit / far-fill mix in the 3x3 (wide ĥ spread) is noise, not a clean mirror (our design)
-      let dMu${i} = m1_${i}.y / nn;
-      let dW${i} = ${dropW(dg, `sqrt(max(m2_${i}.y / nn - dMu${i} * dMu${i}, 0.0))`)};` : ''}
+      // dropoutGuard: a pixel that keeps flipping hit / miss inside a hit / miss mix is SSR dropout, not a clean mirror (our design)
+      let dW${i} = ${dropW(dg, 'dgPhi')} * clamp(min(dgMiss, nn - dgMiss), 0.0, 1.0);` : ''}
       var Hv = H${i};
       var cv = 0.0;
       var m = 0.0;
@@ -578,7 +585,7 @@ const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular
       let alphaVirt = mix(1.0 / (1.0 + min(aD, P${i}.aFast)), 1.0 / (1.0 + aD), cv);
       acc = mix(mix(H${i}, pre, alphaSurf), mix(Hv, pre, alphaVirt), m);
       a = 1.0 / mix(alphaSurf, alphaVirt, m) - 1.0;
-      mVirt = m * cv;   // m*c_v into data's m bits; no pass reads them (R7's virtual candidate was removed, SPEC v0.2 5.11-5.12)
+      ${dg && kind === 'specular' ? '' : 'mVirt = m * cv;   // m*c_v into data\'s m bits; no pass reads them (R7\'s virtual candidate was removed, SPEC v0.2 5.11-5.12)'}
     }
     textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
     A[${sl}] = a;
@@ -659,6 +666,8 @@ fn catmullRomLoad1(tex: texture_2d<f32>, uv: vec2f) -> f32 {
 
 export function temporalPass(kinds: RecurrentKind[], tv: RecurrentTemporalVariant = {}): PassDef {
   const b = base(kinds);
+  // dropoutGuard: the radiance specular signal whose hit / miss state data's m bits carry (-1: compiled out)
+  const dgi = tv.dropoutGuard ? kinds.indexOf('specular') : -1;
   addReproj(b);
   b.add('smp', 'sampler', 's');
   b.add('fastPrev', 'texture_2d<f32>', 'f');
@@ -756,7 +765,9 @@ fn main(${TILE_MAIN}) {
   }
   // C-8: custom-weighted bilinear; valid taps with tiny bilinear weight still count.
   var Ahist = vec2f(0.0);
-  var Fh = vec4f(0.0);
+  var Fh = vec4f(0.0);${dgi >= 0 ? `
+  var dgBest = 0.0;
+  var dgPrev = 0u;` : ''}
   ${I.map((i) => `var H${i} = ${ZERO(kinds[i])};\n  var lo${i} = ${BIG(kinds[i], '1e30')};\n  var hi${i} = ${BIG(kinds[i], '-1e30')};`).join('\n  ')}
   if (hasHist) {
     let wts = max(r.bil, vec4f(1e-3)) * r.valid;
@@ -767,7 +778,9 @@ fn main(${TILE_MAIN}) {
       let ok = wk > 0.0;
       let q = clampPix(r.base + TAP_OFFS[${k}]);
       let dv = textureLoad(dataPrev, q, 0).r;
-      Ahist += vec2f(unpackA(dv, 0u), unpackA(dv, 1u)) * wk;
+      Ahist += vec2f(unpackA(dv, 0u), unpackA(dv, 1u)) * wk;${dgi >= 0 ? `
+      dgPrev = select(dgPrev, (dv >> 20u) & 255u, wk > dgBest);   // dropoutGuard: the nearest valid tap's state
+      dgBest = max(dgBest, wk);` : ''}
       Fh += textureLoad(fastPrev, q, 0) * wk;
       ${I.map((i) => `{
         let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
@@ -798,7 +811,8 @@ fn main(${TILE_MAIN}) {
   var m2_${i} = m1_${i} * m1_${i};${kinds[i] === 'specular' ? `
   var c1_${i} = pc${i}.rgb;
   var c2_${i} = pc${i}.rgb * pc${i}.rgb;` : ''}`).join('\n  ')}
-  var nn = 1.0;
+  var nn = 1.0;${dgi >= 0 ? `
+  var dgMiss = select(0.0, 1.0, pc${dgi}.a > ${DG_MISS});   // dropoutGuard: misses among the valid 3x3` : ''}
   var curvSum = 0.0;
   var curvN = 0.0;
   if (hasHist) {
@@ -809,7 +823,8 @@ fn main(${TILE_MAIN}) {
       let ti = tidx(lid, ${x}, ${y});
       let zq = tile_z[ti];
       let ok = select(0.0, 1.0, inside(qq) && zq > 0.0 && planeDist(pl, q, zq) < P0.geoTolLo);
-      nn += ok;
+      nn += ok;${dgi >= 0 ? `
+      dgMiss += select(0.0, ok, tile_pre${dgi}[ti].a > ${DG_MISS});` : ''}
       ${I.map((i) => `{ let s = tile_pre${i}[ti]; let v = ${mvec(kinds[i], 's')} * ok; m1_${i} += v; m2_${i} += v * v;${kinds[i] === 'specular' ? ` let sc = s.rgb * ok; c1_${i} += sc; c2_${i} += sc * sc;` : ''} }`).join('\n      ')}${hasSpec && (x === 0 || y === 0) ? `
       { // curvature along this axis neighbour: dot(n_q - n, dX) / |dX|^2 (positive = convex)
         let dX = viewPosAt(uvOf(q), zq) - X;
@@ -818,7 +833,12 @@ fn main(${TILE_MAIN}) {
       }` : ''}
     }`).join('')}
   }
-  ${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest, tv.dropoutGuard) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
+  ${dgi >= 0 ? `// dropoutGuard persistence: EMA (rate 1/8) of hit / miss changes, with this frame's state, in data's m bits
+  let dgNow = select(0u, 1u, pc${dgi}.a > ${DG_MISS});
+  var dgPhi = 0.0;
+  if (hasHist && dgBest > 0.0) { dgPhi = mix(f32(dgPrev >> 1u) / 127.0, select(0.0, 1.0, dgNow != (dgPrev & 1u)), 0.125); }
+  mVirt = f32((u32(round(dgPhi * 127.0)) << 1u) | dgNow) / 255.0;
+  ` : ''}${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest, tv.dropoutGuard) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
   textureStore(outFast, p, fastOut);
   var mask = 0u;
   if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
@@ -1313,9 +1333,9 @@ fn main(${TILE_MAIN}) {
     if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
       ${kinds[i] === 'specular' ? `// window centred on the pixel's own fast value as roughness -> 0 (clean mirror input:
       // the 3x3 mean would blur reflected edges; our addition)
-      ${dg ? `// dropoutGuard: the same test on the fast history's ĥ spread (the raw spread, not the clamp's standard error)
+      ${dg ? `// dropoutGuard: this pixel's flip persistence (data's m bits, written by the temporal pass)
       let cw = max(mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre),
-                   ${dropW(dg, `sqrt(max(fSq[${2 * slot(i) + 1}] / nValid - fMean[${2 * slot(i) + 1}] * fMean[${2 * slot(i) + 1}], 0.0))`)});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
+                   ${dropW(dg, 'f32((dv >> 21u) & 127u) / 127.0')});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
       let mu = mix(fc[${2 * slot(i)}], fMean[${2 * slot(i)}], cw);
       let muH = mix(fc[${2 * slot(i) + 1}], fMean[${2 * slot(i) + 1}], cw);` : `let mu = fMean[${2 * slot(i)}];
       let muH = fMean[${2 * slot(i) + 1}];`}

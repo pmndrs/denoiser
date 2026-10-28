@@ -1184,6 +1184,10 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   varies in depth (bumps, curved reflectors, silhouettes), and treating those as rough cost up to −8.4 dB on the `rm-*`
   paths. Run the 12 reflection paths first for any low-roughness change: ~10 min, and they caught this before the
   rule-9 set. Workbench stills of one SSR scene can't show it.
+- **Detect dropout from time, not space.** A per-pixel EMA of hit/miss flips, gated by a 3×3 that holds both hits
+  and misses, left every rm-* marker 1 exactly as it was (v1's spatial spread cost up to 8.4 dB). It needs an
+  unambiguous miss: hit distance 0, never a "far" 100. Spare per-pixel state already existed: data's m bits were
+  written but read by no pass.
 - **On a perfect mirror the recurrent filter's only history is virtual.** The surface cap is 0 at lobe half-angle 0, so
   whatever drops the virtual footprint (the T6 hit test) drops all history.
 
