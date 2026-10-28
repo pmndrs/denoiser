@@ -307,6 +307,8 @@ async function liveMode() {
     info: { ...engine.info, w: W, h: H, cache: engine.cacheAvailable },
     gpuErrors: engine.gpuErrors,
     get frame() { return engine.frame; },
+    /** The engine itself, for diagnostics scripts (readHistory, step, readFrame). */
+    engine,
     defaultVariants: DEFAULT_VARIANTS,
     keptFrames: (c: Partial<BenchConfig>) => keptFrames(resolveConfig({ ...cfg, ...c })),
     /** Start a run (returns at once); poll window.__benchState for { progress } then { ready, id } or { error }. */

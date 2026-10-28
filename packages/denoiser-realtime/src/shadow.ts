@@ -35,9 +35,12 @@ import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
-  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
+  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE, shadowStabilizeWgsl,
   TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type SpatialVariant, type TemporalVariant, type TrVariant,
 } from './shaders/shadow';
+
+/** antiLagNoise / stillHistory stay off for this many frames after the light moves or changes size. */
+const STILL_LIGHT_FRAMES = 8;
 
 export interface ShadowDenoiserOptions {
   /** History cap A_cap (frames - 1) of the accumulated visibility. Default 15 (SPEC SH-4). */
@@ -101,6 +104,31 @@ export interface ShadowDenoiserOptions {
   youngMinPx?: number;
   /** History length (A) a full anti-lag drops to (0 = this frame only). Default 0. */
   antiLagHistory?: number;
+  /**
+   * Anti-lag noise dead zone on a still view (results/SHADOW-BENCH.md, our design): where the history was not resampled
+   * (a still camera and light: the bilinear footprint's variance below STILL_VARIANCE = 0.01 px^2, fading in), the clamp's
+   * move of the history counts toward the restart only beyond antiLagNoise x the window's noise scale: the larger of the 5x5 samples' sigma and a binary
+   * sample's at the history's value, sqrt(vH (1 - vH)) (x sqrt(25 / n) with clampGeometry: clampSigma's unit). On a still view about a third of the penumbra pixels restart within 48 frames because the 5x5 raw
+   * mean's own noise steps just past the window; each restart shows half a raw sample for a frame (the "not solid",
+   * popping shadow). A real change moves the history far past the window and still restarts; the clamp itself is
+   * unchanged, and so is everything where the history was resampled (a moving camera, or a light that moved or changed
+   * size in the last 8 frames). Cost: a shadow moving over a still receiver (a moving object, still camera) restarts later
+   * and trails (1080p test bed 'object' path: -0.56 dB at 0.1, -1.13 at 0.2). Pipeline variant (opaque path). Default 0
+   * (off).
+   */
+  antiLagNoise?: number;
+  /**
+   * Full history on a still view (results/SHADOW-BENCH.md, our design): historyScale's W_px^2 cap and the stabilizer's
+   * box-width gate (stabilizeBox) both guard against the blur of resampling the history at each reprojection; where the
+   * history was not resampled (a still camera and light: the bilinear footprint's variance fx (1 - fx) + fy (1 - fy) below
+   * STILL_VARIANCE = 0.01 px^2, fading in) there is no such blur, and narrow penumbrae and contact edges (which a still,
+   * distant view is full of) otherwise sit on a 1-4 frame, unstabilized history and shimmer. With this on they keep
+   * maxHistory and the stabilizer there (the stabilizer only on settled histories, 9+ frames: a pixel just uncovered or
+   * restarted because its shadow moved keeps the edge gate, which also stops a moving edge from trailing). A moving
+   * camera, or a light that moved or changed size in the last 8 frames, is unchanged. 'cap' / 'stabilize': only that half.
+   * Pipeline variant (opaque path). Default false.
+   */
+  stillHistory?: boolean | 'cap' | 'stabilize';
   /** Temporal disocclusion: plane distance relative to view distance. Default 0.01. */
   planeDistance?: number;
   /** Kernel radius = radiusScale x penumbra width W (first pass; the second uses half). Default 0.75. */
@@ -366,6 +394,8 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     floorE: o.floorE ?? 0.05, // q29 (a)
     horizonSnap: o.horizonSnap ?? true, // q24 (a)
     lightMotion: o.lightMotion ?? 0,
+    antiLagNoise: o.antiLagNoise ?? 0,
+    stillHistory: o.stillHistory ?? false,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
@@ -462,6 +492,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private temporalVariant: TemporalVariant = {};
   /** lightMotion: the light of the previous dispatch (undefined after a reset). */
   private prevLight?: ShadowLight;
+  /** Frames since the light last changed (antiLagNoise / stillHistory's light gate). */
+  private lightStillFrames = 0;
 
   private frame: GPUBuffer;
   private params: GPUBuffer;
@@ -539,7 +571,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
         this.lastTauPipe = tr.compose ? this.lastPipe : this.mkPipe('shadows stabilize (translucency, tau tiles)', shadowStabilizeTrWgsl(tr, true), this.layouts.stabilize);
       }
     } else if (o.stabilize > 0 && o.spatialPasses > 0) {
-      this.stabPipe = this.mkPipe('shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
+      this.stabPipe = this.mkPipe('shadows stabilize', o.stillHistory === true || o.stillHistory === 'stabilize' ? shadowStabilizeWgsl(true) : SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
@@ -548,6 +580,9 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     if (!tr) {
       if (o.horizonSnap) this.temporalVariant.horizonSnap = true;
       if (o.lightMotion > 0) this.temporalVariant.lightMotion = true;
+      if (o.antiLagNoise > 0) this.temporalVariant.antiLagNoise = o.antiLagNoise;
+      if (o.stillHistory) this.temporalVariant.stillHistory = true;
+      if (o.stillHistory === 'stabilize') this.temporalVariant.stillCap = false;
     }
     this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
@@ -779,7 +814,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     f[95] = o.noiseCap;
     f[96] = o.snapHardPx;
     if (o.floorE > 0) f[99] = o.floorE;
-    if (this.temporalVariant.lightMotion) {
+    if (this.temporalVariant.lightMotion || this.temporalVariant.antiLagNoise || this.temporalVariant.stillHistory) {
       // light displacement since the last dispatch, in light sizes (sphere: radius; directional: angular radius)
       const cur = inputs.light ?? o.light;
       const prev = this.prevLight;
@@ -798,6 +833,15 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
         }
       }
       f[97] = rho;
+      if (this.temporalVariant.antiLagNoise || this.temporalVariant.stillHistory) {
+        // still-view gate (antiLagNoise / stillHistory: the shaders' wS needs q4 == 0): any change of the light (moved, or
+        // resized in place) holds it off for STILL_LIGHT_FRAMES frames while the history catches up; -1 marks the hold
+        // (lightMotion only acts on q4 > 0)
+        const resized = !!cur && !!prev && !reset && (cur.type === 'sphere' && prev.type === 'sphere' ? cur.radius !== prev.radius
+          : cur.type === 'directional' && prev.type === 'directional' ? cur.angularRadius !== prev.angularRadius : false);
+        this.lightStillFrames = reset ? STILL_LIGHT_FRAMES : rho > 0 || resized ? 0 : this.lightStillFrames + 1;
+        if (rho === 0 && this.lightStillFrames < STILL_LIGHT_FRAMES) f[97] = -1;
+      }
       f[98] = o.lightMotion;
       this.prevLight = cur ? JSON.parse(JSON.stringify(cur)) as ShadowLight : undefined;
     }

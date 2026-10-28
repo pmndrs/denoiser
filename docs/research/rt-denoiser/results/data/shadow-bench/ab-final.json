@@ -1,0 +1,1039 @@
+{
+ "base": "sb-ship",
+ "sets": {
+  "std540": {
+   "captures": [
+    "std540-orbit",
+    "std540-pan",
+    "std540-light",
+    "std540-thin",
+    "std540-glossy",
+    "std540-cut",
+    "std540-object"
+   ],
+   "rows": {
+    "sb-ship": {
+     "pooled": 37.02976549045993,
+     "dPooled": 0,
+     "dPooledMin": 0,
+     "dPooledMinCap": "std540-orbit",
+     "flip": 0.014314266700317315,
+     "flipR": 0,
+     "boilR": 0,
+     "boilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "dynBoilR": 0,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "spBoilR": 0,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "changing": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "static": {
+       "v": 0,
+       "cap": "std540-orbit"
+      }
+     },
+     "fsS": 0.009925683807942806,
+     "fs4S": 0.004605198574181047,
+     "fsD": 0.18402725347978624,
+     "fsSR": 0,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "fsDR": 0,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "sharp": 0.9645396766881603,
+     "gpuR": 0,
+     "edge": 26.58172025268428,
+     "soft": 30.981549868925516,
+     "contact": 22.031451982646292,
+     "changing": 23.493260595659887,
+     "trail": 0.017376666245709556,
+     "lag": null
+    },
+    "sb-st-stabilize": {
+     "pooled": 37.031946179708754,
+     "dPooled": 0.0021806892488232927,
+     "dPooledMin": -0.0026405776293429994,
+     "dPooledMinCap": "std540-light",
+     "flip": 0.014305203469848812,
+     "flipR": -0.000456457443018984,
+     "boilR": -0.016144569479814432,
+     "boilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "dynBoilR": 0.000700228271705334,
+     "dynBoilCmax": {
+      "v": 0.0049053796764093605,
+      "cap": "std540-object"
+     },
+     "spBoilR": -0.024456086841401548,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 3.840263662624466e-9,
+       "cap": "std540-orbit"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "contact": {
+       "v": 4.0765709452550425e-7,
+       "cap": "std540-glossy"
+      },
+      "changing": {
+       "v": 0.01711795749565459,
+       "cap": "std540-object"
+      },
+      "static": {
+       "v": 0,
+       "cap": "std540-orbit"
+      }
+     },
+     "fsS": 0.009121825444869872,
+     "fs4S": 0.0042978649553629955,
+     "fsD": 0.1839885661298463,
+     "fsSR": -0.05432377257574079,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "std540-cut"
+     },
+     "fsDR": -0.00014464104912974879,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "sharp": 0.9643884617830905,
+     "gpuR": -0.4277861196089156,
+     "edge": 26.588870548284643,
+     "soft": 30.983394189870797,
+     "contact": 22.047398266108438,
+     "changing": 23.48200532123892,
+     "trail": 0.01747293274741967,
+     "lag": null
+    },
+    "sb-sts01": {
+     "pooled": null,
+     "dPooled": null,
+     "dPooledMin": null,
+     "dPooledMinCap": "",
+     "flip": null,
+     "flipR": null,
+     "boilR": null,
+     "boilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "dynBoilR": 0.002618751447908146,
+     "dynBoilCmax": {
+      "v": 0.01834842346143173,
+      "cap": "std540-object"
+     },
+     "spBoilR": -0.046469964787027904,
+     "spBoilCmax": {
+      "v": 0.0000015101475685508348,
+      "cap": "std540-pan"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0.000038622099920226916,
+       "cap": "std540-thin"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "contact": {
+       "v": 0.000007555306348994151,
+       "cap": "std540-cut"
+      },
+      "changing": {
+       "v": 0.09241819277231489,
+       "cap": "std540-object"
+      },
+      "static": {
+       "v": 0.000004916135950328027,
+       "cap": "std540-pan"
+      }
+     },
+     "fsS": 0.008550996467975736,
+     "fs4S": 0.003990421271245866,
+     "fsD": 0.18416881405835053,
+     "fsSR": -0.08572910977572354,
+     "fsSRmax": {
+      "v": -0.000034678873630067386,
+      "cap": "std540-glossy"
+     },
+     "fsDR": 0.0005270994633032837,
+     "fsDRmax": {
+      "v": 0.003743135028993816,
+      "cap": "std540-object"
+     },
+     "sharp": 0.9643328965103137,
+     "gpuR": -0.3620137711737009,
+     "edge": 26.63787316270669,
+     "soft": 30.91374418677291,
+     "contact": 22.098976172590504,
+     "changing": 23.31448542112251,
+     "trail": 0.018819096659768192,
+     "lag": null
+    },
+    "sb-still2": {
+     "pooled": 37.03455128183708,
+     "dPooled": 0.004785791377153308,
+     "dPooledMin": -0.00001579968010645416,
+     "dPooledMinCap": "std540-glossy",
+     "flip": 0.01430654821072944,
+     "flipR": -0.00034565787049228066,
+     "boilR": -0.01844667747258179,
+     "boilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "dynBoilR": 0.0006947055545224456,
+     "dynBoilCmax": {
+      "v": 0.004866725547649109,
+      "cap": "std540-object"
+     },
+     "spBoilR": -0.027972212084318198,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 3.840263662624466e-9,
+       "cap": "std540-orbit"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "std540-orbit"
+      },
+      "contact": {
+       "v": 0.00001360066494404677,
+       "cap": "std540-pan"
+      },
+      "changing": {
+       "v": 0.017106950563977597,
+       "cap": "std540-object"
+      },
+      "static": {
+       "v": 0,
+       "cap": "std540-orbit"
+      }
+     },
+     "fsS": 0.00904694337491324,
+     "fs4S": 0.004261496962160458,
+     "fsD": 0.1839885661298463,
+     "fsSR": -0.059653171620958956,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "std540-cut"
+     },
+     "fsDR": -0.00014464104912974879,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "std540-orbit"
+     },
+     "sharp": 0.9644084402768031,
+     "gpuR": -0.03548549134622731,
+     "edge": 26.602900499008673,
+     "soft": 30.98320991497895,
+     "contact": 22.081022947137456,
+     "changing": 23.481998205443197,
+     "trail": 0.017473041535971928,
+     "lag": null
+    },
+    "sb-ffx": {
+     "pooled": 30.85412092536423,
+     "dPooled": -6.1756445650957,
+     "dPooledMin": -7.923018468518489,
+     "dPooledMinCap": "std540-glossy",
+     "flip": 0.05209454247267775,
+     "flipR": 2.643712054482584,
+     "boilR": 0.36794336995442695,
+     "boilCmax": {
+      "v": 0.5113009655828857,
+      "cap": "std540-pan"
+     },
+     "dynBoilR": -0.02527668978974305,
+     "dynBoilCmax": {
+      "v": 0.14880123840473036,
+      "cap": "std540-cut"
+     },
+     "spBoilR": 0.17448609375972815,
+     "spBoilCmax": {
+      "v": 0.5430775683053208,
+      "cap": "std540-glossy"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0.422161617516426,
+       "cap": "std540-object"
+      },
+      "soft": {
+       "v": 1.3031437618828896,
+       "cap": "std540-glossy"
+      },
+      "contact": {
+       "v": 0.16822560894782068,
+       "cap": "std540-cut"
+      },
+      "changing": {
+       "v": 0.4413314486518616,
+       "cap": "std540-cut"
+      },
+      "static": {
+       "v": 0.6297395632715825,
+       "cap": "std540-pan"
+      }
+     },
+     "fsS": 0.02377199345784159,
+     "fs4S": 0.009628903588215238,
+     "fsD": 0.20122603956552093,
+     "fsSR": 1.5417406210579878,
+     "fsSRmax": {
+      "v": 2.228221667360244,
+      "cap": "std540-glossy"
+     },
+     "fsDR": 0.14669298559019994,
+     "fsDRmax": {
+      "v": 0.8331483070091334,
+      "cap": "std540-light"
+     },
+     "sharp": 0.8355069106894064,
+     "gpuR": -0.08223552143996218,
+     "edge": 20.289618243419785,
+     "soft": 25.5940432827333,
+     "contact": 17.2827743267261,
+     "changing": 19.624473490939714,
+     "trail": 0.021897419463397523,
+     "lag": null
+    }
+   }
+  },
+  "real": {
+   "captures": [
+    "three-knot-static",
+    "three-knot-still",
+    "three-knot-orbit",
+    "three-orbit",
+    "three-pan",
+    "sponza-orbit",
+    "sponza-pan",
+    "sponza-move",
+    "bistro-orbit",
+    "bistro-pan",
+    "bistro-move"
+   ],
+   "rows": {
+    "sb-ship": {
+     "pooled": 30.880730028579304,
+     "dPooled": 0,
+     "dPooledMin": 0,
+     "dPooledMinCap": "three-knot-static",
+     "flip": 0.025443225269203628,
+     "flipR": 0,
+     "boilR": 0,
+     "boilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "dynBoilR": 0,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "spBoilR": 0,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "changing": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "static": {
+       "v": 0,
+       "cap": "three-knot-static"
+      }
+     },
+     "fsS": 0.014774771906286998,
+     "fs4S": 0.0091182331820551,
+     "fsD": 0.18824850579003727,
+     "fsSR": 0,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "fsDR": 0,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "sharp": 0.8380343893555081,
+     "gpuR": 0,
+     "edge": 19.558147911569964,
+     "soft": 29.698447128262366,
+     "contact": 16.922691052150146,
+     "changing": 17.4578863659648,
+     "trail": 0.034813366324712866,
+     "lag": null
+    },
+    "sb-st-stabilize": {
+     "pooled": 30.85836608912012,
+     "dPooled": -0.022363939459185064,
+     "dPooledMin": -0.24847677274421187,
+     "dPooledMinCap": "three-knot-static",
+     "flip": 0.02545792206582045,
+     "flipR": 0.0006988994584623744,
+     "boilR": -0.02303844230618688,
+     "boilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "dynBoilR": -0.00228229356979589,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "spBoilR": -0.030614828325115095,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "three-knot-static"
+      },
+      "changing": {
+       "v": 1.676240724002298e-8,
+       "cap": "three-knot-orbit"
+      },
+      "static": {
+       "v": 0,
+       "cap": "three-knot-static"
+      }
+     },
+     "fsS": 0.014417776099861819,
+     "fs4S": 0.008960792002431604,
+     "fsD": 0.18727873537157544,
+     "fsSR": -0.05585385276392172,
+     "fsSRmax": {
+      "v": 0.000004288263965035455,
+      "cap": "bistro-pan"
+     },
+     "fsDR": -0.007732847361657547,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "three-knot-orbit"
+     },
+     "sharp": 0.8373416234618403,
+     "gpuR": -0.05542922330322885,
+     "edge": 19.514505410442602,
+     "soft": 29.704718923950725,
+     "contact": 16.91908605917719,
+     "changing": 17.451450313487854,
+     "trail": 0.034947705155585845,
+     "lag": null
+    },
+    "sb-sts01": {
+     "pooled": null,
+     "dPooled": null,
+     "dPooledMin": null,
+     "dPooledMinCap": "",
+     "flip": null,
+     "flipR": null,
+     "boilR": null,
+     "boilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "dynBoilR": -0.0029511417919058313,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "spBoilR": -0.054402322389577235,
+     "spBoilCmax": {
+      "v": 0.00002404658776766766,
+      "cap": "three-knot-orbit"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0.00000871522534739988,
+       "cap": "three-knot-orbit"
+      },
+      "soft": {
+       "v": 0.000002186062185938198,
+       "cap": "three-orbit"
+      },
+      "contact": {
+       "v": 0.000014159610956188118,
+       "cap": "three-knot-orbit"
+      },
+      "changing": {
+       "v": 1.6757207843554056e-7,
+       "cap": "sponza-pan"
+      },
+      "static": {
+       "v": 0.000008000466802160489,
+       "cap": "three-knot-orbit"
+      }
+     },
+     "fsS": 0.014167807519341213,
+     "fs4S": 0.008828507685701302,
+     "fsD": 0.1867189828717873,
+     "fsSR": -0.09324709715976807,
+     "fsSRmax": {
+      "v": 8.57652793007091e-7,
+      "cap": "bistro-pan"
+     },
+     "fsDR": -0.011781209873737476,
+     "fsDRmax": {
+      "v": 0.00000996264009955894,
+      "cap": "bistro-orbit"
+     },
+     "sharp": 0.8366457653719032,
+     "gpuR": -0.04201238772199538,
+     "edge": 19.491700411723528,
+     "soft": 29.737521158561602,
+     "contact": 16.91638599795335,
+     "changing": 17.437738811797352,
+     "trail": 0.03531546465550365,
+     "lag": null
+    },
+    "sb-still2": {
+     "pooled": 30.906047452529172,
+     "dPooled": 0.025317423949866417,
+     "dPooledMin": -0.2019716145929138,
+     "dPooledMinCap": "three-knot-static",
+     "flip": 0.02541743207389959,
+     "flipR": -0.0008941088573452397,
+     "boilR": -0.04264991710775085,
+     "boilCmax": {
+      "v": 0.00002332413672712086,
+      "cap": "bistro-pan"
+     },
+     "dynBoilR": -0.004117044277889692,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "spBoilR": -0.05054809227904269,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "three-knot-static"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0.00001807686085575355,
+       "cap": "bistro-pan"
+      },
+      "soft": {
+       "v": 0.000006014796305242598,
+       "cap": "sponza-orbit"
+      },
+      "contact": {
+       "v": 0.000040819878155407,
+       "cap": "bistro-pan"
+      },
+      "changing": {
+       "v": 0.000007068676800559004,
+       "cap": "three-pan"
+      },
+      "static": {
+       "v": 0.000024935943025994334,
+       "cap": "bistro-pan"
+      }
+     },
+     "fsS": 0.014094721235564565,
+     "fs4S": 0.008798814079770192,
+     "fsD": 0.1864488885567648,
+     "fsSR": -0.09545587684986993,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "three-knot-orbit"
+     },
+     "fsDR": -0.0169539973453967,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "three-knot-orbit"
+     },
+     "sharp": 0.8382257476254812,
+     "gpuR": -0.11547948664570068,
+     "edge": 19.574690354791223,
+     "soft": 29.70953447514037,
+     "contact": 17.013224522666317,
+     "changing": 17.407163492250156,
+     "trail": 0.03507826733083594,
+     "lag": null
+    },
+    "sb-ffx": {
+     "pooled": 24.560031019746194,
+     "dPooled": -6.320699008833108,
+     "dPooledMin": -8.445633170869261,
+     "dPooledMinCap": "three-knot-static",
+     "flip": 0.0730248210351554,
+     "flipR": 1.8580798042259117,
+     "boilR": -0.03640465261944022,
+     "boilCmax": {
+      "v": 0.31854507161428924,
+      "cap": "three-knot-still"
+     },
+     "dynBoilR": -0.17689727324500443,
+     "dynBoilCmax": {
+      "v": 0.8704369111749841,
+      "cap": "three-knot-static"
+     },
+     "spBoilR": 0.03808668947201641,
+     "spBoilCmax": {
+      "v": 0.5222529208761708,
+      "cap": "three-knot-still"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0.43578259756226845,
+       "cap": "three-knot-still"
+      },
+      "soft": {
+       "v": 0.4263084057212072,
+       "cap": "three-pan"
+      },
+      "contact": {
+       "v": 0.04851509327670489,
+       "cap": "three-pan"
+      },
+      "changing": {
+       "v": 1.4618327171381784,
+       "cap": "three-knot-static"
+      },
+      "static": {
+       "v": 0.31854507161428924,
+       "cap": "three-knot-still"
+      }
+     },
+     "fsS": 0.024612584876754516,
+     "fs4S": 0.01131070488125649,
+     "fsD": 0.14930176313040172,
+     "fsSR": 0.7721882040369717,
+     "fsSRmax": {
+      "v": 1.479835899385415,
+      "cap": "three-knot-still"
+     },
+     "fsDR": -0.1191375040193523,
+     "fsDRmax": {
+      "v": 1.0162308385933274,
+      "cap": "three-knot-static"
+     },
+     "sharp": 0.5471084514316377,
+     "gpuR": -0.26176319753178173,
+     "edge": 13.456574765048265,
+     "soft": 22.852097378239645,
+     "contact": 11.612869419877086,
+     "changing": 12.593769484316864,
+     "trail": 0.05723076381553778,
+     "lag": null
+    }
+   }
+  },
+  "motion": {
+   "captures": [
+    "sm-hard-camera",
+    "sm-hard-light",
+    "sm-hard-object",
+    "sm-hard-frozen",
+    "sm-sun-camera",
+    "sm-sun-light",
+    "sm-sun-object",
+    "sm-sun-frozen"
+   ],
+   "rows": {
+    "sb-ship": {
+     "pooled": 34.89363724952501,
+     "dPooled": 0,
+     "dPooledMin": 0,
+     "dPooledMinCap": "sm-hard-camera",
+     "flip": 0.012692880899964195,
+     "flipR": 0,
+     "boilR": 0,
+     "boilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "dynBoilR": 0,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "spBoilR": 0,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "changing": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "static": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      }
+     },
+     "fsS": 0.009933006221291263,
+     "fs4S": 0.005137810222298856,
+     "fsD": 0.2604747175264459,
+     "fsSR": 0,
+     "fsSRmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "fsDR": 0,
+     "fsDRmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "sharp": 0.9498862698134417,
+     "gpuR": 0,
+     "edge": 24.699892784982925,
+     "soft": 27.18671831391979,
+     "contact": 22.005009371963613,
+     "changing": 17.477865115419934,
+     "trail": 0.07173711011637059,
+     "lag": null
+    },
+    "sb-st-stabilize": {
+     "pooled": 34.93732191140207,
+     "dPooled": 0.043684661877060105,
+     "dPooledMin": -0.009030785186908474,
+     "dPooledMinCap": "sm-sun-light",
+     "flip": 0.012719397865119607,
+     "flipR": 0.0020474422776500245,
+     "boilR": -0.1131322647532282,
+     "boilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "dynBoilR": 0.0016864907998814793,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "spBoilR": -0.13750913458541214,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "changing": {
+       "v": 0.02870308010552214,
+       "cap": "sm-hard-object"
+      },
+      "static": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      }
+     },
+     "fsS": 0.007876763764691977,
+     "fs4S": 0.004168112151610639,
+     "fsD": 0.25684388326555,
+     "fsSR": -0.2040776344464632,
+     "fsSRmax": {
+      "v": -0.07461947837072169,
+      "cap": "sm-hard-camera"
+     },
+     "fsDR": -0.015922660881148003,
+     "fsDRmax": {
+      "v": 0.009695011108866947,
+      "cap": "sm-hard-object"
+     },
+     "sharp": 0.9490888398417684,
+     "gpuR": 0.08692748660651013,
+     "edge": 24.738445138313963,
+     "soft": 27.311348525230947,
+     "contact": 22.033136740870557,
+     "changing": 17.385241992412702,
+     "trail": 0.07331670482247209,
+     "lag": null
+    },
+    "sb-sts01": {
+     "pooled": null,
+     "dPooled": null,
+     "dPooledMin": null,
+     "dPooledMinCap": "",
+     "flip": null,
+     "flipR": null,
+     "boilR": null,
+     "boilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "dynBoilR": 0.0025044524190842945,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "spBoilR": -0.19816016047590018,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "changing": {
+       "v": 0.02928902006487233,
+       "cap": "sm-hard-object"
+      },
+      "static": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      }
+     },
+     "fsS": 0.006782708181214573,
+     "fs4S": 0.003605047936865967,
+     "fsD": 0.2545089465350452,
+     "fsSR": -0.3107565207962101,
+     "fsSRmax": {
+      "v": -0.10463696657443333,
+      "cap": "sm-hard-camera"
+     },
+     "fsDR": -0.024429160478699197,
+     "fsDRmax": {
+      "v": 0.008988083215512033,
+      "cap": "sm-hard-object"
+     },
+     "sharp": 0.9486727964055339,
+     "gpuR": 0.09854099315232479,
+     "edge": 24.811180826858056,
+     "soft": 27.584540641442636,
+     "contact": 22.016367055944,
+     "changing": 17.31979045421336,
+     "trail": 0.07462316049596053,
+     "lag": null
+    },
+    "sb-still2": {
+     "pooled": 35.127666426967636,
+     "dPooled": 0.23402917744262464,
+     "dPooledMin": 0.0005981393143912328,
+     "dPooledMinCap": "sm-sun-light",
+     "flip": 0.012568616293458443,
+     "flipR": -0.014614488886933036,
+     "boilR": -0.26710696646229615,
+     "boilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "dynBoilR": 0.03916453061980799,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "spBoilR": -0.3533763021306889,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "soft": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "changing": {
+       "v": 0.34046811546456546,
+       "cap": "sm-hard-object"
+      },
+      "static": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      }
+     },
+     "fsS": 0.005147929614785486,
+     "fs4S": 0.0026343690468088963,
+     "fsD": 0.2537532309895849,
+     "fsSR": -0.4519342533412837,
+     "fsSRmax": {
+      "v": -0.20447534347584007,
+      "cap": "sm-sun-light"
+     },
+     "fsDR": -0.029704385456392052,
+     "fsDRmax": {
+      "v": 0.0038376085639264534,
+      "cap": "sm-hard-object"
+     },
+     "sharp": 0.9484050243652059,
+     "gpuR": -0.4981649158444371,
+     "edge": 24.949115261878593,
+     "soft": 27.343719357713795,
+     "contact": 22.29555117766037,
+     "changing": 16.75833282644833,
+     "trail": 0.08281125339421658,
+     "lag": null
+    },
+    "sb-ffx": {
+     "pooled": 23.43866887326143,
+     "dPooled": -10.296201843486,
+     "dPooledMin": -11.329582759317471,
+     "dPooledMinCap": "sm-hard-frozen",
+     "flip": 0.09453610981324741,
+     "flipR": 6.348795864907821,
+     "boilR": -0.29070639454274294,
+     "boilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "dynBoilR": -0.2802379933094601,
+     "dynBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "spBoilR": -0.4293293776762048,
+     "spBoilCmax": {
+      "v": 0,
+      "cap": "sm-hard-camera"
+     },
+     "regWorst": {
+      "edge": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "soft": {
+       "v": 0.27163808262462785,
+       "cap": "sm-hard-camera"
+      },
+      "contact": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "changing": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      },
+      "static": {
+       "v": 0,
+       "cap": "sm-hard-camera"
+      }
+     },
+     "fsS": 0.015362033403895978,
+     "fs4S": 0.005659674873516746,
+     "fsD": 0.33239291434893486,
+     "fsSR": 0.4380048902824707,
+     "fsSRmax": {
+      "v": 1.1899510412014753,
+      "cap": "sm-hard-light"
+     },
+     "fsDR": 0.1378403434609036,
+     "fsDRmax": {
+      "v": 0.7698444758634619,
+      "cap": "sm-hard-object"
+     },
+     "sharp": 0.6291730008493371,
+     "gpuR": -0.19470992280206217,
+     "edge": 14.39880564875662,
+     "soft": 19.776805441439425,
+     "contact": 10.964955037903303,
+     "changing": 11.853554067501541,
+     "trail": 0.13322948332544468,
+     "lag": null
+    }
+   }
+  }
+ }
+}

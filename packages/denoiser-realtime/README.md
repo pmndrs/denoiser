@@ -482,7 +482,7 @@ const out = shadows.dispatch(
   away from a moving light doesn't keep its lit history; pairs with `terminatorAnalytic`; both **need the exact light**,
   see below), `floorE` [0.05 since 2026-10-27, q29] (the 1-px `minRadius` floor scaled by the noise estimate E, down to
   half where E is 0: with `stepTest`, contacts and sub-pixel penumbrae are no longer blurred; 0 = the fixed 1-px floor),
-  `lightMotion` [0; opt-in, see below] — results/SHADOWS-FOLLOWUPS.md, `normalThreshold` [0] / `normalTest`
+  `lightMotion` [0; opt-in, see below] — results/SHADOWS-FOLLOWUPS.md, `stillHistory` [false; `'stabilize'` proposed as the default, q32] / `antiLagNoise` [0; opt-in] (solid shadows on a still view, see below) — results/SHADOW-BENCH.md, `normalThreshold` [0] / `normalTest`
   ['center'] (a history normal test as on the recurrent filter: passes rule 9 but gains only +0.004…+0.010 dB for
   +5.8 % cost, results/T6-boundaries.md), `catmullRom` [true], `planeDistance` [0.01], `radiusScale` [0.75],
   `historyShrink` [0.5], `minRadius` [1 px], `maxRadius` [48 px @1080p], `maxScaleHistory` [7],
@@ -535,6 +535,23 @@ ms. Losses: noisier while the light moves (edge boil +47 % on that capture, stat
 std540-light: fails rule 9's boil clause). Use `1` (or `0.5`, sharper and noisier) for scenes where a hard-shadowing light
 moves a large fraction of its size per frame (a swinging lantern, a flashlight) and trailing shadows are the bigger
 problem; keep 0 for still or slow lights.
+
+**Proposed default: `stillHistory: 'stabilize'`; opt-in: `antiLagNoise`** (q32, 2026-10-28; results `SHADOW-BENCH.md`).
+On a still view the default shadow pops: single pixels in soft shadows and along contact edges jump several display
+levels for a frame and settle (the "not solid" look: 4–6× FFX's flicker on realtime-shadows' paused wide shot, though RMS
+boil ranks ours better). Read off the history: false anti-lag restarts (the 5×5 mean's noise stepping past the clamp
+window) and narrow penumbrae held unstabilized by the stabilizer's edge gate and on a 1–4 frame history by the W_px² cap,
+two guards against reprojection blur that a still camera doesn't have. Both options act only where the reprojection lands
+on texel centres and the light hasn't moved or resized in 8 frames; a moving camera keeps today's output.
+
+- `stillHistory: 'stabilize'` keeps the stabilizer on there for settled histories (9+ frames). Demo wide shot, knot
+  still: pixels changing ≥ 2 / ≥ 4 display levels per frame 0.23 / 0.095 % → 0.14 / 0.067 % (FFX 0.05 / 0.010 %); 26
+  captures: pooled PSNR −0.02…+0.04 dB per set (worst capture three-knot-static −0.25), FLIP ±0, boil −2…−11 %, still-
+  region flicker share −5…−20 %; 1080p test bed ±0.00 dB on the moving-camera paths. `true` also lifts the W_px² cap
+  (0.10 / 0.045 %, motion captures +0.23 dB), but a moving hard shadow edge over a still receiver trails (+33 % trail).
+- `antiLagNoise: 0.1` on top: 0.09 / 0.045 %; `0.2` with `true`: 0.04 / 0.013 % (FFX's level). Cost: a shadow moving over
+  a still receiver restarts later (1080p `object` path −0.56 dB at 0.1, −1.13 at 0.2). Use it for scenes where nothing
+  moves.
 
 | pass | threads | reads → writes |
 |---|---|---|

@@ -1,0 +1,95 @@
+[
+ {
+  "query": "signal=shadows&mode=bench&path=orbit&denoiser=shadows,shadows@sh.stillHistory=stabilize,shadows@sh.stillHistory=stabilize@sh.antiLagNoise=0.1",
+  "ready": true,
+  "results": {
+   "mode": "bench",
+   "path": "orbit",
+   "width": 960,
+   "height": 540,
+   "frames": 100,
+   "sampling": "blue",
+   "query": "?signal=shadows&mode=bench&path=orbit&denoiser=shadows,shadows@sh.stillHistory=stabilize,shadows@sh.stillHistory=stabilize@sh.antiLagNoise=0.1",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "0x0000",
+    "description": "Apple M5 Pro"
+   },
+   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+   "results": {
+    "shadows": {
+     "shadows": {
+      "gpuMs": {
+       "median": 0.2019,
+       "p25": 0.1991,
+       "p90": 0.2102,
+       "min": 0.1926,
+       "n": 100
+      },
+      "passesMs": {
+       "temporal": 0.1161,
+       "tiles": 0.0038,
+       "spatial0": 0.0322,
+       "spatial1": 0.0312,
+       "stabilize": 0.0177
+      },
+      "wallMs": {
+       "median": 0.6,
+       "p25": 0.6,
+       "p90": 0.8,
+       "min": 0.5,
+       "n": 100
+      }
+     },
+     "shadows@sh.stillHistory=stabilize": {
+      "gpuMs": {
+       "median": 0.2021,
+       "p25": 0.1991,
+       "p90": 0.2073,
+       "min": 0.1934,
+       "n": 100
+      },
+      "passesMs": {
+       "temporal": 0.1159,
+       "tiles": 0.0037,
+       "spatial0": 0.0331,
+       "spatial1": 0.0318,
+       "stabilize": 0.0172
+      },
+      "wallMs": {
+       "median": 0.6,
+       "p25": 0.6,
+       "p90": 0.7,
+       "min": 0.5,
+       "n": 100
+      }
+     },
+     "shadows@sh.stillHistory=stabilize@sh.antiLagNoise=0.1": {
+      "gpuMs": {
+       "median": 0.2037,
+       "p25": 0.2017,
+       "p90": 0.2107,
+       "min": 0.1955,
+       "n": 100
+      },
+      "passesMs": {
+       "temporal": 0.1178,
+       "tiles": 0.0038,
+       "spatial0": 0.033,
+       "spatial1": 0.0312,
+       "stabilize": 0.0174
+      },
+      "wallMs": {
+       "median": 0.6,
+       "p25": 0.6,
+       "p90": 0.7,
+       "min": 0.5,
+       "n": 100
+      }
+     }
+    }
+   }
+  }
+ }
+]

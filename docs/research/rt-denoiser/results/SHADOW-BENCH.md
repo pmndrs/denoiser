@@ -163,9 +163,9 @@ GPU ms in the tables are indicative (uncontended runs, but no warm-up protocol):
 
 ## Limits and next
 
-- **Still camera only.** realtime-shadows' default view *orbits*. If the boil Dennis sees is there, it's camera-motion
-  boil (reprojection, clamp), which this bench doesn't score yet: scoring it needs motion-compensated temporal metrics
-  (compare.mjs' reprojected history) and a camera path in the timeline.
+- **Still camera only.** realtime-shadows' default view *orbits*, and Dennis sees the boil there too. This bench doesn't
+  score camera-motion boil yet (it needs motion-compensated temporal metrics and a camera path in the timeline); the
+  rule-9 captures do (compare.mjs' reprojected history, flickShareDynamic).
 - One scene (the corner), the corner's rectangular panel as a sphere of equal area for ours (as the page does), 960×540.
 - `ours` gets the occluder distance and the light; FFX gets the visibility only, as on the page.
 
@@ -208,7 +208,128 @@ of narrow penumbrae, which get narrower in pixels with distance.
 | B: `historyScale 0, clampSigma 1.2` | | 0.11 / 0.12 / 0.15 % | 0.031 / 0.040 / 0.043 % | 0.014 / 0.015 / 0.019 | 0.022 / 0.023 / 0.031 | – / 0.015 / 0.026 | – / 0.0027 / 0.0029 |
 
 A reaches FFX's flicker and stays 2–5× more accurate in the shadow, but lags on the moving knot's own surface (knot RMSE
-+50…70 %, still under FFX). B halves the flicker without an accuracy loss in the shadow, but also lags on the knot's surface (+12 % at 1×, +43 % at 4×). Neither is A/B'd under rule 9
-yet (test bed 7 paths + real captures, moving cameras: anti-lag 0 and a longer history are exactly what trails under
-camera motion), and neither is on the review bench (rule 12). The bench still scores a still camera only.
++50…70 %, still under FFX). B halves the flicker without an accuracy loss in the shadow, but also lags on the knot's surface
+(+12 % at 1×, +43 % at 4×). **Both fail rule 9** (next section).
+
+## 2026-10-28 (later): rule 9 on A / B, the mechanism, and two still-view options (q32)
+
+### A / B and single knobs under rule 9: no
+
+26 captures (7 `std540`, 11 real, 8 `sm-*` motion-separation; replays at HEAD 575a827 + this doc's code, scored by
+`score-captures.mjs`, `compare.mjs` with the new flicker share, `shadow-regions.mjs`; tables `data/shadow-bench-ab.mjs`).
+Pooled PSNR Δ vs the defaults, set means (worst capture):
+
+| | std540 | real | motion | static flicker share (std540 / real / motion) |
+|---|---|---|---|---|
+| A | −1.95 (−8.50 std540-light) | −1.55 (−2.40 bistro-orbit) | −1.48 (−6.87 sm-hard-light) | −24 / −25 / −62 % |
+| B | −1.87 (−7.90 std540-light) | −1.03 (−1.83 bistro-orbit) | −0.94 (−5.42 sm-hard-light) | −19 / −23 / −49 % |
+| `historyScale 0` | −0.13 | −1.01 | −0.57 (−3.21 sm-hard-light) | −1 / −7 / −25 % |
+| `antiLagGain 0` | −1.00 (−4.59 std540-light) | −0.35 | −0.52 | −17 / −9 / −20 % |
+| `antiLagGain 8` | −0.13 (−1.01) | −0.07 | −0.15 (−1.39 sm-sun-light) | −13 / −7 / −18 % |
+| `clampSigma 0.8` | −0.97 (−4.83 std540-light) | +0.10 | −0.13 (−3.12 sm-sun-light) | −20 / −13 / −25 % |
+| `antiLagHistory 2` | −0.38 | −0.15 | −0.22 | −14 / −7 / −14 % |
+
+Every global knob trades the still view's flicker for lag where something moves (camera, light, occluder).
+
+### The mechanism (read off the history)
+
+`src/shadow-bench/engine.ts` `readHistory` reads the ShadowDenoiser's history texture (v, g, A, n_g) next to the
+output (a compute pass: the package's textures have no COPY_SRC). On the `demo` view, knot still, 48 frames, the pixels
+whose output moves by > 0.04 in a frame ([data/shadow-bench/popdiag.mjs](data/shadow-bench/popdiag.mjs)):
+
+- **66 % sit on pixels that restarted** (A dropped). 32 % of the penumbra pixels restart at least once in 48 frames,
+  1.8 times each, with nothing moving: the anti-lag (gain 64: any clamp move > 1/64 restarts at A = 0, and the next
+  output carries half a raw 0/1 sample) fires on the 5×5 mean's own noise stepping past the window, and on windows whose
+  25 samples agree by chance near a penumbra's ends (σ = 0 there: 7 % of the frames at v = 0.9).
+- **22 % sit on ~450 pixels capped at a 1–4 frame history** (contact edges, sub-pixel penumbrae: the W_px² cap), each
+  popping in ~30 % of the frames; the stabilizer is off on them too (its box-width gate opens on steep 3×3 ranges).
+- 12 % on long, steady histories.
+
+Both guards (the W_px² cap, the stabilizer's gate) exist because each reprojection *resamples* the history and blurs a
+narrow penumbra. A still camera reprojects onto texel centres: nothing is resampled, nothing blurs.
+
+### Two options (default off, default output byte-identical: 496 `.f32` files over 10 captures compared, 0 differ)
+
+Both act only where the history was **not resampled**: the bilinear footprint's variance fx (1 − fx) + fy (1 − fy) below
+`STILL_VARIANCE` 0.01 px² (fading in), and the light unchanged (no move or resize this frame or the 8 before;
+`STILL_LIGHT_FRAMES`). A moving camera keeps today's maths (1080p orbit / pan / thin / glossy / cut: ±0.00 dB).
+
+- **`stillHistory`**: there, the stabilizer's edge gate stays shut on settled histories (A ≥ 9; a pixel just uncovered or
+  restarted keeps the gate: shut everywhere, the moving-object path lost 1 dB on uncovered pixels), and (`true`, not
+  `'stabilize'`) the W_px² cap is lifted to maxHistory.
+- **`antiLagNoise: k`**: there, the clamp's move counts toward the restart only beyond k × the window's noise scale,
+  max(σ, √(v_H (1 − v_H))) (× √(25 / n) with clampGeometry).
+
+Shadow bench, `demo` camera (`runs 20261028-*-stab-*`, `*-settled-*`):
+
+| `demo` camera, knot still / 1× / 4× | flicker ≥2 | flicker ≥4 | pen. RMSE | knot RMSE |
+|---|---|---|---|---|
+| FFX | 0.05 / 0.05 / 0.05 % | 0.010 / 0.008 / 0.008 % | 0.081 / 0.080 / 0.080 | – / 0.039 / 0.045 |
+| ours (defaults) | 0.23 / 0.23 / 0.30 % | 0.095 / 0.098 / 0.115 % | 0.027 / 0.027 / 0.031 | – / 0.014 / 0.018 |
+| `stillHistory: 'stabilize'` | 0.14 / 0.14 / 0.20 % | 0.067 / 0.072 / 0.087 % | 0.027 / 0.027 / 0.031 | – / 0.014 / 0.018 |
+| `stillHistory: true` | 0.10 / 0.11 / 0.17 % | 0.045 / 0.051 / 0.064 % | 0.026 / 0.026 / 0.031 | – / 0.014 / 0.018 |
+| `stillHistory: 'stabilize'` + `antiLagNoise 0.1` | 0.09 / 0.10 / 0.13 % | 0.045 / 0.051 / 0.055 % | 0.025 / 0.026 / 0.032 | – / 0.014 / 0.018 |
+| `stillHistory: true` + `antiLagNoise 0.2` | 0.04 / 0.05 / 0.07 % | 0.013 / 0.021 / 0.023 % | 0.025 / 0.025 / 0.031 | – / 0.014 / 0.018 |
+
+Pop counts (`popdiag.mjs`, 48 frames, knot still): defaults 30.6k, `antiLagNoise 0.2` 15.2k (restarting pixels 20.4k →
+2.4k), both options (stabilizer gated everywhere, the first version) 7.0k.
+
+### Rule 9
+
+**`stillHistory: 'stabilize'`** (proposed default, q32; Dennis 2026-10-28: "propose stabilize as default"), vs the
+defaults, 26 captures ([data/shadow-bench/ab-final.md](data/shadow-bench/ab-final.md)):
+
+| set | pooled Δ (worst capture) | FLIP | boil | region boil clause, worst | static flicker share (≥ 0.04) | trail |
+|---|---|---|---|---|---|---|
+| std540 (7) | +0.002 (−0.003 std540-light) | ±0 % | −2 % | +2 % (changing, std540-object) | 0.993 → 0.912 % (0.461 → 0.430) | 0.017 → 0.017 |
+| real (11) | −0.022 (−0.248 three-knot-static) | ±0 % | −2 % | +0 % | 1.477 → 1.442 % (0.912 → 0.896) | 0.035 → 0.035 |
+| motion (8) | +0.044 (−0.009 sm-sun-light) | ±0 % | −11 % | +3 % (changing, sm-hard-object) | 0.993 → 0.788 % (0.514 → 0.417) | 0.072 → 0.073 |
+
+1080p test bed, 7 paths ([data/shadow-bench/live-final.md](data/shadow-bench/live-final.md)), pooled Δ dB:
+
+| | orbit | pan | light | thin | glossy | cut | object | mean | FLIP | flicker (mc) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `stillHistory: 'stabilize'` | +0.00 | +0.00 | −0.02 | +0.00 | −0.00 | +0.00 | −0.02 | −0.007 | ±0 % | −1 % |
+| + `antiLagNoise 0.1` | +0.00 | +0.00 | −0.03 | +0.00 | −0.00 | +0.00 | **−0.57** | −0.085 | ±0 % | −2 % |
+| `stillHistory: true` | +0.00 | +0.00 | −0.01 | +0.00 | −0.00 | +0.00 | −0.02 | −0.004 | ±0 % | −4 % |
+| FFX (for scale; run before) | −9.12 | −8.79 | −8.26 | −8.73 | −11.85 | −8.67 | −6.92 | −8.91 | +335 % | +51 % |
+
+The moving-camera paths are unchanged by construction. Cost, alone on the GPU (960×540, orbit, median of 100 frames):
+defaults 0.2019 ms, 'stabilize' 0.2021 (+0.1 %), + `antiLagNoise 0.1` 0.2037 (+0.9 %).
+
+Every clause passes except one capture below −0.1 dB: three-knot-static −0.25 (still camera, rotating knot; its
+penumbra and changing-region boil go *down*, 0.0132 → 0.0128; the bench's same scene at 1× shows no penumbra loss and
+knot RMSE 0.0136 → 0.0144). The set means pass the −0.1 dB clause; this one capture doesn't on its own, which is
+for Dennis to weigh against the flicker it removes on the same scene.
+
+**`stillHistory: true`** (both halves): motion +0.234 dB, still-region flicker share −45 %, but a moving hard shadow
+over a still receiver trails: sm-hard-object changing region boil 0.138 → 0.186 (+34 %, over the clause), trail 0.149 →
+0.198; the cap half alone does it (0.179 / 0.189; 'stabilize' alone 0.142 / 0.154). Stays an option.
+
+**`antiLagNoise`**: with 'stabilize', 0.1 adds −0.56 dB on the 1080p `object` path (−1.13 at 0.2, with `true`): a
+shadow moving over a still receiver restarts later. Opt-in for scenes where nothing moves.
+
+Captures replayed from a pinned server of this worktree (HEAD + this doc's code); outputs `sb-*` under the shared
+`tools/rt-capture/outputs/<capture>/`. Default byte identity re-checked after every code change (std540-orbit / -light /
+-object, three-knot-static, bistro-move / -orbit, sm-hard-object, sm-sun-light: 296 / 200 / 296 files, 0 differ).
+
+### Reproduce
+
+```sh
+# pinned test-bed server, captures of the main worktree
+RT_CAPTURE_DIR=<cleanroom>/tools/rt-capture node node_modules/vite/bin/vite.js examples/realtime-denoiser --port 5267 --strictPort --host 127.0.0.1
+BASE=http://127.0.0.1:5267/ node examples/realtime-denoiser/run-headless.mjs \
+  "mode=replay&capture=three-knot-static&denoiser=shadows&output=sb-st-stabilize&warm=0&sh.stillHistory=stabilize"
+node tools/rt-capture/compare.mjs three-knot-static --outputs <root>     # flickShare* columns
+node tools/rt-capture/shadow-regions.mjs three-knot-static --outputs <root> --json <dir>/three-knot-static.json
+node examples/three-temporal/score-captures.mjs three-knot-static --denoisers sb-ship,sb-st-stabilize --json <dir>/three-knot-static.json
+node docs/research/rt-denoiser/results/data/shadow-bench-ab.mjs --score <dir> --cmp <root> --regions <dir> --base sb-ship --variants sb-st-stabilize
+# live 1080p, one page per path, then the table
+BASE=... node examples/realtime-denoiser/run-headless.mjs --json=live/orbit.json \
+  "signal=shadows&mode=eval&preset=full&path=orbit&denoiser=shadows,shadows@sh.stillHistory=stabilize"
+node docs/research/rt-denoiser/results/data/shadow-bench-live.mjs live
+# bench + pop diagnosis
+node examples/three-temporal/shadow-bench.mjs run --camera=demo --knotRate=0 --variant='st:{"stillHistory":"stabilize"}'
+node docs/research/rt-denoiser/results/data/shadow-bench/popdiag.mjs '{"camera":"demo","knotRate":0}' '{"stillHistory":"stabilize"}'
+```
 

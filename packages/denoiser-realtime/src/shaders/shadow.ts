@@ -174,7 +174,19 @@ const TILE = 8;
  * (whole light below the horizon and a 0 sample: the history is 0), `lightMotion` (history cap from the light's
  * motion, SP.q4 = light displacement / light size this frame, SP.q5 = the option's gain).
  */
-export interface TemporalVariant { horizonSnap?: boolean; lightMotion?: boolean }
+export interface TemporalVariant { horizonSnap?: boolean; lightMotion?: boolean; antiLagNoise?: number; stillHistory?: boolean; stillCap?: boolean }
+
+/**
+ * antiLagNoise / stillHistory (results/SHADOW-BENCH.md): a reprojection counts as still where the bilinear footprint's
+ * variance fx (1 - fx) + fy (1 - fy) (px^2, the blur one resample adds) is below this, fading in from it to 0, and only
+ * while the light holds still (SP.q4 == 0: no move or resize this frame or the 8 before). A still camera lands every
+ * pixel on a texel centre (0); a moving one almost never does.
+ */
+export const STILL_VARIANCE = 0.01;
+/** stillHistory's stabilizer: the edge gate shuts fully once the temporal history is this many frames past 1. */
+export const STILL_SETTLED = 8;
+/** WGSL: the still weight wS of the above from `f` (the footprint's fractional offset) and SP.q4 (light displacement). */
+const stillWeight = (f: string) => `select(0.0, saturate(1.0 - dot(${f}, 1.0 - ${f}) / ${STILL_VARIANCE.toFixed(6)}), SP.q4 == 0.0)`;
 
 export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false, tv: TemporalVariant = {}): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
@@ -552,10 +564,15 @@ ${packed ? `        trH += trAcc * ws;
       // confined to a band about as wide as the penumbra)
       var cap = SP.maxHistory;
       var wPx = 1e30;   // penumbra width in pixels (unknown: no occluded sample yet)
-      if (nWn > 0.0 && !spFlag(SF_NOISE)) {
+${tv.antiLagNoise || tv.stillHistory ? `      // (antiLagNoise / stillHistory) 1 where the history was not resampled (a still camera and light), 0 where it was
+      let wS = ${stillWeight('vec2f(r.bil.y + r.bil.w, r.bil.z + r.bil.w)')};
+` : ''}      if (nWn > 0.0 && !spFlag(SF_NOISE)) {
         wPx = SP.lightSize * gAcc / (g.z * SP.pixScale + SP.pixOrtho);
         if (SP.historyScale > 0.0) { cap = clamp(SP.historyScale * wPx * wPx, SP.minHistory, SP.maxHistory); }
-      }
+${tv.stillHistory && tv.stillCap !== false ? `        // (stillHistory, results/SHADOW-BENCH.md) the cap guards against the blur of resampling the history; a history
+        // that was not resampled keeps all of it
+        cap = mix(cap, SP.maxHistory, wS);
+` : ''}      }
       // ---- neighbourhood clamp on raw visibility (5x5 mean +- gamma sigma)
       var m1 = 0.0;
       var m2 = 0.0;
@@ -618,7 +635,12 @@ ${edgeBox ? `      // (edgeBox, results/SHADOWS-MOTION.md) at hard edges the win
       }
 ` : ''}      if (A >= 0.0) {
         // anti-lag (our design): a history the clamp had to move is short-lived
-        let c = saturate(abs(vC - vH) * SP.antiLag);
+${tv.antiLagNoise ? `        // (antiLagNoise, results/SHADOW-BENCH.md) on a still reprojection (wS), a move within the window's noise scale is
+        // the 5x5 mean's noise, not a change; the scale is the larger of the samples' sigma and a binary sample's at the
+        // history's value (25 samples agree by chance near the penumbra's ends: sigma 0 there, 7 % of the frames at v = 0.9)
+        let hS = saturate(vH);
+        let sN = max(sigma, sqrt(hS * (1.0 - hS)))${clampGeo ? ' * sqrt(25.0 / nS)' : ''};
+        let c = saturate((abs(vC - vH) - ${tv.antiLagNoise.toFixed(6)} * sN * wS) * SP.antiLag);` : `        let c = saturate(abs(vC - vH) * SP.antiLag);`}
         A = mix(A, min(A, SP.antiLagHistory), c);
       }
       // all 25 samples agree: take their value exactly, keep the history length (the floor
@@ -1108,7 +1130,11 @@ ${tr ? `  textureStore(outTex, p, vec4f(select(vin, sum / wsum, vAct), 0.0, 0.0,
  * Ours (our design, measured): 3x3 min / max box of the current output instead of a variance box, the
  * box-width gate (stabilizeBox) and the clamp-distance anti-lag (stabilizeAntiLag).
  */
-export const SHADOW_STABILIZE_WGSL = /* wgsl */ `
+export const SHADOW_STABILIZE_WGSL = shadowStabilizeWgsl();
+
+/** SHADOW_STABILIZE_WGSL, with `stillHistory` (the box-width gate off where the history was not resampled). */
+export function shadowStabilizeWgsl(stillHistory = false): string {
+  return /* wgsl */ `
 ${FRAME_WGSL}
 ${PARAMS_WGSL}
 @group(0) @binding(0) var<uniform> F: Frame;
@@ -1161,7 +1187,12 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
                 mix(textureLoad(prevTex, clampPix(b + vec2i(0, 1)), 0).r, textureLoad(prevTex, clampPix(b + vec2i(1, 1)), 0).r, f.x), f.y);
     // only where the 3x3 range is narrow (wide, smooth penumbrae, where the boil is): at sharp edges
     // the range spans the step, the clamp holds nothing back and resampling would blur the edge
-    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)));
+${stillHistory ? `    // (stillHistory, results/SHADOW-BENCH.md) the gate keeps resampling from blurring sharp edges; where the history
+    // was not resampled (a still camera and light) there is no such blur, so it stays shut, but only on settled
+    // histories: a young one (just uncovered, or restarted because its shadow moved) keeps the gate, which also keeps a
+    // moving edge from trailing (measured: shut everywhere, a moving occluder lost 1 dB on the uncovered pixels)
+    let gS = 1.0 - ${stillWeight('f')} * saturate((A - 1.0) / ${STILL_SETTLED.toFixed(1)});
+    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)) * gS);` : `    var a = mix(SP.stabilize, 1.0, saturate((hi - lo - SP.stabilizeBox) / max(SP.stabilizeBox, 1e-4)));`}
     let hc = clamp(h, lo, hi);
     // anti-lag: a history the box had to move (stabilizeAntiLag), or a short temporal history (anti-lag
     // restarts of the temporal pass mark changing penumbrae; stabilizeYoung), takes more of this frame
@@ -1172,6 +1203,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
   textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));
 }
 `;
+}
 
 /**
  * The last pass of the translucency variants (SPEC v0.3 §7.10, M8-7; indirect over the filtered tiles):

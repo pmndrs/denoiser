@@ -1162,12 +1162,26 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       and replays to the paused frame; `shadow-bench.mjs` runs / lists / compares headless. Runs are byte-identical run to
       run. First numbers: ours 3–4× lower umbra RMSE (FFX's umbra is the greyer one), but per-pixel penumbra boil +9…+76 %
       over FFX in every view (largest at 4× knot speed and with a small light). — found by shadow-bench
-- [ ] Shadows: visible flicker on still / slow scenes (results/SHADOW-BENCH.md, 2026-10-28). On realtime-shadows' paused
-      wide shot ours flickers 4–6× FFX (pixels changing ≥ 4 display levels per frame: 0.091 % vs 0.016 %) though its
-      per-pixel boil RMS is lower, which is why compare.mjs never flagged it. Candidates: A `historyScale 0, clampSigma 0.8,
-      antiLagGain 0, maxHistory 31` (FFX's flicker, lags on the moving knot's surface), B `historyScale 0, clampSigma 1.2`
-      (half the flicker, no loss in the shadow, knot surface +12…43 %). Next: rule 9 A/B with a flicker-share column added to compare.mjs, moving-camera
-      captures above all, then review-bench entries (rule 12) — found by shadow-bench, owner shadows
+- [x] Shadows: visible flicker on still / slow scenes (results/SHADOW-BENCH.md, 2026-10-28). On realtime-shadows' paused
+      wide shot ours flickered 4–6× FFX (pixels changing ≥ 4 display levels per frame: 0.091 % vs 0.016 %) though its
+      per-pixel boil RMS is lower, which is why compare.mjs never flagged it (it now reports `flickShare*`). Candidates
+      A / B and every single global knob fail rule 9 (−1…−8 dB under motion). Cause, read off the history: false anti-lag
+      restarts on still pixels, and narrow penumbrae held unstabilized / on a 1–4 frame cap by guards against
+      reprojection blur a still camera doesn't have. Two options (default off, byte-identical): `stillHistory`
+      ('stabilize' | true) and `antiLagNoise`, both only where the history isn't resampled and the light is still
+      — found by shadow-bench, owner shadows
+- [ ] **Proposal q32 (Dennis, 2026-10-28: "propose stabilize as default"): `stillHistory: 'stabilize'` as the shadows
+      default.** Rule 9 (results/SHADOW-BENCH.md, "rule 9"): 26 captures pooled −0.02…+0.04 dB per set (worst capture
+      three-knot-static −0.25), FLIP ±0, boil −2…−11 %, region boil clause worst +3 %, still-region flicker share −5…−20 %;
+      1080p 7 paths mean −0.007 dB (worst −0.025), cost +0.1 % solo; demo wide shot flicker ≥ 2 / ≥ 4 0.23 / 0.095 % → 0.14 / 0.067 %. On the review bench
+      (q32 card). Flip = `stillHistory: o.stillHistory ?? 'stabilize'` in shadow.ts + registry `default` / `changes`,
+      after Dennis has looked at it there. `antiLagNoise 0.1` stays opt-in (trails moving objects under a still camera:
+      −0.56 dB on the 1080p `object` path) — owner shadows
+- [ ] Shadows: the still view still flickers ~3× FFX with 'stabilize' (0.14 vs 0.05 % ≥ 2 levels). What is left: false
+      restarts without a motion cost (antiLagNoise trails moving occluders: a restart test that tells a moving shadow from
+      noise, e.g. the clamp firing two frames running, or the occluder distance changing), and the contact-edge cap
+      (`stillHistory: true` trails moving hard edges: the cap is the only lag guard where the clamp window opens) —
+      found by shadow-bench, owner shadows
 - [ ] Shadow bench: moving-camera mode (a camera path in the timeline + motion-compensated boil, compare.mjs' reprojected
       history). realtime-shadows' default view orbits, so camera-motion boil may be what Dennis sees there; the bench scores
       a still camera only — found by shadow-bench, owner tooling

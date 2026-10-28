@@ -321,6 +321,19 @@ export const OPTIONS: ReviewOption[] = [
     where: { scene: 'bistro', path: 'bistro-move', signal: 'shadow', note: "the lantern's shadows while it moves" },
   },
   {
+    id: 'shadows.stillHistory', filter: 'shadows', key: 'stillHistory', targets: ['shadows'],
+    values: [false, 'stabilize', true], valueLabels: { false: 'off', stabilize: 'stabilize (proposed)', true: 'stabilize + full history' },
+    default: false, candidate: 'stabilize', decision: 'q32', status: 'open',
+    look: "Still camera: off, single pixels in soft shadows and along contact edges pop for a frame and settle (the shadow never looks solid); 'stabilize' keeps the output stabilizer on there, so they hold still. 'true' also lifts the history cap (calmer still, but a moving hard shadow edge trails). Moving camera: no change.",
+    where: { scene: 'knot', path: 'knot-still', signal: 'lit', note: "the knot's wall shadow and the contact edges: watch for single-pixel pops" },
+  },
+  {
+    id: 'shadows.antiLagNoise', filter: 'shadows', key: 'antiLagNoise', targets: ['shadows'],
+    values: [0, 0.1, 0.2], default: 0, candidate: 0.1, related: ['q32'], status: 'opt-in',
+    look: "Still camera: stops most false history restarts (pops) in soft shadows, close to FFX's calm; but a shadow moving over a still receiver (moving object, still camera) restarts later and trails. For scenes where nothing moves.",
+    where: { scene: 'knot', path: 'knot-static', signal: 'lit', note: "the rotating knot's shadow: does it trail?" },
+  },
+  {
     id: 'shadows.snapHardPx', filter: 'shadows', key: 'snapHardPx', targets: ['shadows'],
     values: [0, 2], default: 2, changes: [{ on: '2026-10-26', from: 0, by: 'q21' }], decision: 'q21', status: 'default',
     look: 'Moving camera: with 0 a grey veil softens fine hard shadow detail (Bistro facades); 2 snaps it back to crisp.',
@@ -397,6 +410,17 @@ export const OPTIONS: ReviewOption[] = [
 ];
 
 export const DECISIONS: Decision[] = [
+  {
+    id: 'q32', highlight: true,
+    title: "Shadows: stillHistory 'stabilize' as the default (solid shadows on a still camera)",
+    answer: "proposed 2026-10-28 (Dennis: \"propose stabilize as default\"); rule 9: results/SHADOW-BENCH.md",
+    look: "A = today's shadows, B = stillHistory 'stabilize'. Hold the camera still and look at soft shadows and contact edges in the lit view: A has single pixels popping every few frames, B holds them still. Let the knot rotate: its moving shadow should look the same on both sides; on an orbit both sides are identical by design. Try antiLagNoise 0.1 on B for the calmer still view (and the trailing it costs).",
+    where: { scene: 'knot', path: 'knot-still', signal: 'lit', note: 'still camera, knot frozen: the boil without any motion' },
+    alsoAt: [
+      { scene: 'knot', path: 'knot-static', signal: 'lit', note: 'still camera, knot rotating: the moving shadow must not trail' },
+      { scene: 'corner', signal: 'lit', note: 'the free-running orbit: the moving camera, where B equals A' },
+    ],
+  },
   {
     id: 'q23', highlight: true,
     title: 'Shadows: stepTest + edgeBox + rotationStep 0',

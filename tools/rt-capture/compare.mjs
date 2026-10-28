@@ -25,6 +25,12 @@
 // (= the per-frame noise sigma of a temporally white signal; a linear change over 3 frames adds 0):
 // boilDynamic, boilStaticPenumbra (static region, 0.02 < ref < 0.98); the noisy baseline also carries
 // refBoilDynamic / refBoilStaticPenumbra, the same measure on the reference (its noise floor).
+// Boil and flicker are means, so sparse strong flicker (a few pixels jumping several display levels per frame: the
+// "not solid" shadow, results/SHADOW-BENCH.md) barely moves them; flickShareStatic / flickShareDynamic count it: the
+// share of pixel-frames (valid history) whose output changes by more than the reference does, plus FLICK_2 = 0.02
+// (flickShare4*: FLICK_4 = 0.04), |out_t - out_t-1| - |ref_t - ref_t-1| > FLICK along the reprojected history: about
+// 2 / 4 8-bit display levels on a mid-lit receiver (the shadow bench's lit-composite flicker share). Not the error
+// change: the references are re-noised every frame (2048 rays: 0.24 % of the knot's pixels change by > 0.02).
 // Visibility also gets edgeSharpness (results/SHADOWS-LOOK.md, SHADOWS-MOTION.md): sum |∇out| / sum |∇ref| over the
 // pixels where |∇ref| > 0.1 (forward differences, lib/capture.mjs gradMag), all frames: 1 = as crisp as the reference,
 // < 1 softer (PSNR and boil barely see a resampling veil), noisy input > 1.
@@ -44,6 +50,8 @@
 //     static / boil fields above on the per-pixel mean of the clamped channels.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+const FLICK_2 = 0.02, FLICK_4 = 0.04;
+
 import {
   BUMP_COS, OUTPUTS_DIR, PSNR_CAP_DB, SIGNALS, V1_SIGNALS, edgeGradSums, frameDir, gradMag, listDirs, maskedBlur3, mean, readBuffer, readF32, readManifest, reinhard,
   resolveCapture, scoreFrame, settledMask, shResolve,
@@ -167,8 +175,8 @@ function dynFrame(f, key = 'visibility') {
 function dynScore(f, out, s, prevS, hist, key = 'visibility', pen = null, e3 = null, prevE3 = null) {
   const { tap, dyn } = dynFrame(f, key);
   const tap1 = f > 0 && !m.frames[f].reset ? dynFrame(f - 1, key).tap : null;
-  const ref = dynRef(f, key), depth = capFrame(f).depth;
-  const r = { dSse: 0, dN: 0, sSse: 0, sN: 0, spSse: 0, spN: 0, dT: [0, 0, 0], sT: [0, 0, 0], dB: [0, 0], spB: [0, 0] };
+  const ref = dynRef(f, key), depth = capFrame(f).depth, pref = tap1 ? dynRef(f - 1, key) : null;
+  const r = { dSse: 0, dN: 0, sSse: 0, sN: 0, spSse: 0, spN: 0, dT: [0, 0, 0, 0, 0, 0], sT: [0, 0, 0, 0, 0, 0], dB: [0, 0], spB: [0, 0] };
   const cl = (v) => Math.min(Math.max(v, 0), 1);
   // boil: second temporal difference along the history (hist = [out_t-1, out_t-2] clamped, or nulls)
   for (let i = 0; i < N; i++) {
@@ -186,6 +194,11 @@ function dynScore(f, out, s, prevS, hist, key = 'visibility', pen = null, e3 = n
         const d = e - prevS[tap[i]];
         t[0] += Math.abs(d); t[1] += d * d; t[2]++;
       }
+    }
+    if (hist?.[0] && pref && tap[i] >= 0) {
+      const x = Math.abs(cl(out[i]) - hist[0][tap[i]]) - Math.abs(ref[i] - pref[tap[i]]);
+      const t = dyn[i] ? r.dT : r.sT;
+      t[3] += x > FLICK_2; t[4] += x > FLICK_4; t[5]++;
     }
     if (hist?.[1] && tap1 && tap[i] >= 0 && tap1[tap[i]] >= 0) {
       const b = cl(out[i]) - 2 * hist[0][tap[i]] + hist[1][tap1[tap[i]]];
@@ -349,6 +362,10 @@ function scoreSequence(getOut, signal, isBaseline = false) {
     tpsnrDynamic: db(tsum('dT', 1), tsum('dT', 2)),
     flickerStatic: tsum('sT', 2) ? tsum('sT', 0) / tsum('sT', 2) : NaN,
     tpsnrStatic: db(tsum('sT', 1), tsum('sT', 2)),
+    flickShareDynamic: tsum('dT', 5) ? tsum('dT', 3) / tsum('dT', 5) : NaN,
+    flickShare4Dynamic: tsum('dT', 5) ? tsum('dT', 4) / tsum('dT', 5) : NaN,
+    flickShareStatic: tsum('sT', 5) ? tsum('sT', 3) / tsum('sT', 5) : NaN,
+    flickShare4Static: tsum('sT', 5) ? tsum('sT', 4) / tsum('sT', 5) : NaN,
     boilDynamic: tsum('dB', 1) ? Math.sqrt(tsum('dB', 0) / tsum('dB', 1) / 6) : NaN,
     boilStaticPenumbra: tsum('spB', 1) ? Math.sqrt(tsum('spB', 0) / tsum('spB', 1) / 6) : NaN,
   };
@@ -442,6 +459,7 @@ for (const d of denoisers) {
 }
 
 const f2 = (x, k = 2) => (Number.isFinite(x) ? x.toFixed(k) : '–');
+const pctS = (x) => (Number.isFinite(x) ? `${(100 * x).toFixed(3)} %` : '–');
 const lines = [
   `# ${capName}: replay scores`,
   '',
@@ -461,11 +479,11 @@ if (vis.length) {
   const b = baselines.visibility;
   lines.push('', `Visibility, dynamic vs static region (dynamic: reference range over frames t-${DYN_K}..t > ${DYN_DELTA}, reprojected; ` +
     `${b.dynamicPixelsPerFrame} px per frame). Pooled PSNR; flicker = mean |e_t − e_t−1| and tPSNR, motion-compensated, valid history.`, '',
-  '| denoiser | dynamic PSNR | dynamic flicker | dynamic tPSNR | dynamic boil | static PSNR | static penumbra | static flicker | static tPSNR | static penumbra boil | edge sharpness |', '|---|---|---|---|---|---|---|---|---|---|---|');
+  '| denoiser | dynamic PSNR | dynamic flicker | dynamic tPSNR | dynamic boil | static PSNR | static penumbra | static flicker | static tPSNR | static penumbra boil | edge sharpness | flicker share dyn / static (> 0.02) | static > 0.04 |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const r of [{ denoiser: 'noisy', ...b }, ...vis]) {
-    lines.push(`| ${r.denoiser} | ${f2(r.psnrDynamicPooled)} | ${f2(r.flickerDynamic, 4)} | ${f2(r.tpsnrDynamic)} | ${f2(r.boilDynamic, 4)} | ${f2(r.psnrStaticPooled)} | ${f2(r.psnrStaticPenumbraPooled)} | ${f2(r.flickerStatic, 4)} | ${f2(r.tpsnrStatic)} | ${f2(r.boilStaticPenumbra, 4)} | ${f2(r.edgeSharpness, 3)} |`);
+    lines.push(`| ${r.denoiser} | ${f2(r.psnrDynamicPooled)} | ${f2(r.flickerDynamic, 4)} | ${f2(r.tpsnrDynamic)} | ${f2(r.boilDynamic, 4)} | ${f2(r.psnrStaticPooled)} | ${f2(r.psnrStaticPenumbraPooled)} | ${f2(r.flickerStatic, 4)} | ${f2(r.tpsnrStatic)} | ${f2(r.boilStaticPenumbra, 4)} | ${f2(r.edgeSharpness, 3)} | ${pctS(r.flickShareDynamic)} / ${pctS(r.flickShareStatic)} | ${pctS(r.flickShare4Static)} |`);
   }
-  lines.push(`| reference (its own boil) | | | | ${f2(b.refBoilDynamic, 4)} | | | | | ${f2(b.refBoilStaticPenumbra, 4)} | 1 |`);
+  lines.push(`| reference (its own boil) | | | | ${f2(b.refBoilDynamic, 4)} | | | | | ${f2(b.refBoilStaticPenumbra, 4)} | 1 | | |`);
 }
 // ---- v1 tables
 const shRows = results.filter((r) => r.signal.startsWith('sh-'));

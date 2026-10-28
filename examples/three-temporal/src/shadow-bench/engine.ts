@@ -49,6 +49,7 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
   const device = (renderer.backend as unknown as { device: GPUDevice }).device;
+  let histPipe: GPUComputePipeline | undefined;   // readHistory's texture -> buffer pass
   const gpuErrors: string[] = [];
   device.addEventListener('uncapturederror', (e) => {
     const msg = (e as GPUUncapturedErrorEvent).error.message;
@@ -336,6 +337,36 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
     },
 
     /** Latest per-variant total GPU ms (timestamps land a few frames late). */
+    /**
+     * Diagnostics: one of our variants' internal history (ShadowDenoiser.debugTexture('history'): v, g, A + young
+     * counter, n_g; rgba16float) after the last dispatch, decoded to rgba float32, row 0 = top. undefined for FFX.
+     */
+    async readHistory(id: string): Promise<Float32Array | undefined> {
+      await idle();
+      const tex = (nodes.get(id)?.node.denoiser as { debugTexture?: (n: string) => GPUTexture | undefined } | undefined)?.debugTexture?.('history');
+      if (!tex) return undefined;
+      // the package's textures have no COPY_SRC: a compute pass loads the texels into a storage buffer
+      histPipe ??= device.createComputePipeline({ layout: 'auto', compute: { entryPoint: 'main', module: device.createShaderModule({ code: /* wgsl */ `
+        @group(0) @binding(0) var src: texture_2d<f32>;
+        @group(0) @binding(1) var<storage, read_write> dst: array<vec4f>;
+        @compute @workgroup_size(8, 8) fn main(@builtin(global_invocation_id) id: vec3u) {
+          let s = textureDimensions(src);
+          if (id.x < s.x && id.y < s.y) { dst[id.y * s.x + id.x] = textureLoad(src, vec2i(id.xy), 0); }
+        }` }) } });
+      const size = tex.width * tex.height * 16;
+      const buf = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+      const rd = device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const bg = device.createBindGroup({ layout: histPipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: tex.createView() }, { binding: 1, resource: { buffer: buf } }] });
+      const enc = device.createCommandEncoder();
+      const cp = enc.beginComputePass(); cp.setPipeline(histPipe); cp.setBindGroup(0, bg); cp.dispatchWorkgroups(Math.ceil(tex.width / 8), Math.ceil(tex.height / 8)); cp.end();
+      enc.copyBufferToBuffer(buf, 0, rd, 0, size);
+      device.queue.submit([enc.finish()]);
+      await rd.mapAsync(GPUMapMode.READ);
+      const out = new Float32Array(rd.getMappedRange().slice(0));
+      rd.unmap(); rd.destroy(); buf.destroy();
+      return out;
+    },
+
     timings(): Record<string, number | undefined> {
       return Object.fromEntries([...nodes].map(([id, n]) => [id, n.node.denoiser?.gpuTimings?.get('total') as number | undefined]));
     },

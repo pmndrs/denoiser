@@ -1211,4 +1211,27 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   Classify motion by rate per frame. — shadow-bench
 - **zsh doesn't word-split `$var`.** `for a in "--x=1 --y=2"; do node … $a; done` passes one argument, and the bench
   then read `knotRate` as NaN. Use `${=a}`. The bench's config now rejects non-finite numbers. — shadow-bench
+- **"Not solid" is sparse, strong flicker; RMS boil hides it.** A few pixels jumping several display levels per frame
+  barely move an RMS over the penumbra (ours scored *better* than FFX there while visibly popping 4-6x more). Count it:
+  the share of pixels whose displayed brightness (or visibility, beyond the reference's own change) moves by > 2 / 4 8-bit
+  levels per frame (bench flicker ≥2 / ≥4, compare.mjs `flickShare*`). — shadow-bench
+- **Diagnose pops by the history state of the pixels that pop.** Reading the shadow history (A) next to the output
+  showed 66 % of the still-view pops on pixels whose history had just restarted (false anti-lag: the 5x5 mean's noise
+  stepping past the clamp window, and 25 samples agreeing by chance near the penumbra's ends, sigma 0) and 22 % on ~450
+  contact-edge pixels capped at a 1-4 frame history. Global knobs (anti-lag off, a looser clamp, no cap) each fixed some
+  of it and each cost 1-8 dB under motion; the fixes that held up target the mechanism (stillHistory, antiLagNoise).
+  The package textures have no COPY_SRC: read them with a compute pass into a buffer. — shadow-bench
+- **Guards against resampling blur only matter where the history is resampled.** The W_px^2 history cap and the
+  stabilizer's box-width gate both exist because reprojection blurs a narrow penumbra; on a still camera the
+  reprojection lands on texel centres and blurs nothing, so they only throw away history there (stillHistory: off where
+  the bilinear footprint's variance fx (1 - fx) + fy (1 - fy) is ~0). But check what else a guard does before lifting it:
+  the stabilizer's gate also stops a moving edge trailing over a still receiver (gate it on settled histories only), and
+  the W_px^2 cap is the only lag guard at hard edges, where the clamp window opens fully (lifting it: +33 % trail on a
+  moving hard shadow). A version applied wherever the motion was sub-pixel cost 1.35 dB on the 1080p orbit. — shadow-bench
+- **"Still" must include the light.** A gate keyed on light *position* missed a light resized in place and switched back
+  on the frame after a jump, while the history was still catching up (1080p `light` path −0.4…−0.9 dB); any change of
+  position or size, plus an 8-frame hold, fixed it (−0.01). — shadow-bench
+- **Capture references are re-noised every frame.** 2048-ray references change by > 0.02 on 0.24 % of the knot's pixels
+  per frame, so "error change > 0.02" counts the reference's noise; count the output's change beyond the reference's
+  (|Δout| - |Δref|). — shadow-bench
 
