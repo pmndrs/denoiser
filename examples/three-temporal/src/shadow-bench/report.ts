@@ -26,6 +26,8 @@ const COLS: Col[] = [
   { label: 'tErr', title: 'RMS of the frame-to-frame change the true motion does not explain (boil + lag), static receivers', get: (s) => s.all?.tErr, floor: true },
   { label: 'flicker ≥2', title: 'share of static receivers whose displayed brightness changes by >= 2 of 255 levels between frames (sparse strong flicker; the RMS columns dilute it)', get: (s) => s.all?.flick2, fmt: (v) => (v === undefined || !Number.isFinite(v) ? '–' : `${(v * 100).toFixed(2)} %`), floor: true },
   { label: 'flicker ≥4', title: 'the same at >= 4 levels', get: (s) => s.all?.flick4, fmt: (v) => (v === undefined || !Number.isFinite(v) ? '–' : `${(v * 100).toFixed(3)} %`), floor: true },
+  { label: 'after TAA ≥1', title: 'flicker share after the downstream-TAA model (src/realtime/taa.ts, weight taaAlpha) on the displayed image: changes >= 1 level', get: (s) => s.all?.tflick1, fmt: (v) => (v === undefined || !Number.isFinite(v) ? '–' : `${(v * 100).toFixed(3)} %`), floor: true },
+  { label: 'after TAA ≥2', title: 'the same at >= 2 levels', get: (s) => s.all?.tflick2, fmt: (v) => (v === undefined || !Number.isFinite(v) ? '–' : `${(v * 100).toFixed(3)} %`), floor: true },
   { label: 'knot RMSE', title: "the moving knot's own surface (scored apart from the static receivers)", get: (s) => s.object?.rmse },
   { label: 'GPU ms', title: 'median total GPU time of the denoiser', get: (_s, k, run) => run.gpuMs[k], fmt: (v) => f4(v, 3) },
 ];
@@ -70,7 +72,7 @@ export function configLine(run: RunResult): string {
   return [
     `${c.w}×${c.h}`, `camera ${c.camera} (${cam.position.join(', ')} → ${cam.target.join(', ')})`,
     `knot ${c.knotStart} + ${c.knotRate.toFixed(5)} rad/frame`, `light half ${c.lightHalf}`, `${c.sampler} noise`,
-    `warmup ${c.warmup}, step ${c.step}, ${c.count} checkpoints, burst ${c.burst}`, `ground truth ${c.gtGrid ** 2} rays/px`, `blotch σ ${c.blurSigma} px`,
+    `warmup ${c.warmup}, step ${c.step}, ${c.count} checkpoints, burst ${c.burst}`, `ground truth ${c.gtGrid ** 2} rays/px`, `blotch σ ${c.blurSigma} px`, `TAA model α ${c.taaAlpha ?? 0.1}`,
   ].join(' · ');
 }
 

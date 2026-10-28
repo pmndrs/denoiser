@@ -1228,6 +1228,10 @@ _Facts about driving native NRD as a black box: interface and build behavior onl
   the stabilizer's gate also stops a moving edge trailing over a still receiver (gate it on settled histories only), and
   the W_px^2 cap is the only lag guard at hard edges, where the clamp window opens fully (lifting it: +33 % trail on a
   moving hard shadow). A version applied wherever the motion was sub-pixel cost 1.35 dB on the 1080p orbit. — shadow-bench
+- **A downstream TAA forgives single-frame pops more than multi-frame ones.** Through the same model TAA (α 0.1) ours
+  drops ~10× and FFX ~3×, yet ours stays 2–4× FFX: a restart's excursion lasts several frames, which an exponential
+  history only partly averages. Judge "solid" both with and without a TAA after the denoiser (bench `taaAlpha`, review
+  bench T). — shadow-bench
 - **"Still" must include the light.** A gate keyed on light *position* missed a light resized in place and switched back
   on the frame after a jump, while the history was still catching up (1080p `light` path −0.4…−0.9 dB); any change of
   position or size, plus an 8-frame hold, fixed it (−0.01). — shadow-bench

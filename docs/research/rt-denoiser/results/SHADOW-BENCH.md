@@ -313,9 +313,56 @@ Captures replayed from a pinned server of this worktree (HEAD + this doc's code)
 `tools/rt-capture/outputs/<capture>/`. Default byte identity re-checked after every code change (std540-orbit / -light /
 -object, three-knot-static, bistro-move / -orbit, sm-hard-object, sm-sun-light: 296 / 200 / 296 files, 0 differ).
 
+### Acceptance after TAA (q35, open)
+
+Dennis (2026-10-28): what flicker is acceptable before a TAA / upscaler, assuming one follows? Measured with a model TAA
+(`src/realtime/taa.ts`: velocity reprojection, 3×3 variance clipping, weight α of the current frame, **no jitter**) on each
+variant's displayed image, on the bench (`taaAlpha`, columns "after TAA ≥1 / ≥2": share of static receivers changing by
+≥ 1 / ≥ 2 of 255 display levels per frame; runs `20261028-*-taa*`). `demo` camera:
+
+| | alone ≥2 / ≥4 | after TAA α 0.1: ≥1 / ≥2 | after TAA α 0.05: ≥1 / ≥2 | knot 1×, α 0.1: ≥1 / ≥2 |
+|---|---|---|---|---|
+| raw 1 ray | 5.0 / 5.0 % | 8.7 / 7.0 % | – | 8.5 / 6.9 % |
+| FFX | 0.05 / 0.010 % | 0.015 / 0.006 % | 0.012 / 0.005 % | 0.045 / 0.025 % |
+| ours, defaults | 0.23 / 0.095 % | 0.067 / 0.024 % | 0.038 / 0.012 % | 0.104 / 0.051 % |
+| `stillHistory: 'stabilize'` | 0.14 / 0.067 % | 0.057 / 0.021 % | 0.034 / 0.010 % | 0.094 / 0.049 % |
+| 'stabilize' + `antiLagNoise 0.1` | 0.09 / 0.045 % | 0.046 / 0.015 % | 0.028 / 0.007 % | 0.083 / 0.043 % |
+| `true` + `antiLagNoise 0.2` | 0.04 / 0.013 % | 0.029 / 0.008 % | – | – |
+| ground truth | 0 | 0 | 0 | 0.017 / 0.009 % (the moving shadow itself) |
+
+What it says:
+
+- **A TAA takes about 10× off our visible flicker, and less off FFX's** (its flicker is already single-frame, which a TAA
+  averages best). After the same TAA ours is still 2–4× FFX on a still view (α 0.05: 2×, α 0.1: 3.5× with 'stabilize').
+  Our pops last several frames (a restart, then the history climbing back), which an exponential history only partly
+  averages; the residual is the same clusters as before, fainter.
+- **A TAA cannot rescue raw 1-ray input** (it gets worse: 7 % of the pixels change ≥ 2 levels), so the denoiser has to
+  do the work; the TAA hides what is left.
+- **With the knot moving** the gap is smaller (0.094 vs 0.045 % ≥ 1 level): part of what every variant shows there is the
+  shadow's real motion (the ground truth alone: 0.017 %).
+- Caveats, all of which make a real TAA *less* forgiving than this model: real TAA / upscalers jitter the camera every
+  frame (the denoiser's input moves sub-pixel, and the still-view gate sees a still camera while the samples move); FSR's
+  reactive / lock masks pass "changing" pixels through. Under camera motion the model's variance clipping is the same
+  as a real TAA's, but it isn't scored here (still camera).
+
+Proposed criteria (for Dennis to pick, q35 on the review bench):
+
+- **(a) Relative, after TAA:** on still views, within 2× of FFX's flicker through the same TAA (α 0.1, ≥ 2 levels):
+  needs ≤ 0.012 %; 'stabilize' is at 0.021 %, + `antiLagNoise 0.1` at 0.015 %, `true` + 0.2 at 0.008 %.
+- **(b) Absolute, after TAA:** ≤ 0.01 % of receivers changing ≥ 2 levels per frame after a typical TAA (≈ 50 px of a
+  960×540 frame): FFX passes (0.006 %), 'stabilize' doesn't yet (0.021 %).
+- **(c) The denoiser alone:** FFX's level without any TAA (≤ 0.05 % ≥ 2, ≤ 0.01 % ≥ 4), for apps that run no TAA
+  (realtime-shadows itself, inspection views).
+
+My recommendation is (a) as the target for the default (most three.js apps that ray trace also run TAA or an upscaler,
+and FFX is the look Dennis calls solid), with (c) kept as the goal of the still-view work that is still open (TASKS):
+'stabilize' is a step toward both, not the end of it.
+
 ### Reproduce
 
 ```sh
+# bench, after-TAA columns (taaAlpha: the model's current-frame weight)
+node examples/three-temporal/shadow-bench.mjs run --camera=demo --knotRate=0 --taaAlpha=0.1 --variant='st:{"stillHistory":"stabilize"}'
 # pinned test-bed server, captures of the main worktree
 RT_CAPTURE_DIR=<cleanroom>/tools/rt-capture node node_modules/vite/bin/vite.js examples/realtime-denoiser --port 5267 --strictPort --host 127.0.0.1
 BASE=http://127.0.0.1:5267/ node examples/realtime-denoiser/run-headless.mjs \

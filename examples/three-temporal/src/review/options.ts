@@ -31,6 +31,8 @@ export interface Where {
   event?: SceneEvent;
   /** One short line shown with the jump (what to do there). */
   note?: string;
+  /** The downstream TAA model on (true) or off (false) for this jump (src/realtime/taa.ts; omitted = unchanged). */
+  taa?: boolean;
 }
 
 export interface ReviewOption {
@@ -105,6 +107,7 @@ export const SCENE_PATHS: Record<SceneId, { id: string; label: string }[]> = {
   knot: [
     { id: 'knot-static', label: 'still camera, knot rotating' }, { id: 'knot-still', label: 'still camera, knot frozen' },
     { id: 'knot-orbit', label: 'orbit, knot rotating' },
+    { id: 'wide-still', label: 'wide shot, still camera, knot frozen (the demo paused)' }, { id: 'wide-static', label: 'wide shot, still camera, knot rotating' },
   ],
   sponza: [
     { id: '', label: 'free: slow orbit' }, { id: 'sponza-orbit', label: 'orbit' }, { id: 'sponza-pan', label: 'fast pan' },
@@ -321,17 +324,24 @@ export const OPTIONS: ReviewOption[] = [
     where: { scene: 'bistro', path: 'bistro-move', signal: 'shadow', note: "the lantern's shadows while it moves" },
   },
   {
+    id: 'shadows.engine', filter: 'shadows', key: 'engine', targets: ['shadows'], switch: true,
+    values: ['ours', 'ffx'], valueLabels: { ours: 'ours (ShadowDenoiser)', ffx: 'FidelityFX (ffxShadows)' }, default: 'ours', related: ['q32', 'q35'], status: 'default',
+    look: "Which shadow denoiser the side runs: ours, or FidelityFX's on the same 1-ray signal (a bench switch for comparison; FFX takes none of the options below).",
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'FFX looks solid, partly because it is steadily too dark (view diff vs ours, or the reference)' },
+    benchNote: 'not a package option: the bench builds ffxShadows() instead of realtimeShadows() for this side',
+  },
+  {
     id: 'shadows.stillHistory', filter: 'shadows', key: 'stillHistory', targets: ['shadows'],
     values: [false, 'stabilize', true], valueLabels: { false: 'off', stabilize: 'stabilize (proposed)', true: 'stabilize + full history' },
     default: false, candidate: 'stabilize', decision: 'q32', status: 'open',
     look: "Still camera: off, single pixels in soft shadows and along contact edges pop for a frame and settle (the shadow never looks solid); 'stabilize' keeps the output stabilizer on there, so they hold still. 'true' also lifts the history cap (calmer still, but a moving hard shadow edge trails). Moving camera: no change.",
-    where: { scene: 'knot', path: 'knot-still', signal: 'lit', note: "the knot's wall shadow and the contact edges: watch for single-pixel pops" },
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: "the knot's wall shadow behind the pedestal, chair / table legs: watch for single-pixel pops" },
   },
   {
     id: 'shadows.antiLagNoise', filter: 'shadows', key: 'antiLagNoise', targets: ['shadows'],
-    values: [0, 0.1, 0.2], default: 0, candidate: 0.1, related: ['q32'], status: 'opt-in',
+    values: [0, 0.1, 0.2], default: 0, candidate: 0.1, decision: 'q33', related: ['q32'], status: 'open',
     look: "Still camera: stops most false history restarts (pops) in soft shadows, close to FFX's calm; but a shadow moving over a still receiver (moving object, still camera) restarts later and trails. For scenes where nothing moves.",
-    where: { scene: 'knot', path: 'knot-static', signal: 'lit', note: "the rotating knot's shadow: does it trail?" },
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'still view: calmer still?' },
   },
   {
     id: 'shadows.snapHardPx', filter: 'shadows', key: 'snapHardPx', targets: ['shadows'],
@@ -413,12 +423,46 @@ export const DECISIONS: Decision[] = [
   {
     id: 'q32', highlight: true,
     title: "Shadows: stillHistory 'stabilize' as the default (solid shadows on a still camera)",
-    answer: "proposed 2026-10-28 (Dennis: \"propose stabilize as default\"); rule 9: results/SHADOW-BENCH.md",
-    look: "A = today's shadows, B = stillHistory 'stabilize'. Hold the camera still and look at soft shadows and contact edges in the lit view: A has single pixels popping every few frames, B holds them still. Let the knot rotate: its moving shadow should look the same on both sides; on an orbit both sides are identical by design. Try antiLagNoise 0.1 on B for the calmer still view (and the trailing it costs).",
-    where: { scene: 'knot', path: 'knot-still', signal: 'lit', note: 'still camera, knot frozen: the boil without any motion' },
+    answer: "proposed 2026-10-28 (Dennis: \"propose stabilize as default\"); rule 9 passes on the sets, worst capture three-knot-static -0.25 dB (results/SHADOW-BENCH.md)",
+    look: "A = today's shadows, B = stillHistory 'stabilize'. Camera still, lit view: A has single pixels popping every few frames in the knot's wall shadow and along the furniture's contact edges, B holds most of them still (about 40 % fewer). Then the rotating knot: its moving shadow should look the same on both sides. On an orbit both sides are identical by design. Press T for the TAA model on both sides.",
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'the demo paused: still camera, knot frozen; watch the wall shadow behind the pedestal and the legs', taa: false },
     alsoAt: [
-      { scene: 'knot', path: 'knot-static', signal: 'lit', note: 'still camera, knot rotating: the moving shadow must not trail' },
-      { scene: 'corner', signal: 'lit', note: 'the free-running orbit: the moving camera, where B equals A' },
+      { scene: 'knot', path: 'wide-static', signal: 'lit', note: 'still camera, knot rotating: the moving shadow must not trail', taa: false },
+      { scene: 'knot', path: 'knot-still', signal: 'lit', note: 'close-up: here both look calm (the flicker is a distance effect)', taa: false },
+      { scene: 'corner', signal: 'lit', note: 'the free-running orbit: a moving camera, where B equals A', taa: false },
+    ],
+  },
+  {
+    id: 'q33', highlight: true,
+    title: 'Shadows: antiLagNoise (calmer still, trails moving objects): opt-in, or drop it?',
+    answer: 'open, 2026-10-28: proposed as a documented opt-in',
+    base: { 'shadows.stillHistory': 'stabilize' },
+    look: "Both sides have 'stabilize'; A = antiLagNoise 0, B = 0.1 (try 0.2). Still view: B is calmer again, close to FFX (switch a side's shadow engine to FFX to compare). The cost: with the knot rotating, B's moving shadow restarts later and can trail (1080p moving-object path -0.56 dB at 0.1). Answer: keep it as an opt-in for scenes where nothing moves, or drop it.",
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'still: B calmer?', taa: false },
+    alsoAt: [
+      { scene: 'knot', path: 'wide-static', signal: 'lit', note: 'knot rotating: does B trail?', taa: false },
+      { scene: 'bistro', path: 'bistro-move', signal: 'shadow', note: 'moving object + lantern: where it costs', taa: false },
+    ],
+  },
+  {
+    id: 'q34',
+    title: "Shadows: stillHistory true (also lift the history cap on a still view): keep as an option?",
+    answer: 'open, 2026-10-28: proposed as an option, not the default',
+    set: { 'shadows.stillHistory': ['stabilize', true] },
+    look: "A = 'stabilize', B = true. Still view: B is calmer at contact edges and hard shadows (another ~25 % fewer pops). The cost: a hard shadow edge moving over a still floor trails (+34 % boil on the moving-object capture under a hard light). Answer: keep it as an option, or drop it.",
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'contact edges: B calmer?', taa: false },
+    alsoAt: [{ scene: 'knot', path: 'wide-static', signal: 'lit', note: 'the moving shadow edge: B trails?', taa: false }],
+  },
+  {
+    id: 'q35', highlight: true,
+    title: 'Acceptance: how much flicker may the shadow keep if a TAA / upscaler runs after it?',
+    answer: 'open, 2026-10-28: proposed criterion in results/SHADOW-BENCH.md ("Acceptance after TAA")',
+    set: { 'shadows.stillHistory': [false, 'stabilize'] },
+    look: "TAA model on (T toggles it; weight α 0.1, try 0.05 = three's TRAA minimum, 0.2 = a fast one). A = today's shadows, B = 'stabilize'; switch a side to FFX for its reference look. Question: with a TAA after it, is A already solid enough, is B, or must the denoiser alone be as calm as FFX? The bench numbers for each are in the results doc.",
+    where: { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'TAA model on: does any flicker survive?', taa: true },
+    alsoAt: [
+      { scene: 'knot', path: 'wide-static', signal: 'lit', note: 'knot rotating, TAA on: does the TAA smear the moving shadow?', taa: true },
+      { scene: 'knot', path: 'wide-still', signal: 'lit', note: 'the same without the TAA (the denoiser alone)', taa: false },
     ],
   },
   {

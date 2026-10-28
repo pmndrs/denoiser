@@ -17,8 +17,9 @@ import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, uniform, uint, screenCoordinate, pass, mrt, output, diffuseColor, normalView,
   materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal, velocity, getViewPosition,
-  convertToTexture, renderOutput, uv,
+  convertToTexture, renderOutput, uv, acesFilmicToneMapping, sRGBTransferOETF,
 } from 'three/tsl';
+import { TaaNode } from '../realtime/taa';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { ffxShadows, realtimeShadows } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
@@ -32,7 +33,7 @@ export type Show = 'lit' | 'mask';
 
 export interface GroundTruth { key: string; gt: Float32Array; recv: Uint8Array; cached: boolean }
 /** `object`: 1 where the pixel has non-zero velocity (static camera: the moving knot). */
-export interface FrameRead { frame: number; noisy: Float32Array; outputs: Record<string, Float32Array>; base: Float32Array; direct: Float32Array; object: Uint8Array }
+export interface FrameRead { frame: number; noisy: Float32Array; outputs: Record<string, Float32Array>; base: Float32Array; direct: Float32Array; object: Uint8Array; taa: Record<string, Float32Array> }
 
 /** Dev-server cache endpoint (shadow-bench-plugin via rtCapture: captures/ = ground truths, outputs/ = runs). */
 export const BENCH_API = '/__shadow-bench';
@@ -169,7 +170,11 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
     ? ffxShadows(sigRTT, { ...guides, ...(v.options ?? {}) } as N)
     : realtimeShadows(sigRTT, { ...guides, hitDistance: distRTT, light, denoiser: v.options ?? {} } as N);
   let variants: Variant[] = [];
-  const nodes = new Map<string, { v: Variant; sig: string; node: N }>();
+  const nodes = new Map<string, { v: Variant; sig: string; node: N; taa: TaaNode }>();
+  // downstream-TAA model per variant (and the raw signal) on its displayed image: the "after TAA" flicker
+  const shown = (vis: N): N => vec4(sRGBTransferOETF(acesFilmicToneMapping(baseRTT.sample(uv()).rgb.add(directRTT.sample(uv()).rgb.mul(vis)), float(1)).clamp(0, 1)), 1);
+  const taaOf = (vis: N): TaaNode => { const t = new TaaNode(convertToTexture(shown(vis)), velTex); t.alpha.value = cfg?.taaAlpha ?? 0.1; return t; };
+  const noisyTaa = taaOf(sigRTT.sample(uv()).r);
 
   // ---- pipelines -------------------------------------------------------------------------------------------------
   const pipe = () => { const p = new THREE.RenderPipeline(renderer); p.outputColorTransform = false; return p; };
@@ -184,7 +189,7 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
   const rebuild = () => {
     // every variant (and both composite inputs) stays in the graph at weight 0, so each one dispatches every frame
     // whatever the canvas shows, and switching the view does not touch any history
-    const keep = [...[...nodes.values()].map((n) => n.node.r), baseRTT.sample(uv()).r, directRTT.sample(uv()).r, objectRTT.sample(uv()).r].reduce((a: N, b: N) => a.add(b), float(0) as N).mul(0);
+    const keep = [...[...nodes.values()].flatMap((n) => [n.node.r, (n.taa as N).r]), (noisyTaa as N).r, baseRTT.sample(uv()).r, directRTT.sample(uv()).r, objectRTT.sample(uv()).r].reduce((a: N, b: N) => a.add(b), float(0) as N).mul(0);
     const view = live.view === 'gt' ? 'noisy' : live.view;
     denoisePipe.outputNode = display(visOf(view).add(keep), live.show) as N;
     denoisePipe.needsUpdate = true;
@@ -241,9 +246,9 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
       const want = new Map(variants.map((v) => [v.id, v]));
       for (const [id, n] of nodes) {
         const v = want.get(id);
-        if (!v || JSON.stringify([v.kind, v.options]) !== n.sig) { n.node.dispose?.(); nodes.delete(id); }
+        if (!v || JSON.stringify([v.kind, v.options]) !== n.sig) { n.node.dispose?.(); n.taa.dispose(); nodes.delete(id); }
       }
-      for (const v of variants) if (!nodes.has(v.id)) nodes.set(v.id, { v, sig: JSON.stringify([v.kind, v.options]), node: makeNode(v) });
+      for (const v of variants) if (!nodes.has(v.id)) { const node = makeNode(v); nodes.set(v.id, { v, sig: JSON.stringify([v.kind, v.options]), node, taa: taaOf(node.r) }); }
       rebuild();
     },
 
@@ -257,7 +262,8 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
     reset() {
       pose(0);
       tick(idlePipe);
-      for (const n of nodes.values()) n.node.resetHistory();
+      for (const n of nodes.values()) { n.node.resetHistory(); n.taa.reset(); n.taa.alpha.value = cfg?.taaAlpha ?? 0.1; }
+      noisyTaa.reset(); noisyTaa.alpha.value = cfg?.taaAlpha ?? 0.1;
       frame = -1;
     },
 
@@ -290,7 +296,11 @@ export async function createEngine(canvas: HTMLCanvasElement, W: number, H: numb
       const direct = (await readTexture(renderer, directRTT.renderTarget!.texture)).data;
       const ob = (await readTexture(renderer, objectRTT.renderTarget!.texture)).data;
       const object = new Uint8Array(n); for (let i = 0; i < n; i++) object[i] = ob[i * 4] > 0.5 ? 1 : 0;
-      return { frame, noisy, outputs, base, direct, object };
+      // after-TAA displayed brightness (mean of the sRGB channels, 0..255), as litLuma
+      const lumaOf = async (t: TaaNode) => { const d = (await readTexture(renderer, t.result)).data, o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = (d[4 * i] + d[4 * i + 1] + d[4 * i + 2]) * 85; return o; };
+      const taa: Record<string, Float32Array> = { noisy: await lumaOf(noisyTaa) };
+      for (const [id, nd] of nodes) taa[id] = await lumaOf(nd.taa);
+      return { frame, noisy, outputs, base, direct, object, taa };
     },
 
     /**

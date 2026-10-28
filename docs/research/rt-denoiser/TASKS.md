@@ -1177,6 +1177,18 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (q32 card). Flip = `stillHistory: o.stillHistory ?? 'stabilize'` in shadow.ts + registry `default` / `changes`,
       after Dennis has looked at it there. `antiLagNoise 0.1` stays opt-in (trails moving objects under a still camera:
       −0.56 dB on the 1080p `object` path) — owner shadows
+- [ ] **q33 (open): `antiLagNoise` as a documented opt-in, or drop it.** Still view calmer (demo ≥ 2 levels 0.14 → 0.09 % on
+      top of 'stabilize'), but a shadow moving over a still receiver restarts later (1080p `object` −0.56 dB at 0.1).
+      Review bench q33 card — owner shadows
+- [ ] **q34 (open): `stillHistory: true` (also lift the W_px² cap) as an option.** Another ~25 % fewer still-view pops at
+      contact edges; a moving hard edge over a still receiver trails (+34 % changing-region boil on sm-hard-object).
+      Review bench decisions table — owner shadows
+- [ ] **q35 (open): acceptance level for flicker before a TAA / upscaler** (Dennis, 2026-10-28). Measured with a model TAA
+      (`src/realtime/taa.ts`, bench `taaAlpha`, "after TAA" columns; review bench **T** toggle): a TAA takes ~10× off our
+      visible flicker, but ours stays 2–4× FFX through the same TAA on a still view. Proposed criteria (a) within 2× of
+      FFX after TAA α 0.1, (b) ≤ 0.01 % ≥ 2 levels after TAA, (c) FFX's level without TAA; recommended (a) for the
+      default, (c) as the goal (results/SHADOW-BENCH.md "Acceptance after TAA"). Not modelled: jitter, FSR masks — owner
+      shadows / tooling
 - [ ] Shadows: the still view still flickers ~3× FFX with 'stabilize' (0.14 vs 0.05 % ≥ 2 levels). What is left: false
       restarts without a motion cost (antiLagNoise trails moving occluders: a restart test that tells a moving shadow from
       noise, e.g. the clamp firing two frames running, or the occluder distance changing), and the contact-edge cap

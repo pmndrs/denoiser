@@ -88,7 +88,7 @@ export async function runBench(engine: Engine, cfg: BenchConfig, variants: Varia
   const images = ['noisy', ...variants.map((v) => v.id)];
   const perFrame: RunResult['perFrame'] = {};
   const perCheckpoint: RunResult['perCheckpoint'] = {};
-  type Win = { gt: Float32Array; recv: Uint8Array; object: Uint8Array; x: Record<string, Float32Array>; low: Record<string, Float32Array>; luma: Record<string, Float32Array> };
+  type Win = { gt: Float32Array; recv: Uint8Array; object: Uint8Array; x: Record<string, Float32Array>; low: Record<string, Float32Array>; luma: Record<string, Float32Array>; taa: Record<string, Float32Array> };
   const win = new Map<number, Win>();
   const es = Object.fromEntries(images.map((k) => [k, new ErrStd(N)]));
   const gpu: Record<string, number[]> = Object.fromEntries(variants.map((v) => [v.id, []]));
@@ -118,7 +118,7 @@ export async function runBench(engine: Engine, cfg: BenchConfig, variants: Varia
     const prev = win.get(f - 1);
     if (prev) for (const k of Object.keys(luma)) { const a = luma[k], p = prev.luma[k], m = flick[k]; for (let i = 0; i < N; i++) { const d = Math.abs(a[i] - p[i]); if (d > m[i]) m[i] = d; } }
     lastLuma = luma;
-    win.set(f, { gt, recv, object: rd.object, x, low, luma });
+    win.set(f, { gt, recv, object: rd.object, x, low, luma, taa: rd.taa });
 
     // images
     const wantImages = cfg.images === 'all' || (cfg.images === 'checkpoints' && cpSet.has(f));
@@ -151,6 +151,9 @@ export async function runBench(engine: Engine, cfg: BenchConfig, variants: Varia
         const ts = temporalStats(xs, lows, gs, cm);
         const fl = flickerStats(burst.map((b) => win.get(b)!.luma[k]), cm);
         for (const r of Object.keys(ts) as RegionId[]) Object.assign(ts[r], fl[r]);
+        // after the downstream-TAA model (src/realtime/taa.ts): >= 1 / >= 2 display levels (the ground truth: its own lit image)
+        const tl = flickerStats(burst.map((b) => (k === 'gt' ? win.get(b)!.luma.gt : win.get(b)!.taa[k])), cm, [1, 2]);
+        for (const r of Object.keys(ts) as RegionId[]) Object.assign(ts[r], { tflick1: tl[r].flick2, tflick2: tl[r].flick4 });
         const fs = k === 'gt' ? {} : Object.fromEntries(Object.entries(cm).map(([r, m]) => [r, frameStats(x[k], gt, m)]));
         perCheckpoint[f][k] = Object.fromEntries(Object.entries(ts).map(([r, t]) => [r, { ...t, ...(fs as Record<string, FrameStats>)[r] }]));
       }

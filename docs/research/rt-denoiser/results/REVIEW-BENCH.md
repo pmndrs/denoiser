@@ -30,8 +30,17 @@ and defaults (the other pages of `yarn dev` use `packages/denoiser/dist`, which 
 - **Motion and events**: moving / paused (**Space**), camera cut (**K**: the other shot, or half a path ahead), light colour
   change at constant luminance (**C**, Sponza / Bistro: the case `antiLagChroma` is for), light brightness step (**L**),
   reset both histories (**0**); a camera-path menu per scene; the corner and knot have a panel-size slider (soft vs hard).
+- **TAA after (model)** (**T**, 2026-10-28): a downstream TAA / temporal upscaler model (`src/realtime/taa.ts`: velocity
+  reprojection, 3×3 variance clipping, current-frame weight α 0.05 / 0.1 / 0.2, no jitter) on both sides' displayed
+  image, before the split: how much of a denoiser's flicker would survive the temporal pass most apps run after it.
+- **Shadow engine** switch per side (`shadows.engine`, 2026-10-28): ours or FidelityFX's `ffxShadows()` on the same 1-ray
+  signal (a bench switch, not a package option; FFX takes none of the other shadow options).
+- **Knot paths `wide-still` / `wide-static`** (2026-10-28): realtime-shadows' paused wide shot with the knot frozen /
+  rotating, where the still-view shadow flicker shows (the close-ups barely show it; results/SHADOW-BENCH.md).
 - **Flip tests** (top cards): the decisions Dennis asked to see highlighted, **q23** (stepTest + edgeBox + rotationStep 0)
-  and **q29** (floorE 0.05). "Load the flip test" sets A = without, B = with, and jumps to the scene / path / signal where
+  and **q29** (floorE 0.05), and the still-view shadow questions of 2026-10-28: **q32** (`stillHistory: 'stabilize'` as the
+  default), **q33** (`antiLagNoise`: opt-in or drop), **q35** (how much flicker may stay before a TAA; its jumps turn the
+  TAA model on); q34 (`stillHistory: true`) is in the decisions table. "Load the flip test" sets A = without, B = with, and jumps to the scene / path / signal where
   it shows best; the "also" buttons go to the other places worth a look; the per-option boxes toggle each part of the
   decision on side B alone (which part does what).
 - **Options table**: one row per registry entry, grouped by filter (shadows, SVGF, occlusion, recurrent, SH), with the

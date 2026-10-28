@@ -9,8 +9,9 @@
 // View modes switch by uniform (split / A / B / |A - B|: instant, so F blinks without a rebuild); the reference and
 // raw views rebuild the output graph. The URL mirrors the state for sharing, but the page never needs it.
 import * as THREE from 'three/webgpu';
-import { float, vec3, vec4, uniform, screenCoordinate, renderOutput, select, acesFilmicToneMapping } from 'three/tsl';
-import { realtimeDiffuse, realtimeDiffuseSpecular, realtimeOcclusion, realtimeShadows, realtimeSpecular } from 'denoiser/three';
+import { float, vec3, vec4, uniform, screenCoordinate, renderOutput, select, acesFilmicToneMapping, convertToTexture } from 'three/tsl';
+import { TaaNode } from '../realtime/taa';
+import { ffxShadows, realtimeDiffuse, realtimeDiffuseSpecular, realtimeOcclusion, realtimeShadows, realtimeSpecular } from 'denoiser/three';
 import { mountShell } from '../../../_shared/shell';
 import { type N, readTexture, nonFiniteCount } from '../realtime/scene';
 import { buildKit, type Kit, type Parts } from './scenes';
@@ -54,6 +55,8 @@ async function main() {
     moving: q.get('moving') !== '0',
     split: Number(q.get('split') ?? 0.5),
     gainExp: Number(q.get('gain') ?? 4),
+    taa: q.get('taa') === '1',
+    taaAlpha: Number(q.get('taaAlpha') ?? 0.1),
     show: 'all',
     note: q.get('note') ?? '',
   };
@@ -105,7 +108,12 @@ async function main() {
     };
   };
   const buildAo = (cfg: C.SideConfig) => realtimeOcclusion(kit.inputs.difHit, { ...kit.guides, denoiser: C.nodeOptions(cfg).ao as N }) as N;
-  const buildShadows = (cfg: C.SideConfig) => realtimeShadows(kit.inputs.sh, { ...kit.guides, hitDistance: kit.inputs.shDist, light: kit.light, denoiser: C.nodeOptions(cfg).shadows as N }) as N;
+  const buildShadows = (cfg: C.SideConfig) => {
+    // 'shadows.engine' (a bench switch, not a package option): FidelityFX's shadow denoiser on the same 1-ray signal
+    const { engine, ...o } = C.nodeOptions(cfg).shadows as N;
+    return (engine === 'ffx' ? ffxShadows(kit.inputs.sh, { ...kit.guides } as N)
+      : realtimeShadows(kit.inputs.sh, { ...kit.guides, hitDistance: kit.inputs.shDist, light: kit.light, denoiser: o })) as N;
+  };
   const makeSide = (cfg: C.SideConfig): Side => ({ cfg, keys: C.nodeKeys(cfg), gi: buildGi(cfg), ao: buildAo(cfg), shadows: buildShadows(cfg) });
   const sides: Record<SideId, Side> = { A: makeSide(initial.A), B: makeSide(initial.B) };
   const nodesOf = (s: Side): N[] => [...s.gi.nodes, s.ao, s.shadows];
@@ -137,6 +145,7 @@ async function main() {
   const partsOf = (s: Side): Parts => ({ dif: s.gi.diffuse.rgb, spec: s.gi.specular.rgb, ao: s.ao.r, vis: s.shadows.r });
   const tm = (sig: Signal, c: N): N => (sig === 'ao' || sig === 'shadow' ? c : acesFilmicToneMapping(c, float(1)));
   let graphKind: 'cmp' | 'ref' | 'noisy' = 'cmp';
+  const taaNodes: TaaNode[] = [];
   const buildOutput = () => {
     const sig = state.signal;
     graphKind = CMP_VIEWS.includes(state.view) ? 'cmp' : state.view === 'ref' ? 'ref' : 'noisy';
@@ -146,7 +155,13 @@ async function main() {
     if (graphKind === 'cmp') {
       // .toVar(): evaluated once up front; used inside several selects, a tone-mapping Fn call was otherwise only
       // computed in the branch of its first use (black split view)
-      const a = tm(sig, kit.color(sig, partsOf(sides.A), false)).toVar(), b = tm(sig, kit.color(sig, partsOf(sides.B), false)).toVar();
+      let a = tm(sig, kit.color(sig, partsOf(sides.A), false)).toVar(), b = tm(sig, kit.color(sig, partsOf(sides.B), false)).toVar();
+      // downstream TAA model (src/realtime/taa.ts) on each side's displayed colour, before the split
+      for (const t of taaNodes.splice(0)) graveyard.push({ nodes: [t], at: frame + 4 });
+      if (state.taa) {
+        const [ta, tb] = [a, b].map((c) => { const t = new TaaNode(convertToTexture(vec4(c, 1)), kit.guides.velocity); t.alpha.value = state.taaAlpha; taaNodes.push(t); return t; });
+        a = (ta as N).rgb.toVar(); b = (tb as N).rgb.toVar();
+      }
       const x = screenCoordinate.x, cut = uSplit.mul(W);
       const split = select(x.sub(cut).abs().lessThan(1), vec3(1, 1, 1), select(x.lessThan(cut), a, b));
       const diff = a.sub(b).abs().mul(uGain);
@@ -213,7 +228,9 @@ async function main() {
   const jump = (w: Where | undefined) => {
     if (!w) return;
     state.note = w.note ?? (w.event === 'cut' ? 'press "camera cut" (K)' : w.event === 'colour' ? 'press "light colour" (C)' : w.event === 'brightness' ? 'press "light step" (L)' : '');
-    if (w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', note: state.note }); return; }
+    const taa = w.taa === undefined ? {} : { taa: w.taa ? '1' : '0' };
+    if (w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', note: state.note, ...taa }); return; }
+    if (w.taa !== undefined && w.taa !== state.taa) setTaa(w.taa);
     if ((w.path ?? '') !== kit.path) setPath(w.path ?? '');
     setSignal(w.signal);
     setView(w.view ?? (state.view === 'ref' || state.view === 'noisy' ? 'split' : state.view));
@@ -238,6 +255,11 @@ async function main() {
   $('#btn-bright').addEventListener('click', () => kit.events.brightness());
   $('#btn-reset').addEventListener('click', resetAll);
   $('#chk-blink').addEventListener('change', (e) => setBlink((e.target as HTMLInputElement).checked));
+  const setTaa = (on: boolean) => { state.taa = on; $<HTMLInputElement>('#chk-taa').checked = on; buildOutput(); mirror(); };
+  $('#chk-taa').addEventListener('change', (e) => setTaa((e.target as HTMLInputElement).checked));
+  $<HTMLInputElement>('#chk-taa').checked = state.taa;
+  $<HTMLSelectElement>('#taa-alpha').value = String(state.taaAlpha);
+  $('#taa-alpha').addEventListener('change', (e) => { state.taaAlpha = Number((e.target as HTMLSelectElement).value); for (const t of taaNodes) t.alpha.value = state.taaAlpha; mirror(); });
   if (kit.controls) { const host = $('#rv-scene-controls'); host.innerHTML = kit.controls.html; kit.controls.wire(host); }
   const dragTo = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); setSplit((e.clientX - r.left) / r.width); };
   canvas.addEventListener('pointerdown', (e) => { if (state.view !== 'split') return; canvas.setPointerCapture(e.pointerId); dragTo(e); });
@@ -250,7 +272,7 @@ async function main() {
       f: () => { setBlink(false); flip(); }, x: swap, s: () => { setBlink(false); setView('split'); }, d: () => { setBlink(false); setView('diff'); },
       r: () => { setBlink(false); setView('ref'); }, n: () => { setBlink(false); setView('noisy'); }, ' ': () => setMoving(!state.moving),
       k: () => { kit.cut(); resetAll(); }, c: () => kit.events.colour?.(), l: () => kit.events.brightness(), '0': resetAll,
-      arrowleft: () => setSplit(state.split - 0.05), arrowright: () => setSplit(state.split + 0.05), b: () => setBlink(!$<HTMLInputElement>('#chk-blink').checked),
+      arrowleft: () => setSplit(state.split - 0.05), arrowright: () => setSplit(state.split + 0.05), b: () => setBlink(!$<HTMLInputElement>('#chk-blink').checked), t: () => setTaa(!state.taa),
     };
     if (act[k]) { act[k](); e.preventDefault(); }
   });
@@ -385,7 +407,7 @@ async function main() {
     if (!d) return;
     const p = C.decisionPreset(d);
     const w = [C.decisionWhere(d), ...(d.alsoAt ?? [])][whereIdx];
-    if (w && w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', A: C.encodeSide(p.A), B: C.encodeSide(p.B), note: w.note ?? '' }); return; }
+    if (w && w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', A: C.encodeSide(p.A), B: C.encodeSide(p.B), note: w.note ?? '', ...(w.taa === undefined ? {} : { taa: w.taa ? '1' : '0' }) }); return; }
     setBoth(p);
     jump(w);
   };
@@ -434,7 +456,7 @@ async function main() {
     for (const k of ['w', 'h', 'manual']) if (q.has(k)) p.set(k, q.get(k)!);
     const base: Record<string, string> = {
       scene: kit.id, path: kit.path, signal: state.signal, view: state.view, moving: state.moving ? '1' : '0',
-      split: String(+state.split.toFixed(3)), gain: String(state.gainExp), A: C.encodeSide(sides.A.cfg), B: C.encodeSide(sides.B.cfg),
+      split: String(+state.split.toFixed(3)), gain: String(state.gainExp), taa: state.taa ? '1' : '0', taaAlpha: String(state.taaAlpha), A: C.encodeSide(sides.A.cfg), B: C.encodeSide(sides.B.cfg),
     };
     for (const [k, v] of Object.entries({ ...base, ...o })) if (v !== '') p.set(k, v);
     return p;

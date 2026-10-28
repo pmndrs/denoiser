@@ -42,6 +42,11 @@ export interface BenchConfig {
   gtRows: number;
   /** Low-frequency boil: Gaussian sigma (px) applied before the temporal second difference. */
   blurSigma: number;
+  /**
+   * Weight of the current frame in the downstream-TAA model (src/realtime/taa.ts) run on every variant's displayed image:
+   * the "after TAA" flicker columns. 0.1 = a typical TAA, 0.05 = three's TRAA minimum.
+   */
+  taaAlpha: number;
   /** A pixel is in the .moving split when its ground truth changes faster than this per frame over the burst. */
   movingRate: number;
   /** Images written per run: every kept frame, only the checkpoints, or none (metrics only). */
@@ -70,6 +75,7 @@ export const DEFAULT_CONFIG: BenchConfig = {
   warmup: 300, step: 1, count: 5, burst: 3,
   gtGrid: 64, gtRows: 1,
   blurSigma: 3,
+  taaAlpha: 0.1,
   movingRate: 0.0005,
   images: 'checkpoints',
   raw: false,

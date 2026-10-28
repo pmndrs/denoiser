@@ -104,6 +104,8 @@
           <button class="dn-btn" id="btn-bright" title="L">light step</button>
           <button class="dn-btn" id="btn-reset" title="0">reset both histories</button>
           <label class="dn-check"><input type="checkbox" id="chk-blink" /> blink A / B</label>
+          <label class="dn-check" title="T: a model of the TAA / temporal upscaler most apps run after the denoiser (variance-clipped history, no jitter), on both sides: how much of the flicker would survive it"><input type="checkbox" id="chk-taa" /> TAA after (model)</label>
+          <select id="taa-alpha" title="TAA weight of the current frame"><option value="0.05">α 0.05 (TRAA min)</option><option value="0.1" selected>α 0.1</option><option value="0.2">α 0.2</option></select>
         </div></div>
         <div id="rv-scene-controls" style="display: contents"></div>
       </section>

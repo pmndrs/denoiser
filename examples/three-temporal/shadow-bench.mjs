@@ -12,7 +12,7 @@
 //
 // Config flags: any BenchConfig key (src/shadow-bench/config.ts), --warmup=300 --step=1 --count=5 --burst=3
 // --camera=wall|knot|wide --knotRate=0.0058 --knotStart=0 --lightHalf=0.3 --gtGrid=64 --images=checkpoints|all|none
-// --raw=true --blurSigma=3, or --cfg='{"count":10}'. --w / --h / --sampler reload the page at that size / noise.
+// --raw=true --blurSigma=3 --taaAlpha=0.1 (the after-TAA model), or --cfg='{"count":10}'. --w / --h / --sampler reload the page at that size / noise.
 // Variants: ffx and ours (package defaults) unless --only; each --variant adds ours with those options, e.g.
 //   --variant='rot0:{"rotationStep":0}' --variant='nostab:{"stabilize":0}'
 // (kind ffx: --variant='ffx2:ffx:{...}').
@@ -32,7 +32,7 @@ const cmd = ['run', 'gt', 'list', 'compare'].includes(pos[0]) ? pos.shift() : 'r
 const PORT = Number(opts.port ?? 5266);
 const BASE = `http://127.0.0.1:${PORT}/`;
 
-const NUM_KEYS = new Set(['knotStart', 'knotRate', 'knotTilt', 'lightHalf', 'warmup', 'step', 'count', 'burst', 'gtGrid', 'gtRows', 'blurSigma', 'movingRate']);
+const NUM_KEYS = new Set(['knotStart', 'knotRate', 'knotTilt', 'lightHalf', 'warmup', 'step', 'count', 'burst', 'gtGrid', 'gtRows', 'blurSigma', 'movingRate', 'taaAlpha']);
 const STR_KEYS = new Set(['camera', 'images', 'label']);
 const JSON_KEYS = new Set(['position', 'target']);
 function configFromArgs() {
@@ -63,7 +63,7 @@ const COLS = [
   ['pen. RMSE', (s) => s.penumbra?.rmse], ['all RMSE', (s) => s.all?.rmse],
   ['boil umbra', (s) => s.umbra?.boil], ['boil pen.', (s) => s.penumbra?.boil],
   ['blotch umbra', (s) => s.umbra?.boilLow], ['blotch pen.', (s) => s.penumbra?.boilLow], ['blotch moving', (s) => s['penumbra.moving']?.boilLow],
-  ['tErr', (s) => s.all?.tErr], ['flicker ≥2', (s) => s.all?.flick2, 'pct2'], ['flicker ≥4', (s) => s.all?.flick4, 'pct3'], ['knot RMSE', (s) => s.object?.rmse],
+  ['tErr', (s) => s.all?.tErr], ['flicker ≥2', (s) => s.all?.flick2, 'pct2'], ['flicker ≥4', (s) => s.all?.flick4, 'pct3'], ['after TAA ≥1', (s) => s.all?.tflick1, 'pct3'], ['after TAA ≥2', (s) => s.all?.tflick2, 'pct3'], ['knot RMSE', (s) => s.object?.rmse],
 ];
 const fmt = (v, kind) => (v === undefined || v === null || !Number.isFinite(v) ? '–' : kind === 'pct' ? `${(v * 100).toFixed(1)} %` : kind === 'pct2' ? `${(v * 100).toFixed(2)} %` : kind === 'pct3' ? `${(v * 100).toFixed(3)} %` : v.toFixed(4));
 function summaryMd(run) {
@@ -74,7 +74,7 @@ function summaryMd(run) {
 }
 function configLine(run) {
   const c = run.config;
-  return `${c.w}×${c.h}, camera ${c.camera}, knot ${c.knotStart} + ${c.knotRate.toFixed(5)} rad/frame, light half ${c.lightHalf}, ${c.sampler} noise, warmup ${c.warmup}, step ${c.step}, ${c.count} checkpoints, burst ${c.burst}, ground truth ${c.gtGrid ** 2} rays/px, blotch σ ${c.blurSigma} px`;
+  return `${c.w}×${c.h}, camera ${c.camera}, knot ${c.knotStart} + ${c.knotRate.toFixed(5)} rad/frame, light half ${c.lightHalf}, ${c.sampler} noise, warmup ${c.warmup}, step ${c.step}, ${c.count} checkpoints, burst ${c.burst}, ground truth ${c.gtGrid ** 2} rays/px, blotch σ ${c.blurSigma} px, TAA model α ${c.taaAlpha ?? 0.1}`;
 }
 function reportMd(run, url) {
   return [

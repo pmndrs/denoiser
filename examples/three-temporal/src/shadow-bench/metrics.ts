@@ -35,7 +35,7 @@ export const SPLIT_REGIONS = ['umbra.static', 'umbra.moving', 'penumbra.static',
 export type RegionId = (typeof REGIONS)[number] | (typeof SPLIT_REGIONS)[number];
 
 export interface FrameStats { n: number; rmse: number; bias: number; psnr: number; bad: number }
-export interface TemporalStats { n: number; boil: number; boilLow: number; tErr: number; flick2?: number; flick4?: number }
+export interface TemporalStats { n: number; boil: number; boilLow: number; tErr: number; flick2?: number; flick4?: number; tflick1?: number; tflick2?: number }
 
 const cl = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const clamp01 = (x: Float32Array) => { const o = new Float32Array(x.length); for (let i = 0; i < x.length; i++) o[i] = cl(x[i]); return o; };
@@ -151,8 +151,8 @@ export function temporalStats(xs: Float32Array[], xsLow: Float32Array[], gs: Flo
   return out;
 }
 
-/** flick2 / flick4 of a burst of displayed-brightness images (oldest first) per region. */
-export function flickerStats(L: Float32Array[], masks: Record<RegionId, Uint8Array>): Record<RegionId, { flick2: number; flick4: number }> {
+/** flick2 / flick4 of a burst of displayed-brightness images (oldest first) per region (levels: the two thresholds). */
+export function flickerStats(L: Float32Array[], masks: Record<RegionId, Uint8Array>, levels: [number, number] = [2, 4]): Record<RegionId, { flick2: number; flick4: number }> {
   const out = {} as Record<RegionId, { flick2: number; flick4: number }>;
   for (const [k, m] of Object.entries(masks) as [RegionId, Uint8Array][]) {
     let n = 0, a = 0, b = 0;
@@ -161,7 +161,7 @@ export function flickerStats(L: Float32Array[], masks: Record<RegionId, Uint8Arr
       for (let i = 0; i < m.length; i++) {
         if (!m[i]) continue;
         const d = Math.abs(c[i] - p[i]);
-        n++; if (d >= 2) a++; if (d >= 4) b++;
+        n++; if (d >= levels[0]) a++; if (d >= levels[1]) b++;
       }
     }
     out[k] = { flick2: n ? a / n : NaN, flick4: n ? b / n : NaN };
