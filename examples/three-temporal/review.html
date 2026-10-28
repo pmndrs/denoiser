@@ -104,12 +104,14 @@
           <button class="dn-btn" id="btn-bright" title="L">light step</button>
           <button class="dn-btn" id="btn-reset" title="0">reset both histories</button>
           <label class="dn-check"><input type="checkbox" id="chk-blink" /> blink A / B</label>
-          <label class="dn-check" title="T: a model of the TAA / temporal upscaler most apps run after the denoiser (variance-clipped history, no jitter), on both sides: how much of the flicker would survive it"><input type="checkbox" id="chk-taa" /> TAA after (model)</label>
+          <label class="dn-check" title="E: the specular (SSR) term in the lit view, on both sides and the reference; off hides the reflections' own noise while you look at shadows. The specular denoisers keep running"><input type="checkbox" id="chk-refl" checked /> reflections</label>
+          <label class="dn-check" title="T cycles: what runs after the denoisers, on both sides (how much of the flicker survives it). Model: src/realtime/taa.ts, variance-clipped history, no jitter. three TRAA: three's TRAANode per side, jittered (the denoisers see the jitter). FSR3: @pmndrs/upscaler at native resolution, jittered, one upscaler on the displayed image (flipping A / B re-converges it)">after
+            <select id="sel-resolver"><option value="none">nothing</option><option value="model">TAA model</option><option value="traa">three TRAA</option><option value="fsr">FSR3 native</option></select></label>
           <select id="taa-alpha" title="TAA weight of the current frame"><option value="0.05">α 0.05 (TRAA min)</option><option value="0.1" selected>α 0.1</option><option value="0.2">α 0.2</option></select>
         </div></div>
         <div id="rv-scene-controls" style="display: contents"></div>
       </section>
-      <p class="rv-keys">Keys: <kbd>F</kbd> flip A / B · <kbd>X</kbd> swap sides · <kbd>S</kbd> split · <kbd>D</kbd> difference · <kbd>R</kbd> reference · <kbd>N</kbd> raw · <kbd>Space</kbd> pause · <kbd>K</kbd> camera cut · <kbd>C</kbd> light colour · <kbd>L</kbd> light step · <kbd>0</kbd> reset histories · <kbd>←</kbd> <kbd>→</kbd> divider · <kbd>B</kbd> blink</p>
+      <p class="rv-keys">Keys: <kbd>F</kbd> flip A / B · <kbd>X</kbd> swap sides · <kbd>S</kbd> split · <kbd>D</kbd> difference · <kbd>R</kbd> reference · <kbd>N</kbd> raw · <kbd>Space</kbd> pause · <kbd>K</kbd> camera cut · <kbd>C</kbd> light colour · <kbd>L</kbd> light step · <kbd>0</kbd> reset histories · <kbd>←</kbd> <kbd>→</kbd> divider · <kbd>B</kbd> blink · <kbd>T</kbd> resolver · <kbd>E</kbd> reflections</p>
 
       <h2>Flip tests</h2>
       <div class="rv-cards" id="rv-cards"></div>

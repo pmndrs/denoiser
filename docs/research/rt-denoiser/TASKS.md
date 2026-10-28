@@ -1194,6 +1194,16 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       noise, e.g. the clamp firing two frames running, or the occluder distance changing), and the contact-edge cap
       (`stillHistory: true` trails moving hard edges: the cap is the only lag guard where the clamp window opens) —
       found by shadow-bench, owner shadows
+- [ ] q35 with real resolvers: the review bench now has three's TRAANode and FSR3 (pmndrs upscaler, native) as
+      "after" choices; the shadow bench's after-TAA columns still use the model. Add both there (one jitter owner: TRAA
+      per variant, FSR3 one per run) and re-measure the q35 table — owner tooling
+- [ ] Review bench: the reference as a side (A | reference) and kept while paused (it restarts on every entry today),
+      so a denoiser can be flipped against ground truth; its status counts frames, show rays (knot: 4 shadow rays a
+      frame, 256 frames) — owner tooling
+- [ ] Review bench under GPU load (Dennis, 2026-10-28): the same settings look perfect on one load and blink on a
+      refresh while other GPU work runs. The scene advances per rendered frame, so dropped frames alone shouldn't change
+      the result: check whether anything in the denoisers or the bench reads wall time, or whether the blinking is
+      the compositor dropping presented frames (headless manual stepping is the clean A/B) — owner tooling
 - [ ] Shadow bench: moving-camera mode (a camera path in the timeline + motion-compensated boil, compare.mjs' reprojected
       history). realtime-shadows' default view orbits, so camera-motion boil may be what Dennis sees there; the bench scores
       a still camera only — found by shadow-bench, owner tooling

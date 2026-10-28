@@ -11,6 +11,8 @@
 import * as THREE from 'three/webgpu';
 import { float, vec3, vec4, uniform, screenCoordinate, renderOutput, select, acesFilmicToneMapping, convertToTexture } from 'three/tsl';
 import { TaaNode } from '../realtime/taa';
+import { traa } from 'three/addons/tsl/display/TRAANode.js';
+import { upscale } from '@pmndrs/upscaler';
 import { ffxShadows, realtimeDiffuse, realtimeDiffuseSpecular, realtimeOcclusion, realtimeShadows, realtimeSpecular } from 'denoiser/three';
 import { mountShell } from '../../../_shared/shell';
 import { type N, readTexture, nonFiniteCount } from '../realtime/scene';
@@ -30,6 +32,8 @@ const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
 const manual = q.has('manual');
 const SCENES: SceneId[] = ['corner', 'knot', 'sponza', 'bistro'];
 const SIGNALS: Signal[] = ['lit', 'diffuse', 'specular', 'ao', 'shadow'];
+type Resolver = 'none' | 'model' | 'traa' | 'fsr';
+const RESOLVERS: Resolver[] = ['none', 'model', 'traa', 'fsr'];
 const VIEWS: View[] = ['split', 'A', 'B', 'diff', 'ref', 'noisy'];
 const CMP_VIEWS: View[] = ['split', 'A', 'B', 'diff'];
 const GROUPS: { filter: Filter; title: string }[] = [
@@ -55,8 +59,10 @@ async function main() {
     moving: q.get('moving') !== '0',
     split: Number(q.get('split') ?? 0.5),
     gainExp: Number(q.get('gain') ?? 4),
-    taa: q.get('taa') === '1',
+    /** What runs after the denoisers: nothing, the TAA model, three's TRAANode, or FSR3 (pmndrs upscaler) at native resolution. */
+    resolver: pick(q.get('resolver'), RESOLVERS, q.get('taa') === '1' ? 'model' : 'none'),
     taaAlpha: Number(q.get('taaAlpha') ?? 0.1),
+    reflections: q.get('reflections') !== '0',
     show: 'all',
     note: q.get('note') ?? '',
   };
@@ -85,6 +91,7 @@ async function main() {
   const uSplit = uniform(state.split);
   const uView = uniform(0); // 0 split, 1 A, 2 B, 3 diff
   const uGain = uniform(2 ** state.gainExp);
+  const uSpec = uniform(state.reflections ? 1 : 0); // 0: the lit composite leaves out the specular (SSR) term
 
   // ---- sides ---------------------------------------------------------------------------------------------------
   const buildGi = (cfg: C.SideConfig): GiSet => {
@@ -142,10 +149,12 @@ async function main() {
   // ---- output graph --------------------------------------------------------------------------------------------
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
-  const partsOf = (s: Side): Parts => ({ dif: s.gi.diffuse.rgb, spec: s.gi.specular.rgb, ao: s.ao.r, vis: s.shadows.r });
+  const partsOf = (s: Side): Parts => ({ dif: s.gi.diffuse.rgb, spec: s.gi.specular.rgb.mul(uSpec), ao: s.ao.r, vis: s.shadows.r });
+  const noSpec = (p: Parts): Parts => ({ ...p, spec: p.spec.mul(uSpec) });
   const tm = (sig: Signal, c: N): N => (sig === 'ao' || sig === 'shadow' ? c : acesFilmicToneMapping(c, float(1)));
   let graphKind: 'cmp' | 'ref' | 'noisy' = 'cmp';
   const taaNodes: TaaNode[] = [];
+  let resolverNodes: N[] = [];
   const buildOutput = () => {
     const sig = state.signal;
     graphKind = CMP_VIEWS.includes(state.view) ? 'cmp' : state.view === 'ref' ? 'ref' : 'noisy';
@@ -155,19 +164,35 @@ async function main() {
     if (graphKind === 'cmp') {
       // .toVar(): evaluated once up front; used inside several selects, a tone-mapping Fn call was otherwise only
       // computed in the branch of its first use (black split view)
-      let a = tm(sig, kit.color(sig, partsOf(sides.A), false)).toVar(), b = tm(sig, kit.color(sig, partsOf(sides.B), false)).toVar();
-      // downstream TAA model (src/realtime/taa.ts) on each side's displayed colour, before the split
       for (const t of taaNodes.splice(0)) graveyard.push({ nodes: [t], at: frame + 4 });
-      if (state.taa) {
+      if (resolverNodes.length) graveyard.push({ nodes: resolverNodes.splice(0), at: frame + 4 });
+      let aL: N = kit.color(sig, partsOf(sides.A), false).toVar(), bL: N = kit.color(sig, partsOf(sides.B), false).toVar();
+      // three's TRAANode per side, on the linear colour as apps run it: the first one jitters the camera (both sides
+      // and the denoisers' inputs see that jitter), the second resolves the same frame (TRAA's resolve doesn't use the offset)
+      if (state.resolver === 'traa') {
+        const [ta, tb] = [aL, bL].map((c) => { const t = traa(convertToTexture(vec4(c, 1)), kit.guides.depth, kit.guides.velocity, kit.camera); resolverNodes.push(t); return t; });
+        aL = (ta as N).rgb.toVar(); bL = (tb as N).rgb.toVar();
+      }
+      let a = tm(sig, aL).toVar(), b = tm(sig, bL).toVar();
+      // downstream TAA model (src/realtime/taa.ts) on each side's displayed colour, before the split
+      if (state.resolver === 'model') {
         const [ta, tb] = [a, b].map((c) => { const t = new TaaNode(convertToTexture(vec4(c, 1)), kit.guides.velocity); t.alpha.value = state.taaAlpha; taaNodes.push(t); return t; });
         a = (ta as N).rgb.toVar(); b = (tb as N).rgb.toVar();
       }
       const x = screenCoordinate.x, cut = uSplit.mul(W);
-      const split = select(x.sub(cut).abs().lessThan(1), vec3(1, 1, 1), select(x.lessThan(cut), a, b));
+      const pickAB = (ca: N, cb: N) => select(uView.equal(1), ca, select(uView.equal(2), cb, select(x.lessThan(cut), ca, cb)));
+      let shown: N = pickAB(a, b);
+      // FSR3 (@pmndrs/upscaler) at native resolution: ONE upscaler on the displayed image (split or A / B) — a second
+      // one in the same frame can't share the camera jitter. Flipping A / B is a content change it re-converges from.
+      if (state.resolver === 'fsr') {
+        const up = upscale(convertToTexture(vec4(pickAB(aL, bL) as N, 1) as N), kit.guides.depth, kit.guides.velocity, kit.camera, { ratio: 1 } as N) as N;
+        resolverNodes.push(up);
+        shown = tm(sig, up.rgb).toVar();
+      }
       const diff = a.sub(b).abs().mul(uGain);
-      col = select(uView.equal(1), a, select(uView.equal(2), b, select(uView.equal(3), diff, split)));
-    } else if (graphKind === 'ref') col = tm(sig, kit.color(sig, kit.ref, true));
-    else col = tm(sig, kit.color(sig, kit.noisy, false));
+      col = select(uView.equal(3), diff, select(uView.equal(0).and(x.sub(cut).abs().lessThan(1)), vec3(1, 1, 1), shown));
+    } else if (graphKind === 'ref') col = tm(sig, kit.color(sig, noSpec(kit.ref), true));
+    else col = tm(sig, kit.color(sig, noSpec(kit.noisy), false));
     pipeline.outputNode = renderOutput(vec4(col.add(vec3(keep)), 1), THREE.NoToneMapping, THREE.SRGBColorSpace) as N;
     pipeline.needsUpdate = true;
   };
@@ -228,9 +253,9 @@ async function main() {
   const jump = (w: Where | undefined) => {
     if (!w) return;
     state.note = w.note ?? (w.event === 'cut' ? 'press "camera cut" (K)' : w.event === 'colour' ? 'press "light colour" (C)' : w.event === 'brightness' ? 'press "light step" (L)' : '');
-    const taa = w.taa === undefined ? {} : { taa: w.taa ? '1' : '0' };
+    const taa: Record<string, string> = w.taa === undefined ? {} : { resolver: w.taa ? 'model' : 'none' };
     if (w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', note: state.note, ...taa }); return; }
-    if (w.taa !== undefined && w.taa !== state.taa) setTaa(w.taa);
+    if (w.taa !== undefined && w.taa !== (state.resolver === 'model')) setResolver(w.taa ? 'model' : 'none');
     if ((w.path ?? '') !== kit.path) setPath(w.path ?? '');
     setSignal(w.signal);
     setView(w.view ?? (state.view === 'ref' || state.view === 'noisy' ? 'split' : state.view));
@@ -255,9 +280,16 @@ async function main() {
   $('#btn-bright').addEventListener('click', () => kit.events.brightness());
   $('#btn-reset').addEventListener('click', resetAll);
   $('#chk-blink').addEventListener('change', (e) => setBlink((e.target as HTMLInputElement).checked));
-  const setTaa = (on: boolean) => { state.taa = on; $<HTMLInputElement>('#chk-taa').checked = on; buildOutput(); mirror(); };
-  $('#chk-taa').addEventListener('change', (e) => setTaa((e.target as HTMLInputElement).checked));
-  $<HTMLInputElement>('#chk-taa').checked = state.taa;
+  const setReflections = (on: boolean) => { state.reflections = on; uSpec.value = on ? 1 : 0; $<HTMLInputElement>('#chk-refl').checked = on; mirror(); };
+  $('#chk-refl').addEventListener('change', (e) => setReflections((e.target as HTMLInputElement).checked));
+  $<HTMLInputElement>('#chk-refl').checked = state.reflections;
+  const setResolver = (r: Resolver) => {
+    state.resolver = r; $<HTMLSelectElement>('#sel-resolver').value = r; $<HTMLSelectElement>('#taa-alpha').hidden = r !== 'model';
+    buildOutput(); mirror();
+  };
+  $('#sel-resolver').addEventListener('change', (e) => setResolver((e.target as HTMLSelectElement).value as Resolver));
+  $<HTMLSelectElement>('#sel-resolver').value = state.resolver;
+  $<HTMLSelectElement>('#taa-alpha').hidden = state.resolver !== 'model';
   $<HTMLSelectElement>('#taa-alpha').value = String(state.taaAlpha);
   $('#taa-alpha').addEventListener('change', (e) => { state.taaAlpha = Number((e.target as HTMLSelectElement).value); for (const t of taaNodes) t.alpha.value = state.taaAlpha; mirror(); });
   if (kit.controls) { const host = $('#rv-scene-controls'); host.innerHTML = kit.controls.html; kit.controls.wire(host); }
@@ -272,7 +304,8 @@ async function main() {
       f: () => { setBlink(false); flip(); }, x: swap, s: () => { setBlink(false); setView('split'); }, d: () => { setBlink(false); setView('diff'); },
       r: () => { setBlink(false); setView('ref'); }, n: () => { setBlink(false); setView('noisy'); }, ' ': () => setMoving(!state.moving),
       k: () => { kit.cut(); resetAll(); }, c: () => kit.events.colour?.(), l: () => kit.events.brightness(), '0': resetAll,
-      arrowleft: () => setSplit(state.split - 0.05), arrowright: () => setSplit(state.split + 0.05), b: () => setBlink(!$<HTMLInputElement>('#chk-blink').checked), t: () => setTaa(!state.taa),
+      arrowleft: () => setSplit(state.split - 0.05), arrowright: () => setSplit(state.split + 0.05), b: () => setBlink(!$<HTMLInputElement>('#chk-blink').checked), t: () => setResolver(RESOLVERS[(RESOLVERS.indexOf(state.resolver) + 1) % RESOLVERS.length]),
+      e: () => setReflections(!state.reflections),
     };
     if (act[k]) { act[k](); e.preventDefault(); }
   });
@@ -407,7 +440,7 @@ async function main() {
     if (!d) return;
     const p = C.decisionPreset(d);
     const w = [C.decisionWhere(d), ...(d.alsoAt ?? [])][whereIdx];
-    if (w && w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', A: C.encodeSide(p.A), B: C.encodeSide(p.B), note: w.note ?? '', ...(w.taa === undefined ? {} : { taa: w.taa ? '1' : '0' }) }); return; }
+    if (w && w.scene !== kit.id) { reloadWith({ scene: w.scene, path: w.path ?? '', signal: w.signal, view: w.view ?? 'split', A: C.encodeSide(p.A), B: C.encodeSide(p.B), note: w.note ?? '', ...(w.taa === undefined ? {} : { resolver: w.taa ? 'model' : 'none' }) }); return; }
     setBoth(p);
     jump(w);
   };
@@ -456,7 +489,7 @@ async function main() {
     for (const k of ['w', 'h', 'manual']) if (q.has(k)) p.set(k, q.get(k)!);
     const base: Record<string, string> = {
       scene: kit.id, path: kit.path, signal: state.signal, view: state.view, moving: state.moving ? '1' : '0',
-      split: String(+state.split.toFixed(3)), gain: String(state.gainExp), taa: state.taa ? '1' : '0', taaAlpha: String(state.taaAlpha), A: C.encodeSide(sides.A.cfg), B: C.encodeSide(sides.B.cfg),
+      split: String(+state.split.toFixed(3)), gain: String(state.gainExp), resolver: state.resolver, taaAlpha: String(state.taaAlpha), reflections: state.reflections ? '1' : '0', A: C.encodeSide(sides.A.cfg), B: C.encodeSide(sides.B.cfg),
     };
     for (const [k, v] of Object.entries({ ...base, ...o })) if (v !== '') p.set(k, v);
     return p;
