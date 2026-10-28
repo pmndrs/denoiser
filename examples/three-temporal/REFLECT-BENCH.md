@@ -30,6 +30,13 @@ environment, and the pipeline of `reflections-hybrid.html`, not the workbench's.
 
 Without a resolver: ray traced raw 0.70; hybrid raw 3.73; SSR raw 6.5-7.5.
 
+Model defaults (the file's roughness maps), FSR3 1.5x: hybrid raw 1.17 / FFX **0.38** / recurrent 0.61 / SVGF 0.64; ray
+traced 1.38 / **0.40** / 0.52 / 0.59. Ours is also ~3 luma brighter than raw and FFX (a bias). Dennis's review: FFX
+clean, ours ripples on the camera body.
+
+**Next:** Ben's PR work is paused. The plan to match FFX (and then beat it on quality, speed and hybrid input) starts
+from this bench: `docs/research/rt-denoiser/results/REFLECT-BENCH.md` on `feat/rt-denoiser-cleanroom`.
+
 - **The boil is three's SSR trace on this model, not the scene, the lighting or the denoisers.** Its stochastic march
   offsets the steps with new noise every frame over a fixed step count (quality x 192, spread as (i / steps)^2), and a
   step behind the depth buffer counts as a hit only within `thickness` of the ray. On a detailed model the far steps
