@@ -1,3 +1,6 @@
+> **Superseded on 2026-11-06 by [STOCKTAKE-2026-11-06.md](STOCKTAKE-2026-11-06.md)**, which covers
+> everything since 10-25 and the reset plan. This page is kept as the 10-25 record.
+
 # Status: morning of 2026-10-25
 
 _The overnight run's summary for Dennis. Task board: [TASKS.md](TASKS.md). Decisions waiting on
