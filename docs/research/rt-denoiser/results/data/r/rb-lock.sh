@@ -4,7 +4,7 @@
 set -e
 HERE=${0:A:h}
 L=${RT_GPU_LOCK:-/tmp/rt-gpu.lock}
-until mkdir "$L" 2>/dev/null; do sleep 2; done
+until mkdir "$L" 2>/dev/null; do sleep 0.5; done
 echo "R (track r) reflect-bench $2 $(date) pid $$" > "$L/owner"
 trap 'rm -rf "$L"' EXIT
 node "$HERE/rb-run.mjs" "$1"

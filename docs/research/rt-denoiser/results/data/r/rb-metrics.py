@@ -9,6 +9,7 @@ model rough r >= 0.25 / background):
   p99        99th percentile of that std
   luma       mean luma (temporal mean)
   bias       luma - reference luma (8-bit levels)
+  sigma_norm sigma x reference luma / luma (calm at equal brightness; a darker output fluctuates less in display levels)
   rmse_mean  RMS(temporal mean - reference): the error left after time averaging (blur, bias, ghost of the pose)
   rmse_frame mean over frames of RMS(frame - reference)
 Orbit (frames sampled along the scripted orbit, each against the reference accumulated at that pose):
@@ -76,6 +77,8 @@ def run_metrics(out_dir, info):
             if ref is not None:
                 r['ref_luma'] = stats(ref, m)
                 r['bias'] = r['luma'] - r['ref_luma']
+                # sigma rescaled to the reference's brightness (a darker output also fluctuates less in display levels)
+                r['sigma_norm'] = r['sigma'] * r['ref_luma'] / max(r['luma'], 1e-3)
                 r['rmse_mean'] = float(np.sqrt(((mean - ref) ** 2)[m].mean()))
                 r['rmse_frame'] = float(np.mean([np.sqrt(((f - ref) ** 2)[m].mean()) for f in y]))
             reg[k] = {a: (round(b, 4) if isinstance(b, float) else b) for a, b in r.items()}
