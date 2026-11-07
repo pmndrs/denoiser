@@ -72,6 +72,7 @@ const sh = (c) => { try { return execSync(c, { cwd: REPO, encoding: 'utf8' }).tr
 const t0 = Date.now();
 const results = { generated: new Date().toISOString(), repoCommit: sh('git rev-parse --short HEAD'), packageCommit: sh('git log -1 --format=%h -- packages/denoiser-realtime/src packages/denoiser-ffx/src'),
   params: { settle: SETTLE, flipEvery: FLIP_EVERY, captures: SRC_CAPTURES }, gpu: null, cost: prev?.cost ?? null, scenes: [] };
+results.gpu = prev?.gpu ?? sh('sysctl -n machdep.cpu.brand_string') ?? null;
 
 try {
   // ---- replays: all of them under one GPU lock (a few minutes of short jobs, rule 11), released before scoring
@@ -139,7 +140,8 @@ try {
     }
     results.scenes.push(scene);
     if (!flag('keep')) {
-      for (const d of existsSync(outRoot) ? readdirSync(outRoot) : []) rmSync(path.join(outRoot, d), { recursive: true, force: true });
+      const mine = new Set(Object.keys(cfg.rows).flatMap((k) => Object.values(cfg.rows[k].denoiser ?? {})));   // only this runner's folders (calibration keeps cal-*)
+      for (const d of existsSync(outRoot) ? readdirSync(outRoot) : []) if (mine.has(d)) rmSync(path.join(outRoot, d), { recursive: true, force: true });
     }
   }
 

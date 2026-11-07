@@ -14,6 +14,7 @@
 //    plus tools/scorecard/calibration/key.json (labels, windows and every metric value; read by analyze.mjs only).
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { readBuffer, readManifest } from '../../rt-capture/lib/capture.mjs';
 import { captureInfo, noisySource, outputSource, scoreSignal, SIG_CH, REF_BUFFER } from '../lib/metrics.mjs';
@@ -217,8 +218,13 @@ for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
         for (let y = 0; y < SIZE; y++) t.copy(rgb, ((r * SIZE + y) * W2 + k * SIZE) * 3, y * SIZE * 3, (y + 1) * SIZE * 3);
       });
     });
-    const sheet = `${id}.png`;
-    writeFileSync(path.join(SHEETS, sheet), encodePng(rgb, W2, H2));
+    // sheets are near-lossless WebP (cwebp -near_lossless 20: ~3x smaller than PNG, low bits only); PNG is the intermediate
+    const sheet = `${id}.webp`, tmp = path.join(WORK, `${id}.png`);
+    writeFileSync(tmp, encodePng(rgb, W2, H2));
+    // calm and detail stay near-lossless (the judgement is about fine temporal / spatial structure); lag and trade-off clips are lossy q92 (repo size)
+    const enc = metric === 'calm' || metric === 'detail' ? ['-near_lossless', '20', '-z', '6'] : ['-q', '92', '-m', '6'];
+    execFileSync('cwebp', ['-quiet', ...enc, tmp, '-o', path.join(SHEETS, sheet)]);
+    rmSync(tmp);
     pairsOut.push({ id, metric, sheet, frames: frames.length, size: SIZE, rows, fps: FPS, ...(still ? { still: true } : {}) });
     key.push({ id, metric, capture: sc.capture, signal: sc.signal, window: c.a.window, frames: [frames[0], frames[frames.length - 1]],
       dis: c.dis ?? null, a: { variant: va.variant, calm: va.calm, detail: va.detail, lag: va.lag }, b: { variant: vb.variant, calm: vb.calm, detail: vb.detail, lag: vb.lag } });

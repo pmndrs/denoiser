@@ -15,10 +15,10 @@ type MetricId = 'calm' | 'detail' | 'lag' | 'tradeoff';
 interface Pair { id: string; metric: MetricId; sheet: string; frames: number; size: number; rows: number; fps: number; still?: boolean }
 interface Manifest { version: number; generated: string; metrics: Record<MetricId, { title: string; question: string; hint: string }>; pairs: Pair[] }
 interface Answer { pair: string; metric: MetricId; leftIs: 'a' | 'b'; pick: 'left' | 'right' | 'tie'; ms: number; at: string }
-interface State { session: string; order: Record<string, string[]>; leftIs: Record<string, 'a' | 'b'>; answers: Record<string, Answer> }
+interface State { manifest?: string; session: string; order: Record<string, string[]>; leftIs: Record<string, 'a' | 'b'>; answers: Record<string, Answer> }
 
 const M = manifest as unknown as Manifest;
-const sheets = import.meta.glob('./calibration/sheets/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const sheets = import.meta.glob('./calibration/sheets/*.{png,webp}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const sheetUrl = (name: string) => sheets[`./calibration/sheets/${name}`];
 const KEY = 'rv-calibration-v1';
 const METRICS: MetricId[] = (['calm', 'detail', 'lag', 'tradeoff'] as MetricId[]).filter((m) => M.metrics[m]);
@@ -26,7 +26,7 @@ const METRICS: MetricId[] = (['calm', 'detail', 'lag', 'tradeoff'] as MetricId[]
 function load(): State {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? 'null') as State | null;
-    if (s && s.order && s.answers) return s;
+    if (s && s.order && s.answers && s.manifest === M.generated && METRICS.every((m) => Array.isArray(s.order[m]))) return s;   // a new pair set starts fresh
   } catch { /* private window or cleared site data */ }
   return fresh();
 }
@@ -36,7 +36,7 @@ function fresh(): State {
   for (const m of METRICS) order[m] = M.pairs.filter((p) => p.metric === m).map((p) => p.id).sort(rnd);
   const leftIs: Record<string, 'a' | 'b'> = {};
   for (const p of M.pairs) leftIs[p.id] = Math.random() < 0.5 ? 'a' : 'b';
-  return { session: new Date().toISOString(), order, leftIs, answers: {} };
+  return { manifest: M.generated, session: new Date().toISOString(), order, leftIs, answers: {} };
 }
 let state = load();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* storage unavailable: the copy button still works */ } };

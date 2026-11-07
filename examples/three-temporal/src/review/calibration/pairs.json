@@ -1,6 +1,6 @@
 {
  "version": 1,
- "generated": "2026-11-07T15:30:29.262Z",
+ "generated": "2026-11-07T16:16:15.054Z",
  "metrics": {
   "tradeoff": {
    "title": "Calm vs sharp",
@@ -10,7 +10,7 @@
   "calm": {
    "title": "Calmer",
    "question": "Which one is calmer?",
-   "hint": "Look for flicker, boiling, crawling or shimmer over time. A steady image counts as calm even when it is a bit soft or lags the motion. Noise and speckle count against it."
+   "hint": "Watch the whole loop for flicker, boiling, crawling and slow rippling or swimming of shapes. A steady image counts as calm even when it is a bit soft. Noise and speckle count against it."
   },
   "detail": {
    "title": "More detail",
@@ -27,117 +27,99 @@
   {
    "id": "calm-01",
    "metric": "calm",
-   "sheet": "calm-01.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-01.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-02",
    "metric": "calm",
-   "sheet": "calm-02.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-02.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-03",
    "metric": "calm",
-   "sheet": "calm-03.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-03.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-04",
    "metric": "calm",
-   "sheet": "calm-04.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-04.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-05",
    "metric": "calm",
-   "sheet": "calm-05.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-05.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-06",
    "metric": "calm",
-   "sheet": "calm-06.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-06.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-07",
    "metric": "calm",
-   "sheet": "calm-07.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-07.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-08",
    "metric": "calm",
-   "sheet": "calm-08.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-08.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-09",
    "metric": "calm",
-   "sheet": "calm-09.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-09.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "calm-10",
    "metric": "calm",
-   "sheet": "calm-10.png",
-   "frames": 12,
-   "size": 80,
-   "rows": 2,
-   "fps": 24
-  },
-  {
-   "id": "calm-11",
-   "metric": "calm",
-   "sheet": "calm-11.png",
-   "frames": 12,
-   "size": 80,
-   "rows": 2,
-   "fps": 24
-  },
-  {
-   "id": "calm-12",
-   "metric": "calm",
-   "sheet": "calm-12.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "calm-10.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
    "fps": 24
   },
   {
    "id": "detail-01",
    "metric": "detail",
-   "sheet": "detail-01.png",
+   "sheet": "detail-01.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -145,9 +127,9 @@
   {
    "id": "detail-02",
    "metric": "detail",
-   "sheet": "detail-02.png",
+   "sheet": "detail-02.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -155,9 +137,9 @@
   {
    "id": "detail-03",
    "metric": "detail",
-   "sheet": "detail-03.png",
+   "sheet": "detail-03.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -165,9 +147,9 @@
   {
    "id": "detail-04",
    "metric": "detail",
-   "sheet": "detail-04.png",
+   "sheet": "detail-04.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -175,9 +157,9 @@
   {
    "id": "detail-05",
    "metric": "detail",
-   "sheet": "detail-05.png",
+   "sheet": "detail-05.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -185,9 +167,9 @@
   {
    "id": "detail-06",
    "metric": "detail",
-   "sheet": "detail-06.png",
+   "sheet": "detail-06.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -195,9 +177,9 @@
   {
    "id": "detail-07",
    "metric": "detail",
-   "sheet": "detail-07.png",
+   "sheet": "detail-07.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -205,9 +187,9 @@
   {
    "id": "detail-08",
    "metric": "detail",
-   "sheet": "detail-08.png",
+   "sheet": "detail-08.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -215,9 +197,9 @@
   {
    "id": "detail-09",
    "metric": "detail",
-   "sheet": "detail-09.png",
+   "sheet": "detail-09.webp",
    "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -225,29 +207,9 @@
   {
    "id": "detail-10",
    "metric": "detail",
-   "sheet": "detail-10.png",
+   "sheet": "detail-10.webp",
    "frames": 1,
-   "size": 80,
-   "rows": 3,
-   "fps": 24,
-   "still": true
-  },
-  {
-   "id": "detail-11",
-   "metric": "detail",
-   "sheet": "detail-11.png",
-   "frames": 1,
-   "size": 80,
-   "rows": 3,
-   "fps": 24,
-   "still": true
-  },
-  {
-   "id": "detail-12",
-   "metric": "detail",
-   "sheet": "detail-12.png",
-   "frames": 1,
-   "size": 80,
+   "size": 256,
    "rows": 3,
    "fps": 24,
    "still": true
@@ -255,198 +217,180 @@
   {
    "id": "lag-01",
    "metric": "lag",
-   "sheet": "lag-01.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-01.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-02",
    "metric": "lag",
-   "sheet": "lag-02.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-02.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-03",
    "metric": "lag",
-   "sheet": "lag-03.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-03.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-04",
    "metric": "lag",
-   "sheet": "lag-04.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-04.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-05",
    "metric": "lag",
-   "sheet": "lag-05.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-05.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-06",
    "metric": "lag",
-   "sheet": "lag-06.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-06.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-07",
    "metric": "lag",
-   "sheet": "lag-07.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-07.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-08",
    "metric": "lag",
-   "sheet": "lag-08.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-08.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-09",
    "metric": "lag",
-   "sheet": "lag-09.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-09.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "lag-10",
    "metric": "lag",
-   "sheet": "lag-10.png",
-   "frames": 16,
-   "size": 80,
+   "sheet": "lag-10.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 2,
-   "fps": 12
-  },
-  {
-   "id": "lag-11",
-   "metric": "lag",
-   "sheet": "lag-11.png",
-   "frames": 16,
-   "size": 80,
-   "rows": 2,
-   "fps": 12
-  },
-  {
-   "id": "lag-12",
-   "metric": "lag",
-   "sheet": "lag-12.png",
-   "frames": 16,
-   "size": 80,
-   "rows": 2,
-   "fps": 12
+   "fps": 24
   },
   {
    "id": "tradeoff-01",
    "metric": "tradeoff",
-   "sheet": "tradeoff-01.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-01.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-02",
    "metric": "tradeoff",
-   "sheet": "tradeoff-02.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-02.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-03",
    "metric": "tradeoff",
-   "sheet": "tradeoff-03.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-03.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-04",
    "metric": "tradeoff",
-   "sheet": "tradeoff-04.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-04.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-05",
    "metric": "tradeoff",
-   "sheet": "tradeoff-05.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-05.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-06",
    "metric": "tradeoff",
-   "sheet": "tradeoff-06.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-06.webp",
+   "frames": 32,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-07",
    "metric": "tradeoff",
-   "sheet": "tradeoff-07.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-07.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-08",
    "metric": "tradeoff",
-   "sheet": "tradeoff-08.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-08.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-09",
    "metric": "tradeoff",
-   "sheet": "tradeoff-09.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-09.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   },
   {
    "id": "tradeoff-10",
    "metric": "tradeoff",
-   "sheet": "tradeoff-10.png",
-   "frames": 12,
-   "size": 80,
+   "sheet": "tradeoff-10.webp",
+   "frames": 40,
+   "size": 256,
    "rows": 3,
    "fps": 24
   }

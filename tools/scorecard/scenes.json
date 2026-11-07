@@ -63,6 +63,24 @@
       "group": "ours:gi"
     },
     {
+      "id": "ours-diffuse",
+      "label": "ours diffuse only (svgf-diffuse)",
+      "denoiser": "svgf-diffuse",
+      "signals": [
+        "diffuse"
+      ],
+      "group": "ours:diffuse"
+    },
+    {
+      "id": "ours-specular",
+      "label": "ours specular only (svgf-specular)",
+      "denoiser": "svgf-specular",
+      "signals": [
+        "specular"
+      ],
+      "group": "ours:specular"
+    },
+    {
       "id": "ours-shadows",
       "label": "ours shadows",
       "denoiser": "shadows",

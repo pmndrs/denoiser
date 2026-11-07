@@ -17,7 +17,7 @@ export function costFor(row, signal, results) {
   if (!c) return null;
   const find = (id) => c[id] && !c[id].skipped ? c[id] : null;
   const id = row.rowKey === 'accumulate' ? 'accumulate-32'
-    : row.rowKey === 'ours' ? (signal === 'visibility' ? 'ours-shadows' : signal === 'ao' ? 'ours-ao' : 'ours-diffuse-specular')
+    : row.rowKey === 'ours' ? (signal === 'visibility' ? 'ours-shadows' : signal === 'ao' ? 'ours-ao' : (c?.[signal === 'diffuse' ? 'ours-diffuse' : 'ours-specular'] && !c[signal === 'diffuse' ? 'ours-diffuse' : 'ours-specular'].skipped ? (signal === 'diffuse' ? 'ours-diffuse' : 'ours-specular') : 'ours-diffuse-specular'))
       : row.rowKey === 'ffx' ? (signal === 'visibility' ? 'ffx-shadows' : 'ffx-reflections') : null;
   const e = id && find(id);
   return e ? { gpuMs: e.gpuMs, wallMs: e.wallMs, note: id + (id === 'ours-diffuse-specular' ? ' (both signals together)' : ''), passes: e.passes } : null;
@@ -92,7 +92,7 @@ const HEAD = ['row', 'CALM k=8 boil (smooth · dense · moving)', 'boil k=1 (smo
 export function toMarkdown(R) {
   const L = [];
   L.push('# Scorecard (latest)', '', `_Generated ${R.generated} by \`node tools/scorecard/run.mjs\` (repo ${R.repoCommit}, packages ${R.packageCommit}). GPU: ${R.gpu ?? 'n/a'}. Details: [tools/scorecard/README.md](../../../../tools/scorecard/README.md)._`, '');
-  L.push('Five numbers per scene and signal (TRACKS.md): **calm** = motion-compensated boil per region (value, and ×the clean reference\'s own boil in the same pixels) plus still-camera σ of luma where the camera is static; **detail** = FLIP vs the capture\'s reference (PSNR secondary); **lag** = frames until the error is within 10 % of its settled level after the event; **bias** = mean display luma minus the reference, 8-bit levels; **cost** = GPU ms and wall ms at 1080p on this Mac.', '');
+  L.push('Five numbers per scene and signal (TRACKS.md): **calm** = motion-compensated boil per region at stride 8 (headline) and stride 1, with the reference\'s own boil as floor, plus still-camera σ of luma at stride 1 / 8 / all frames where the camera is static; **detail** = FLIP vs the capture\'s reference (PSNR secondary); **lag** = frames until the error is within 10 % of its settled level after the event; **bias** = mean display luma minus the reference, 8-bit levels; **cost** = GPU ms and wall ms at 1080p on this Mac.', '');
   if (R.cost) {
     L.push(`## Cost at 1080p (${R.cost.measuredAt})`, '', `${R.cost.protocol}. Capture \`${R.cost.capture}\`.`, '', '| row | GPU ms | wall ms | wall ms, timestamps off | rounds (GPU ms) | passes (ms) |', '|---|---|---|---|---|---|');
     for (const [id, c] of Object.entries(R.cost.rows)) L.push(c.skipped ? `| ${id} | – | – | skipped: ${c.skipped} | |` : `| ${c.label} | ${c.gpuMs.toFixed(3)} | ${c.wallMs.toFixed(2)} | ${c.wallNoTimestampsMs == null ? 'n/a (registry ignores timestamps=0)' : c.wallNoTimestampsMs.toFixed(2)} | ${c.gpuRounds.join(' / ')} | ${Object.entries(c.passes).map(([p, v]) => `${p} ${v.toFixed(3)}`).join(', ')} |`);

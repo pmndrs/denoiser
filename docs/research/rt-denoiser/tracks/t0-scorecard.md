@@ -107,3 +107,35 @@ Dashboard regenerated (commit after c175f0e) incl. golden G3 orbit and G4 pan-li
 - Golden G4 light-on: ours diffuse lag 16 frames after the step (1 at start); shadows lag 13 vs FFX 12.
 - Still pending the GPU queue (T0-scenes' capture script held it): calibration pairs (`make-pairs.mjs`), 1080p cost. `chain.sh`
   keeps waiting under tickets in `/tmp/rt-gpu.queue`; when it finishes, commit `docs/.../scorecard/`, `src/review/calibration/**`, `calibration/key.json`.
+
+## Update 2026-11-08 (2): strided calm, long clips, cost
+
+- **Strided calm** (R's finding: temporal filters correlate neighbouring frames, so k = 1 can rank a slowly rippling filter as calm).
+  `calm.strided[k]` = RMS of x_t - 2 x_(t-k) + x_(t-2k) / sqrt 6 with the reprojection chained over every hop (each hop must be valid;
+  `validFrac` = share of region pixels that survive: 0.92-0.99 on orbits / holds, 0.65-0.74 on the pans), bilinear sample at the end; the
+  reference gets the same chains. Still-camera sigma is reported at k = 1, k = 8 and over all settled frames (the long window).
+  The dashboard headline calm is k = 8 (smooth / dense / moving), k = 1 is the next column; gates use k = 8.
+- **Shadow orbit** (three-knot-orbit), ours vs FFX, moving region: k = 1 0.0515 vs 0.0241 (2.1x), k = 8 0.0668 vs 0.0359 (1.9x): the gap holds.
+  Dense: 0.0261 vs 0.0130 (2.0x) -> 0.0368 vs 0.0265 (1.4x). Smooth static: 0.0011 vs 0.0010 at k = 1, 0.0032 vs 0.0034 at k = 8 (a tie that flips by 6 %).
+  Sponza moving knot (static camera) smooth static: 1.8x worse at k = 1, 1.2x at k = 8; moving 0.0811 vs 0.0426 -> 0.2747 vs 0.2028.
+  Static-camera sigma on Bistro moving-lantern shadows: ours 0.0007 / 0.0057 (k = 1 / 8) vs FFX 0.0010 / 0.0080, i.e. ours calmer.
+- **Where stride changes the story:** accumulate-32 and svgf rise 2.5-3.5x from k = 1 to k = 8 (their output is correlated); on specular
+  the smooth-static advantage over FFX shrinks (corner-orbit 0.0004 vs 0.0019 at k = 1, 0.0019 vs 0.0028 at k = 8; corner-pan
+  0.0006 vs 0.0019 -> 0.0042 vs 0.0046) and the moving region goes from near-tie to 1.9x worse for ours (knot-static specular 0.0138 vs 0.0131 -> 0.0300 vs 0.0161).
+  On Sponza / Bistro diffuse there is no FFX; ours has 0.7-0.8x of accumulate-32's k = 1 boil in the moving region but 1.3-1.8x at k = 8 on the
+  pans (Bistro pan 0.0604 vs 0.0090 -> 0.0684 vs 0.0270).
+- **Calibration set rebuilt**: 256 px windows, clips from the settle frame to the end of the capture at 24 fps (32 frames = 1.3 s) for calm,
+  lag and trade-off. The kept captures have 40-48 frames, so 96+ frames (4 s) is not possible until T0-scenes makes 128-frame calm paths
+  (ask: G2 occluder, G3 orbit / hold, G4 hold, 128 frames, fixed seeds). 10 pairs per metric; half the calm pairs are stride-1 vs stride-8
+  disagreements (`dis` in `key.json`; `analyze.mjs` prints the agreement of each definition on them). Sheets are WebP (calm, detail near-lossless,
+  lag and trade-off q92), 37 MB in total, committed; `pairs.json` has no labels. The panel resets itself when the pair set changes.
+- **Cost bug**: `--cost-only` tested `flag('cost')`, which `--cost-only` does not match, so nothing ran ("done in 0.0 min"). Fixed.
+  1080p, M5 Pro, GPU / wall ms: ours diffuse + specular joint 3.60 / 4.50, diffuse only 2.11 / 3.00, specular only 2.63 / 3.40,
+  shadows 0.893 / 1.60, AO 1.52 / 2.20; FFX shadows 0.597 / 1.20, FFX reflections 2.00 / 2.70. Shadows miss the 0.6 ms gate (0.89).
+  Timestamps-off wall time is n/a: the registry does not pass `timestamps=0` on this branch (D's branch does).
+- Fixed on the way: the runner no longer deletes calibration outputs (`cal-*`); a replay that loses the GPU is retried once.
+
+### Next items (R's requests, not done)
+- A lag metric that separates reprojection lag from filter lag on moving views (the current lag is a settle time of the RMSE series).
+- Detail on G1 without a resolver (FLIP against the reflection bench's reference with the same tone mapping on both sides).
+- Native outputs under `RT_NATIVE_OUTPUTS` for boil / sigma / bias columns; golden G2 / G5 / hold captures into `scenes.json` as they land.
