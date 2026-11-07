@@ -130,35 +130,79 @@ Plus a **side-by-side clip** per scene for your review. **Before any of these nu
 make a decision, it gets calibrated:** you blind-judge ~10 A/B pairs on the review bench, and the
 metric has to agree with you on at least 8. If it doesn't, the metric gets fixed first.
 
-### 5.3 Small plans (sprints), each with a bench, a bar and a stop rule
+### 5.3 Parallel tracks, each with a bench, a bar and a stop rule
 
-| sprint | goal | exit (all must hold) | size |
-|---|---|---|---|
-| **S0 Consolidate** | push the 5 unpushed commits; move the reflection bench here; one scorecard runner for G1–G4 with FFX / native rows; refresh STATUS; storage cleanup (your OK) | dashboard shows today's numbers for every golden scene; no denoiser code changed | 1–2 days |
-| **S1 Calibrate** | blind A/B with you on the review bench | each metric agrees with you on ≥ 8 of 10 pairs | ½ day of your time |
-| **S2 Reflections parity** | find and close the gap to FFX on G1 (REFLECT-BENCH phase 1: bias, low-roughness history, normal-mapped gloss; read our MIT FFX port side by side) | calm ≤ FFX on G1 (traced and hybrid), bias within 1 luma, your OK | ≤ 1 week, stop and reassess after 2 failed attempts |
-| **S3 Shadows in motion** | G2 moving occluder | calm ≤ FFX, detail better than FFX, ≤ 0.6 ms, your OK | ≤ 1 week |
-| **S4 Diffuse + AO** | G3 / G4 against native at tuned settings | calm ≤ native, lag ≤ native, ≤ 4 ms joint incl. specular | decide after OIDN 3 ships (late Nov): it may cover full-frame GI |
-| **S5 Simplify** | one filter per signal; retire the recurrent filter unless it won somewhere in S2–S4; delete options with no measured win; cut submit overhead | option count down by half; WGSL size down; scorecard unchanged | 3–4 days |
-| **S6 Ship** | merge `denoiser/realtime` to main as experimental, one docs page, one demo | CI green, your OK on the demo | 1–2 days |
+_Revised 2026-11-07 after Dennis's review: no waiting on OIDN 3, and the work runs as parallel
+tracks instead of a line of sprints._
 
-### 5.4 How we work from here
+**OIDN 3 is not a dependency.** NRD's family is out now, so our tools get built as well as we can
+build them now. When OIDN 3 ships (due late November), it joins as one more
+`TemporalDenoiser` in `denoiser/realtime` (`OidnTemporalDenoiser`, full frame) and as one more row
+on every golden scene's scorecard. Track O below is the slot for that.
 
-- **One sprint at a time, one active agent** (Sonnet by default), one branch per sprint, merged
-  when its exit holds.
-- **The dashboard page is the status report.** It's updated at the end of every sprint; no
-  status lives only in chat or in a 4,000-line spec.
-- **At most three decisions per sprint**, each with a bench preset you can flip with one key.
-- **No new options without a scorecard win on a golden scene.** No new scenes or side projects
-  mid-sprint.
-- **Disk and usage budget:** captures older than the current sprint get deleted; no overnight
-  swarms.
+```
+week 1   T0 foundation ─────────────┐ (lanes 0a–0e in parallel)
+         R/S/D diagnosis ───────────┤ (read-only + measurement, start day 1)
+         T1 calibration ────────────┘ (needs 0a + review-bench toggles; ~day 4–5)
+week 2   R reflections ─┐
+         S shadows      ├─ fixes in parallel, gated by calibrated metrics
+         D diffuse + AO ┘
+week 3   each track: prune its own options → Opus review → Dennis's visual OK → merge
+         T6 ship (after the first track merges; others follow)
+any time O OIDN 3 adapter, when it's released
+```
+
+| track | lanes / steps | owner model | depends on | exit |
+|---|---|---|---|---|
+| **T0 Foundation** | 0a scorecard runner + dashboard (5 numbers × golden scene, ours / FFX / native rows); 0b move the reflection bench onto this branch as G1; 0c build G5 (product turntable); 0d branch and disk hygiene (push or drop the 5 commits, captures, worktrees: with your OK); 0e native captures of the golden scenes on the Windows RTX (your Windows agent) | Sonnet (all lanes are tooling) | nothing | dashboard shows today's numbers on G1–G5; no denoiser code changed |
+| **T1 Calibration** | blind A/B pairs on the review bench, scored against the metrics | – (half a day of your time) | 0a | each metric agrees with you on ≥ 8 of 10 pairs, or gets fixed before it gates anything |
+| **R Reflections** (G1, G5) | day 1: diagnosis (the +3 luma bias, low-roughness history, normal-mapped gloss, our MIT FFX port read side by side). Week 2: fixes | **Opus** author | diagnosis: nothing; fixes: T1 | calm ≤ FFX on G1, traced and hybrid; bias within 1 luma; your OK. Stop and reassess after 2 failed attempts |
+| **S Shadows** (G2) | day 1: diagnosis of moving-occluder boil vs FFX. Week 2: fixes | **Opus** author | as R | calm ≤ FFX on G2, more detail than FFX, ≤ 0.6 ms, your OK |
+| **D Diffuse + AO** (G3, G4) | day 1: baseline vs native at tuned settings (REBLUR A = 0.01). Week 2: fixes, plus the cost work (4.40 → ≤ 4 ms, wall-time overhead) | **Opus** author; Sonnet for the measurement batches | as R | calm and lag ≤ native, ≤ 4 ms joint with specular, your OK |
+| **T5 Simplify** | done inside each track before it merges: retire what didn't win (the recurrent filter included), delete options without a measured win | the track's author | that track's exit | the track's option count roughly halved, scorecard unchanged |
+| **T6 Ship** | merge `denoiser/realtime` to main as experimental, docs page, one demo; later tracks follow as their own PRs | Sonnet (docs), Opus review | first track through review | CI green, your OK on the demo |
+| **O OIDN 3** | `OidnTemporalDenoiser` adapter on our runtimes, plus scorecard rows | Opus | OIDN 3 release + T0 | runs on every golden scene; numbers on the dashboard |
+
+### 5.4 How the parallel work stays sane
+
+- **Concurrency cap: three authoring agents at once** (R, S, D), plus Sonnet helpers for T0. That
+  is the most I can review properly and keep within your usage.
+- **One worktree per track, and file ownership:**
+  - S owns `shadow.ts` and its shader outright, so it never conflicts.
+  - R and D share the SVGF code (`svgf.ts`, `shaders/svgf.ts`, `common.ts`, `prepass.ts`,
+    `gradient.ts`). **D owns that core.** R edits only the specular paths, rebases on D daily,
+    and asks D's owner for core changes.
+  - T0 lanes touch only tools, examples and docs.
+- **GPU measurements go through one queue.** The Mac keeps rule 11 (one heavy GPU job at a time):
+  analysis and coding run in parallel, measurement runs take turns. The Windows RTX is a second
+  measurement machine for native and same-GPU timings.
+- **Merges are serialized:** each track's diff gets a fresh Opus reviewer (who didn't write it),
+  then your visual OK on the dashboard and the bench, then merge.
+- **The page is the status report,** updated whenever a track changes state (started, blocked,
+  exit met, merged), not only at the end.
+- **Three decisions per track, at most,** each with a bench preset you can flip with one key.
+- **No new option without a scorecard win on a golden scene.** No new scenes or side projects
+  mid-track. Captures older than the current week get deleted.
+
+### 5.5 Model policy
+
+| work | model | why |
+|---|---|---|
+| Algorithm and shader authoring (R, S, D, O), design, diagnosis | **Opus** | correctness on the first pass matters most here |
+| Independent review of every track's diff before merge | **Opus**, a fresh agent | catches what the author can't see |
+| Runners, replays, measurement batches, dashboards, UI wiring, docs | Sonnet | mechanical; Sonnet is reliable and cheap here |
+
+An honest note on what Opus fixes: **305 of the branch's 318 commits, nearly all of M0–M8, were
+written before the switch to Sonnet on 10-27, by Opus subagents.** The problems in §3 came mostly
+from the goals and the ruler, not from the model. Opus authoring is still the right call for the
+algorithm work, but the scorecard and your visual gate are what change the outcome.
 
 ## 6. Decisions needed now
 
-1. **Approve the reset:** pause features, start with S0.
+1. **Approve the reset** as revised: parallel tracks, Opus for algorithm authoring and review,
+   OIDN 3 joining when it ships.
 2. **Golden scenes:** keep G1–G5 as listed, or change them.
-3. **Order:** reflections (S2) before shadows (S3), and hold diffuse/AO (S4) until OIDN 3 is out?
+3. **Concurrency cap:** three authoring agents at once, or a different number?
 4. **Storage:** OK to delete the 306 GB in `tools/rt-capture/` and the stale worktrees
    (`Denoiser-interior-lab` after the bench moves, `-review`, `-shadow-bench`, `-jitter-study`)?
 5. **The 5 unpushed commits** on this branch (dropoutGuard and the 10-28 handoff): push them
