@@ -1,0 +1,27 @@
+{
+ "capture": "golden-G2-occluder",
+ "denoiser": "shadows",
+ "output": "ours-shadows",
+ "description": "denoiser/realtime ShadowDenoiser (penumbra-sized, provisional)",
+ "version": null,
+ "commit": "3138168",
+ "dirty": false,
+ "settings": {},
+ "warmMs": 50,
+ "signals": [
+  "visibility"
+ ],
+ "frames": 64,
+ "width": 960,
+ "height": 540,
+ "gpu": {
+  "vendor": "nvidia",
+  "architecture": "ampere",
+  "device": "0x2520",
+  "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+ },
+ "driver": null,
+ "os": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+ "runner": "tools/rt-capture replay (WebGPU, browser)",
+ "date": "2026-11-07T19:51:58.695Z"
+}

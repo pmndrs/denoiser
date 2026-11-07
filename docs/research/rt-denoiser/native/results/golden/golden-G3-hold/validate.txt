@@ -1,0 +1,15 @@
+capture C:\dev\nrd-reference\captures\golden-G3-hold
+  ok   files                  {"frames":32,"buffers":18,"missing":0,"badSize":0}
+  ok   finite                 {"nonFinite":{}}
+  ok   ranges                 {"violations":{}}
+  ok   viewzNegativeInFront   {"scored":16569504,"positive":0,"beyondFar":0}
+  ok   normalsUnit            {"notUnit":0,"skyNonZero":0}
+  ok   normalsFaceCamera      {"backfacing":24064,"tested":4142080}
+  ok   depthMatchesViewz      {"maxRelErr":0.00001337}
+  ok   cameraContinuity       {"mismatches":[]}
+  ok   motionReprojection     {"static":true,"meanPx":0.00003394,"p99Px":0.0001476,"maxPx":0.0002972,"over0_1px":0,"tested":4142080}
+  ok   motionZReprojection    {"static":true,"meanAbs":1.614e-7,"maxAbs":0.000001907,"p99Rel":3.019e-7}
+  ok   historyConsistency     {"consistentFraction":1,"tested":3998132,"usedMotionZ":true}
+  warn unknown buffer "ao_ref" (1 ch): ignored by v0 readers
+  warn unknown specular demodulation "none"
+VALID

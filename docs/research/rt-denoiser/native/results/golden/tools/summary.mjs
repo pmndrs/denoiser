@@ -16,7 +16,7 @@ for (const s of sigs) {
   console.log('| capture | denoiser | all PSNR | static PSNR | static boil | edge boil | disocc boil | dynamic err-boil |');
   console.log('|---|---|---|---|---|---|---|---|');
   for (const c of capsArg.split(',')) {
-    const file = `${root}/${c}/${s === 'ao' ? 'calm-ao' : 'calm'}.json`;
+    const file = `${root}/${c}/${s === 'ao' ? 'calm-ao' : s === 'visibility' ? 'calm-vis' : 'calm'}.json`;
     if (!existsSync(file)) continue;
     const j = JSON.parse(readFileSync(file, 'utf8'));
     for (const d of dens) {

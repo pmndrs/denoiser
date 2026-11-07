@@ -1,0 +1,17 @@
+capture C:\dev\nrd-reference\captures\golden-G5-turntable
+  ok   files                  {"frames":64,"buffers":19,"missing":0,"badSize":0}
+  ok   finite                 {"nonFinite":{}}
+  ok   ranges                 {"violations":{}}
+  ok   viewzNegativeInFront   {"scored":29158735,"positive":0,"beyondFar":0}
+  ok   normalsUnit            {"notUnit":0,"skyNonZero":0}
+  ok   normalsFaceCamera      {"backfacing":3548,"tested":7281532}
+  ok   depthMatchesViewz      {"maxRelErr":0.00009356}
+  ok   cameraContinuity       {"mismatches":[]}
+  ok   motionReprojection     {"static":false,"meanPx":0.6097,"p99Px":4.769,"maxPx":5.469,"over0_1px":1829347,"tested":7281532}
+  ok   motionZReprojection    {"static":false,"meanAbs":0.0007592,"maxAbs":0.008672,"p99Rel":0.006829}
+  ok   historyConsistency     {"consistentFraction":0.9951,"tested":7144301,"usedMotionZ":true}
+  ok   normalGeomUnit         {"notUnit":0,"equalsNormal":0.8629}
+  ok   normalGeomFacesCamera  {"backfacing":5924,"tested":7281532}
+  warn unknown buffer "ao_ref" (1 ch): ignored by v0 readers
+  warn unknown specular demodulation "none"
+VALID

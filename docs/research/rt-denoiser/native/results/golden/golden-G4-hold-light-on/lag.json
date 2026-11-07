@@ -1,0 +1,161 @@
+{
+ "capture": "golden-G4-hold-light-on",
+ "event": 16,
+ "settle": 8,
+ "rows": [
+  {
+   "signal": "diffuse",
+   "denoiser": "noisy",
+   "lag": 0,
+   "lagPre": null,
+   "t": 0,
+   "peakOverPre": 1.19876549647731,
+   "peakOverSettled": 1.0017659537933254,
+   "preOverSettled": 0.8356646539603557,
+   "settledMse": 0.05266095926982186
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "nrd-reblur",
+   "lag": 11,
+   "lagPre": null,
+   "t": 27,
+   "peakOverPre": 37.15869278365989,
+   "peakOverSettled": 3.5931785729412686,
+   "preOverSettled": 0.09669819640483499,
+   "settledMse": 0.008661082121773274
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "nrd-reblur-tunedD",
+   "lag": 11,
+   "lagPre": null,
+   "t": 27,
+   "peakOverPre": 46.12544247698449,
+   "peakOverSettled": 3.907795178511302,
+   "preOverSettled": 0.08472103395997121,
+   "settledMse": 0.007490084030137146
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "nrd-reblur-tunedS",
+   "lag": 11,
+   "lagPre": null,
+   "t": 27,
+   "peakOverPre": 45.1608065062718,
+   "peakOverSettled": 3.892398779485188,
+   "preOverSettled": 0.08618975347450057,
+   "settledMse": 0.00750938022675261
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "nrd-relax",
+   "lag": 11,
+   "lagPre": null,
+   "t": 27,
+   "peakOverPre": 51.76534669626522,
+   "peakOverSettled": 6.60557707274179,
+   "preOverSettled": 0.12760615922269813,
+   "settledMse": 0.003924774523214691
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "ours-auto",
+   "lag": 8,
+   "lagPre": 13,
+   "t": 24,
+   "peakOverPre": 5.478429141608452,
+   "peakOverSettled": 4.853380276965466,
+   "preOverSettled": 0.8859072831852903,
+   "settledMse": 0.0006665243538475408
+  },
+  {
+   "signal": "diffuse",
+   "denoiser": "ref",
+   "lag": 0,
+   "lagPre": 0,
+   "t": 0,
+   "peakOverPre": null,
+   "peakOverSettled": null,
+   "preOverSettled": null,
+   "settledMse": 0
+  },
+  {
+   "signal": "specular",
+   "denoiser": "noisy",
+   "lag": 0,
+   "lagPre": null,
+   "t": 0,
+   "peakOverPre": 1.5523001425066736,
+   "peakOverSettled": 1.0138385527934746,
+   "preOverSettled": 0.6531201827736197,
+   "settledMse": 0.0011813344793597594
+  },
+  {
+   "signal": "specular",
+   "denoiser": "nrd-reblur",
+   "lag": 10,
+   "lagPre": null,
+   "t": 26,
+   "peakOverPre": 5.755169240407267,
+   "peakOverSettled": 2.041634687604981,
+   "preOverSettled": 0.3547479843460701,
+   "settledMse": 0.00025209405198923926
+  },
+  {
+   "signal": "specular",
+   "denoiser": "nrd-reblur-tunedD",
+   "lag": 10,
+   "lagPre": null,
+   "t": 26,
+   "peakOverPre": 7.181750017949344,
+   "peakOverSettled": 2.000149213866078,
+   "preOverSettled": 0.278504432605856,
+   "settledMse": 0.0002548837874792193
+  },
+  {
+   "signal": "specular",
+   "denoiser": "nrd-reblur-tunedS",
+   "lag": 10,
+   "lagPre": null,
+   "t": 26,
+   "peakOverPre": 10.2235963196657,
+   "peakOverSettled": 2.2044737152126475,
+   "preOverSettled": 0.21562605234835122,
+   "settledMse": 0.0002178326816353259
+  },
+  {
+   "signal": "specular",
+   "denoiser": "nrd-relax",
+   "lag": 10,
+   "lagPre": null,
+   "t": 26,
+   "peakOverPre": 8.593600868553633,
+   "peakOverSettled": 2.472956443757666,
+   "preOverSettled": 0.28776719812609625,
+   "settledMse": 0.0001844503764440374
+  },
+  {
+   "signal": "specular",
+   "denoiser": "ours-auto",
+   "lag": 5,
+   "lagPre": null,
+   "t": 21,
+   "peakOverPre": 4.945041114856578,
+   "peakOverSettled": 3.1665229143227895,
+   "preOverSettled": 0.6403430913464971,
+   "settledMse": 0.00003203704291175383
+  },
+  {
+   "signal": "specular",
+   "denoiser": "ref",
+   "lag": 0,
+   "lagPre": 0,
+   "t": 0,
+   "peakOverPre": null,
+   "peakOverSettled": null,
+   "preOverSettled": null,
+   "settledMse": 0
+  }
+ ]
+}

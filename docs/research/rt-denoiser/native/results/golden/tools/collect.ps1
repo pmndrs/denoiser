@@ -6,7 +6,7 @@ $root = 'C:\dev\nrd-reference'
 $src = "$root\outputs\$Capture"
 $dst = "$root\golden\wt-results\docs\research\rt-denoiser\native\results\golden\$Capture"
 New-Item -ItemType Directory -Force $dst | Out-Null
-foreach ($f in 'compare.md','compare.json','calm.json','calm-ao.json') { if (Test-Path "$src\$f") { Copy-Item "$src\$f" $dst } }
+foreach ($f in 'compare.md','compare.json','calm.json','calm-ao.json','calm-vis.json') { if (Test-Path "$src\$f") { Copy-Item "$src\$f" $dst } }
 Copy-Item "$root\golden\validate-$Capture.txt" "$dst\validate.txt" -ErrorAction SilentlyContinue
 $cj = Get-Content "$root\captures\$Capture\capture.json" -Raw | ConvertFrom-Json
 $cj | Select-Object * -ExcludeProperty frames | ConvertTo-Json -Depth 6 | Out-File "$dst\capture-manifest.json" -Encoding utf8
@@ -20,6 +20,7 @@ $t = "docs/research/rt-denoiser/results/data/d/calm-table.mjs"
 $md = @("# $Capture`: calm (track D's calm.mjs, motion-compensated boil per region)", '')
 foreach ($s in 'diffuse','specular') { $md += (node $t "$src\calm.json" --signal $s) ; $md += '' }
 if (Test-Path "$src\calm-ao.json") { $md += (node $t "$src\calm-ao.json" --signal ao); $md += '' }
+if (Test-Path "$src\calm-vis.json") { $md += (node $t "$src\calm-vis.json" --signal visibility); $md += '' }
 Pop-Location
 $md | Out-File "$dst\calm.md" -Encoding utf8
 if ($Event -ge 0) {
@@ -32,9 +33,11 @@ $cropDens = ($dens | Where-Object { $_ -match '^(nrd-reblur|nrd-reblur-tunedD|nr
 $crops = @()
 foreach ($fr in $CropFrames.Split(',')) {
   foreach ($s in 'diffuse','specular') {
-    $crops += (node "$root\golden\tools\crops.mjs" "$root\captures\$Capture" $src --frame $fr --signal $s --den $cropDens --x auto --out "$dst\crop_f$($fr)_$s.png")
+    $dsDens = (($cropDens.Split(',')) | Where-Object { $_ -notmatch 'sigma|shadows' }) -join ','
+    $crops += (node "$root\golden\tools\crops.mjs" "$root\captures\$Capture" $src --frame $fr --signal $s --den $dsDens --x auto --out "$dst\crop_f$($fr)_$s.png")
   }
-  if ($dens -contains 'ours-shadows') { $crops += (node "$root\golden\tools\crops.mjs" "$root\captures\$Capture" $src --frame $fr --signal visibility --den $cropDens --x auto --out "$dst\crop_f$($fr)_visibility.png") }
+  $visDens = (($cropDens.Split(',')) | Where-Object { $_ -match 'sigma|shadows' }) -join ','
+  if ($visDens) { $crops += (node "$root\golden\tools\crops.mjs" "$root\captures\$Capture" $src --frame $fr --signal visibility --den $visDens --x auto --out "$dst\crop_f$($fr)_visibility.png") }
 }
 $crops | Out-File "$dst\crops.txt" -Encoding utf8
 "collected $Capture -> $dst"

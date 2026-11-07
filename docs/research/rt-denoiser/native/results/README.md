@@ -1,6 +1,6 @@
 # Native NRD results (black box)
 
-**Golden scenes (GOLDEN-BRIEF; group 1: G3 orbit + the four G4 light changes, calm / lag / detail; cost pending): [golden/README.md](golden/README.md).**
+**Golden scenes (GOLDEN-BRIEF: G3 orbit, the four G4 light changes, the two 16384-spp holds, G2 occluder with SIGMA, G5 turntable; calm / lag / detail; cost pending): [golden/README.md](golden/README.md).**
 
 **Round 3 (REBLUR hit-distance sweep, cost at HEAD, P6 / P7): [ROUND3.md](ROUND3.md).**
 
