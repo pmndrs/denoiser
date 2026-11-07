@@ -15,7 +15,7 @@ binding), [TASKS.md](TASKS.md) "How agents work here" (rules 1–12 still apply,
 | T0-native: golden captures through native NRD | Dennis's Windows machine | – | 1 | **ready to start**: [native/GOLDEN-BRIEF.md](native/GOLDEN-BRIEF.md) |
 | T1 calibration: Dennis blind A/B | – | Dennis | 1 | waits for T0-scorecard |
 | R reflections (G1, G5) | `track/r-reflections` · `../Denoiser-track-r` | Opus | 1: diagnosis | running |
-| S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | running |
+| S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | **diagnosis done** (tracks/s.md on its branch, 87bfba6). Remaining gap: pops in static penumbrae (p99 1.4–2.9× FFX). Waits for T1 |
 | D diffuse + AO + cost (G3, G4) | `track/d-diffuse` · `../Denoiser-track-d` | Opus | 1: diagnosis | **diagnosis done** (tracks/d.md on its branch, 02154b7). Waits for T1 + native runs on G3/G4 |
 | O OIDN 3 | – | Opus | – | waits for the OIDN 3 release |
 
@@ -65,7 +65,9 @@ Phase 1 is diagnosis: **no default changes** in `packages/denoiser-realtime`. In
 ## Shared resources
 
 - **GPU lock:** `RT_GPU_LOCK=/tmp/rt-gpu.lock` (TASKS rule 11). Anything longer than a short
-  smoke test holds it; release between batches.
+  smoke test holds it. **From 2026-11-07 use the fair queue:** `tools/gpu-lock.sh "<agent> <task>" <command…>`
+  (FIFO tickets in `/tmp/rt-gpu.queue`, same lock directory, so it also excludes the old inline
+  loop). One batch per call, **≤ 15 min per hold**; call again for the next batch.
 - **Dev-server ports:** T0-scenes 5301, T0-scorecard 5302, R 5303, S 5304, D 5305
   (`--strictPort --host 127.0.0.1`).
 - **Captures:** `Denoiser-nrd-cleanroom/tools/rt-capture/captures/` holds the kept golden
