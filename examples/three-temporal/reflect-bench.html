@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - reflection bench: hybrid reflections, FFX vs ours</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #ddd; font: 12px/1.45 system-ui, sans-serif; }
+      #stage { position: fixed; inset: 0; touch-action: none; cursor: grab; }
+      #stage:active { cursor: grabbing; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .divider { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid #ffffffb0; pointer-events: none; z-index: 2; }
+      .divider .grip { position: absolute; top: 50%; left: -16px; width: 32px; height: 40px; margin-top: -20px; border-radius: 6px; background: #141418e0;
+        border: 1px solid #ffffff80; cursor: ew-resize; pointer-events: auto; color: #fff; font: 600 11px/40px system-ui; text-align: center; user-select: none; touch-action: none; }
+      .tag { position: absolute; top: 10px; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; z-index: 2;
+        padding: 3px 8px; border-radius: 4px; background: #141418e0; color: #fff; font-weight: 600; pointer-events: none; }
+      #tag-l { left: 10px; } #tag-r { right: 310px; }
+      #legend { position: absolute; left: 10px; bottom: 28px; z-index: 2; padding: 4px 8px; border-radius: 4px; background: #141418e0; pointer-events: none; }
+      #legend[hidden], .tag[hidden], .divider[hidden] { display: none; }
+      .sw { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin: 0 .3rem 0 .6rem; vertical-align: -1px; }
+      #status { position: fixed; left: 10px; bottom: 6px; z-index: 3; color: #aaa; pointer-events: none; white-space: pre; }
+      .lil-gui.root { z-index: 4; --width: 290px; max-height: 100vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <canvas id="view"></canvas>
+      <div class="divider" id="divider"><div class="grip">⇔</div></div>
+      <div class="tag" id="tag-l"></div>
+      <div class="tag" id="tag-r"></div>
+      <div id="legend" hidden>
+        <span class="sw" style="background:#26cc40"></span>SSR hit
+        <span class="sw" style="background:#3380ff"></span>ray traced
+        <span class="sw" style="background:#ff3326"></span>missed: environment
+        <span class="sw" style="background:#ff990d"></span>rough: prefiltered, no ray
+      </div>
+    </div>
+    <div id="status">loading...</div>
+    <script type="module" src="./src/reflect-bench/main.ts"></script>
+  </body>
+</html>
