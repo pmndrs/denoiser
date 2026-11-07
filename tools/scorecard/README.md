@@ -36,7 +36,7 @@ comparable). For region boil, σ and bias the native *outputs* are needed: put t
 
 ## Adding a scene (golden scenes from T0-scenes)
 
-Add an entry to `scenes.json` (`capture`, optional `capturesDir`, `native` result folder name, `signals`, `gates`).
+Add an entry to `scenes.json` (`capture`, optional `tonemap: "aces"` for the golden scenes' display transform, optional `capturesDir`, `native` result folder name, `signals`, `gates`).
 Gate metrics are paths into a row (`calm.moving.boil`, `detail.flip`, `lag.0.lag`, `bias.levels`, `cost.gpuMs` with
 `"cost": "<cost row id>"`); `vs` is `ffx`, `native` (best native) or a number.
 

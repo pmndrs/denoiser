@@ -166,7 +166,7 @@ export function mountCalibration(): void {
 
     // ---- sheet playback: row 0 = option a, row 1 = option b, (row 2 = reference); left / right by the stored coin flip
     const size = p.size;
-    for (const cv of [L.cv, R.cv, ...(refCv ? [refCv] : [])]) { cv.width = size; cv.height = size; cv.style.width = `${Math.min(size * 4, 400)}px`; }
+    for (const cv of [L.cv, R.cv, ...(refCv ? [refCv] : [])]) { cv.width = size; cv.height = size; cv.style.width = `${Math.min(size * 4, p.rows === 3 ? 300 : 400)}px`; }
     const leftRow = state.leftIs[p.id] === 'a' ? 0 : 1;
     const draw = (k: number) => {
       const lc = L.cv.getContext('2d')!, rc = R.cv.getContext('2d')!;

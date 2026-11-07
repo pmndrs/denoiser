@@ -108,7 +108,7 @@ try {
       if (nativeOut) for (const nid of nativeIds) if (existsSync(path.join(nativeOut, nid))) { sources.push(outputSource(nativeOut, nid, signal)); nativeScored.push(nid); }
       log(`[${s.id}] scoring ${signal}: ${sources.map((x) => x.id).join(', ')}`);
       const ts = Date.now();
-      const sc = scoreSignal({ capDir, m, info, signal, sources, opts: { settle: SETTLE, flipEvery: FLIP_EVERY }, log: () => {} });
+      const sc = scoreSignal({ capDir, m, info, signal, sources, opts: { settle: SETTLE, flipEvery: FLIP_EVERY, ...(s.tonemap ? { tonemap: s.tonemap } : {}) }, log: () => {} });
       log(`[${s.id}] ${signal} scored in ${((Date.now() - ts) / 1000).toFixed(0)} s`);
       const rows = defs.map((d) => ({ ...sc.rows[d.id === 'raw' ? 'raw' : d.id], id: d.id, rowKey: d.rowKey, kind: cfg.rows[d.rowKey].kind, label: cfg.rows[d.rowKey].label, missing: d.rowKey !== 'raw' && !sc.rows[d.id]?.frames }));
       for (const nid of nativeScored) rows.push({ ...sc.rows[nid], id: nid, rowKey: 'native', kind: 'native', label: `native ${nid}` });
