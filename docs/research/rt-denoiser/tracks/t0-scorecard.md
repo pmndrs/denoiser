@@ -95,3 +95,15 @@ fix round on the first run.
   scene, `tonemap: "aces"`, `perfect` and `reference` captures as extra scenes). Merge `track/t0-scenes` into this branch first.
 - T0-native: native outputs for the golden captures under `$RT_NATIVE_OUTPUTS` fill the native rows' boil / σ / bias columns.
 - T1: Dennis answers the blind pairs; `analyze.mjs` reports agreement per metric definition (the bench lists several definitions of calm).
+
+## Update 2026-11-08: first run of the bilinear / dense / tail metrics
+
+Dashboard regenerated (commit after c175f0e) incl. golden G3 orbit and G4 pan-light-on (4096 spp, ACES); no code fix was needed.
+- Sanity: on the static-camera Bistro hold the moving-region boil is identical to the nearest-tap version (0.0073 / 0.0073); the
+  smooth-static number is lower only because dense geometry is now its own region (hold: smooth 0.0007, dense 0.0069).
+- Shadow orbit, bilinear history: ours moving 0.0515 vs FFX 0.0241 (2.1x; nearest tap said 1.6x), p99 0.255 vs 0.111, dense 0.0261
+  vs 0.0130; smooth-static level (0.0011 vs 0.0010). So the gap is real and larger with bilinear; it is in the moving and
+  dense regions and in the tail. Same picture on corner-pan visibility (0.0524 vs 0.0331, p99 0.220 vs 0.153) and Sponza moving knot (0.0811 vs 0.0426).
+- Golden G4 light-on: ours diffuse lag 16 frames after the step (1 at start); shadows lag 13 vs FFX 12.
+- Still pending the GPU queue (T0-scenes' capture script held it): calibration pairs (`make-pairs.mjs`), 1080p cost. `chain.sh`
+  keeps waiting under tickets in `/tmp/rt-gpu.queue`; when it finishes, commit `docs/.../scorecard/`, `src/review/calibration/**`, `calibration/key.json`.
