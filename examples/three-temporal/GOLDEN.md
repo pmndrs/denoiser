@@ -14,8 +14,8 @@ Existing scene code is reused, not rewritten (`src/realtime/*`: corner, Sponza/B
 |---|---|---|---|---|---|
 | **G1** | reflection bench (Ben's camera model, normal-mapped metal, traced + hybrid) | specular | _external page_ (`reflect-bench.html`, owned by R) | - | - |
 | **G2** | the knot over a floor, area light, **moving occluder** | shadows | `occluder` (static close-up camera, knot rotates), `orbit` (orbit camera, knot rotates) | 64 | - |
-| **G3** | Sponza orbit | diffuse GI + AO | `orbit`, `pan` | 64 | - |
-| **G4** | Bistro pan with a **light switching on** | diffuse, light-change lag | `pan-light-on` | 64 | `light-on` at frame 32 (a street lantern, step change) |
+| **G3** | Sponza orbit | diffuse GI + AO | `orbit`, `pan`, `hold` (still camera, 32 frames: boil against a static scene) | 64 / 32 | - |
+| **G4** | Bistro pan with a **light change** | diffuse, light-change lag | `pan-light-on` (step), `pan-light-colour` (colour step at constant luminance), `pan-light-fade` (ramp 24-40), `pan-lamp-switch` (lamp A off, lamp B on), `hold-light-on` (still camera, step at 16) | 64 / 32 | at frame 32 (fade: 24, hold: 16); see `events` |
 | **G5** | product turntable (glossy + rough, normal maps, environment light) | specular + diffuse | `turntable` | 64 | - |
 
 Scene ids are the registry keys; paths are `G2/occluder` etc. `list()` returns this table as data (below).
@@ -203,12 +203,50 @@ axis (96 deg over the path); static 3/4 camera, a satin floor, a soft key (sun, 
 sky as the environment light. The shading normal (normal-mapped) is the denoiser guide and `normal`; `normal_geom` is the vertex
 normal (v1 capture buffer). Mover = plinth + helmet.
 
+## Reference noise and boil (read before scoring calm)
+
+`refSeed=fixed` (default): reference sample seeds (diffuse, shadow, SSR frames) do **not** depend on the path frame, so the
+reference's own noise is a static pixel pattern: on a still camera the reference has exactly zero frame-to-frame change (measured:
+G3 `hold`, rmse 0), and on moving paths its "boil" comes only from the scene moving under that fixed pattern, not from fresh noise.
+`refSeed=frame` gives fresh noise per frame (the old behaviour, which boiled more than any denoiser). Noise floor of one 4096-spp
+reference, measured as two seeds / sqrt 2 against the 1-spp noise (G2 and G3, 960x540): diffuse 27 dB, AO 27 dB, shadow 25-27 dB,
+specular 13 dB (SSR's own variance) below the 1-spp noise. For calm measurement use the `hold` paths with `referenceSpp=16384`
+(4x: 6 dB lower floor), where a denoiser's boil is measured against a static, near-noise-free target.
+
+## Light-change paths (G4)
+
+All five G4 paths run the same camera (`bistro-pan`; `hold-light-on`: pan frame 20, still). The references are converged per frame for that
+frame's lighting, so they step, ramp or change colour with the event. Lag = frames after `events[0].frame` until error is back within 10 % of its
+settled level. Each path exports as its own CAPTURE-FORMAT capture with per-frame `lights` (power / colour / position of the lantern), so
+native NRD replays it unchanged (`golden-G4-<path>`; sizes below).
+
 ## Cost of the reference modes
 
-Measured on the M5 Pro at 960x540 (see "Status" for the numbers and the lock protocol). A `reference` frame costs
-`difFrames x (rays/sub-frame) + visFrames + specFrames` sub-frames: at `referenceSpp = 4096` that is 512 diffuse sub-frames
-(8 rays each), 1024 shadow sub-frames (2x2 rays) and 4096 SSR frames. `referenceSppSpec` caps the SSR frames.
+Measured on the M5 Pro at 960x540, `referenceSpp = 4096` (512 diffuse sub-frames of 8 rays, 1024 shadow sub-frames of 2x2, 4096 SSR
+frames), one path frame: **G2 1.5 s, G3 7.9 s, G4 21.3 s, G5 1.7 s**; G2 at 1080p 6.2 s. A 64-frame reference/capture is about 1.6 min (G2),
+8.5 min (G3), 23 min (G4). 16384 spp is 4x.
+
+## Measured denoiser cost, 1080p, `lean`, M5 Pro (indicative: the GPU was not verified idle)
+
+| scene | ours: diffuse+specular / ao / shadow / total GPU ms | FFX: specular / shadow / total | wall ms (ours / ffx, whole frame incl. rays) |
+|---|---|---|---|
+| G2 | 6.79 / 3.24 / 1.25 / 11.44 | 2.82 / 0.86 / 3.73 | 28.6 / 18.5 |
+| G3 | 8.28 / 4.17 / 1.42 / 14.14 | 3.17 / 1.15 / 4.25 | 100.1 / 82.2 |
+| G4 | 7.22 / 4.09 / 1.77 / 13.30 | 2.58 / 1.31 / 3.97 | 235.3 / 187.9 |
+| G5 | 5.29 / 2.62 / 0.81 / 8.99 | 2.60 / 0.94 / 3.48 | 27.7 / 21.6 |
+
+These are higher than the 4.4 ms recorded for joint diffuse+specular elsewhere; other agents' jobs ran around my lock hold, so re-measure
+with `driver.mjs time` on an idle GPU before using them as the cost number.
 
 ## Status
 
-(Maintained at the end of the track: what runs, what is partial, measured costs.)
+- G2-G5 render headless in `run`, `perfect`, `reference` and `capture` modes (G3 `pan`/`hold`, all five G4 paths added after track D's request);
+  `perfect` works on all four (converged diffuse, AO, shadow, SSR specular); G1 is registered as external (R's bench).
+- Determinism (`driver.mjs determinism`): two page loads, same seed, 20-42 reads each (1-spp diffuse/shadow/specular/AO, display, depth,
+  motion): identical SHA-256 on G2, G3, G4, G5 (and G2 `perfect` converged inputs); a different seed changes every noisy read.
+- Captures: an 8-frame capture of each of G2-G5 (256 spp) passed `tools/rt-capture/validate.mjs` (VALID; warnings only for the `ao_ref`
+  extra buffer and `specular` demodulation `none`); 65 MB/frame (G5: 71 MB with `normal_geom`).
+- Full 64-frame, 4096-spp captures: `src/golden/capture-all.sh` (priority: G3 orbit, the G4 light-change paths, the two holds at
+  16384 spp, then G2, G5; 4.2 GB each at half resolution). Started under the GPU lock; progress in the log of whoever launched it
+  (here `/tmp/t0s-full.log`), files in `tools/rt-capture/captures/golden-*` of the worktree `Denoiser-track-t0s`.
+- Known limits: specular is three's SSR (not demodulated, manifest says `none`); the G5 denoiser guide is the shading normal; timings above are not idle-GPU.
