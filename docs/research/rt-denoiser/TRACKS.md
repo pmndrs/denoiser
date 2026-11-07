@@ -10,12 +10,12 @@ binding), [TASKS.md](TASKS.md) "How agents work here" (rules 1–12 still apply,
 
 | track | branch / worktree | model | phase | status |
 |---|---|---|---|---|
-| T0-scenes: golden scene registry, G5, G2–G4 paths, perfect-input + reference modes | `track/t0-scenes` · `../Denoiser-track-t0s` | Sonnet | 1 | **done**, merged (42fb730). Full 4096-spp captures running in the background under the GPU lock (`/tmp/t0s-full.log`) |
-| T0-scorecard: runner, metrics, dashboard, calibration mode for T1 | `track/t0-scorecard` · `../Denoiser-track-t0c` | Sonnet | 1 | running |
+| T0-scenes: golden scene registry, G5, G2–G4 paths, perfect-input + reference modes | `track/t0-scenes` · `../Denoiser-track-t0s` | Sonnet | 1 | **done**, merged (42fb730). Captured and VALID: G3 orbit, hold; G4 pan-light-on, -colour, lamp-switch, hold-light-on; G2 occluder. **G4 pan-light-fade fails validation** (motion-Z reprojection, history consistency), so it's left out of the scorecard until checked. Still queued behind the scorecard: G5 turntable, G2 drift ×3, G3 move (`/tmp/t0s-after.log`) |
+| T0-scorecard: runner, metrics, dashboard, calibration mode for T1 | `track/t0-scorecard` · `../Denoiser-track-t0c` | Sonnet | 1 | **dashboard live** (bca1d13): bilinear motion compensation, dense-geometry region, p99 and pops, golden G3 orbit and G4 pan-light-on. Calibration panel built; the **pairs and the 1080p cost table are waiting on their GPU run** (`chain.sh`) |
 | T0-native: golden captures through native NRD | Dennis's Windows machine | – | 1 | **ready to start**: [native/GOLDEN-BRIEF.md](native/GOLDEN-BRIEF.md) |
 | T1 calibration: Dennis blind A/B | – | Dennis | 1 | waits for T0-scorecard |
 | R reflections (G1, G5) | `track/r-reflections` · `../Denoiser-track-r` | Opus | 1: diagnosis | running |
-| S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | **diagnosis done** (tracks/s.md on its branch, 87bfba6). Remaining gap: pops in static penumbrae (p99 1.4–2.9× FFX). Waits for T1 |
+| S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | **diagnosis done** (87bfba6). Remaining gap: pops in static penumbrae (p99 1.4–2.9× FFX). **New from the scorecard:** with bilinear history, the moving-camera shadow orbit boils 2.1× FFX in the moving region (0.0515 vs 0.0241; p99 0.255 vs 0.111), and the dense region is 2× too; smooth static is level. That contradicts S's "level with FFX on orbits", so it goes into S's phase 2. Waits for T1 |
 | D diffuse + AO + cost (G3, G4) | `track/d-diffuse` · `../Denoiser-track-d` | Opus | 1: diagnosis | **diagnosis done** (tracks/d.md on its branch, 02154b7). Waits for T1 + native runs on G3/G4 |
 | O OIDN 3 | – | Opus | – | waits for the OIDN 3 release |
 
