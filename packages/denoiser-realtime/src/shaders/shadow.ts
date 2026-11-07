@@ -178,6 +178,8 @@ export interface TemporalVariant {
   horizonSnap?: boolean; lightMotion?: boolean;
   /** (option clampHistoryNoise, track S phase 1 experiment) clamp window += k x sigma / sqrt(A + 1): k baked into the WGSL. */
   historyNoise?: number;
+  /** (option antiLagNoise, track S phase 1 experiment) anti-lag restart only beyond the window + k x sigma / sqrt(A + 1). */
+  antiLagNoise?: number;
 }
 
 export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false, tv: TemporalVariant = {}): string {
@@ -626,7 +628,11 @@ ${edgeBox ? `      // (edgeBox, results/SHADOWS-MOTION.md) at hard edges the win
       }
 ` : ''}      if (A >= 0.0) {
         // anti-lag (our design): a history the clamp had to move is short-lived
-        let c = saturate(abs(vC - vH) * SP.antiLag);
+        let c = ${tv.antiLagNoise ? `saturate(max(abs(vH - mu) - win - ${tv.antiLagNoise.toFixed(6)} * sigma * inverseSqrt(max(A, 0.0) + 1.0), abs(vC - clamp(vH, mu - win, mu + win))) * SP.antiLag);
+        // (antiLagNoise, track S experiment, our design) restart only where the history sits outside the clamp window by more
+        // than k standard errors of itself (an (A + 1)-sample mean of 1-ray samples): the clamp still moves it, but a
+        // statistical false alarm no longer restarts it (edgeBox's extra move at hard edges still does)`
+          : 'saturate(abs(vC - vH) * SP.antiLag);'}
         A = mix(A, min(A, SP.antiLagHistory), c);
       }
       // all 25 samples agree: take their value exactly, keep the history length (the floor

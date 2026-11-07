@@ -5,7 +5,7 @@
 # Needs the tools/rt-capture dev server on BASE (default :5304) with captures/ symlinked (tracks/s.md).
 cd /Users/dex/Developer/Denoiser-track-s
 L=${RT_GPU_LOCK:-/tmp/rt-gpu.lock}
-until mkdir "$L" 2>/dev/null; do sleep 2; done
+until mkdir "$L" 2>/dev/null; do sleep 0.3; done
 echo "S replay $* $(date)" > "$L/owner"
 trap 'rm -rf "$L"' EXIT
 cap=$1; shift

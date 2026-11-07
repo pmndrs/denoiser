@@ -322,6 +322,12 @@ export interface ShadowDenoiserOptions {
    * static penumbrae. Opaque path only.
    */
   clampHistoryNoise?: number;
+  /**
+   * Experiment (track S phase 1, our design; default 0 = off, WGSL unchanged): the temporal anti-lag restart fires only
+   * where the history sits outside the clamp window by more than antiLagNoise x sigma / sqrt(A + 1) (its own standard
+   * error); the clamp itself is unchanged. Opaque path only.
+   */
+  antiLagNoise?: number;
 }
 
 type Resolved = Required<Omit<ShadowDenoiserOptions, 'light' | 'antiLag' | 'debugStabilize'>> & { light?: ShadowLight; debugStabilize?: 'weight' | 'age' };
@@ -381,6 +387,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     horizonSnap: o.horizonSnap ?? true, // q24 (a)
     lightMotion: o.lightMotion ?? 0,
     clampHistoryNoise: o.clampHistoryNoise ?? 0,
+    antiLagNoise: o.antiLagNoise ?? 0,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
@@ -568,6 +575,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       if (o.horizonSnap) this.temporalVariant.horizonSnap = true;
       if (o.lightMotion > 0) this.temporalVariant.lightMotion = true;
       if (o.clampHistoryNoise > 0) this.temporalVariant.historyNoise = o.clampHistoryNoise;
+      if (o.antiLagNoise > 0) this.temporalVariant.antiLagNoise = o.antiLagNoise;
     }
     this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
