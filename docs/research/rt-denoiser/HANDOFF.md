@@ -7,7 +7,7 @@ _2026-10-24. From the planning session to the implementing agent._
 | what | where |
 |---|---|
 | This work | branch `feat/rt-denoiser-cleanroom`, worktree `/Users/dex/Developer/Denoiser-nrd-cleanroom` |
-| **Start here (2026-11-06)** | [STOCKTAKE-2026-11-06.md](STOCKTAKE-2026-11-06.md): where we are, what went wrong, the reset plan |
+| **Start here (2026-11-06)** | [STOCKTAKE-2026-11-06.md](STOCKTAKE-2026-11-06.md): where we are, what went wrong, the reset plan; [TRACKS.md](TRACKS.md): the live track board |
 | Morning status (2026-10-25, superseded) | [STATUS.md](STATUS.md) |
 | Plan (all decisions made) | [PLAN.md](PLAN.md) |
 | Rules (binding) | [RULES.md](RULES.md); you are an **implementer** in rule 8 |
