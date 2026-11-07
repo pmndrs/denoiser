@@ -123,6 +123,26 @@ def plans():
         run('rec-noHAL-nofsr', side('recurrent', resolve='off', recurrent={'historyAntiLag': False})),
         run('svgf-C-nofsr-noTableFix', side('svgf', resolve='off', svgf={'antiLag': 'off', 'temporalAlpha': 1 / 32})),
     ]}
+    # dropoutGuard (opt-in, tuned on Ben's SSR scene): what it does here. The bench fills misses with hit distance 100,
+    # the guard keys on exact misses (0), so it is also run with rec-D for comparison on SSR input
+    p['dropout'] = {'base': base, 'runs': [
+        run(f'{pr}-{src}-rec-dropoutGuard', side('recurrent', preset=pr, refl=src, recurrent={'dropoutGuard': True}))
+        for pr, src in [('ben', 'hybrid'), ('defaults', 'hybrid'), ('defaults', 'rt')]]}
+    # recurrent on the glossy table (r 0.15 / 0.3: 2x SVGF): is it C-10 too? and SVGF-C there
+    p['glossy'] = {'base': base, 'runs': [
+        run(f'table{t}-{n}', side(d, tableRough=t, **o))
+        for t in [0.15, 0.3]
+        for n, d, o in [('rec-C', 'recurrent', {'recurrent': {'historyAntiLag': False}}),
+                        ('rec-noDet', 'recurrent', {'recurrent': {'antiLagCurrentSigma': 0}}),
+                        ('svgf-C', 'svgf', {'svgf': {'antiLag': 'off', 'temporalAlpha': 1 / 32}, 'patches': [svgf8]})]]}
+    p['glossy2'] = {'base': base, 'runs': [
+        run(f'table0.15-{n}', side('recurrent', tableRough=0.15, recurrent=o))
+        for n, o in [('rec-noVirtual', {'virtualMotion': False}), ('rec-virtClamp3', {'virtualClampSigma': 3}),
+                     ('rec-C-noVirtual', {'historyAntiLag': False, 'virtualMotion': False})]]}
+    p['glossy3'] = {'base': base, 'runs': [
+        run(f'table0.15-{n}', side('recurrent', tableRough=0.15, recurrent=o))
+        for n, o in [('rec-minR3', {'specularMinRadiusScale': 0, 'minBlurRadius': 3}),
+                     ('rec-C-minR3', {'historyAntiLag': False, 'specularMinRadiusScale': 0, 'minBlurRadius': 3})]]}
     # GPU time per denoiser, each alone, at the denoiser's own 1080p (no resolver; run with RB_W=1920 RB_H=1223 so the
     # canvas is 1920 x 1080), 300 timed frames after 60, three rounds interleaved; model defaults, traced
     p['timing'] = {'base': {**base, 'resolve': 'off'}, 'runs': [

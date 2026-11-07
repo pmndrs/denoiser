@@ -1,0 +1,4598 @@
+[
+ {
+  "name": "defaults-rt-fsr-ffx",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3742,
+    "p99": 3.8397,
+    "luma": 97.4787,
+    "ref_luma": 100.7786,
+    "bias": -3.2999,
+    "sigma_norm": 0.3869,
+    "rmse_mean": 11.4151,
+    "rmse_frame": 11.45
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.4734,
+    "p99": 4.2127,
+    "luma": 94.4633,
+    "ref_luma": 98.9563,
+    "bias": -4.493,
+    "sigma_norm": 0.4959,
+    "rmse_mean": 13.4604,
+    "rmse_frame": 13.499
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.37,
+    "p99": 3.4148,
+    "luma": 149.9125,
+    "ref_luma": 149.8694,
+    "bias": 0.043,
+    "sigma_norm": 0.3699,
+    "rmse_mean": 5.5954,
+    "rmse_frame": 5.6467
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.5419,
+    "p99": 6.6334,
+    "luma": 60.728,
+    "ref_luma": 78.443,
+    "bias": -17.7149,
+    "sigma_norm": 1.9917,
+    "rmse_mean": 27.4448,
+    "rmse_frame": 27.5174
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 0.8907,
+    "p99": 3.269,
+    "luma": 53.917,
+    "ref_luma": 62.3556,
+    "bias": -8.4386,
+    "sigma_norm": 1.0301,
+    "rmse_mean": 16.1815,
+    "rmse_frame": 16.2228
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.6177,
+    "p99": 6.8683,
+    "luma": 61.52,
+    "ref_luma": 80.3136,
+    "bias": -18.7936,
+    "sigma_norm": 2.1118,
+    "rmse_mean": 28.4667,
+    "rmse_frame": 28.5421
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0673,
+    "p99": 0.661,
+    "luma": 86.411,
+    "ref_luma": 87.2256,
+    "bias": -0.8146,
+    "sigma_norm": 0.0679,
+    "rmse_mean": 2.2112,
+    "rmse_frame": 2.2199
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.6393,
+    "orbit_bias": -2.4296,
+    "orbit_flicker": 2.5071,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.7107,
+    "orbit_bias": -3.4224,
+    "orbit_flicker": 2.7419,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-svgf",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.49,
+    "p99": 5.5394,
+    "luma": 100.4136,
+    "ref_luma": 100.7786,
+    "bias": -0.365,
+    "sigma_norm": 0.4918,
+    "rmse_mean": 6.2947,
+    "rmse_frame": 6.4192
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6186,
+    "p99": 5.9944,
+    "luma": 98.5276,
+    "ref_luma": 98.9563,
+    "bias": -0.4287,
+    "sigma_norm": 0.6213,
+    "rmse_mean": 7.1996,
+    "rmse_frame": 7.3395
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.4767,
+    "p99": 5.0967,
+    "luma": 149.4616,
+    "ref_luma": 149.8694,
+    "bias": -0.4078,
+    "sigma_norm": 0.478,
+    "rmse_mean": 6.1851,
+    "rmse_frame": 6.3219
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 2.0631,
+    "p99": 8.1111,
+    "luma": 77.1074,
+    "ref_luma": 78.443,
+    "bias": -1.3356,
+    "sigma_norm": 2.0988,
+    "rmse_mean": 13.2639,
+    "rmse_frame": 13.5331
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.2442,
+    "p99": 5.1821,
+    "luma": 62.6369,
+    "ref_luma": 62.3556,
+    "bias": 0.2813,
+    "sigma_norm": 1.2386,
+    "rmse_mean": 9.3326,
+    "rmse_frame": 9.4796
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 2.1583,
+    "p99": 8.2332,
+    "luma": 78.79,
+    "ref_luma": 80.3136,
+    "bias": -1.5236,
+    "sigma_norm": 2.2001,
+    "rmse_mean": 13.6477,
+    "rmse_frame": 13.928
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0795,
+    "p99": 0.4443,
+    "luma": 87.1341,
+    "ref_luma": 87.2256,
+    "bias": -0.0914,
+    "sigma_norm": 0.0796,
+    "rmse_mean": 2.0339,
+    "rmse_frame": 2.0445
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 8.9186,
+    "orbit_bias": -0.5635,
+    "orbit_flicker": 2.9406,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 9.8942,
+    "orbit_bias": -0.7404,
+    "orbit_flicker": 3.0848,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-svgf-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3563,
+    "p99": 4.2072,
+    "luma": 100.807,
+    "ref_luma": 100.7786,
+    "bias": 0.0284,
+    "sigma_norm": 0.3562,
+    "rmse_mean": 6.1541,
+    "rmse_frame": 6.2263
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.4449,
+    "p99": 4.5382,
+    "luma": 99.0133,
+    "ref_luma": 98.9563,
+    "bias": 0.057,
+    "sigma_norm": 0.4447,
+    "rmse_mean": 7.1544,
+    "rmse_frame": 7.231
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.4093,
+    "p99": 4.5997,
+    "luma": 150.0937,
+    "ref_luma": 149.8694,
+    "bias": 0.2242,
+    "sigma_norm": 0.4086,
+    "rmse_mean": 3.6957,
+    "rmse_frame": 3.8353
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.4585,
+    "p99": 6.5849,
+    "luma": 78.5141,
+    "ref_luma": 78.443,
+    "bias": 0.0711,
+    "sigma_norm": 1.4572,
+    "rmse_mean": 14.1997,
+    "rmse_frame": 14.3377
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 0.8468,
+    "p99": 3.5868,
+    "luma": 63.3334,
+    "ref_luma": 62.3556,
+    "bias": 0.9778,
+    "sigma_norm": 0.8337,
+    "rmse_mean": 9.7931,
+    "rmse_frame": 9.8593
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.5296,
+    "p99": 6.7309,
+    "luma": 80.2792,
+    "ref_luma": 80.3136,
+    "bias": -0.0344,
+    "sigma_norm": 1.5303,
+    "rmse_mean": 14.6262,
+    "rmse_frame": 14.7706
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.044,
+    "p99": 0.372,
+    "luma": 87.1651,
+    "ref_luma": 87.2256,
+    "bias": -0.0604,
+    "sigma_norm": 0.0441,
+    "rmse_mean": 2.0459,
+    "rmse_frame": 2.052
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.0642,
+    "orbit_bias": 0.4063,
+    "orbit_flicker": 2.3618,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.0625,
+    "orbit_bias": 0.3282,
+    "orbit_flicker": 2.6069,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-svgf-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4158,
+    "p99": 5.0465,
+    "luma": 100.7146,
+    "ref_luma": 100.7786,
+    "bias": -0.0639,
+    "sigma_norm": 0.4161,
+    "rmse_mean": 5.9838,
+    "rmse_frame": 6.0838
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5269,
+    "p99": 5.4769,
+    "luma": 98.8785,
+    "ref_luma": 98.9563,
+    "bias": -0.0778,
+    "sigma_norm": 0.5274,
+    "rmse_mean": 6.9428,
+    "rmse_frame": 7.0528
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.4122,
+    "p99": 4.619,
+    "luma": 150.0785,
+    "ref_luma": 149.8694,
+    "bias": 0.2091,
+    "sigma_norm": 0.4116,
+    "rmse_mean": 3.74,
+    "rmse_frame": 3.8803
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.7954,
+    "p99": 7.8103,
+    "luma": 77.922,
+    "ref_luma": 78.443,
+    "bias": -0.521,
+    "sigma_norm": 1.8074,
+    "rmse_mean": 13.7227,
+    "rmse_frame": 13.934
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.0357,
+    "p99": 4.747,
+    "luma": 63.0128,
+    "ref_luma": 62.3556,
+    "bias": 0.6572,
+    "sigma_norm": 1.0249,
+    "rmse_mean": 9.6836,
+    "rmse_frame": 9.7857
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.8837,
+    "p99": 7.9584,
+    "luma": 79.6556,
+    "ref_luma": 80.3136,
+    "bias": -0.658,
+    "sigma_norm": 1.8993,
+    "rmse_mean": 14.1175,
+    "rmse_frame": 14.3387
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0526,
+    "p99": 0.4009,
+    "luma": 87.1742,
+    "ref_luma": 87.2256,
+    "bias": -0.0513,
+    "sigma_norm": 0.0526,
+    "rmse_mean": 2.0356,
+    "rmse_frame": 2.0439
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.417,
+    "orbit_bias": 0.0672,
+    "orbit_flicker": 2.4703,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 11.5306,
+    "orbit_bias": -0.0085,
+    "orbit_flicker": 2.7001,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-rec",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4462,
+    "p99": 4.2487,
+    "luma": 100.2642,
+    "ref_luma": 100.7786,
+    "bias": -0.5144,
+    "sigma_norm": 0.4485,
+    "rmse_mean": 6.2149,
+    "rmse_frame": 6.3077
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5569,
+    "p99": 4.4828,
+    "luma": 98.3059,
+    "ref_luma": 98.9563,
+    "bias": -0.6503,
+    "sigma_norm": 0.5606,
+    "rmse_mean": 7.1727,
+    "rmse_frame": 7.2736
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.4668,
+    "p99": 5.0762,
+    "luma": 149.7869,
+    "ref_luma": 149.8694,
+    "bias": -0.0826,
+    "sigma_norm": 0.4671,
+    "rmse_mean": 5.1333,
+    "rmse_frame": 5.2921
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.8139,
+    "p99": 5.8763,
+    "luma": 76.0715,
+    "ref_luma": 78.443,
+    "bias": -2.3715,
+    "sigma_norm": 1.8704,
+    "rmse_mean": 13.6916,
+    "rmse_frame": 13.8621
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.4734,
+    "p99": 5.5687,
+    "luma": 60.0954,
+    "ref_luma": 62.3556,
+    "bias": -2.2602,
+    "sigma_norm": 1.5288,
+    "rmse_mean": 9.4819,
+    "rmse_frame": 9.6741
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.8535,
+    "p99": 5.9066,
+    "luma": 77.9292,
+    "ref_luma": 80.3136,
+    "bias": -2.3844,
+    "sigma_norm": 1.9102,
+    "rmse_mean": 14.0998,
+    "rmse_frame": 14.2695
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0765,
+    "p99": 0.4131,
+    "luma": 87.0309,
+    "ref_luma": 87.2256,
+    "bias": -0.1947,
+    "sigma_norm": 0.0767,
+    "rmse_mean": 2.0368,
+    "rmse_frame": 2.0449
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.2387,
+    "orbit_bias": -0.5376,
+    "orbit_flicker": 2.6362,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 11.3783,
+    "orbit_bias": -0.7383,
+    "orbit_flicker": 2.823,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-rec-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4411,
+    "p99": 3.8347,
+    "luma": 99.7924,
+    "ref_luma": 100.7786,
+    "bias": -0.9862,
+    "sigma_norm": 0.4454,
+    "rmse_mean": 6.9001,
+    "rmse_frame": 6.9603
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5362,
+    "p99": 4.0681,
+    "luma": 97.6759,
+    "ref_luma": 98.9563,
+    "bias": -1.2804,
+    "sigma_norm": 0.5432,
+    "rmse_mean": 8.0131,
+    "rmse_frame": 8.0786
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.3452,
+    "p99": 4.0262,
+    "luma": 149.8603,
+    "ref_luma": 149.8694,
+    "bias": -0.0091,
+    "sigma_norm": 0.3452,
+    "rmse_mean": 4.9668,
+    "rmse_frame": 5.0398
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.602,
+    "p99": 5.6236,
+    "luma": 73.7449,
+    "ref_luma": 78.443,
+    "bias": -4.6981,
+    "sigma_norm": 1.7041,
+    "rmse_mean": 15.6888,
+    "rmse_frame": 15.8121
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.3722,
+    "p99": 5.2744,
+    "luma": 59.4508,
+    "ref_luma": 62.3556,
+    "bias": -2.9048,
+    "sigma_norm": 1.4393,
+    "rmse_mean": 9.9256,
+    "rmse_frame": 10.0901
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.6287,
+    "p99": 5.6585,
+    "luma": 75.4069,
+    "ref_luma": 80.3136,
+    "bias": -4.9067,
+    "sigma_norm": 1.7347,
+    "rmse_mean": 16.2266,
+    "rmse_frame": 16.348
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.1722,
+    "p99": 0.4754,
+    "luma": 86.8334,
+    "ref_luma": 87.2256,
+    "bias": -0.3922,
+    "sigma_norm": 0.173,
+    "rmse_mean": 2.0567,
+    "rmse_frame": 2.0729
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.0284,
+    "orbit_bias": -0.8697,
+    "orbit_flicker": 2.5544,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.3078,
+    "orbit_bias": -1.253,
+    "orbit_flicker": 2.76,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-fsr-rec-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4343,
+    "p99": 3.7401,
+    "luma": 99.7945,
+    "ref_luma": 100.7786,
+    "bias": -0.984,
+    "sigma_norm": 0.4386,
+    "rmse_mean": 6.9153,
+    "rmse_frame": 6.9727
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5314,
+    "p99": 3.9999,
+    "luma": 97.6771,
+    "ref_luma": 98.9563,
+    "bias": -1.2792,
+    "sigma_norm": 0.5383,
+    "rmse_mean": 8.029,
+    "rmse_frame": 8.0925
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.3242,
+    "p99": 3.6672,
+    "luma": 149.8583,
+    "ref_luma": 149.8694,
+    "bias": -0.0112,
+    "sigma_norm": 0.3242,
+    "rmse_mean": 4.9811,
+    "rmse_frame": 5.0461
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.5876,
+    "p99": 5.4621,
+    "luma": 73.73,
+    "ref_luma": 78.443,
+    "bias": -4.713,
+    "sigma_norm": 1.6891,
+    "rmse_mean": 15.7245,
+    "rmse_frame": 15.8442
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.3504,
+    "p99": 5.2611,
+    "luma": 59.3708,
+    "ref_luma": 62.3556,
+    "bias": -2.9847,
+    "sigma_norm": 1.4182,
+    "rmse_mean": 9.9724,
+    "rmse_frame": 10.1297
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.6152,
+    "p99": 5.487,
+    "luma": 75.3997,
+    "ref_luma": 80.3136,
+    "bias": -4.9139,
+    "sigma_norm": 1.7205,
+    "rmse_mean": 16.2619,
+    "rmse_frame": 16.3797
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.1731,
+    "p99": 0.4671,
+    "luma": 86.8416,
+    "ref_luma": 87.2256,
+    "bias": -0.384,
+    "sigma_norm": 0.1738,
+    "rmse_mean": 2.0554,
+    "rmse_frame": 2.0713
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.0446,
+    "orbit_bias": -0.8583,
+    "orbit_flicker": 2.5547,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.3159,
+    "orbit_bias": -1.2377,
+    "orbit_flicker": 2.7722,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-ffx",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4656,
+    "p99": 6.0921,
+    "luma": 97.9453,
+    "ref_luma": 100.2212,
+    "bias": -2.2758,
+    "sigma_norm": 0.4765,
+    "rmse_mean": 9.6122,
+    "rmse_frame": 9.7442
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5822,
+    "p99": 6.2735,
+    "luma": 94.908,
+    "ref_luma": 98.2004,
+    "bias": -3.2924,
+    "sigma_norm": 0.6024,
+    "rmse_mean": 11.4437,
+    "rmse_frame": 11.5745
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.5694,
+    "p99": 9.9911,
+    "luma": 150.1908,
+    "ref_luma": 149.7759,
+    "bias": 0.4149,
+    "sigma_norm": 0.5679,
+    "rmse_mean": 3.3813,
+    "rmse_frame": 3.9307
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.0714,
+    "p99": 13.0197,
+    "luma": 60.3848,
+    "ref_luma": 75.305,
+    "bias": -14.9202,
+    "sigma_norm": 2.5832,
+    "rmse_mean": 23.7344,
+    "rmse_frame": 23.9447
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 1.1486,
+    "p99": 3.7572,
+    "luma": 53.5414,
+    "ref_luma": 60.9386,
+    "bias": -7.3972,
+    "sigma_norm": 1.3072,
+    "rmse_mean": 14.2093,
+    "rmse_frame": 14.2844
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.1767,
+    "p99": 13.9218,
+    "luma": 61.1657,
+    "ref_luma": 76.9443,
+    "bias": -15.7786,
+    "sigma_norm": 2.7382,
+    "rmse_mean": 24.5878,
+    "rmse_frame": 24.809
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.4955,
+    "orbit_bias": -1.6515,
+    "orbit_flicker": 3.4024,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.3648,
+    "orbit_bias": -2.3687,
+    "orbit_flicker": 4.0156,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-svgf",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 1.26,
+    "p99": 21.1695,
+    "luma": 100.2944,
+    "ref_luma": 100.2212,
+    "bias": 0.0732,
+    "sigma_norm": 1.259,
+    "rmse_mean": 3.7978,
+    "rmse_frame": 5.9422
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 1.4783,
+    "p99": 20.2266,
+    "luma": 98.3633,
+    "ref_luma": 98.2004,
+    "bias": 0.1629,
+    "sigma_norm": 1.4759,
+    "rmse_mean": 4.2918,
+    "rmse_frame": 6.2417
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 2.1017,
+    "p99": 40.2238,
+    "luma": 149.5358,
+    "ref_luma": 149.7759,
+    "bias": -0.2402,
+    "sigma_norm": 2.105,
+    "rmse_mean": 3.752,
+    "rmse_frame": 8.3387
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 4.7637,
+    "p99": 25.2407,
+    "luma": 76.1253,
+    "ref_luma": 75.305,
+    "bias": 0.8203,
+    "sigma_norm": 4.7124,
+    "rmse_mean": 8.3367,
+    "rmse_frame": 10.8416
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.4267,
+    "p99": 11.0447,
+    "luma": 61.4281,
+    "ref_luma": 60.9386,
+    "bias": 0.4895,
+    "sigma_norm": 2.4074,
+    "rmse_mean": 7.0265,
+    "rmse_frame": 7.8251
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 5.0304,
+    "p99": 25.8459,
+    "luma": 77.8023,
+    "ref_luma": 76.9443,
+    "bias": 0.858,
+    "sigma_norm": 4.9749,
+    "rmse_mean": 8.4733,
+    "rmse_frame": 11.1339
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 6.2314,
+    "orbit_bias": 0.1292,
+    "orbit_flicker": 6.4909,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 6.7308,
+    "orbit_bias": 0.239,
+    "orbit_flicker": 6.6841,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-svgf-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4589,
+    "p99": 7.2418,
+    "luma": 100.607,
+    "ref_luma": 100.2212,
+    "bias": 0.3859,
+    "sigma_norm": 0.4572,
+    "rmse_mean": 3.5233,
+    "rmse_frame": 3.9131
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5376,
+    "p99": 7.1335,
+    "luma": 98.7318,
+    "ref_luma": 98.2004,
+    "bias": 0.5315,
+    "sigma_norm": 0.5347,
+    "rmse_mean": 4.1844,
+    "rmse_frame": 4.5157
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.8052,
+    "p99": 13.7456,
+    "luma": 150.0158,
+    "ref_luma": 149.7759,
+    "bias": 0.2399,
+    "sigma_norm": 0.8039,
+    "rmse_mean": 1.2406,
+    "rmse_frame": 3.0784
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 1.6755,
+    "p99": 9.5151,
+    "luma": 77.3695,
+    "ref_luma": 75.305,
+    "bias": 2.0645,
+    "sigma_norm": 1.6308,
+    "rmse_mean": 8.6993,
+    "rmse_frame": 9.0545
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 0.9006,
+    "p99": 3.7256,
+    "luma": 62.1702,
+    "ref_luma": 60.9386,
+    "bias": 1.2316,
+    "sigma_norm": 0.8827,
+    "rmse_mean": 7.2519,
+    "rmse_frame": 7.3589
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 1.7639,
+    "p99": 9.8287,
+    "luma": 79.1039,
+    "ref_luma": 76.9443,
+    "bias": 2.1596,
+    "sigma_norm": 1.7158,
+    "rmse_mean": 8.8494,
+    "rmse_frame": 9.2282
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 9.1397,
+    "orbit_bias": 0.9118,
+    "orbit_flicker": 3.3284,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 9.7853,
+    "orbit_bias": 1.0537,
+    "orbit_flicker": 3.8835,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-svgf-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.6357,
+    "p99": 10.3389,
+    "luma": 100.5356,
+    "ref_luma": 100.2212,
+    "bias": 0.3144,
+    "sigma_norm": 0.6338,
+    "rmse_mean": 3.4683,
+    "rmse_frame": 4.1095
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.7895,
+    "p99": 11.0216,
+    "luma": 98.6307,
+    "ref_luma": 98.2004,
+    "bias": 0.4303,
+    "sigma_norm": 0.7861,
+    "rmse_mean": 4.1185,
+    "rmse_frame": 4.7568
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.8084,
+    "p99": 13.9676,
+    "luma": 150.0115,
+    "ref_luma": 149.7759,
+    "bias": 0.2356,
+    "sigma_norm": 0.8071,
+    "rmse_mean": 1.2406,
+    "rmse_frame": 3.0988
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.7817,
+    "p99": 16.4299,
+    "luma": 76.9271,
+    "ref_luma": 75.305,
+    "bias": 1.6221,
+    "sigma_norm": 2.723,
+    "rmse_mean": 8.5595,
+    "rmse_frame": 9.5756
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 1.3484,
+    "p99": 6.2594,
+    "luma": 61.9333,
+    "ref_luma": 60.9386,
+    "bias": 0.9947,
+    "sigma_norm": 1.3267,
+    "rmse_mean": 7.2329,
+    "rmse_frame": 7.5064
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.9452,
+    "p99": 16.9164,
+    "luma": 78.638,
+    "ref_luma": 76.9443,
+    "bias": 1.6937,
+    "sigma_norm": 2.8818,
+    "rmse_mean": 8.698,
+    "rmse_frame": 9.784
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 6.8826,
+    "orbit_bias": 0.5748,
+    "orbit_flicker": 3.5464,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 7.7059,
+    "orbit_bias": 0.7354,
+    "orbit_flicker": 4.0571,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-rec",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.9076,
+    "p99": 11.765,
+    "luma": 100.3454,
+    "ref_luma": 100.2212,
+    "bias": 0.1242,
+    "sigma_norm": 0.9065,
+    "rmse_mean": 5.0587,
+    "rmse_frame": 5.9482
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 1.0779,
+    "p99": 10.9059,
+    "luma": 98.3869,
+    "ref_luma": 98.2004,
+    "bias": 0.1866,
+    "sigma_norm": 1.0759,
+    "rmse_mean": 5.9579,
+    "rmse_frame": 6.6931
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.3515,
+    "p99": 28.6071,
+    "luma": 149.9042,
+    "ref_luma": 149.7759,
+    "bias": 0.1282,
+    "sigma_norm": 1.3503,
+    "rmse_mean": 2.844,
+    "rmse_frame": 5.9688
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 3.675,
+    "p99": 12.5514,
+    "luma": 75.8931,
+    "ref_luma": 75.305,
+    "bias": 0.5881,
+    "sigma_norm": 3.6465,
+    "rmse_mean": 12.192,
+    "rmse_frame": 12.994
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 3.5608,
+    "p99": 14.5438,
+    "luma": 60.2828,
+    "ref_luma": 60.9386,
+    "bias": -0.6558,
+    "sigma_norm": 3.5996,
+    "rmse_mean": 6.8116,
+    "rmse_frame": 8.3796
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 3.688,
+    "p99": 12.3739,
+    "luma": 77.6743,
+    "ref_luma": 76.9443,
+    "bias": 0.73,
+    "sigma_norm": 3.6534,
+    "rmse_mean": 12.6614,
+    "rmse_frame": 13.42
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 7.6614,
+    "orbit_bias": 0.3191,
+    "orbit_flicker": 4.762,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 8.7021,
+    "orbit_bias": 0.4345,
+    "orbit_flicker": 5.1408,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-rec-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5979,
+    "p99": 8.5266,
+    "luma": 100.0298,
+    "ref_luma": 100.2212,
+    "bias": -0.1914,
+    "sigma_norm": 0.5991,
+    "rmse_mean": 5.1042,
+    "rmse_frame": 5.5169
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.7636,
+    "p99": 8.9546,
+    "luma": 97.916,
+    "ref_luma": 98.2004,
+    "bias": -0.2843,
+    "sigma_norm": 0.7658,
+    "rmse_mean": 6.0191,
+    "rmse_frame": 6.3886
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.4986,
+    "p99": 13.4979,
+    "luma": 149.9962,
+    "ref_luma": 149.7759,
+    "bias": 0.2203,
+    "sigma_norm": 0.4978,
+    "rmse_mean": 2.6832,
+    "rmse_frame": 3.8783
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 3.0088,
+    "p99": 12.5337,
+    "luma": 73.7721,
+    "ref_luma": 75.305,
+    "bias": -1.5329,
+    "sigma_norm": 3.0713,
+    "rmse_mean": 12.3643,
+    "rmse_frame": 12.9867
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.5074,
+    "p99": 10.6347,
+    "luma": 59.0006,
+    "ref_luma": 60.9386,
+    "bias": -1.938,
+    "sigma_norm": 2.5898,
+    "rmse_mean": 7.094,
+    "rmse_frame": 7.9094
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 3.066,
+    "p99": 12.69,
+    "luma": 75.4576,
+    "ref_luma": 76.9443,
+    "bias": -1.4866,
+    "sigma_norm": 3.1264,
+    "rmse_mean": 12.8288,
+    "rmse_frame": 13.4447
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 8.1137,
+    "orbit_bias": 0.0225,
+    "orbit_flicker": 3.768,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 9.2483,
+    "orbit_bias": -0.0081,
+    "orbit_flicker": 4.3033,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-rt-nofsr-rec-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "rt",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5558,
+    "p99": 8.0034,
+    "luma": 100.026,
+    "ref_luma": 100.2212,
+    "bias": -0.1952,
+    "sigma_norm": 0.5569,
+    "rmse_mean": 5.0869,
+    "rmse_frame": 5.3794
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.7453,
+    "p99": 8.729,
+    "luma": 97.909,
+    "ref_luma": 98.2004,
+    "bias": -0.2914,
+    "sigma_norm": 0.7476,
+    "rmse_mean": 6.0041,
+    "rmse_frame": 6.3293
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.3172,
+    "p99": 6.8009,
+    "luma": 150.0018,
+    "ref_luma": 149.7759,
+    "bias": 0.2258,
+    "sigma_norm": 0.3167,
+    "rmse_mean": 2.5829,
+    "rmse_frame": 2.9777
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 3.0159,
+    "p99": 12.7292,
+    "luma": 73.7402,
+    "ref_luma": 75.305,
+    "bias": -1.5648,
+    "sigma_norm": 3.0799,
+    "rmse_mean": 12.3517,
+    "rmse_frame": 12.9809
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.5001,
+    "p99": 10.4433,
+    "luma": 58.9116,
+    "ref_luma": 60.9386,
+    "bias": -2.027,
+    "sigma_norm": 2.5861,
+    "rmse_mean": 7.2122,
+    "rmse_frame": 8.0127
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 3.0748,
+    "p99": 12.8973,
+    "luma": 75.4322,
+    "ref_luma": 76.9443,
+    "bias": -1.5121,
+    "sigma_norm": 3.1364,
+    "rmse_mean": 12.8077,
+    "rmse_frame": 13.4314
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 8.0858,
+    "orbit_bias": 0.0204,
+    "orbit_flicker": 3.5556,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 9.2408,
+    "orbit_bias": -0.0083,
+    "orbit_flicker": 4.1948,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-ffx",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3655,
+    "p99": 3.5778,
+    "luma": 98.1053,
+    "ref_luma": 100.7786,
+    "bias": -2.6732,
+    "sigma_norm": 0.3755,
+    "rmse_mean": 12.9382,
+    "rmse_frame": 12.9661
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.4513,
+    "p99": 3.8233,
+    "luma": 95.3417,
+    "ref_luma": 98.9563,
+    "bias": -3.6146,
+    "sigma_norm": 0.4684,
+    "rmse_mean": 15.241,
+    "rmse_frame": 15.2705
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.5913,
+    "p99": 4.0475,
+    "luma": 150.2616,
+    "ref_luma": 149.8694,
+    "bias": 0.3921,
+    "sigma_norm": 0.5898,
+    "rmse_mean": 7.9023,
+    "rmse_frame": 7.9744
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.1648,
+    "p99": 5.625,
+    "luma": 64.1435,
+    "ref_luma": 78.443,
+    "bias": -14.2995,
+    "sigma_norm": 1.4245,
+    "rmse_mean": 30.6502,
+    "rmse_frame": 30.6937
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 0.8853,
+    "p99": 3.2036,
+    "luma": 53.6114,
+    "ref_luma": 62.3556,
+    "bias": -8.7441,
+    "sigma_norm": 1.0297,
+    "rmse_mean": 17.3493,
+    "rmse_frame": 17.3871
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.1973,
+    "p99": 5.797,
+    "luma": 65.3682,
+    "ref_luma": 80.3136,
+    "bias": -14.9454,
+    "sigma_norm": 1.4711,
+    "rmse_mean": 31.8382,
+    "rmse_frame": 31.8825
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0647,
+    "p99": 0.6355,
+    "luma": 86.4105,
+    "ref_luma": 87.2256,
+    "bias": -0.8151,
+    "sigma_norm": 0.0653,
+    "rmse_mean": 2.2197,
+    "rmse_frame": 2.2276
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 13.7613,
+    "orbit_bias": -2.2668,
+    "orbit_flicker": 2.4642,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 16.1184,
+    "orbit_bias": -3.1962,
+    "orbit_flicker": 2.7037,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-svgf",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5448,
+    "p99": 5.8554,
+    "luma": 100.543,
+    "ref_luma": 100.7786,
+    "bias": -0.2356,
+    "sigma_norm": 0.5461,
+    "rmse_mean": 8.5562,
+    "rmse_frame": 8.6649
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6716,
+    "p99": 6.2178,
+    "luma": 98.7037,
+    "ref_luma": 98.9563,
+    "bias": -0.2526,
+    "sigma_norm": 0.6733,
+    "rmse_mean": 9.9034,
+    "rmse_frame": 10.0193
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 1.0351,
+    "p99": 7.6374,
+    "luma": 149.6858,
+    "ref_luma": 149.8694,
+    "bias": -0.1836,
+    "sigma_norm": 1.0363,
+    "rmse_mean": 8.0764,
+    "rmse_frame": 8.3411
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.5927,
+    "p99": 7.4889,
+    "luma": 77.6016,
+    "ref_luma": 78.443,
+    "bias": -0.8414,
+    "sigma_norm": 1.61,
+    "rmse_mean": 18.6153,
+    "rmse_frame": 18.7516
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.1946,
+    "p99": 4.8297,
+    "luma": 61.5407,
+    "ref_luma": 62.3556,
+    "bias": -0.8149,
+    "sigma_norm": 1.2104,
+    "rmse_mean": 11.2685,
+    "rmse_frame": 11.3767
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.639,
+    "p99": 7.6249,
+    "luma": 79.4691,
+    "ref_luma": 80.3136,
+    "bias": -0.8445,
+    "sigma_norm": 1.6565,
+    "rmse_mean": 19.2888,
+    "rmse_frame": 19.4283
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0735,
+    "p99": 0.4196,
+    "luma": 87.1295,
+    "ref_luma": 87.2256,
+    "bias": -0.0961,
+    "sigma_norm": 0.0736,
+    "rmse_mean": 2.0317,
+    "rmse_frame": 2.041
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.3455,
+    "orbit_bias": -0.5811,
+    "orbit_flicker": 2.9414,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 11.6357,
+    "orbit_bias": -0.7539,
+    "orbit_flicker": 3.0653,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-svgf-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3912,
+    "p99": 4.2918,
+    "luma": 100.9734,
+    "ref_luma": 100.7786,
+    "bias": 0.1949,
+    "sigma_norm": 0.3904,
+    "rmse_mean": 8.777,
+    "rmse_frame": 8.8324
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.477,
+    "p99": 4.547,
+    "luma": 99.2219,
+    "ref_luma": 98.9563,
+    "bias": 0.2656,
+    "sigma_norm": 0.4757,
+    "rmse_mean": 10.2399,
+    "rmse_frame": 10.2967
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.7359,
+    "p99": 5.4506,
+    "luma": 150.8059,
+    "ref_luma": 149.8694,
+    "bias": 0.9364,
+    "sigma_norm": 0.7314,
+    "rmse_mean": 7.6339,
+    "rmse_frame": 7.7705
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.1564,
+    "p99": 6.0053,
+    "luma": 78.5302,
+    "ref_luma": 78.443,
+    "bias": 0.0872,
+    "sigma_norm": 1.1551,
+    "rmse_mean": 19.5127,
+    "rmse_frame": 19.5859
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 0.7982,
+    "p99": 3.8893,
+    "luma": 62.3,
+    "ref_luma": 62.3556,
+    "bias": -0.0556,
+    "sigma_norm": 0.7989,
+    "rmse_mean": 11.4516,
+    "rmse_frame": 11.505
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.198,
+    "p99": 6.1438,
+    "luma": 80.4174,
+    "ref_luma": 80.3136,
+    "bias": 0.1038,
+    "sigma_norm": 1.1965,
+    "rmse_mean": 20.2427,
+    "rmse_frame": 20.318
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0522,
+    "p99": 0.3994,
+    "luma": 87.155,
+    "ref_luma": 87.2256,
+    "bias": -0.0706,
+    "sigma_norm": 0.0523,
+    "rmse_mean": 2.0477,
+    "rmse_frame": 2.0549
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.855,
+    "orbit_bias": 0.4251,
+    "orbit_flicker": 2.3666,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.1512,
+    "orbit_bias": 0.374,
+    "orbit_flicker": 2.614,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-svgf-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4466,
+    "p99": 4.8171,
+    "luma": 100.8922,
+    "ref_luma": 100.7786,
+    "bias": 0.1136,
+    "sigma_norm": 0.4461,
+    "rmse_mean": 8.6188,
+    "rmse_frame": 8.6877
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5495,
+    "p99": 5.1679,
+    "luma": 99.1114,
+    "ref_luma": 98.9563,
+    "bias": 0.1551,
+    "sigma_norm": 0.5487,
+    "rmse_mean": 10.0454,
+    "rmse_frame": 10.1189
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.7468,
+    "p99": 5.458,
+    "luma": 150.7874,
+    "ref_luma": 149.8694,
+    "bias": 0.918,
+    "sigma_norm": 0.7422,
+    "rmse_mean": 7.6467,
+    "rmse_frame": 7.7836
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.4059,
+    "p99": 7.0343,
+    "luma": 78.0996,
+    "ref_luma": 78.443,
+    "bias": -0.3434,
+    "sigma_norm": 1.4121,
+    "rmse_mean": 19.0612,
+    "rmse_frame": 19.1708
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.0033,
+    "p99": 4.5372,
+    "luma": 62.0048,
+    "ref_luma": 62.3556,
+    "bias": -0.3508,
+    "sigma_norm": 1.0089,
+    "rmse_mean": 11.4213,
+    "rmse_frame": 11.5013
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.4527,
+    "p99": 7.184,
+    "luma": 79.9711,
+    "ref_luma": 80.3136,
+    "bias": -0.3425,
+    "sigma_norm": 1.4589,
+    "rmse_mean": 19.7587,
+    "rmse_frame": 19.8714
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.074,
+    "p99": 0.4306,
+    "luma": 87.1411,
+    "ref_luma": 87.2256,
+    "bias": -0.0844,
+    "sigma_norm": 0.0741,
+    "rmse_mean": 2.0368,
+    "rmse_frame": 2.0455
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.5287,
+    "orbit_bias": 0.1117,
+    "orbit_flicker": 2.4735,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.9203,
+    "orbit_bias": 0.068,
+    "orbit_flicker": 2.711,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-rec",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5025,
+    "p99": 5.1502,
+    "luma": 100.582,
+    "ref_luma": 100.7786,
+    "bias": -0.1966,
+    "sigma_norm": 0.5035,
+    "rmse_mean": 8.9414,
+    "rmse_frame": 9.0271
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6234,
+    "p99": 5.389,
+    "luma": 98.7094,
+    "ref_luma": 98.9563,
+    "bias": -0.2469,
+    "sigma_norm": 0.6249,
+    "rmse_mean": 10.3954,
+    "rmse_frame": 10.4858
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.9938,
+    "p99": 7.0766,
+    "luma": 150.2565,
+    "ref_luma": 149.8694,
+    "bias": 0.387,
+    "sigma_norm": 0.9913,
+    "rmse_mean": 8.1589,
+    "rmse_frame": 8.3921
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.5034,
+    "p99": 5.7138,
+    "luma": 76.9754,
+    "ref_luma": 78.443,
+    "bias": -1.4676,
+    "sigma_norm": 1.5321,
+    "rmse_mean": 19.6699,
+    "rmse_frame": 19.7664
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.4493,
+    "p99": 5.0517,
+    "luma": 59.5044,
+    "ref_luma": 62.3556,
+    "bias": -2.8512,
+    "sigma_norm": 1.5188,
+    "rmse_mean": 11.324,
+    "rmse_frame": 11.4723
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.5097,
+    "p99": 5.7766,
+    "luma": 79.0069,
+    "ref_luma": 80.3136,
+    "bias": -1.3067,
+    "sigma_norm": 1.5347,
+    "rmse_mean": 20.4201,
+    "rmse_frame": 20.5144
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0432,
+    "p99": 0.3906,
+    "luma": 87.1336,
+    "ref_luma": 87.2256,
+    "bias": -0.092,
+    "sigma_norm": 0.0432,
+    "rmse_mean": 2.0289,
+    "rmse_frame": 2.0345
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.1171,
+    "orbit_bias": -0.3827,
+    "orbit_flicker": 2.6888,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.6051,
+    "orbit_bias": -0.5212,
+    "orbit_flicker": 2.861,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-rec-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5274,
+    "p99": 4.4084,
+    "luma": 100.0244,
+    "ref_luma": 100.7786,
+    "bias": -0.7542,
+    "sigma_norm": 0.5314,
+    "rmse_mean": 9.2871,
+    "rmse_frame": 9.3482
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6257,
+    "p99": 4.6065,
+    "luma": 98.0048,
+    "ref_luma": 98.9563,
+    "bias": -0.9515,
+    "sigma_norm": 0.6318,
+    "rmse_mean": 10.8335,
+    "rmse_frame": 10.8975
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.8205,
+    "p99": 5.8812,
+    "luma": 150.2303,
+    "ref_luma": 149.8694,
+    "bias": 0.3608,
+    "sigma_norm": 0.8185,
+    "rmse_mean": 7.4098,
+    "rmse_frame": 7.5761
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.3255,
+    "p99": 5.3446,
+    "luma": 74.8179,
+    "ref_luma": 78.443,
+    "bias": -3.6251,
+    "sigma_norm": 1.3897,
+    "rmse_mean": 21.0542,
+    "rmse_frame": 21.128
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.3167,
+    "p99": 4.9365,
+    "luma": 58.742,
+    "ref_luma": 62.3556,
+    "bias": -3.6136,
+    "sigma_norm": 1.3977,
+    "rmse_mean": 11.9684,
+    "rmse_frame": 12.0894
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.3265,
+    "p99": 5.3934,
+    "luma": 76.6872,
+    "ref_luma": 80.3136,
+    "bias": -3.6264,
+    "sigma_norm": 1.3892,
+    "rmse_mean": 21.867,
+    "rmse_frame": 21.9385
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.2003,
+    "p99": 0.4841,
+    "luma": 86.7883,
+    "ref_luma": 87.2256,
+    "bias": -0.4373,
+    "sigma_norm": 0.2013,
+    "rmse_mean": 2.0749,
+    "rmse_frame": 2.0934
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.3312,
+    "orbit_bias": -0.755,
+    "orbit_flicker": 2.6387,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.8941,
+    "orbit_bias": -1.0653,
+    "orbit_flicker": 2.8356,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-fsr-rec-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4375,
+    "p99": 3.8156,
+    "luma": 100.1384,
+    "ref_luma": 100.7786,
+    "bias": -0.6402,
+    "sigma_norm": 0.4403,
+    "rmse_mean": 9.1776,
+    "rmse_frame": 9.2239
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5293,
+    "p99": 4.0529,
+    "luma": 98.1155,
+    "ref_luma": 98.9563,
+    "bias": -0.8408,
+    "sigma_norm": 0.5338,
+    "rmse_mean": 10.7254,
+    "rmse_frame": 10.775
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.5618,
+    "p99": 4.7176,
+    "luma": 150.378,
+    "ref_luma": 149.8694,
+    "bias": 0.5086,
+    "sigma_norm": 0.5599,
+    "rmse_mean": 6.84,
+    "rmse_frame": 6.9371
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.322,
+    "p99": 5.363,
+    "luma": 74.8062,
+    "ref_luma": 78.443,
+    "bias": -3.6368,
+    "sigma_norm": 1.3863,
+    "rmse_mean": 21.0522,
+    "rmse_frame": 21.1262
+   },
+   "model_gloss": {
+    "px": 17571,
+    "sigma": 1.3325,
+    "p99": 4.8848,
+    "luma": 58.7773,
+    "ref_luma": 62.3556,
+    "bias": -3.5782,
+    "sigma_norm": 1.4136,
+    "rmse_mean": 11.9541,
+    "rmse_frame": 12.0775
+   },
+   "model_rough": {
+    "px": 151113,
+    "sigma": 1.3208,
+    "p99": 5.4277,
+    "luma": 76.67,
+    "ref_luma": 80.3136,
+    "bias": -3.6436,
+    "sigma_norm": 1.3836,
+    "rmse_mean": 21.8657,
+    "rmse_frame": 21.9374
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.1545,
+    "p99": 0.472,
+    "luma": 86.9221,
+    "ref_luma": 87.2256,
+    "bias": -0.3035,
+    "sigma_norm": 0.155,
+    "rmse_mean": 2.0459,
+    "rmse_frame": 2.06
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.5595,
+    "orbit_bias": -0.7169,
+    "orbit_flicker": 2.5751,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.0993,
+    "orbit_bias": -1.0253,
+    "orbit_flicker": 2.7947,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-ffx",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5971,
+    "p99": 8.9325,
+    "luma": 97.99,
+    "ref_luma": 100.2212,
+    "bias": -2.2311,
+    "sigma_norm": 0.6107,
+    "rmse_mean": 12.596,
+    "rmse_frame": 12.7683
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6926,
+    "p99": 8.7472,
+    "luma": 95.0876,
+    "ref_luma": 98.2004,
+    "bias": -3.1128,
+    "sigma_norm": 0.7153,
+    "rmse_mean": 14.8736,
+    "rmse_frame": 15.0262
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.5825,
+    "p99": 14.5763,
+    "luma": 148.124,
+    "ref_luma": 149.7759,
+    "bias": -1.652,
+    "sigma_norm": 1.6001,
+    "rmse_mean": 9.0379,
+    "rmse_frame": 9.7797
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 1.3778,
+    "p99": 9.5923,
+    "luma": 63.7654,
+    "ref_luma": 75.305,
+    "bias": -11.5396,
+    "sigma_norm": 1.6272,
+    "rmse_mean": 29.568,
+    "rmse_frame": 29.678
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 1.203,
+    "p99": 3.6278,
+    "luma": 53.5576,
+    "ref_luma": 60.9386,
+    "bias": -7.381,
+    "sigma_norm": 1.3687,
+    "rmse_mean": 17.5147,
+    "rmse_frame": 17.5794
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 1.3978,
+    "p99": 10.5817,
+    "luma": 64.9301,
+    "ref_luma": 76.9443,
+    "bias": -12.0142,
+    "sigma_norm": 1.6564,
+    "rmse_mean": 30.6434,
+    "rmse_frame": 30.7574
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 13.0873,
+    "orbit_bias": -2.1799,
+    "orbit_flicker": 4.1214,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 15.4374,
+    "orbit_bias": -3.0434,
+    "orbit_flicker": 4.8131,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-svgf",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 2.2882,
+    "p99": 39.6496,
+    "luma": 99.5949,
+    "ref_luma": 100.2212,
+    "bias": -0.6263,
+    "sigma_norm": 2.3026,
+    "rmse_mean": 10.073,
+    "rmse_frame": 13.0558
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 2.586,
+    "p99": 38.8194,
+    "luma": 97.5332,
+    "ref_luma": 98.2004,
+    "bias": -0.6672,
+    "sigma_norm": 2.6037,
+    "rmse_mean": 11.5155,
+    "rmse_frame": 14.3378
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 7.3292,
+    "p99": 64.0654,
+    "luma": 146.7211,
+    "ref_luma": 149.7759,
+    "bias": -3.0549,
+    "sigma_norm": 7.4818,
+    "rmse_mean": 12.4248,
+    "rmse_frame": 20.5188
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 3.3835,
+    "p99": 23.2501,
+    "luma": 75.9519,
+    "ref_luma": 75.305,
+    "bias": 0.6469,
+    "sigma_norm": 3.3547,
+    "rmse_mean": 20.1479,
+    "rmse_frame": 20.9632
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.0595,
+    "p99": 9.3303,
+    "luma": 60.1779,
+    "ref_luma": 60.9386,
+    "bias": -0.7607,
+    "sigma_norm": 2.0855,
+    "rmse_mean": 12.9726,
+    "rmse_frame": 13.294
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 3.5346,
+    "p99": 23.8241,
+    "luma": 77.7518,
+    "ref_luma": 76.9443,
+    "bias": 0.8075,
+    "sigma_norm": 3.4979,
+    "rmse_mean": 20.81,
+    "rmse_frame": 21.6664
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.1807,
+    "orbit_bias": -0.8598,
+    "orbit_flicker": 11.5165,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.6388,
+    "orbit_bias": -1.0779,
+    "orbit_flicker": 12.5055,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-svgf-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.6583,
+    "p99": 10.4071,
+    "luma": 100.1351,
+    "ref_luma": 100.2212,
+    "bias": -0.0861,
+    "sigma_norm": 0.6589,
+    "rmse_mean": 9.0447,
+    "rmse_frame": 9.3291
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.7434,
+    "p99": 10.0409,
+    "luma": 98.1346,
+    "ref_luma": 98.2004,
+    "bias": -0.0658,
+    "sigma_norm": 0.7439,
+    "rmse_mean": 10.5897,
+    "rmse_frame": 10.8375
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.9844,
+    "p99": 17.4025,
+    "luma": 148.3135,
+    "ref_luma": 149.7759,
+    "bias": -1.4625,
+    "sigma_norm": 2.0039,
+    "rmse_mean": 8.5398,
+    "rmse_frame": 9.5982
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 1.1597,
+    "p99": 8.0557,
+    "luma": 76.9572,
+    "ref_luma": 75.305,
+    "bias": 1.6522,
+    "sigma_norm": 1.1348,
+    "rmse_mean": 20.1142,
+    "rmse_frame": 20.2141
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 0.8,
+    "p99": 3.1722,
+    "luma": 60.7289,
+    "ref_luma": 60.9386,
+    "bias": -0.2097,
+    "sigma_norm": 0.8027,
+    "rmse_mean": 13.0035,
+    "rmse_frame": 13.0493
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 1.2007,
+    "p99": 8.3287,
+    "luma": 78.8089,
+    "ref_luma": 76.9443,
+    "bias": 1.8647,
+    "sigma_norm": 1.1723,
+    "rmse_mean": 20.7714,
+    "rmse_frame": 20.8759
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.8666,
+    "orbit_bias": 0.0738,
+    "orbit_flicker": 3.8924,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.1686,
+    "orbit_bias": -0.0731,
+    "orbit_flicker": 4.546,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-svgf-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.7919,
+    "p99": 11.8544,
+    "luma": 100.0669,
+    "ref_luma": 100.2212,
+    "bias": -0.1543,
+    "sigma_norm": 0.7932,
+    "rmse_mean": 9.0563,
+    "rmse_frame": 9.42
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.9346,
+    "p99": 12.0256,
+    "luma": 98.0376,
+    "ref_luma": 98.2004,
+    "bias": -0.1627,
+    "sigma_norm": 0.9361,
+    "rmse_mean": 10.6039,
+    "rmse_frame": 10.9493
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.9909,
+    "p99": 17.4852,
+    "luma": 148.3094,
+    "ref_luma": 149.7759,
+    "bias": -1.4665,
+    "sigma_norm": 2.0106,
+    "rmse_mean": 8.5474,
+    "rmse_frame": 9.6102
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 1.9895,
+    "p99": 15.3087,
+    "luma": 76.5349,
+    "ref_luma": 75.305,
+    "bias": 1.2299,
+    "sigma_norm": 1.9575,
+    "rmse_mean": 20.1421,
+    "rmse_frame": 20.4686
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 1.1125,
+    "p99": 5.3113,
+    "luma": 60.56,
+    "ref_luma": 60.9386,
+    "bias": -0.3786,
+    "sigma_norm": 1.1194,
+    "rmse_mean": 13.0049,
+    "rmse_frame": 13.1127
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.0895,
+    "p99": 15.7745,
+    "luma": 78.3577,
+    "ref_luma": 76.9443,
+    "bias": 1.4134,
+    "sigma_norm": 2.0518,
+    "rmse_mean": 20.8014,
+    "rmse_frame": 21.146
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 9.5784,
+    "orbit_bias": -0.2119,
+    "orbit_flicker": 4.0979,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 10.9992,
+    "orbit_bias": -0.3504,
+    "orbit_flicker": 4.7149,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-rec",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 1.4448,
+    "p99": 25.5123,
+    "luma": 99.8298,
+    "ref_luma": 100.2212,
+    "bias": -0.3914,
+    "sigma_norm": 1.4505,
+    "rmse_mean": 9.9384,
+    "rmse_frame": 11.2214
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 1.6222,
+    "p99": 24.3271,
+    "luma": 97.7721,
+    "ref_luma": 98.2004,
+    "bias": -0.4283,
+    "sigma_norm": 1.6293,
+    "rmse_mean": 11.603,
+    "rmse_frame": 12.7424
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 4.1559,
+    "p99": 41.9171,
+    "luma": 147.6681,
+    "ref_luma": 149.7759,
+    "bias": -2.1079,
+    "sigma_norm": 4.2152,
+    "rmse_mean": 10.0457,
+    "rmse_frame": 14.2841
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.8442,
+    "p99": 12.6365,
+    "luma": 76.0075,
+    "ref_luma": 75.305,
+    "bias": 0.7025,
+    "sigma_norm": 2.8179,
+    "rmse_mean": 21.6608,
+    "rmse_frame": 22.0246
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 3.194,
+    "p99": 13.1876,
+    "luma": 59.2256,
+    "ref_luma": 60.9386,
+    "bias": -1.713,
+    "sigma_norm": 3.2864,
+    "rmse_mean": 13.1802,
+    "rmse_frame": 13.8687
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.8042,
+    "p99": 12.5573,
+    "luma": 77.9224,
+    "ref_luma": 76.9443,
+    "bias": 0.9781,
+    "sigma_norm": 2.7691,
+    "rmse_mean": 22.4256,
+    "rmse_frame": 22.7702
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.5096,
+    "orbit_bias": -0.4328,
+    "orbit_flicker": 6.1828,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 12.1386,
+    "orbit_bias": -0.5856,
+    "orbit_flicker": 6.8192,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-rec-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.6464,
+    "p99": 9.6873,
+    "luma": 99.6909,
+    "ref_luma": 100.2212,
+    "bias": -0.5303,
+    "sigma_norm": 0.6499,
+    "rmse_mean": 9.5811,
+    "rmse_frame": 9.8503
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.796,
+    "p99": 10.2189,
+    "luma": 97.4981,
+    "ref_luma": 98.2004,
+    "bias": -0.7023,
+    "sigma_norm": 0.8017,
+    "rmse_mean": 11.2431,
+    "rmse_frame": 11.4941
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.2184,
+    "p99": 18.1901,
+    "luma": 148.4189,
+    "ref_luma": 149.7759,
+    "bias": -1.357,
+    "sigma_norm": 1.2295,
+    "rmse_mean": 8.4652,
+    "rmse_frame": 9.2439
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.2339,
+    "p99": 12.1826,
+    "luma": 74.0089,
+    "ref_luma": 75.305,
+    "bias": -1.2962,
+    "sigma_norm": 2.273,
+    "rmse_mean": 21.662,
+    "rmse_frame": 21.9413
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.329,
+    "p99": 9.4402,
+    "luma": 58.6858,
+    "ref_luma": 60.9386,
+    "bias": -2.2528,
+    "sigma_norm": 2.4184,
+    "rmse_mean": 13.2845,
+    "rmse_frame": 13.6479
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.2231,
+    "p99": 12.401,
+    "luma": 75.7573,
+    "ref_luma": 76.9443,
+    "bias": -1.187,
+    "sigma_norm": 2.2579,
+    "rmse_mean": 22.4198,
+    "rmse_frame": 22.6958
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.3129,
+    "orbit_bias": -0.5829,
+    "orbit_flicker": 4.1407,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 11.9971,
+    "orbit_bias": -0.8354,
+    "orbit_flicker": 4.797,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "defaults-hybrid-nofsr-rec-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "defaults",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5835,
+    "p99": 8.3864,
+    "luma": 99.6906,
+    "ref_luma": 100.2212,
+    "bias": -0.5306,
+    "sigma_norm": 0.5866,
+    "rmse_mean": 9.5762,
+    "rmse_frame": 9.7516
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.7425,
+    "p99": 9.0169,
+    "luma": 97.4951,
+    "ref_luma": 98.2004,
+    "bias": -0.7053,
+    "sigma_norm": 0.7478,
+    "rmse_mean": 11.2397,
+    "rmse_frame": 11.4261
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.9451,
+    "p99": 10.8441,
+    "luma": 148.4339,
+    "ref_luma": 149.7759,
+    "bias": -1.3421,
+    "sigma_norm": 0.9537,
+    "rmse_mean": 8.4134,
+    "rmse_frame": 8.7637
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.2484,
+    "p99": 12.1744,
+    "luma": 73.9845,
+    "ref_luma": 75.305,
+    "bias": -1.3205,
+    "sigma_norm": 2.2885,
+    "rmse_mean": 21.6787,
+    "rmse_frame": 21.96
+   },
+   "model_gloss": {
+    "px": 17277,
+    "sigma": 2.3277,
+    "p99": 9.3595,
+    "luma": 58.7858,
+    "ref_luma": 60.9386,
+    "bias": -2.1528,
+    "sigma_norm": 2.4129,
+    "rmse_mean": 13.2314,
+    "rmse_frame": 13.5996
+   },
+   "model_rough": {
+    "px": 151414,
+    "sigma": 2.2393,
+    "p99": 12.4314,
+    "luma": 75.7187,
+    "ref_luma": 76.9443,
+    "bias": -1.2256,
+    "sigma_norm": 2.2755,
+    "rmse_mean": 22.4413,
+    "rmse_frame": 22.7193
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 10.2903,
+    "orbit_bias": -0.58,
+    "orbit_flicker": 3.9555,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 11.9871,
+    "orbit_bias": -0.8284,
+    "orbit_flicker": 4.6826,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-ffx",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3274,
+    "p99": 3.4591,
+    "luma": 97.0956,
+    "ref_luma": 98.177,
+    "bias": -1.0814,
+    "sigma_norm": 0.3311,
+    "rmse_mean": 10.6018,
+    "rmse_frame": 10.635
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.3951,
+    "p99": 3.7097,
+    "luma": 93.9289,
+    "ref_luma": 95.2378,
+    "bias": -1.3089,
+    "sigma_norm": 0.4006,
+    "rmse_mean": 12.4105,
+    "rmse_frame": 12.4457
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.5879,
+    "p99": 4.0528,
+    "luma": 149.942,
+    "ref_luma": 149.8632,
+    "bias": 0.0788,
+    "sigma_norm": 0.5876,
+    "rmse_mean": 7.7713,
+    "rmse_frame": 7.8438
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 0.9189,
+    "p99": 5.8823,
+    "luma": 58.2591,
+    "ref_luma": 62.1334,
+    "bias": -3.8743,
+    "sigma_norm": 0.98,
+    "rmse_mean": 24.4309,
+    "rmse_frame": 24.4841
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 0.9189,
+    "p99": 5.8823,
+    "luma": 58.2591,
+    "ref_luma": 62.1334,
+    "bias": -3.8743,
+    "sigma_norm": 0.98,
+    "rmse_mean": 24.4309,
+    "rmse_frame": 24.4841
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0678,
+    "p99": 0.6678,
+    "luma": 86.4157,
+    "ref_luma": 87.2187,
+    "bias": -0.803,
+    "sigma_norm": 0.0684,
+    "rmse_mean": 2.2259,
+    "rmse_frame": 2.2337
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.1476,
+    "orbit_bias": -0.6962,
+    "orbit_flicker": 2.3616,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.1437,
+    "orbit_bias": -0.961,
+    "orbit_flicker": 2.5618,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-svgf",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5276,
+    "p99": 5.7522,
+    "luma": 96.7622,
+    "ref_luma": 98.177,
+    "bias": -1.4148,
+    "sigma_norm": 0.5353,
+    "rmse_mean": 11.054,
+    "rmse_frame": 11.1513
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6285,
+    "p99": 6.1673,
+    "luma": 93.3607,
+    "ref_luma": 95.2378,
+    "bias": -1.8771,
+    "sigma_norm": 0.6411,
+    "rmse_mean": 12.9598,
+    "rmse_frame": 13.0642
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 1.0522,
+    "p99": 7.6177,
+    "luma": 149.299,
+    "ref_luma": 149.8632,
+    "bias": -0.5642,
+    "sigma_norm": 1.0562,
+    "rmse_mean": 8.3036,
+    "rmse_frame": 8.5632
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.2522,
+    "p99": 8.3638,
+    "luma": 54.7777,
+    "ref_luma": 62.1334,
+    "bias": -7.3557,
+    "sigma_norm": 1.4203,
+    "rmse_mean": 25.4519,
+    "rmse_frame": 25.5852
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 1.2522,
+    "p99": 8.3638,
+    "luma": 54.7777,
+    "ref_luma": 62.1334,
+    "bias": -7.3557,
+    "sigma_norm": 1.4203,
+    "rmse_mean": 25.4519,
+    "rmse_frame": 25.5852
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.1281,
+    "p99": 0.4533,
+    "luma": 87.0371,
+    "ref_luma": 87.2187,
+    "bias": -0.1816,
+    "sigma_norm": 0.1284,
+    "rmse_mean": 2.089,
+    "rmse_frame": 2.1011
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.7871,
+    "orbit_bias": -1.5646,
+    "orbit_flicker": 2.9267,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.6876,
+    "orbit_bias": -2.175,
+    "orbit_flicker": 3.0392,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-svgf-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3684,
+    "p99": 4.5005,
+    "luma": 97.6525,
+    "ref_luma": 98.177,
+    "bias": -0.5245,
+    "sigma_norm": 0.3704,
+    "rmse_mean": 10.0147,
+    "rmse_frame": 10.0658
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.4449,
+    "p99": 4.8436,
+    "luma": 94.5066,
+    "ref_luma": 95.2378,
+    "bias": -0.7312,
+    "sigma_norm": 0.4483,
+    "rmse_mean": 11.7657,
+    "rmse_frame": 11.8182
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.7376,
+    "p99": 5.5627,
+    "luma": 150.4343,
+    "ref_luma": 149.8632,
+    "bias": 0.5711,
+    "sigma_norm": 0.7348,
+    "rmse_mean": 7.4587,
+    "rmse_frame": 7.6007
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.0166,
+    "p99": 7.2785,
+    "luma": 58.2221,
+    "ref_luma": 62.1334,
+    "bias": -3.9113,
+    "sigma_norm": 1.0849,
+    "rmse_mean": 23.0298,
+    "rmse_frame": 23.0981
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 1.0166,
+    "p99": 7.2785,
+    "luma": 58.2221,
+    "ref_luma": 62.1334,
+    "bias": -3.9113,
+    "sigma_norm": 1.0849,
+    "rmse_mean": 23.0298,
+    "rmse_frame": 23.0981
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0507,
+    "p99": 0.3923,
+    "luma": 87.1552,
+    "ref_luma": 87.2187,
+    "bias": -0.0635,
+    "sigma_norm": 0.0508,
+    "rmse_mean": 2.0774,
+    "rmse_frame": 2.0828
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 13.9814,
+    "orbit_bias": -0.1095,
+    "orbit_flicker": 2.2777,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 15.6069,
+    "orbit_bias": -0.4304,
+    "orbit_flicker": 2.501,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-svgf-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3778,
+    "p99": 4.5752,
+    "luma": 97.6209,
+    "ref_luma": 98.177,
+    "bias": -0.5561,
+    "sigma_norm": 0.38,
+    "rmse_mean": 9.9779,
+    "rmse_frame": 10.031
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.4547,
+    "p99": 4.962,
+    "luma": 94.4677,
+    "ref_luma": 95.2378,
+    "bias": -0.7701,
+    "sigma_norm": 0.4584,
+    "rmse_mean": 11.7213,
+    "rmse_frame": 11.7759
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.7468,
+    "p99": 5.5495,
+    "luma": 150.4206,
+    "ref_luma": 149.8632,
+    "bias": 0.5573,
+    "sigma_norm": 0.744,
+    "rmse_mean": 7.4755,
+    "rmse_frame": 7.619
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.0302,
+    "p99": 7.6344,
+    "luma": 58.1158,
+    "ref_luma": 62.1334,
+    "bias": -4.0176,
+    "sigma_norm": 1.1014,
+    "rmse_mean": 22.9209,
+    "rmse_frame": 22.9934
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 1.0302,
+    "p99": 7.6344,
+    "luma": 58.1158,
+    "ref_luma": 62.1334,
+    "bias": -4.0176,
+    "sigma_norm": 1.1014,
+    "rmse_mean": 22.9209,
+    "rmse_frame": 22.9934
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0592,
+    "p99": 0.3969,
+    "luma": 87.1362,
+    "ref_luma": 87.2187,
+    "bias": -0.0825,
+    "sigma_norm": 0.0592,
+    "rmse_mean": 2.0783,
+    "rmse_frame": 2.0843
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 13.0371,
+    "orbit_bias": -0.3864,
+    "orbit_flicker": 2.3913,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.8387,
+    "orbit_bias": -0.6702,
+    "orbit_flicker": 2.5945,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-rec",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.5065,
+    "p99": 5.7886,
+    "luma": 97.2573,
+    "ref_luma": 98.177,
+    "bias": -0.9197,
+    "sigma_norm": 0.5112,
+    "rmse_mean": 10.1343,
+    "rmse_frame": 10.2309
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6199,
+    "p99": 6.2667,
+    "luma": 93.9902,
+    "ref_luma": 95.2378,
+    "bias": -1.2476,
+    "sigma_norm": 0.6282,
+    "rmse_mean": 11.8673,
+    "rmse_frame": 11.972
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 1.0096,
+    "p99": 6.9788,
+    "luma": 149.8565,
+    "ref_luma": 149.8632,
+    "bias": -0.0067,
+    "sigma_norm": 1.0096,
+    "rmse_mean": 8.1321,
+    "rmse_frame": 8.3652
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.4125,
+    "p99": 9.5338,
+    "luma": 56.652,
+    "ref_luma": 62.1334,
+    "bias": -5.4814,
+    "sigma_norm": 1.5492,
+    "rmse_mean": 23.0197,
+    "rmse_frame": 23.1602
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 1.4125,
+    "p99": 9.5338,
+    "luma": 56.652,
+    "ref_luma": 62.1334,
+    "bias": -5.4814,
+    "sigma_norm": 1.5492,
+    "rmse_mean": 23.0197,
+    "rmse_frame": 23.1602
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0675,
+    "p99": 0.4061,
+    "luma": 87.1429,
+    "ref_luma": 87.2187,
+    "bias": -0.0758,
+    "sigma_norm": 0.0676,
+    "rmse_mean": 2.0687,
+    "rmse_frame": 2.0758
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.449,
+    "orbit_bias": -0.8312,
+    "orbit_flicker": 2.6339,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.2677,
+    "orbit_bias": -1.2231,
+    "orbit_flicker": 2.7795,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-rec-C",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4372,
+    "p99": 4.8837,
+    "luma": 97.1202,
+    "ref_luma": 98.177,
+    "bias": -1.0568,
+    "sigma_norm": 0.442,
+    "rmse_mean": 10.1407,
+    "rmse_frame": 10.2048
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.5314,
+    "p99": 5.2697,
+    "luma": 93.7891,
+    "ref_luma": 95.2378,
+    "bias": -1.4487,
+    "sigma_norm": 0.5396,
+    "rmse_mean": 11.8913,
+    "rmse_frame": 11.96
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.8018,
+    "p99": 5.9023,
+    "luma": 149.9521,
+    "ref_luma": 149.8632,
+    "bias": 0.0888,
+    "sigma_norm": 0.8014,
+    "rmse_mean": 7.3339,
+    "rmse_frame": 7.5034
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 1.2087,
+    "p99": 7.8359,
+    "luma": 55.8803,
+    "ref_luma": 62.1334,
+    "bias": -6.2531,
+    "sigma_norm": 1.344,
+    "rmse_mean": 23.4368,
+    "rmse_frame": 23.528
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 1.2087,
+    "p99": 7.8359,
+    "luma": 55.8803,
+    "ref_luma": 62.1334,
+    "bias": -6.2531,
+    "sigma_norm": 1.344,
+    "rmse_mean": 23.4368,
+    "rmse_frame": 23.528
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0888,
+    "p99": 0.4428,
+    "luma": 87.0814,
+    "ref_luma": 87.2187,
+    "bias": -0.1373,
+    "sigma_norm": 0.0889,
+    "rmse_mean": 2.0658,
+    "rmse_frame": 2.0742
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.6568,
+    "orbit_bias": -0.9959,
+    "orbit_flicker": 2.568,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.5454,
+    "orbit_bias": -1.4765,
+    "orbit_flicker": 2.7326,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-fsr-rec-D",
+  "cfg": {
+   "resolve": "1.5",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.3008,
+    "p99": 3.8541,
+    "luma": 97.347,
+    "ref_luma": 98.177,
+    "bias": -0.83,
+    "sigma_norm": 0.3034,
+    "rmse_mean": 9.8118,
+    "rmse_frame": 9.8504
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.3686,
+    "p99": 4.1605,
+    "luma": 94.0752,
+    "ref_luma": 95.2378,
+    "bias": -1.1626,
+    "sigma_norm": 0.3731,
+    "rmse_mean": 11.5131,
+    "rmse_frame": 11.5539
+   },
+   "table": {
+    "px": 252937,
+    "sigma": 0.526,
+    "p99": 4.7789,
+    "luma": 150.1884,
+    "ref_luma": 149.8632,
+    "bias": 0.3252,
+    "sigma_norm": 0.5248,
+    "rmse_mean": 6.7006,
+    "rmse_frame": 6.7997
+   },
+   "model": {
+    "px": 168684,
+    "sigma": 0.9296,
+    "p99": 6.4127,
+    "luma": 56.682,
+    "ref_luma": 62.1334,
+    "bias": -5.4514,
+    "sigma_norm": 1.019,
+    "rmse_mean": 22.834,
+    "rmse_frame": 22.8926
+   },
+   "model_gloss": {
+    "px": 168684,
+    "sigma": 0.9296,
+    "p99": 6.4127,
+    "luma": 56.682,
+    "ref_luma": 62.1334,
+    "bias": -5.4514,
+    "sigma_norm": 1.019,
+    "rmse_mean": 22.834,
+    "rmse_frame": 22.8926
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638179,
+    "sigma": 0.0453,
+    "p99": 0.3894,
+    "luma": 87.1523,
+    "ref_luma": 87.2187,
+    "bias": -0.0663,
+    "sigma_norm": 0.0454,
+    "rmse_mean": 2.0648,
+    "rmse_frame": 2.0699
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.7273,
+    "orbit_bias": -0.7897,
+    "orbit_flicker": 2.5038,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.5699,
+    "orbit_bias": -1.2085,
+    "orbit_flicker": 2.6966,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-ffx",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "ffx",
+   "right": "ffx"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.7275,
+    "p99": 12.2543,
+    "luma": 96.4365,
+    "ref_luma": 97.1346,
+    "bias": -0.6981,
+    "sigma_norm": 0.7327,
+    "rmse_mean": 9.9599,
+    "rmse_frame": 10.3232
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.8753,
+    "p99": 13.5407,
+    "luma": 92.95,
+    "ref_luma": 93.7872,
+    "bias": -0.8372,
+    "sigma_norm": 0.8832,
+    "rmse_mean": 11.6382,
+    "rmse_frame": 12.0101
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.6053,
+    "p99": 14.9655,
+    "luma": 147.2651,
+    "ref_luma": 149.7745,
+    "bias": -2.5094,
+    "sigma_norm": 1.6326,
+    "rmse_mean": 9.7413,
+    "rmse_frame": 10.4514
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.1629,
+    "p99": 22.1405,
+    "luma": 55.2932,
+    "ref_luma": 55.9158,
+    "bias": -0.6226,
+    "sigma_norm": 2.1872,
+    "rmse_mean": 21.9297,
+    "rmse_frame": 22.4876
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 2.1629,
+    "p99": 22.1405,
+    "luma": 55.2932,
+    "ref_luma": 55.9158,
+    "bias": -0.6226,
+    "sigma_norm": 2.1872,
+    "rmse_mean": 21.9297,
+    "rmse_frame": 22.4876
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.792,
+    "orbit_bias": -0.4997,
+    "orbit_flicker": 5.0934,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.8497,
+    "orbit_bias": -0.6,
+    "orbit_flicker": 5.9955,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-svgf",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 3.196,
+    "p99": 52.308,
+    "luma": 95.605,
+    "ref_luma": 97.1346,
+    "bias": -1.5296,
+    "sigma_norm": 3.2471,
+    "rmse_mean": 11.0539,
+    "rmse_frame": 15.6804
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 3.8515,
+    "p99": 56.3061,
+    "luma": 91.9305,
+    "ref_luma": 93.7872,
+    "bias": -1.8568,
+    "sigma_norm": 3.9292,
+    "rmse_mean": 12.6198,
+    "rmse_frame": 17.5524
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 7.6031,
+    "p99": 66.1095,
+    "luma": 145.6976,
+    "ref_luma": 149.7745,
+    "bias": -4.0769,
+    "sigma_norm": 7.8159,
+    "rmse_mean": 13.7321,
+    "rmse_frame": 21.8534
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 8.6763,
+    "p99": 77.6506,
+    "luma": 52.4202,
+    "ref_luma": 55.9158,
+    "bias": -3.4956,
+    "sigma_norm": 9.2548,
+    "rmse_mean": 22.0193,
+    "rmse_frame": 28.7832
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 8.6763,
+    "p99": 77.6506,
+    "luma": 52.4202,
+    "ref_luma": 55.9158,
+    "bias": -3.4956,
+    "sigma_norm": 9.2548,
+    "rmse_mean": 22.0193,
+    "rmse_frame": 28.7832
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 15.1329,
+    "orbit_bias": -1.5499,
+    "orbit_flicker": 15.2655,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 17.2384,
+    "orbit_bias": -2.0107,
+    "orbit_flicker": 17.1786,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-svgf-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "antiLag": "off",
+    "temporalAlpha": 0.03125
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.8733,
+    "p99": 14.2127,
+    "luma": 96.3981,
+    "ref_luma": 97.1346,
+    "bias": -0.7365,
+    "sigma_norm": 0.88,
+    "rmse_mean": 9.6869,
+    "rmse_frame": 10.192
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 1.0455,
+    "p99": 15.6118,
+    "luma": 92.881,
+    "ref_luma": 93.7872,
+    "bias": -0.9062,
+    "sigma_norm": 1.0557,
+    "rmse_mean": 11.3552,
+    "rmse_frame": 11.8731
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 2.0118,
+    "p99": 17.99,
+    "luma": 147.3767,
+    "ref_luma": 149.7745,
+    "bias": -2.3978,
+    "sigma_norm": 2.0446,
+    "rmse_mean": 9.0904,
+    "rmse_frame": 10.1384
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.4693,
+    "p99": 26.5603,
+    "luma": 54.8848,
+    "ref_luma": 55.9158,
+    "bias": -1.031,
+    "sigma_norm": 2.5156,
+    "rmse_mean": 21.5777,
+    "rmse_frame": 22.3261
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 2.4693,
+    "p99": 26.5603,
+    "luma": 54.8848,
+    "ref_luma": 55.9158,
+    "bias": -1.031,
+    "sigma_norm": 2.5156,
+    "rmse_mean": 21.5777,
+    "rmse_frame": 22.3261
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.072,
+    "orbit_bias": -0.0894,
+    "orbit_flicker": 5.0177,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.7057,
+    "orbit_bias": -0.2723,
+    "orbit_flicker": 5.9071,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-svgf-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "svgf",
+   "right": "svgf",
+   "svgf": {
+    "temporalAlpha": 0.03125,
+    "antiLagNoiseFloor": 3
+   },
+   "patches": [
+    {
+     "label": "svgf-specular temporal",
+     "find": "return clamp(aSpec + 1.0, 1.0, P0.maxHistory);",
+     "replace": "return clamp(aSpec + 8.0, 1.0, P0.maxHistory);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.9138,
+    "p99": 14.7296,
+    "luma": 96.3769,
+    "ref_luma": 97.1346,
+    "bias": -0.7578,
+    "sigma_norm": 0.921,
+    "rmse_mean": 9.5943,
+    "rmse_frame": 10.1953
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 1.1023,
+    "p99": 16.6082,
+    "luma": 92.8507,
+    "ref_luma": 93.7872,
+    "bias": -0.9365,
+    "sigma_norm": 1.1134,
+    "rmse_mean": 11.2416,
+    "rmse_frame": 11.8751
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 2.0194,
+    "p99": 18.2499,
+    "luma": 147.3749,
+    "ref_luma": 149.7745,
+    "bias": -2.3996,
+    "sigma_norm": 2.0523,
+    "rmse_mean": 9.0945,
+    "rmse_frame": 10.1533
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.7125,
+    "p99": 33.5659,
+    "luma": 54.754,
+    "ref_luma": 55.9158,
+    "bias": -1.1619,
+    "sigma_norm": 2.7701,
+    "rmse_mean": 21.3133,
+    "rmse_frame": 22.3252
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 2.7125,
+    "p99": 33.5659,
+    "luma": 54.754,
+    "ref_luma": 55.9158,
+    "bias": -1.1619,
+    "sigma_norm": 2.7701,
+    "rmse_mean": 21.3133,
+    "rmse_frame": 22.3252
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.2503,
+    "orbit_bias": -0.3225,
+    "orbit_flicker": 5.2249,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.0635,
+    "orbit_bias": -0.4697,
+    "orbit_flicker": 6.0874,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-rec",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent"
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 1.9275,
+    "p99": 38.706,
+    "luma": 96.0293,
+    "ref_luma": 97.1346,
+    "bias": -1.1053,
+    "sigma_norm": 1.9497,
+    "rmse_mean": 10.1694,
+    "rmse_frame": 12.7461
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 2.3089,
+    "p99": 43.6248,
+    "luma": 92.4329,
+    "ref_luma": 93.7872,
+    "bias": -1.3543,
+    "sigma_norm": 2.3427,
+    "rmse_mean": 11.8299,
+    "rmse_frame": 14.5988
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 4.1489,
+    "p99": 42.4169,
+    "luma": 146.6882,
+    "ref_luma": 149.7745,
+    "bias": -3.0864,
+    "sigma_norm": 4.2362,
+    "rmse_mean": 10.8794,
+    "rmse_frame": 14.9387
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 5.8873,
+    "p99": 67.7089,
+    "luma": 53.6005,
+    "ref_luma": 55.9158,
+    "bias": -2.3153,
+    "sigma_norm": 6.1416,
+    "rmse_mean": 21.7303,
+    "rmse_frame": 26.1911
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 5.8873,
+    "p99": 67.7089,
+    "luma": 53.6005,
+    "ref_luma": 55.9158,
+    "bias": -2.3153,
+    "sigma_norm": 6.1416,
+    "rmse_mean": 21.7303,
+    "rmse_frame": 26.1911
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 12.3792,
+    "orbit_bias": -0.6843,
+    "orbit_flicker": 8.6108,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 14.4055,
+    "orbit_bias": -0.8911,
+    "orbit_flicker": 9.8491,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-rec-C",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false
+   }
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.726,
+    "p99": 16.0938,
+    "luma": 96.2644,
+    "ref_luma": 97.1346,
+    "bias": -0.8702,
+    "sigma_norm": 0.7325,
+    "rmse_mean": 9.7677,
+    "rmse_frame": 10.439
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.9044,
+    "p99": 18.333,
+    "luma": 92.6817,
+    "ref_luma": 93.7872,
+    "bias": -1.1055,
+    "sigma_norm": 0.9152,
+    "rmse_mean": 11.4519,
+    "rmse_frame": 12.191
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 1.224,
+    "p99": 18.4408,
+    "luma": 147.5416,
+    "ref_luma": 149.7745,
+    "bias": -2.2329,
+    "sigma_norm": 1.2425,
+    "rmse_mean": 9.1084,
+    "rmse_frame": 9.8514
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 2.7253,
+    "p99": 39.1736,
+    "luma": 53.7977,
+    "ref_luma": 55.9158,
+    "bias": -2.1181,
+    "sigma_norm": 2.8326,
+    "rmse_mean": 21.7941,
+    "rmse_frame": 23.218
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 2.7253,
+    "p99": 39.1736,
+    "luma": 53.7977,
+    "ref_luma": 55.9158,
+    "bias": -2.1181,
+    "sigma_norm": 2.8326,
+    "rmse_mean": 21.7941,
+    "rmse_frame": 23.218
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.8605,
+    "orbit_bias": -0.5881,
+    "orbit_flicker": 5.5095,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.88,
+    "orbit_bias": -0.8024,
+    "orbit_flicker": 6.4606,
+    "samples": 8
+   }
+  }
+ },
+ {
+  "name": "ben-hybrid-nofsr-rec-D",
+  "cfg": {
+   "resolve": "off",
+   "tableRough": 0,
+   "preset": "ben",
+   "refl": "hybrid",
+   "left": "recurrent",
+   "right": "recurrent",
+   "recurrent": {
+    "historyAntiLag": false,
+    "tune": {
+     "detRough": 0
+    }
+   },
+   "patches": [
+    {
+     "label": "recurrent-specular temporal",
+     "find": "return min(aSpec, P0.aCap);",
+     "replace": "return min(max(aSpec, 7.0), P0.aCap);"
+    }
+   ]
+  },
+  "still": {
+   "all": {
+    "px": 1059800,
+    "sigma": 0.4992,
+    "p99": 9.5711,
+    "luma": 96.265,
+    "ref_luma": 97.1346,
+    "bias": -0.8696,
+    "sigma_norm": 0.5037,
+    "rmse_mean": 9.678,
+    "rmse_frame": 9.9364
+   },
+   "crop": {
+    "px": 741200,
+    "sigma": 0.6189,
+    "p99": 10.7975,
+    "luma": 92.6791,
+    "ref_luma": 93.7872,
+    "bias": -1.1082,
+    "sigma_norm": 0.6263,
+    "rmse_mean": 11.345,
+    "rmse_frame": 11.6314
+   },
+   "table": {
+    "px": 252990,
+    "sigma": 0.9485,
+    "p99": 11.0613,
+    "luma": 147.5666,
+    "ref_luma": 149.7745,
+    "bias": -2.2079,
+    "sigma_norm": 0.9627,
+    "rmse_mean": 9.0334,
+    "rmse_frame": 9.365
+   },
+   "model": {
+    "px": 168691,
+    "sigma": 1.7136,
+    "p99": 22.8469,
+    "luma": 53.7636,
+    "ref_luma": 55.9158,
+    "bias": -2.1522,
+    "sigma_norm": 1.7822,
+    "rmse_mean": 21.5884,
+    "rmse_frame": 22.1078
+   },
+   "model_gloss": {
+    "px": 168691,
+    "sigma": 1.7136,
+    "p99": 22.8469,
+    "luma": 53.7636,
+    "ref_luma": 55.9158,
+    "bias": -2.1522,
+    "sigma_norm": 1.7822,
+    "rmse_mean": 21.5884,
+    "rmse_frame": 22.1078
+   },
+   "model_rough": {
+    "px": 0,
+    "sigma": NaN,
+    "p99": NaN,
+    "luma": NaN,
+    "ref_luma": NaN,
+    "bias": NaN,
+    "sigma_norm": NaN,
+    "rmse_mean": NaN,
+    "rmse_frame": NaN
+   },
+   "bg": {
+    "px": 638119,
+    "sigma": 0.0,
+    "p99": 0.0,
+    "luma": 87.1613,
+    "ref_luma": 87.1613,
+    "bias": 0.0,
+    "sigma_norm": 0.0,
+    "rmse_mean": 0.0,
+    "rmse_frame": 0.0
+   }
+  },
+  "orbit": {
+   "all": {
+    "orbit_rmse": 11.8178,
+    "orbit_bias": -0.5732,
+    "orbit_flicker": 5.1081,
+    "samples": 8
+   },
+   "crop": {
+    "orbit_rmse": 13.8509,
+    "orbit_bias": -0.7812,
+    "orbit_flicker": 6.0707,
+    "samples": 8
+   }
+  }
+ }
+]
