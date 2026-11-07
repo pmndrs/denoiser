@@ -122,8 +122,8 @@ Dashboard regenerated (commit after c175f0e) incl. golden G3 orbit and G4 pan-li
 - **Where stride changes the story:** accumulate-32 and svgf rise 2.5-3.5x from k = 1 to k = 8 (their output is correlated); on specular
   the smooth-static advantage over FFX shrinks (corner-orbit 0.0004 vs 0.0019 at k = 1, 0.0019 vs 0.0028 at k = 8; corner-pan
   0.0006 vs 0.0019 -> 0.0042 vs 0.0046) and the moving region goes from near-tie to 1.9x worse for ours (knot-static specular 0.0138 vs 0.0131 -> 0.0300 vs 0.0161).
-  On Sponza / Bistro diffuse there is no FFX; ours has 0.7-0.8x of accumulate-32's k = 1 boil in the moving region but 1.3-1.8x at k = 8 on the
-  pans (Bistro pan 0.0604 vs 0.0090 -> 0.0684 vs 0.0270).
+  On Sponza / Bistro diffuse there is no FFX; ours boils more than accumulate-32 in the moving region on orbits and pans (Bistro pan 0.0604 vs 0.0090 at k = 1, 0.0684 vs 0.0270 at k = 8: the ratio
+  falls from 6.7x to 2.5x because accumulate-32 is the correlated one), while in smooth static regions ours is calmer at both strides.
 - **Calibration set rebuilt**: 256 px windows, clips from the settle frame to the end of the capture at 24 fps (32 frames = 1.3 s) for calm,
   lag and trade-off. The kept captures have 40-48 frames, so 96+ frames (4 s) is not possible until T0-scenes makes 128-frame calm paths
   (ask: G2 occluder, G3 orbit / hold, G4 hold, 128 frames, fixed seeds). 10 pairs per metric; half the calm pairs are stride-1 vs stride-8
