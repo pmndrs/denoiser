@@ -316,7 +316,7 @@ On `track/s-shadows` (cut from `1c24a8d`):
   written to a separate debug texture, histories untouched) and `clampHistoryNoise` (experiment); scorers and scripts in
   `results/data/s/`.
 - `ee515da` option `antiLagNoise` (experiment); round scripts and region scores.
-- {LAST-COMMIT} this report, round-4 scores, bench data, images.
+- `53dcbda` this report, round-4 scores, bench data, images.
 
 **Default byte identity:** every new branch is behind a pipeline variant that leaves the default WGSL text unchanged
 (`TemporalVariant.historyNoise` / `antiLagNoise` undefined; `SHADOW_STABILIZE_WGSL` untouched, the debug variant is a
