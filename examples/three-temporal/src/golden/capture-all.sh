@@ -19,4 +19,8 @@ cap G3 hold 32 16384 golden-G3-hold
 cap G4 hold-light-on 32 16384 golden-G4-hold-light-on
 cap G2 occluder 64 4096 golden-G2-occluder
 cap G5 turntable 64 4096 golden-G5-turntable
+cap G2 drift 64 4096 golden-G2-drift
+cap G2 drift-held 64 4096 golden-G2-drift-held
+cap G2 drift-frozen 64 4096 golden-G2-drift-frozen
+cap G3 move 64 4096 golden-G3-move
 du -sh ../../tools/rt-capture/captures/golden-*
