@@ -26,7 +26,9 @@ export function headlessLoad() {
   } catch { return 0; }
 }
 
-export async function acquireGpu(task, { log = console.log, pollMs = 4000 } = {}) {
+export async function acquireGpu(task, { log = console.log, pollMs = 1000 } = {}) {
+  // under tools/gpu-lock.sh (fair queue) the caller already holds the lock: SCORECARD_LOCK_HELD=1
+  if (process.env.SCORECARD_LOCK_HELD === '1') return () => {};
   let warned = false;
   for (;;) {
     try {

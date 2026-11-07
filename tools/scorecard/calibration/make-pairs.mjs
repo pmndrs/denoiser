@@ -73,6 +73,8 @@ if (!process.argv.includes('--skip-replay')) {
   }
 }
 
+if (process.argv.includes('--replay-only')) { log('replays done (--replay-only)'); process.exit(0); }
+
 // ---- 2. windowed metrics
 const candidates = { calm: [], detail: [], lag: [] };
 const rel = (x, y) => Math.abs(x - y) / Math.max(x, y, 1e-9);

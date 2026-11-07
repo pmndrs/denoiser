@@ -69,6 +69,7 @@ export function captureInfo(m) {
 function historyTaps(m, mo, vz, pvz, mz, depth, pdepth, refL, prefL) {
   const W = m.width, H = m.height, N = W * H;
   const tapW = new Int32Array(N).fill(-1), tapN = new Int32Array(N).fill(-1);
+  const fpI = new Int32Array(N * 4).fill(-1), fpW = new Float32Array(N * 4);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = y * W + x;
     if (!isScored(depth[i])) continue;
@@ -82,13 +83,14 @@ function historyTaps(m, mo, vz, pvz, mz, depth, pdepth, refL, prefL) {
       if (w <= 1e-3 || qx < 0 || qy < 0 || qx >= W || qy >= H) continue;
       const q = qy * W + qx;
       if (!isScored(pdepth[q]) || Math.abs(pvz[q] - zExp) > tol) continue;
+      fpI[i * 4 + k] = q; fpW[i * 4 + k] = w;
       if (w > bestW) { bestW = w; best = q; }
       const d = Math.abs(refL[i] - prefL[q]);
       if (d < dmin) { dmin = d; near = q; }
     }
     tapW[i] = best; tapN[i] = near;
   }
-  return { tapW, tapN };
+  return { tapW, tapN, fpI, fpW };
 }
 
 const REGIONS = ['static', 'moving', 'disocc', 'dense'];
@@ -109,7 +111,25 @@ function edgeMask(normal, vz, depth, W, H) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (e[y * W + x]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const qx = x + dx, qy = y + dy; if (qx >= 0 && qy >= 0 && qx < W && qy < H) o[qy * W + qx] = 1; }
   return o;
 }
-const newAcc = () => ({ s: 0, e: 0, n: 0, px: 0 });
+const HB = 512, HSTEP = 0.001, POP = 0.03;   // per-pixel boil histogram (tail numbers); pop = per-pixel boil above the reference's by POP
+const newAcc = () => ({ s: 0, e: 0, n: 0, px: 0, pop: 0, hist: new Uint32Array(HB) });
+const addPx = (acc, s2, ch, e2, mRefPx, m) => { acc.s += s2; acc.e += e2; acc.n += ch; acc.px++; acc.hist[Math.min(HB - 1, Math.floor(m / HSTEP))]++; if (m > mRefPx + POP) acc.pop++; };
+const pctl = (hist, px, q) => { if (!px) return NaN; let c = 0; const t = q * px; for (let b = 0; b < HB; b++) { c += hist[b]; if (c >= t) return (b + 1) * HSTEP; } return HB * HSTEP; };
+/** bilinear sample of arr (ch values per pixel) at each pixel's reprojected footprint (valid taps only, weights renormalised); NaN where the footprint is < 50 % valid or a tap is NaN */
+function warp(arr, ch, fpI, fpW, N) {
+  const out = new Float32Array(N * ch).fill(NaN);
+  for (let i = 0; i < N; i++) {
+    let sw = 0;
+    for (let k = 0; k < 4; k++) if (fpI[i * 4 + k] >= 0) sw += fpW[i * 4 + k];
+    if (sw < 0.5) continue;
+    for (let c = 0; c < ch; c++) {
+      let v = 0;
+      for (let k = 0; k < 4; k++) { const q = fpI[i * 4 + k]; if (q >= 0) v += fpW[i * 4 + k] * arr[q * ch + c]; }
+      out[i * ch + c] = v / sw;   // NaN taps propagate
+    }
+  }
+  return out;
+}
 
 /**
  * Score every source of one signal.
@@ -167,7 +187,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
     for (let i = 0; i < N; i++) refL[i] = lumaOf(refT, i);
 
     // ---- history, age, dynamic flag, regions
-    let tapW = null, tapPrevForT2 = null;
+    let tapW = null, tapPrevForT2 = null, fp = null;
     const age = new Uint8Array(N), lag = new Float32Array(N * K_DYN).fill(NaN);
     const region = new Uint8Array(N); // 0 = not scored for boil, 1 static (smooth), 2 moving, 3 disoccluded, 4 dense geometry (static but creases / silhouettes)
     for (let i = 0; i < N; i++) lag[i * K_DYN] = refL[i];
@@ -176,7 +196,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       const vz = readBuffer(capDir, f, 'viewz');
       const mz = hasMz ? readBuffer(capDir, f, 'motion_z') : null;
       const t = historyTaps(m, mo, vz, prev.vz, mz, depth, prev.depth, refL, prev.refL);
-      tapW = t.tapW;
+      tapW = t.tapW; fp = t;
       const edge = edgeMask(readBuffer(capDir, f, 'normal'), vz, depth, W, H);
       for (let i = 0; i < N; i++) {
         const a = tapW[i];
@@ -209,8 +229,19 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
           s2 += d * d; if (Math.abs(d) >= LEGACY_SMOOTH) smooth = false;
         }
         if (smooth) { R.legacy.s += s2; R.legacy.n += ch; }
-        const r = region[i];
-        if (r) { const acc = R.boil[REGIONS[r - 1]]; acc.s += s2; acc.n += ch; }
+      }
+    }
+    // bilinear history (two hops): a = x_(t-1), b = x_(t-2) sampled at this frame's reprojected footprint
+    const Ra = fp && R.h1 ? warp(R.h1, ch, fp.fpI, fp.fpW, N) : null, Rb = Ra && R.w1 ? warp(R.w1, ch, fp.fpI, fp.fpW, N) : null;
+    const mRef = new Float32Array(N);
+    if (inRange && Ra && Rb) {
+      for (let i = 0; i < N; i++) {
+        const r = region[i]; if (!r) continue;
+        let s2 = 0, bad = false;
+        for (let c = 0; c < ch; c++) { const d = refT[i * ch + c] - 2 * Ra[i * ch + c] + Rb[i * ch + c]; if (d !== d) { bad = true; break; } s2 += d * d; }
+        if (bad) { region[i] = 0; continue; }
+        const m = Math.sqrt(s2 / ch / 6); mRef[i] = m;
+        addPx(R.boil[REGIONS[r - 1]], s2, ch, 0, 0, m);
       }
     }
     if (doSigma && sinceReset >= o.settle && inRange) {
@@ -249,24 +280,39 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
         }
         src.biasSum += bs; src.biasN += bn; src.biasRaw += braw;
       }
-      // boil (new regions + legacy), error boil
+      // legacy smooth-mask boil (nearest tap, two hops: score-captures.mjs, for the imported native rows)
       if (inRange && tapW && tapPrevForT2 && src.h1 && src.h2 && R.h1 && R.h2) {
         for (let i = 0; i < N; i++) {
           if (!isScored(depth[i]) || (winMask && !winMask[i])) continue;
           const a = tapW[i]; if (a < 0) continue;
           const b = tapPrevForT2[a]; if (b < 0) continue;
-          let s2 = 0, smooth = true, e2 = 0;
+          let s2 = 0, smooth = true;
           for (let c = 0; c < ch; c++) {
             const d = outT[i * ch + c] - 2 * src.h1[a * ch + c] + src.h2[b * ch + c];
             const dr = refT[i * ch + c] - 2 * R.h1[a * ch + c] + R.h2[b * ch + c];
-            s2 += d * d; e2 += (d - dr) * (d - dr);
+            s2 += d * d;
             if (Math.abs(dr) >= LEGACY_SMOOTH) smooth = false;
           }
           if (smooth) { src.legacy.s += s2; src.legacy.n += ch; }
-          const rg = region[i];
-          if (rg) { const acc = src.boil[REGIONS[rg - 1]]; acc.s += s2; acc.e += e2; acc.n += ch; }
         }
       }
+      // boil per region on the bilinear two-hop history, error boil, tail histogram
+      const sa = fp && src.h1 ? warp(src.h1, ch, fp.fpI, fp.fpW, N) : null, sb = sa && src.w1 ? warp(src.w1, ch, fp.fpI, fp.fpW, N) : null;
+      if (inRange && sa && sb && Ra && Rb) {
+        for (let i = 0; i < N; i++) {
+          const rg = region[i]; if (!rg) continue;
+          let s2 = 0, e2 = 0, bad = false;
+          for (let c = 0; c < ch; c++) {
+            const d = outT[i * ch + c] - 2 * sa[i * ch + c] + sb[i * ch + c];
+            const dr = refT[i * ch + c] - 2 * Ra[i * ch + c] + Rb[i * ch + c];
+            if (d !== d || dr !== dr) { bad = true; break; }
+            s2 += d * d; e2 += (d - dr) * (d - dr);
+          }
+          if (bad) continue;
+          addPx(src.boil[REGIONS[rg - 1]], s2, ch, e2, mRef[i], Math.sqrt(s2 / ch / 6));
+        }
+      }
+      src.w1 = reset ? null : sa;
       if (doSigma && sinceReset >= o.settle && inRange) {
         src.nSig++;
         for (let i = 0; i < N; i++) { const x = lumaOf(outT, i), dlt = x - src.mean[i]; src.mean[i] += dlt / src.nSig; src.m2[i] += dlt * (x - src.mean[i]); }
@@ -275,6 +321,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       if (reset) { src.h1 = outT; src.h2 = null; } else { src.h2 = src.h1; src.h1 = outT; }
     }
     // shift the reference's history after the sources used it
+    R.w1 = reset ? null : Ra;
     if (reset) { R.h1 = refT; R.h2 = null; } else { R.h2 = R.h1; R.h1 = refT; }
     prev = { tapW: tapW ?? new Int32Array(N).fill(-1), age, lag, refL, depth, vz: readBuffer(capDir, f, 'viewz') };
     if (f % 8 === 0) log(`  ${signal} frame ${f}/${m.frames.length}`);
@@ -308,9 +355,10 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
   const regionRes = (acc, refAcc) => {
     const v = acc.n ? Math.sqrt(acc.s / acc.n / 6) : NaN;
     const rv = refAcc.n ? Math.sqrt(refAcc.s / refAcc.n / 6) : NaN;
-    return { boil: v, refBoil: rv, ratio: rv > 1e-4 ? v / rv : null, errBoil: acc.n ? Math.sqrt(acc.e / acc.n / 6) : NaN, n: acc.n };
+    return { boil: v, refBoil: rv, ratio: rv > 1e-4 ? v / rv : null, errBoil: acc.n ? Math.sqrt(acc.e / acc.n / 6) : NaN, n: acc.n,
+      p99: pctl(acc.hist, acc.px, 0.99), refP99: pctl(refAcc.hist, refAcc.px, 0.99), popFrac: acc.px ? acc.pop / acc.px : NaN };
   };
-  const sumAcc = (g) => REGIONS.reduce((t, r) => ({ s: t.s + g[r].s, e: t.e + g[r].e, n: t.n + g[r].n }), { s: 0, e: 0, n: 0 });
+  const sumAcc = (g) => REGIONS.reduce((t, r) => { const h = new Uint32Array(HB); for (let b = 0; b < HB; b++) h[b] = t.hist[b] + g[r].hist[b]; return { s: t.s + g[r].s, e: t.e + g[r].e, n: t.n + g[r].n, px: t.px + g[r].px, pop: t.pop + g[r].pop, hist: h }; }, newAcc());
   const rows = {};
   for (const s of S) {
     const sig = sigmaOf(s);

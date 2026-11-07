@@ -51,6 +51,8 @@ export function evaluateGates(gates, scene, results) {
 // ---- formatting
 const f = (x, k = 3) => (fin(x) ? x.toFixed(k) : '–');
 const boilCell = (r) => (r && fin(r.boil) ? r.boil.toFixed(4) : '–');
+const tailOne = (r) => (r && fin(r.p99) ? `${r.p99.toFixed(3)}/${(100 * r.popFrac).toFixed(1)}%` : '–');
+const tailCell = (c) => ['static', 'dense', 'moving'].map((k) => tailOne(c?.[k])).join(' · ');
 const lagCell = (lags) => (lags?.length ? lags.map((l) => `${l.kind} ${l.lag === null || l.lag === undefined ? '–' : l.lag}`).join(', ') : '–');
 const sigmaCell = (c) => (c?.calm?.sigma ? c.calm.sigma.sigma.toFixed(4) : '–');
 
@@ -72,7 +74,7 @@ function rowCells(row, signal, results) {
   const c = costFor(row, signal, results);
   return [
     row.label + (row.missing ? ' (no outputs)' : ''),
-    boilCell(row.calm?.static), boilCell(row.calm?.dense), boilCell(row.calm?.moving), boilCell(row.calm?.disocc), sigmaCell(row),
+    boilCell(row.calm?.static), boilCell(row.calm?.dense), boilCell(row.calm?.moving), boilCell(row.calm?.disocc), tailCell(row.calm), sigmaCell(row),
     f(row.detail?.flip, 4), f(row.detail?.psnrPooled, 2), lagCell(row.lag),
     fin(row.bias?.levels) ? (row.bias.levels >= 0 ? '+' : '') + row.bias.levels.toFixed(2) : '–',
     c ? (f(c.gpuMs, 3) + (c.foreign ? ' †' : '')) : '–', c ? (f(c.wallMs, 2) + (c.foreign ? ' †' : '')) : '–',
@@ -80,9 +82,9 @@ function rowCells(row, signal, results) {
 }
 function refCells(ref) {
   const b = (r) => (fin(ref.regions?.[r]?.boil) ? ref.regions[r].boil.toFixed(4) : '–');
-  return ['reference floor (its own noise)', b('static'), b('dense'), b('moving'), b('disocc'), fin(ref.sigma) ? ref.sigma.toFixed(4) : '–', '0', '∞', '–', '0', '–', '–'];
+  return ['reference floor (its own noise)', b('static'), b('dense'), b('moving'), b('disocc'), '', fin(ref.sigma) ? ref.sigma.toFixed(4) : '–', '0', '∞', '–', '0', '–', '–'];
 }
-const HEAD = ['row', 'boil static (smooth)', 'boil dense geometry', 'boil moving', 'boil disoccluded', 'still σ', 'FLIP ↓', 'PSNR dB ↑', 'lag (frames) ↓', 'bias (8-bit levels)', 'GPU ms 1080p', 'wall ms 1080p'];
+const HEAD = ['row', 'boil static (smooth)', 'boil dense geometry', 'boil moving', 'boil disoccluded', 'tail p99 / pop % (smooth · dense · moving)', 'still σ', 'FLIP ↓', 'PSNR dB ↑', 'lag (frames) ↓', 'bias (8-bit levels)', 'GPU ms 1080p', 'wall ms 1080p'];
 
 export function toMarkdown(R) {
   const L = [];
@@ -109,6 +111,7 @@ export function toMarkdown(R) {
   }
   L.push('## Notes', '',
     '- Boil: RMS of the second temporal difference x_t − 2x_(t−1) + x_(t−2) along the reprojected history, / √6, on tonemapped values (Reinhard per channel for rgb, clamp for visibility / AO). Regions (per pixel and frame, ≥ 8 frames after a reset): **moving** = the reference changed by > 0.05 along its history within 4 frames; **disoccluded** = history age 2..6 frames; **dense geometry** = static pixels within 1 px of a crease (normal > 10° off a neighbour within 2 px) or silhouette (view-z jump > 2 %); **static (smooth)** = the rest. Boil is shown absolute; the reference row is its own boil in the same pixels, context only (the 1024–2048-spp references boil more than most denoisers, so a ratio to it means nothing). Read calm together with FLIP: a filter can buy calm by smearing detail.',
+    '- Tail numbers (next to the mean boil): p99 of the per-pixel boil and the pop fraction (pixels whose boil exceeds the reference\'s own at that pixel by 0.03), per region; the means can be level while the tail differs. Motion compensation samples the reprojected history bilinearly (two hops, valid taps only), not the nearest tap.',
     '- Native rows are **imported** from `docs/research/rt-denoiser/native/results/*/score-captures.json` (default settings, RTX 3060 Laptop): FLIP, PSNR and lag (from per-frame PSNR) are comparable; boil regions, σ and bias need the native outputs (set `RT_NATIVE_OUTPUTS`). † = timed on the Windows RTX, not this GPU.',
     '- Cost "GPU ms" for `ours diffuse+specular` is the joint dispatch; the same figure is shown on both signals.', '');
   return L.join('\n');

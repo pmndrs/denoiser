@@ -6,7 +6,8 @@
 //   node tools/scorecard/run.mjs --scenes G2-knot-static,corner-pan
 //   node tools/scorecard/run.mjs --cost                  # also (re-)measure cost at 1080p (GPU lock + idle GPU, rule 11)
 //   node tools/scorecard/run.mjs --cost-only             # only the cost; scenes and gates are taken from latest.json
-//   node tools/scorecard/run.mjs --skip-replay           # score existing outputs in the work dir
+//   node tools/scorecard/run.mjs --replay-only           # only the replays (run it under tools/gpu-lock.sh with SCORECARD_LOCK_HELD=1)
+//   node tools/scorecard/run.mjs --skip-replay           # score existing outputs in the work dir (CPU only, no lock)
 //   node tools/scorecard/run.mjs --keep                  # keep the raw outputs (default: deleted after scoring)
 //   node tools/scorecard/run.mjs --report-only           # rebuild latest.md / index.html from latest.json
 //
@@ -43,7 +44,7 @@ const BASE = `http://127.0.0.1:${PORT}/`;
 const SETTLE = Number(opt('settle', 8)), FLIP_EVERY = Number(opt('flip-every', 4));
 const cfg = JSON.parse(readFileSync(path.resolve(opt('scenes-file', path.join(HERE, 'scenes.json'))), 'utf8'));
 const wanted = flag('cost-only') ? [] : opt('scenes') ? opt('scenes').split(',') : null;
-const scenes = cfg.scenes.filter((s) => !wanted || wanted.includes(s.id));
+const scenes = cfg.scenes.filter((s) => (!wanted || wanted.includes(s.id)) && !(s.optional && !existsSync(path.join(s.capturesDir ?? SRC_CAPTURES, s.capture, 'capture.json')) && (log(`skipping ${s.id}: capture not complete yet`), true)));
 const prev = existsSync(path.join(OUT, 'latest.json')) ? JSON.parse(readFileSync(path.join(OUT, 'latest.json'), 'utf8')) : null;
 
 if (flag('report-only')) {
@@ -94,6 +95,7 @@ try {
       }
     } finally { await server.stop(); release(); }
   }
+  if (flag('replay-only')) { log('replays done (--replay-only); score with --skip-replay'); process.exit(0); }
 
   // ---- scoring (CPU)
   for (const s of scenes) {
@@ -136,7 +138,7 @@ try {
       }
     }
     results.scenes.push(scene);
-    if (!flag('keep') && !flag('skip-replay')) {
+    if (!flag('keep')) {
       for (const d of existsSync(outRoot) ? readdirSync(outRoot) : []) rmSync(path.join(outRoot, d), { recursive: true, force: true });
     }
   }
