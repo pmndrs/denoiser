@@ -691,7 +691,8 @@ export class SvgfPipeline {
   debugTexture(name: 'accum' | 'gradient', signal = 0): GPUTexture | undefined {
     const s = this.sigs[signal];
     if (name === 'accum') return s.accum[this.cur ^ 1];
-    return s.grad[s.grad.length - 1];
+    // lambda: grad[4] in v1 (g0a, g1a, g0b, g1b, lambda), grad[2] in v2 (ga, gb, lambda[, ca, cb with antiLagChroma])
+    return s.grad[this.opts.antiLagVersion === 1 ? 4 : 2];
   }
 
   private group(name: string, res: Record<string, Res>): GPUBindGroup {
