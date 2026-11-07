@@ -77,6 +77,7 @@ export const SCENE_REGISTRY: SceneInfo[] = [
     judges: 'diffuse GI + AO', kind: 'engine', signals: ['diffuse', 'ao', 'shadow', 'specular'],
     paths: [
       { name: 'orbit', frames: 64, source: 'sponza-orbit', description: 'slow arc in the nave around its centre, dollying in (~5-8 px/frame at 960 px); the sun is the shadow light', events: [], motion: 'camera only' },
+      { name: 'hold', frames: 32, source: 'sponza-orbit', description: 'still camera (orbit frame 20), nothing moves: boil of the denoiser (and of the reference) is measured against a static scene', events: [], motion: 'none' },
       { name: 'pan', frames: 64, source: 'sponza-pan', description: '8 frames of drift, then 6 cm/frame slide + 2 deg/frame yaw toward the south arcade (disocclusion behind the columns every frame)', events: [], motion: 'camera only' },
     ],
     assets: [{ name: 'Crytek Sponza (Khronos glTF-Sample-Assets), geometry only', licence: 'Cryengine Limited License Agreement (model files)', note: 'scene-assets/NOTICE.md; Git LFS, not redistributed; $RT_SCENE_ASSETS' }],
@@ -86,12 +87,11 @@ export const SCENE_REGISTRY: SceneInfo[] = [
     id: 'G4', name: 'bistro-pan-light', label: 'Bistro pan with a light switching on',
     judges: 'diffuse, light-change lag', kind: 'engine', signals: ['diffuse', 'ao', 'shadow', 'specular'],
     paths: [
-      {
-        name: 'pan-light-on', frames: 64, source: 'bistro-pan',
-        description: 'bistro-pan (8 frames of drift at the junction, then 4-6 cm/frame slide + 2.2 deg/frame yaw) with a street lantern that is OFF until frame 32 and switches ON as a step change (power 0 -> 60)',
-        events: [{ frame: 32, type: 'light-on', note: 'lantern (sphere, r 0.12 m) at (-2.5, 2.4, -9.5) switches on: every lit surface near it changes at once' }],
-        motion: 'camera only; the light is static, its switch is the event',
-      },
+      { name: 'pan-light-on', frames: 64, source: 'bistro-pan', description: 'bistro-pan with a street lantern OFF until frame 32 and ON from frame 32 (step, power 0 -> 60)', events: [{ frame: 32, type: 'light-on', note: 'lantern at (-2.5, 2.4, -9.5) switches on' }], motion: 'camera only' },
+      { name: 'pan-light-colour', frames: 64, source: 'bistro-pan', description: 'lantern on throughout; at frame 32 its colour steps warm to cool at constant luminance', events: [{ frame: 32, type: 'light-colour', note: 'lantern on throughout; at frame 32 its colour steps warm to cool at constant luminance' }], motion: 'camera only' },
+      { name: 'pan-light-fade', frames: 64, source: 'bistro-pan', description: 'lantern fades 0 to 1 linearly over frames 24-40', events: [{ frame: 24, type: 'light-fade', note: 'lantern fades 0 to 1 linearly over frames 24-40' }], motion: 'camera only' },
+      { name: 'pan-lamp-switch', frames: 64, source: 'bistro-pan', description: 'lantern A on until frame 31; lamp B at (4, 2.4, -16) on from frame 32', events: [{ frame: 32, type: 'lamp-switch', note: 'lantern A on until frame 31; lamp B at (4, 2.4, -16) on from frame 32' }], motion: 'camera only' },
+      { name: 'hold-light-on', frames: 32, source: 'bistro-pan', description: 'still camera (pan frame 20), lantern OFF until frame 15, ON from frame 16 (step); for boil and lag on a static scene', events: [{ frame: 16, type: 'light-on', note: 'still camera (pan frame 20), lantern OFF until frame 15, ON from frame 16 (step); for boil and lag on a static scene' }], motion: 'none' },
     ],
     assets: [{ name: 'Amazon Lumberyard Bistro exterior (ORCA, glTF by Cody Bennett), geometry only', licence: 'CC BY 4.0', note: 'scene-assets/NOTICE.md; Git LFS; $RT_SCENE_ASSETS' }],
     limits: ['geometry only (flat colours): no textures', 'the light switch is an instant step in the references too (each frame is converged for its own lighting)'],

@@ -30,7 +30,7 @@ export async function openGolden(o = {}) {
   const port = o.port ?? 5301;
   const host = o.host ?? '127.0.0.1';
   const params = new URLSearchParams();
-  for (const k of ['scene', 'path', 'mode', 'denoiser', 'res', 'w', 'h', 'seed', 'referenceSpp', 'perfectSpp', 'referenceSppSpec', 'signals', 'difRays', 'visGrid']) {
+  for (const k of ['scene', 'path', 'mode', 'denoiser', 'res', 'w', 'h', 'seed', 'referenceSpp', 'perfectSpp', 'referenceSppSpec', 'signals', 'difRays', 'visGrid', 'refSeed']) {
     if (o[k] !== undefined) params.set(k, String(o[k]));
   }
   if (o.options) params.set('options', typeof o.options === 'string' ? o.options : JSON.stringify(o.options));
@@ -88,7 +88,7 @@ const frameList = (s, max = 1e9) => {
 };
 const cfgFromArgs = () => {
   const c = { port: Number(opt('port', 5301)) };
-  for (const k of ['scene', 'path', 'mode', 'denoiser', 'res', 'w', 'h', 'seed', 'referenceSpp', 'perfectSpp', 'referenceSppSpec', 'signals', 'difRays', 'visGrid']) {
+  for (const k of ['scene', 'path', 'mode', 'denoiser', 'res', 'w', 'h', 'seed', 'referenceSpp', 'perfectSpp', 'referenceSppSpec', 'signals', 'difRays', 'visGrid', 'refSeed']) {
     const v = opt(k); if (v !== undefined) c[k] = v;
   }
   if (opt('options')) c.options = opt('options');

@@ -35,6 +35,8 @@ export interface EngineOptions {
   /** Cap on SSR reference frames (the SSR reference is 1 sample per rendered frame). */
   referenceSppSpec: number;
   withReference: boolean;
+  /** 'fixed' (default): reference sample seeds do not depend on the path frame, so the reference's own noise is a static pattern (no boil of its own); 'frame': fresh noise every frame. */
+  refSeed: 'fixed' | 'frame';
   signals: Signal[];
   /** Skip the lit composites and capture guides (timing runs). */
   lean: boolean;
@@ -284,7 +286,7 @@ export async function createEngine(canvas: HTMLCanvasElement, o: EngineOptions) 
     const t0 = performance.now();
     difRef.count.value = 0; visRef.count.value = 0;
     const n = Math.max(difFrames, visFrames);
-    const base = seedBase + (lastFrame ?? 0) * 8191;
+    const base = seedBase + (o.refSeed === 'frame' ? (lastFrame ?? 0) * 8191 : 0);
     for (let k = 0; k < n; k++) {
       uSeed.value = (base + k) >>> 0;
       refPipe.render();

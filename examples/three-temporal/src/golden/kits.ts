@@ -113,10 +113,17 @@ export interface AssetKitSpec {
   events: GoldenEvent[];
   pose(f: number): { position: THREE.Vector3; target: THREE.Vector3 };
   /** Local light position and on-factor (0 = off) at path frame f. */
-  local(f: number): { position: THREE.Vector3; on: number };
+  local(f: number): { position: THREE.Vector3; on: number; tint?: 'warm' | 'cool' };
   /** Local light power override (colour * power); default cfg.local */
   localPower?: number;
   shadow: 'sun' | 'local';
+}
+
+/** Same luminance, another hue (a colour step a luminance-only anti-lag cannot see). */
+function coolOf(c: THREE.Vector3): THREE.Vector3 {
+  const lum = (v: THREE.Vector3) => 0.2126 * v.x + 0.7152 * v.y + 0.0722 * v.z;
+  const t = new THREE.Vector3(c.z * 0.5 + 0.02, c.y * 0.9, c.x * 1.6 + 0.05);
+  return t.multiplyScalar(lum(c) / Math.max(lum(t), 1e-6));
 }
 
 export async function assetKit(spec: AssetKitSpec, W: number, H: number): Promise<Kit> {
@@ -175,7 +182,7 @@ export async function assetKit(spec: AssetKitSpec, W: number, H: number): Promis
       const l = spec.local(fc);
       localOn = l.on;
       uLPos.value.copy(l.position);
-      uLPow.value.copy(lPow0).multiplyScalar(l.on);
+      uLPow.value.copy(l.tint === 'cool' ? coolOf(lPow0) : lPow0).multiplyScalar(l.on);
       content.setMover?.(fc);
       camera.updateMatrixWorld();
       content.mover?.updateMatrixWorld(true);
@@ -204,13 +211,14 @@ async function loadAssetGeometry(id: 'sponza' | 'bistro') {
   return { add: asset.meshes as THREE.Object3D[], bvhMeshes: [bvhMesh], triangles: asset.triangles, info: { triangles: asset.triangles } };
 }
 
-export function sponzaKit(path: 'orbit' | 'pan', W: number, H: number, frames: number) {
+export function sponzaKit(path: 'orbit' | 'pan' | 'hold', W: number, H: number, frames: number) {
   const cfg = SCENES.sponza;
-  const def = pathOf(cfg, path === 'orbit' ? 'sponza-orbit' : 'sponza-pan')!;
+  const def = pathOf(cfg, path === 'pan' ? 'sponza-pan' : 'sponza-orbit')!;
+  const at = (f: number) => def.pose(path === 'hold' ? 20 : f);
   return assetKit({
     id: 'G3', label: 'Sponza orbit', cfg, frames, events: [], shadow: 'sun',
     load: () => loadAssetGeometry('sponza'),
-    pose: (f) => def.pose(f),
+    pose: at,
     local: () => ({ position: cfg.local.position, on: 1 }),
   }, W, H);
 }
@@ -220,16 +228,33 @@ export function sponzaKit(path: 'orbit' | 'pan', W: number, H: number, frames: n
 /** The G4 lantern: not the scene's default one (which is behind the pan's start): a street lamp in view of the pan. */
 export const G4_LANTERN = { position: V3(-2.5, 2.4, -9.5), power: 60, onFrame: 32 };
 
-export function bistroLightKit(W: number, H: number, frames: number) {
+export type G4Path = 'pan-light-on' | 'pan-light-colour' | 'pan-light-fade' | 'pan-lamp-switch' | 'hold-light-on';
+const G4_LAMP_B = V3(4.0, 2.4, -16.0);
+export function bistroLightKit(path: G4Path, W: number, H: number, frames: number) {
   const base = SCENES.bistro;
   const cfg: SceneConfig = { ...base, local: { ...base.local, position: G4_LANTERN.position.clone(), power: G4_LANTERN.power } };
   const def = pathOf(base, 'bistro-pan')!;
+  const T = path === 'hold-light-on' ? 16 : G4_LANTERN.onFrame;
+  const notes: Record<G4Path, string> = {
+    'pan-light-on': `lantern off -> on (step) at frame ${T}`,
+    'pan-light-colour': `lantern on throughout; at frame ${T} its colour steps warm -> cool at constant luminance`,
+    'pan-light-fade': `lantern fades 0 -> 1 linearly over frames ${T - 8}-${T + 8}`,
+    'pan-lamp-switch': `lantern A (${G4_LANTERN.position.toArray()}) on until frame ${T - 1}; lamp B (${G4_LAMP_B.toArray()}) on from ${T}`,
+    'hold-light-on': `still camera (pan frame 20), lantern off -> on (step) at frame ${T}`,
+  };
   return assetKit({
-    id: 'G4', label: 'Bistro pan, light switching on', cfg, frames, shadow: 'sun',
-    events: [{ frame: G4_LANTERN.onFrame, type: 'light-on', note: `lantern at ${G4_LANTERN.position.toArray().join(', ')} switches on (power 0 -> ${G4_LANTERN.power})` }],
+    id: 'G4', label: 'Bistro pan, light change', cfg, frames, shadow: 'sun',
+    events: [{ frame: path === 'pan-light-fade' ? T - 8 : T, type: path.replace(/^(pan|hold)-/, ''), note: notes[path] }],
     load: () => loadAssetGeometry('bistro'),
-    pose: (f) => def.pose(f),
-    local: (f) => ({ position: G4_LANTERN.position, on: f >= G4_LANTERN.onFrame ? 1 : 0 }),
+    pose: (f) => def.pose(path === 'hold-light-on' ? 20 : f),
+    local: (f) => {
+      switch (path) {
+        case 'pan-light-colour': return { position: G4_LANTERN.position, on: 1, tint: f >= T ? 'cool' : 'warm' };
+        case 'pan-light-fade': return { position: G4_LANTERN.position, on: Math.max(0, Math.min(1, (f - (T - 8)) / 16)) };
+        case 'pan-lamp-switch': return { position: f >= T ? G4_LAMP_B : G4_LANTERN.position, on: 1 };
+        default: return { position: G4_LANTERN.position, on: f >= T ? 1 : 0 };
+      }
+    },
   }, W, H);
 }
 

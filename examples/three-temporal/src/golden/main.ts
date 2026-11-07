@@ -50,8 +50,8 @@ async function main() {
   let kit: Kit;
   switch (sceneInfo.id) {
     case 'G2': kit = await cornerKit(pathInfo.source as 'knot-static' | 'knot-orbit', W, H, frames); break;
-    case 'G3': kit = await sponzaKit(pathInfo.name as 'orbit' | 'pan', W, H, frames); break;
-    case 'G4': kit = await bistroLightKit(W, H, frames); break;
+    case 'G3': kit = await sponzaKit(pathInfo.name as 'orbit' | 'pan' | 'hold', W, H, frames); break;
+    case 'G4': kit = await bistroLightKit(pathInfo.name as never, W, H, frames); break;
     case 'G5': kit = await productKit(W, H, frames); break;
     default: throw new Error(`no kit for ${sceneInfo.id}`);
   }
@@ -60,7 +60,7 @@ async function main() {
     kit, mode, denoiser: q.get('denoiser') ?? 'ours', options, width: W, height: H, seed,
     referenceSpp: Number(q.get('referenceSpp') ?? 4096), perfectSpp: Number(q.get('perfectSpp') ?? 256),
     referenceSppSpec: Number(q.get('referenceSppSpec') ?? 4096),
-    withReference: q.get('withReference') === '1', signals, lean: q.get('lean') === '1',
+    withReference: q.get('withReference') === '1', refSeed: q.get('refSeed') === 'frame' ? 'frame' : 'fixed', signals, lean: q.get('lean') === '1',
     difRays: Number(q.get('difRays') ?? 8), visGrid: Number(q.get('visGrid') ?? 2), log,
   });
 
@@ -86,7 +86,7 @@ async function main() {
     list,
     info: () => ({
       scene: sceneInfo.id, path: pathInfo.name, mode, denoiser: eng.denoiserId, options, width: W, height: H, seed, frames,
-      referenceSpp: Number(q.get('referenceSpp') ?? 4096), perfectSpp: Number(q.get('perfectSpp') ?? 256), referenceFrames: eng.refFrames,
+      referenceSpp: Number(q.get('referenceSpp') ?? 4096), perfectSpp: Number(q.get('perfectSpp') ?? 256), referenceFrames: eng.refFrames, refSeed: q.get('refSeed') === 'frame' ? 'frame' : 'fixed',
       signals, applies: eng.applies, events: pathInfo.events, lights: kit.captureLights(),
       camera: { near: kit.camera.near, far: kit.camera.far, fov: kit.camera.fov }, three: THREE.REVISION, gpu: eng.adapterInfo,
       kit: kit.info, triangles: kit.triangles, lean: q.get('lean') === '1', withReference: q.get('withReference') === '1',
