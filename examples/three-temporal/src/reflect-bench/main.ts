@@ -269,7 +269,19 @@ async function main() {
   };
   // Scripted experiments (track R, headless runner): extra options per denoiser and for the TSL node, applied when the
   // graph is (re)built. Empty = the libraries' defaults, exactly what the GUI runs.
-  const exp: { ffx: N; recurrent: N; svgf: N; node: N } = { ffx: {}, recurrent: {}, svgf: {}, node: {} };
+  const exp: { ffx: N; recurrent: N; svgf: N; node: N; patches: { label: string; find: string; replace: string }[] } = { ffx: {}, recurrent: {}, svgf: {}, node: {}, patches: [] };
+  // Diagnosis only: text patches on the WGSL of shader modules whose label matches (e.g. an FFX constant), applied when
+  // a denoiser builds its pipelines, so a hypothesis about either library is tested without editing the packages.
+  const createShaderModule = device.createShaderModule.bind(device);
+  device.createShaderModule = (d: GPUShaderModuleDescriptor) => {
+    let code = d.code;
+    for (const pt of exp.patches) {
+      if (!new RegExp(pt.label).test(d.label ?? '')) continue;
+      if (!code.includes(pt.find)) console.error(`[patch] '${pt.find}' not found in ${d.label}`);
+      code = code.split(pt.find).join(pt.replace);
+    }
+    return createShaderModule({ ...d, code });
+  };
   const SRC = { ssr: vec3(0.15, 0.8, 0.25), rt: vec3(0.2, 0.5, 1), miss: vec3(1, 0.2, 0.15), probe: vec3(1, 0.6, 0.05) };
 
   function buildGraph(resolve: Resolve) {
@@ -590,7 +602,8 @@ async function main() {
     if (c.modelRough !== undefined) setModelRough(c.modelRough);
     if (c.normalMaps !== undefined) setNormalMaps(!!c.normalMaps);
     if (c.tableRough !== undefined) { ui.tableRough = c.tableRough; tableMat.roughness = c.tableRough; }
-    for (const k of ['ffx', 'recurrent', 'svgf', 'node'] as const) if (c[k] !== undefined) exp[k] = { ...c[k] };
+    for (const k of ['ffx', 'recurrent', 'svgf', 'node'] as const) exp[k] = { ...(c[k] ?? {}) };
+    exp.patches = [...(c.patches ?? [])];
     for (const k of ['refl', 'left', 'right', 'resolve', 'view', 'roughCut', 'ssrThickness', 'ssrDistance', 'ssrQuality', 'orbit', 'turntable'] as const) {
       if (c[k] !== undefined) (ui as N)[k] = c[k];
     }
