@@ -91,7 +91,24 @@ function historyTaps(m, mo, vz, pvz, mz, depth, pdepth, refL, prefL) {
   return { tapW, tapN };
 }
 
-const REGIONS = ['static', 'moving', 'disocc'];
+const REGIONS = ['static', 'moving', 'disocc', 'dense'];
+/** dense geometry: creases (normal angle > 10 deg to a neighbour within 2 px) and silhouettes (view-z jump > 2 %), dilated by 1 px */
+function edgeMask(normal, vz, depth, W, H) {
+  const e = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!isScored(depth[i])) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [2, 0], [0, 2]]) {
+      const qx = x + dx, qy = y + dy; if (qx >= W || qy >= H) continue;
+      const q = qy * W + qx; if (!isScored(depth[q])) { e[i] = 1; continue; }
+      const dot = normal[3 * i] * normal[3 * q] + normal[3 * i + 1] * normal[3 * q + 1] + normal[3 * i + 2] * normal[3 * q + 2];
+      if (dot < 0.985 || Math.abs(vz[i] - vz[q]) > 0.02 * Math.abs(vz[i])) { e[i] = 1; e[q] = 1; }
+    }
+  }
+  const o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (e[y * W + x]) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const qx = x + dx, qy = y + dy; if (qx >= 0 && qy >= 0 && qx < W && qy < H) o[qy * W + qx] = 1; }
+  return o;
+}
 const newAcc = () => ({ s: 0, e: 0, n: 0, px: 0 });
 
 /**
@@ -131,7 +148,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
   let prev = null; // previous frame's {tapW, age, lag, refL, depth, vz}
   let lastReset = 0;
   let lastDepth = null;
-  const regionPx = { static: 0, moving: 0, disocc: 0 };
+  const regionPx = { static: 0, moving: 0, disocc: 0, dense: 0 };
   let regionFrames = 0;
 
   for (let f = 0; f < m.frames.length; f++) {
@@ -152,7 +169,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
     // ---- history, age, dynamic flag, regions
     let tapW = null, tapPrevForT2 = null;
     const age = new Uint8Array(N), lag = new Float32Array(N * K_DYN).fill(NaN);
-    const region = new Uint8Array(N); // 0 = not scored for boil, 1 static, 2 moving, 3 disoccluded
+    const region = new Uint8Array(N); // 0 = not scored for boil, 1 static (smooth), 2 moving, 3 disoccluded, 4 dense geometry (static but creases / silhouettes)
     for (let i = 0; i < N; i++) lag[i * K_DYN] = refL[i];
     if (!reset && prev) {
       const mo = readBuffer(capDir, f, 'motion');
@@ -160,6 +177,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       const mz = hasMz ? readBuffer(capDir, f, 'motion_z') : null;
       const t = historyTaps(m, mo, vz, prev.vz, mz, depth, prev.depth, refL, prev.refL);
       tapW = t.tapW;
+      const edge = edgeMask(readBuffer(capDir, f, 'normal'), vz, depth, W, H);
       for (let i = 0; i < N; i++) {
         const a = tapW[i];
         if (a >= 0) age[i] = Math.min(255, prev.age[a] + 1);
@@ -172,7 +190,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
           dyn = hi - lo > DYN_DELTA;
         }
         if (!isScored(depth[i]) || (winMask && !winMask[i]) || age[i] < 2 || sinceReset < o.settle || !inRange) continue;
-        region[i] = age[i] <= o.youngMax ? 3 : dyn ? 2 : 1;
+        region[i] = age[i] <= o.youngMax ? 3 : dyn ? 2 : edge[i] ? 4 : 1;
       }
       tapPrevForT2 = prev.tapW;
     }
@@ -304,6 +322,7 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       },
       calm: {
         static: regionRes(s.boil.static, R.boil.static),
+        dense: regionRes(s.boil.dense, R.boil.dense),
         moving: regionRes(s.boil.moving, R.boil.moving),
         disocc: regionRes(s.boil.disocc, R.boil.disocc),
         all: regionRes(sumAcc(s.boil), sumAcc(R.boil)),

@@ -11,7 +11,7 @@
 // It is not URL driven: a button in the bench header opens the panel.
 import manifest from './calibration/pairs.json';
 
-type MetricId = 'calm' | 'detail' | 'lag';
+type MetricId = 'calm' | 'detail' | 'lag' | 'tradeoff';
 interface Pair { id: string; metric: MetricId; sheet: string; frames: number; size: number; rows: number; fps: number; still?: boolean }
 interface Manifest { version: number; generated: string; metrics: Record<MetricId, { title: string; question: string; hint: string }>; pairs: Pair[] }
 interface Answer { pair: string; metric: MetricId; leftIs: 'a' | 'b'; pick: 'left' | 'right' | 'tie'; ms: number; at: string }
@@ -21,7 +21,7 @@ const M = manifest as unknown as Manifest;
 const sheets = import.meta.glob('./calibration/sheets/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 const sheetUrl = (name: string) => sheets[`./calibration/sheets/${name}`];
 const KEY = 'rv-calibration-v1';
-const METRICS: MetricId[] = ['calm', 'detail', 'lag'];
+const METRICS: MetricId[] = (['calm', 'detail', 'lag', 'tradeoff'] as MetricId[]).filter((m) => M.metrics[m]);
 
 function load(): State {
   try {

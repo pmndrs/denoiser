@@ -72,6 +72,20 @@ for (const metric of ['calm', 'detail', 'lag']) {
   if (bad.length) { lines.push('', `Pairs where "${worst}" and Dennis differ (${bad.length}): ${bad.map((x) => `${x.pair} (${x.capture}/${x.signal}: ${x.variants.join(' vs ')}; he chose ${x.chosen ?? "can't tell"})`).join('; ')}`); }
   lines.push('');
 }
+// trade-off: which side does he weigh more? (option with the lower boil vs the option with the lower FLIP)
+{
+  const mine = [...answers.values()].filter((a) => a.metric === 'tradeoff' && byId.has(a.pair));
+  let calmer = 0, sharper = 0, tie = 0; const det = [];
+  for (const a of mine) {
+    const p = byId.get(a.pair), left = a.leftIs, chosen = a.pick === 'tie' ? null : a.pick === 'left' ? left : left === 'a' ? 'b' : 'a';
+    if (!chosen) { tie++; continue; }
+    const calmSide = p.a.calm.boil < p.b.calm.boil ? 'a' : 'b';
+    if (chosen === calmSide) calmer++; else sharper++;
+    det.push({ pair: a.pair, chose: chosen === calmSide ? 'calmer' : 'sharper', capture: p.capture, signal: p.signal, variants: [p.a.variant, p.b.variant] });
+  }
+  out.tradeoff = { calmer, sharper, tie, pairs: det };
+  lines.push(`## trade-off (calmer but blurrier vs sharper but boils): ${mine.length} answered`, '', `He picked the calmer option ${calmer}x, the sharper option ${sharper}x, "can't tell" ${tie}x. This is the weight to give calm vs detail when a change trades one for the other.`, '');
+}
 const unanswered = key.pairs.filter((p) => !answers.has(p.id)).length;
 lines.push(`${answers.size} answers merged from ${files.length} file(s); ${unanswered} of ${key.pairs.length} pairs unanswered.`);
 console.log(lines.join('\n'));

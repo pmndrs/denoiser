@@ -43,11 +43,21 @@ export function measureCost({ costRows, capture, base, captureDir, rounds = 3, l
       rmSync(dir, { recursive: true, force: true });
     }
     if (!runs.length) { out[row.id] = { skipped: 'replay failed' }; continue; }
+    // wall time with timestamp queries off (they add writes per frame): honoured only where the registry entry passes `timestamps=0` on
+    // (D's finding: Mac wall - GPU ~ 0.6 ms); a run that still reports GPU passes means the setting was ignored
+    const nts = [];
+    for (let k = 0; k < rounds; k++) {
+      const name = `cost-${row.id}-nts${k}`;
+      const [res] = replayQueries([`mode=replay&capture=${capture}&denoiser=${row.denoiser}&signals=${row.signals.join(',')}&output=${name}&timestamps=0`], { base, captureDir, log });
+      const dir = path.join(captureDir, 'outputs', capture, name);
+      if (res && existsSync(path.join(dir, 'timings.csv'))) { const t = readTimings(path.join(dir, 'timings.csv')); if (Object.keys(t.per).every((p) => p === 'wall')) nts.push(t.wall); }
+      rmSync(dir, { recursive: true, force: true });
+    }
     const passes = {};
     for (const p of Object.keys(runs[0].per)) if (p !== 'wall' && p !== 'total' && !p.endsWith('/total')) passes[p] = median(runs.map((r) => r.per[p]));
     out[row.id] = {
       label: row.label, denoiser: row.denoiser, signals: row.signals,
-      gpuMs: median(runs.map((r) => r.gpu)), wallMs: median(runs.map((r) => r.wall)),
+      gpuMs: median(runs.map((r) => r.gpu)), wallMs: median(runs.map((r) => r.wall)), wallNoTimestampsMs: nts.length ? median(nts) : null,
       gpuRounds: runs.map((r) => +r.gpu.toFixed(4)), passes,
       width: man.width, height: man.height, rounds: runs.length,
     };

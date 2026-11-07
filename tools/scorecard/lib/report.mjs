@@ -50,13 +50,14 @@ export function evaluateGates(gates, scene, results) {
 
 // ---- formatting
 const f = (x, k = 3) => (fin(x) ? x.toFixed(k) : '–');
-const boilCell = (r) => (r && fin(r.boil) ? `${r.boil.toFixed(4)}${fin(r.ratio) ? ` (${r.ratio.toFixed(2)}x)` : ''}` : '–');
+const boilCell = (r) => (r && fin(r.boil) ? r.boil.toFixed(4) : '–');
 const lagCell = (lags) => (lags?.length ? lags.map((l) => `${l.kind} ${l.lag === null || l.lag === undefined ? '–' : l.lag}`).join(', ') : '–');
 const sigmaCell = (c) => (c?.calm?.sigma ? c.calm.sigma.sigma.toFixed(4) : '–');
 
 export const COLUMNS = [
   ['row', 'row'],
   ['boil static', (r) => boilCell(r.calm?.static)],
+  ['boil dense', (r) => boilCell(r.calm?.dense)],
   ['boil moving', (r) => boilCell(r.calm?.moving)],
   ['boil disoccluded', (r) => boilCell(r.calm?.disocc)],
   ['still σ', (r) => sigmaCell(r)],
@@ -71,7 +72,7 @@ function rowCells(row, signal, results) {
   const c = costFor(row, signal, results);
   return [
     row.label + (row.missing ? ' (no outputs)' : ''),
-    boilCell(row.calm?.static), boilCell(row.calm?.moving), boilCell(row.calm?.disocc), sigmaCell(row),
+    boilCell(row.calm?.static), boilCell(row.calm?.dense), boilCell(row.calm?.moving), boilCell(row.calm?.disocc), sigmaCell(row),
     f(row.detail?.flip, 4), f(row.detail?.psnrPooled, 2), lagCell(row.lag),
     fin(row.bias?.levels) ? (row.bias.levels >= 0 ? '+' : '') + row.bias.levels.toFixed(2) : '–',
     c ? (f(c.gpuMs, 3) + (c.foreign ? ' †' : '')) : '–', c ? (f(c.wallMs, 2) + (c.foreign ? ' †' : '')) : '–',
@@ -79,17 +80,17 @@ function rowCells(row, signal, results) {
 }
 function refCells(ref) {
   const b = (r) => (fin(ref.regions?.[r]?.boil) ? ref.regions[r].boil.toFixed(4) : '–');
-  return ['reference (its own noise)', b('static'), b('moving'), b('disocc'), fin(ref.sigma) ? ref.sigma.toFixed(4) : '–', '0', '∞', '–', '0', '–', '–'];
+  return ['reference floor (its own noise)', b('static'), b('dense'), b('moving'), b('disocc'), fin(ref.sigma) ? ref.sigma.toFixed(4) : '–', '0', '∞', '–', '0', '–', '–'];
 }
-const HEAD = ['row', 'boil static', 'boil moving', 'boil disoccluded', 'still σ', 'FLIP ↓', 'PSNR dB ↑', 'lag (frames) ↓', 'bias (8-bit levels)', 'GPU ms 1080p', 'wall ms 1080p'];
+const HEAD = ['row', 'boil static (smooth)', 'boil dense geometry', 'boil moving', 'boil disoccluded', 'still σ', 'FLIP ↓', 'PSNR dB ↑', 'lag (frames) ↓', 'bias (8-bit levels)', 'GPU ms 1080p', 'wall ms 1080p'];
 
 export function toMarkdown(R) {
   const L = [];
   L.push('# Scorecard (latest)', '', `_Generated ${R.generated} by \`node tools/scorecard/run.mjs\` (repo ${R.repoCommit}, packages ${R.packageCommit}). GPU: ${R.gpu ?? 'n/a'}. Details: [tools/scorecard/README.md](../../../../tools/scorecard/README.md)._`, '');
   L.push('Five numbers per scene and signal (TRACKS.md): **calm** = motion-compensated boil per region (value, and ×the clean reference\'s own boil in the same pixels) plus still-camera σ of luma where the camera is static; **detail** = FLIP vs the capture\'s reference (PSNR secondary); **lag** = frames until the error is within 10 % of its settled level after the event; **bias** = mean display luma minus the reference, 8-bit levels; **cost** = GPU ms and wall ms at 1080p on this Mac.', '');
   if (R.cost) {
-    L.push(`## Cost at 1080p (${R.cost.measuredAt})`, '', `${R.cost.protocol}. Capture \`${R.cost.capture}\`.`, '', '| row | GPU ms | wall ms | rounds (GPU ms) | passes (ms) |', '|---|---|---|---|---|');
-    for (const [id, c] of Object.entries(R.cost.rows)) L.push(c.skipped ? `| ${id} | – | – | skipped: ${c.skipped} | |` : `| ${c.label} | ${c.gpuMs.toFixed(3)} | ${c.wallMs.toFixed(2)} | ${c.gpuRounds.join(' / ')} | ${Object.entries(c.passes).map(([p, v]) => `${p} ${v.toFixed(3)}`).join(', ')} |`);
+    L.push(`## Cost at 1080p (${R.cost.measuredAt})`, '', `${R.cost.protocol}. Capture \`${R.cost.capture}\`.`, '', '| row | GPU ms | wall ms | wall ms, timestamps off | rounds (GPU ms) | passes (ms) |', '|---|---|---|---|---|---|');
+    for (const [id, c] of Object.entries(R.cost.rows)) L.push(c.skipped ? `| ${id} | – | – | skipped: ${c.skipped} | |` : `| ${c.label} | ${c.gpuMs.toFixed(3)} | ${c.wallMs.toFixed(2)} | ${c.wallNoTimestampsMs == null ? 'n/a (registry ignores timestamps=0)' : c.wallNoTimestampsMs.toFixed(2)} | ${c.gpuRounds.join(' / ')} | ${Object.entries(c.passes).map(([p, v]) => `${p} ${v.toFixed(3)}`).join(', ')} |`);
     L.push('');
   }
   for (const s of R.scenes) {
@@ -107,7 +108,7 @@ export function toMarkdown(R) {
     }
   }
   L.push('## Notes', '',
-    '- Boil: RMS of the second temporal difference x_t − 2x_(t−1) + x_(t−2) along the reprojected history, / √6, on tonemapped values (Reinhard per channel for rgb, clamp for visibility / AO). Regions (per pixel and frame, ≥ 8 frames after a reset): **moving** = the reference changed by > 0.05 along its history within 4 frames; **disoccluded** = history age 2..6 frames; **static** = the rest. "×" = ratio to the reference\'s own boil in the same pixels (the reference is a 1024–2048-spp accumulation, so it has noise of its own).',
+    '- Boil: RMS of the second temporal difference x_t − 2x_(t−1) + x_(t−2) along the reprojected history, / √6, on tonemapped values (Reinhard per channel for rgb, clamp for visibility / AO). Regions (per pixel and frame, ≥ 8 frames after a reset): **moving** = the reference changed by > 0.05 along its history within 4 frames; **disoccluded** = history age 2..6 frames; **dense geometry** = static pixels within 1 px of a crease (normal > 10° off a neighbour within 2 px) or silhouette (view-z jump > 2 %); **static (smooth)** = the rest. Boil is shown absolute; the reference row is its own boil in the same pixels, context only (the 1024–2048-spp references boil more than most denoisers, so a ratio to it means nothing). Read calm together with FLIP: a filter can buy calm by smearing detail.',
     '- Native rows are **imported** from `docs/research/rt-denoiser/native/results/*/score-captures.json` (default settings, RTX 3060 Laptop): FLIP, PSNR and lag (from per-frame PSNR) are comparable; boil regions, σ and bias need the native outputs (set `RT_NATIVE_OUTPUTS`). † = timed on the Windows RTX, not this GPU.',
     '- Cost "GPU ms" for `ours diffuse+specular` is the joint dispatch; the same figure is shown on both signals.', '');
   return L.join('\n');
@@ -132,7 +133,7 @@ export function toHtml(R, outDir) {
     }).join('');
     return `<section id="${esc(s.id)}"><h2>${esc(s.id)}${s.golden ? ` <span class="tag">${esc(s.golden)}</span>` : ''} <small>${esc(s.title)}</small></h2><p class="muted">${s.width}x${s.height}, ${s.frames} frames, reference ${s.referenceSpp} spp, ${s.staticCamera ? 'static' : 'moving'} camera, events: ${esc(s.events.map((e) => `${e.kind}@${e.frame}`).join(', '))}. ${esc(s.status)}</p>${gates}${sigs}</section>`;
   }).join('');
-  const costHtml = R.cost ? `<section><h2>Cost at 1080p <small>${esc(R.cost.measuredAt)}</small></h2><p class="muted">${esc(R.cost.protocol)}. Capture <code>${esc(R.cost.capture)}</code>.</p><div class="scroll"><table><thead><tr><th>row</th><th>GPU ms</th><th>wall ms</th><th>rounds</th><th>passes (ms)</th></tr></thead><tbody>${Object.entries(R.cost.rows).map(([id, c]) => c.skipped ? `<tr><th scope="row">${esc(id)}</th><td colspan="4">skipped: ${esc(c.skipped)}</td></tr>` : `<tr><th scope="row">${esc(c.label)}</th><td>${c.gpuMs.toFixed(3)}</td><td>${c.wallMs.toFixed(2)}</td><td>${c.gpuRounds.join(' / ')}</td><td class="muted">${Object.entries(c.passes).map(([p, v]) => `${esc(p)} ${v.toFixed(3)}`).join(', ')}</td></tr>`).join('')}</tbody></table></div></section>` : '<section><h2>Cost</h2><p class="muted">not measured in this run (use <code>--cost</code>).</p></section>';
+  const costHtml = R.cost ? `<section><h2>Cost at 1080p <small>${esc(R.cost.measuredAt)}</small></h2><p class="muted">${esc(R.cost.protocol)}. Capture <code>${esc(R.cost.capture)}</code>.</p><div class="scroll"><table><thead><tr><th>row</th><th>GPU ms</th><th>wall ms</th><th>wall ms, timestamps off</th><th>rounds</th><th>passes (ms)</th></tr></thead><tbody>${Object.entries(R.cost.rows).map(([id, c]) => c.skipped ? `<tr><th scope="row">${esc(id)}</th><td colspan="5">skipped: ${esc(c.skipped)}</td></tr>` : `<tr><th scope="row">${esc(c.label)}</th><td>${c.gpuMs.toFixed(3)}</td><td>${c.wallMs.toFixed(2)}</td><td>${c.wallNoTimestampsMs == null ? 'n/a' : c.wallNoTimestampsMs.toFixed(2)}</td><td>${c.gpuRounds.join(' / ')}</td><td class="muted">${Object.entries(c.passes).map(([p, v]) => `${esc(p)} ${v.toFixed(3)}`).join(', ')}</td></tr>`).join('')}</tbody></table></div></section>` : '<section><h2>Cost</h2><p class="muted">not measured in this run (use <code>--cost</code>).</p></section>';
   const nav = R.scenes.map((s) => `<a href="#${esc(s.id)}">${esc(s.id)}</a>`).join(' ');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RT denoiser scorecard</title><style>
 :root{--bg:#fff;--fg:#1b1f24;--muted:#6a737d;--line:#d8dee4;--head:#f3f5f7;--pass:#1a7f37;--fail:#cf222e;--na:#8c959f;--accent:#0969da}

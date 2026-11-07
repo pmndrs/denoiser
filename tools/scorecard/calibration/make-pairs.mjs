@@ -51,15 +51,15 @@ process.env.RT_CAPTURE_DIR = WORK;
 const outName = (v) => `cal-${v.id}`;
 
 // ---- 1. replays
-const server = await startServer(BASE, log);
-try {
-  if (!process.argv.includes('--skip-replay')) {
+if (!process.argv.includes('--skip-replay')) {
+  {
     const byCap = new Map();
     for (const s of cfg.sources) {
       const set = byCap.get(s.capture) ?? new Map(); byCap.set(s.capture, set);
       for (const v of s.variants) { const key = outName(v) + '|' + s.signal; set.set(key, { v, signal: s.signal }); }
     }
     const release = await acquireGpu('calibration replays', { log });
+    const server = await startServer(BASE, log);
     try {
       for (const [cap, set] of byCap) {
         // one output folder per variant id; a variant used for two signals of one capture shares the folder, so group by (variant, signals)
@@ -69,12 +69,13 @@ try {
         log(`replaying ${queries.length} variants over ${cap}`);
         replayQueries(queries, { base: BASE, captureDir: WORK, log });
       }
-    } finally { release(); }
+    } finally { await server.stop(); release(); }
   }
-} finally { await server.stop(); }
+}
 
 // ---- 2. windowed metrics
 const candidates = { calm: [], detail: [], lag: [] };
+const rel = (x, y) => Math.abs(x - y) / Math.max(x, y, 1e-9);
 const sourceMeta = [];
 for (const s of cfg.sources) {
   const capDir = path.join(WORK, 'captures', s.capture);
@@ -126,14 +127,21 @@ const all = candidates._v ?? [];
 const groups = new Map();
 for (const e of all) { const k = `${e.source}|${e.window.x},${e.window.y}`; (groups.get(k) ?? groups.set(k, []).get(k)).push(e); }
 const metricsOf = { calm: (e) => e.calm.boil, detail: (e) => e.detail.flip, lag: (e) => e.lag.lag };
-const picks = { calm: [], detail: [], lag: [] };
+const picks = { calm: [], detail: [], lag: [], tradeoff: [] };
 const srcMetrics = Object.fromEntries(cfg.sources.map((s) => [`${s.capture}/${s.signal}`, s.metrics]));
-for (const metric of ['calm', 'detail', 'lag']) {
+for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
   const cands = [];
   for (const [k, list] of groups) {
-    if (!srcMetrics[list[0].source].includes(metric)) continue;
+    if (!srcMetrics[list[0].source].includes(metric === 'tradeoff' ? 'calm' : metric)) continue;
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
       const a = list[i], b = list[j];
+      if (metric === 'tradeoff') {
+        // calmer-but-blurrier vs sharper-but-boils: one option has >= 12 % lower boil, the other >= 12 % lower FLIP
+        const ok2 = Number.isFinite(a.calm.boil) && Number.isFinite(b.calm.boil) && Number.isFinite(a.detail.flip) && Number.isFinite(b.detail.flip) && a.calm.n >= 2000
+          && rel(a.calm.boil, b.calm.boil) >= 0.12 && rel(a.detail.flip, b.detail.flip) >= 0.12 && (a.calm.boil < b.calm.boil) !== (a.detail.flip < b.detail.flip);
+        if (ok2) cands.push({ key: k, a, b, r: rnd() });
+        continue;
+      }
       const va = metricsOf[metric](a), vb = metricsOf[metric](b);
       if (!Number.isFinite(va) || !Number.isFinite(vb)) continue;
       let ok;
@@ -148,7 +156,7 @@ for (const metric of ['calm', 'detail', 'lag']) {
   const perSource = new Map(), perWin = new Map(), used = new Set();
   const seenPair = new Set();
   for (const pass of [0, 1]) for (const c of cands) {
-    if (picks[metric].length >= PER) break;
+    if (picks[metric].length >= (metric === 'tradeoff' ? 10 : PER)) break;
     const src = c.a.source, ps = perSource.get(src) ?? 0, pw = perWin.get(c.key) ?? 0;
     const id = `${c.key}|${[c.a.variant, c.b.variant].sort().join(',')}`;
     if (seenPair.has(id)) continue;
@@ -164,11 +172,12 @@ rmSync(SHEETS, { recursive: true, force: true });
 mkdirSync(SHEETS, { recursive: true });
 const pairsOut = [], key = [];
 const TITLES = {
+  tradeoff: { title: 'Calm vs sharp', question: 'Which would you rather ship?', hint: 'One is calmer but softer, the other sharper but boils. Compare each with the reference on the right and pick the one you would accept in a real scene.' },
   calm: { title: 'Calmer', question: 'Which one is calmer?', hint: 'Look for flicker, boiling, crawling or shimmer over time. A steady image counts as calm even when it is a bit soft or lags the motion. Noise and speckle count against it.' },
   detail: { title: 'More detail', question: 'Which one is closer to the reference?', hint: 'Compare each with the reference on the right: edges, texture and small shapes kept, and no noise or blotches. Not a time question: these are still frames.' },
   lag: { title: 'Settles faster', question: 'Which one settles faster?', hint: 'Each clip starts cold, from a noisy first frame. Which one reaches its final, clean look sooner? (Use the speed menu to slow it down.)' },
 };
-for (const metric of ['calm', 'detail', 'lag']) {
+for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
   picks[metric].forEach((c, n) => {
     const id = `${metric}-${String(n + 1).padStart(2, '0')}`;
     const sc = cfg.sources.find((s) => `${s.capture}/${s.signal}` === c.a.source);
@@ -176,16 +185,16 @@ for (const metric of ['calm', 'detail', 'lag']) {
     const W = m.width, ch = SIG_CH[sc.signal];
     const outRoot = path.join(WORK, 'outputs', sc.capture);
     const meta = sourceMeta.find((x) => x.capture === sc.capture && x.signal === sc.signal);
-    const still = metric === 'detail';
-    const frames = still ? [meta.fDetail] : metric === 'calm' ? Array.from({ length: CLIP }, (_, k) => meta.f0 + k) : Array.from({ length: LAG_FRAMES }, (_, k) => k);
+    const still = metric === 'detail', clip = metric === 'calm' || metric === 'tradeoff';
+    const frames = still ? [meta.fDetail] : clip ? Array.from({ length: CLIP }, (_, k) => meta.f0 + k) : Array.from({ length: LAG_FRAMES }, (_, k) => k);
     const flip = rnd() < 0.5; // which variant is row 0 ("a")
     const [va, vb] = flip ? [c.b, c.a] : [c.a, c.b];
-    const rows = still ? 3 : 2;
+    const rows = still || metric === 'tradeoff' ? 3 : 2;
     const W2 = frames.length * SIZE, H2 = rows * SIZE;
     const rgb = Buffer.alloc(W2 * H2 * 3);
     frames.forEach((f, k) => {
       const tiles = [outputSource(outRoot, outName({ id: va.variant }), sc.signal).get(f), outputSource(outRoot, outName({ id: vb.variant }), sc.signal).get(f)];
-      if (still) tiles.push(readBuffer(capDir, f, REF_BUFFER[sc.signal]));
+      if (rows === 3) tiles.push(readBuffer(capDir, f, REF_BUFFER[sc.signal]));
       tiles.forEach((data, r) => {
         const t = renderTile(data, ch, W, c.a.window, SIZE);
         for (let y = 0; y < SIZE; y++) t.copy(rgb, ((r * SIZE + y) * W2 + k * SIZE) * 3, y * SIZE * 3, (y + 1) * SIZE * 3);
@@ -203,4 +212,4 @@ const generated = new Date().toISOString();
 writeFileSync(PAIRS_JSON, JSON.stringify({ version: 1, generated, metrics: TITLES, pairs: pairsOut }, null, 1));
 writeFileSync(KEY_JSON, JSON.stringify({ version: 1, generated, note: 'Private key for analyze.mjs: which option is which and every metric value. Do not show it while judging.', seed: SEED, size: SIZE, pairs: key }, null, 1));
 const bytes = readdirSync(SHEETS).reduce((a, f) => a + readFileSync(path.join(SHEETS, f)).length, 0);
-log(`wrote ${pairsOut.length} pairs (${pairsOut.filter((p) => p.metric === 'calm').length} calm, ${pairsOut.filter((p) => p.metric === 'detail').length} detail, ${pairsOut.filter((p) => p.metric === 'lag').length} lag), sheets ${(bytes / 1e6).toFixed(1)} MB`);
+log(`wrote ${pairsOut.length} pairs (${pairsOut.filter((p) => p.metric === 'calm').length} calm, ${pairsOut.filter((p) => p.metric === 'detail').length} detail, ${pairsOut.filter((p) => p.metric === 'lag').length} lag, ${pairsOut.filter((p) => p.metric === 'tradeoff').length} tradeoff), sheets ${(bytes / 1e6).toFixed(1)} MB`);

@@ -69,7 +69,6 @@ process.env.RT_CAPTURE_DIR = WORK;
 const rowDenoiser = (rowId, signal) => cfg.rows[rowId].denoiser?.[signal] ?? null;
 const sh = (c) => { try { return execSync(c, { cwd: REPO, encoding: 'utf8' }).trim(); } catch { return null; } };
 const t0 = Date.now();
-const server = await startServer(BASE, log);
 const results = { generated: new Date().toISOString(), repoCommit: sh('git rev-parse --short HEAD'), packageCommit: sh('git log -1 --format=%h -- packages/denoiser-realtime/src packages/denoiser-ffx/src'),
   params: { settle: SETTLE, flipEvery: FLIP_EVERY, captures: SRC_CAPTURES }, gpu: null, cost: prev?.cost ?? null, scenes: [] };
 
@@ -87,12 +86,13 @@ try {
       return { s, queries: [...needs].map(([d, sigs]) => `mode=replay&capture=${s.capture}&denoiser=${d}&signals=${[...sigs].filter((x) => hasSignal(man, x)).join(',')}`) };
     });
     const release = await acquireGpu(`replays for ${scenes.length} scenes`, { log });
+    const server = await startServer(BASE, log);
     try {
       for (const { s, queries } of batches) {
         log(`[${s.id}] replaying ${queries.length} denoisers over ${s.capture}`);
         replayQueries(queries, { base: BASE, captureDir: WORK, log });
       }
-    } finally { release(); }
+    } finally { await server.stop(); release(); }
   }
 
   // ---- scoring (CPU)
@@ -150,12 +150,13 @@ try {
       execSync(`node ${path.join(REPO, 'tools/rt-capture/gen-synthetic.mjs')} --name ${capName} --w 1920 --h 1080 --frames 10`, { env: process.env, stdio: 'inherit' });
     } else if (!existsSync(dst)) symlinkSync(src, dst);
     const release = await acquireGpu('cost 1080p', { log });
+    const server = await startServer(BASE, log);
     try {
       await waitForQuietGpu({ log });
       log('timing at 1080p (3 rounds per row)');
       const cost = measureCost({ costRows: cfg.cost, capture: capName, base: BASE, captureDir: WORK, log });
       results.cost = { measuredAt: new Date().toISOString(), gpu: results.gpu, capture: capName, protocol: 'rule 11: GPU lock, no other headless Chrome, 50 ms warm-up before each timed dispatch, first frame dropped, median of 3 rounds', rows: cost };
-    } finally { release(); }
+    } finally { await server.stop(); release(); }
   }
   // native cost (RTX, imported)
   results.nativeCost = Object.fromEntries(Object.entries(cfg.nativeCost).map(([g, id]) => [g, { id, ...loadNativeCost(id) }]));
@@ -170,5 +171,5 @@ try {
   writeReports(OUT, results);
   log(`done in ${((Date.now() - t0) / 60000).toFixed(1)} min -> ${OUT}/latest.{json,md} + index.html`);
 } finally {
-  await server.stop();
+  // servers are started and stopped inside the lock sections above
 }
