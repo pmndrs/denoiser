@@ -3,21 +3,17 @@
 // the WGSL ray functions) and add only what the golden contract needs: deterministic poses per path frame, the light
 // event of G4, the product scene of G5.
 import * as THREE from 'three/webgpu';
-import { float, vec2, vec3, vec4, uniform, uint, select, hash } from 'three/tsl';
+import { float, vec2, vec4, uniform, uint, hash } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshBVH, SAH } from 'three-mesh-bvh';
 import { BVHComputeData } from 'three-mesh-bvh/webgpu';
-import {
-  type N as _N, LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, equivalentSphereRadius,
-} from '../realtime/scene';
+import { LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, equivalentSphereRadius } from '../realtime/scene';
 import { scenePose, type PathName } from '../realtime/path';
 import { loadAsset } from '../realtime/assets';
 import { SCENES, makeSkyEnvironment, pathOf, type SceneConfig } from '../realtime/scenes';
 import { cornerRays, assetRays } from '../realtime/rays';
 import type { GBuf, Kit, KitSignals, N, RaySetup } from './types';
 import type { GoldenEvent } from './registry';
-
-void (0 as unknown as _N);
 
 const V3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const clampF = (f: number, n: number) => Math.max(0, Math.min(n - 1, f));
@@ -274,7 +270,7 @@ export function productKit(W: number, H: number, frames: number) {
       model.position.set(-c.x, 0.03 - box2.min.y, -c.z);
       const root = new THREE.Group(); // the turntable: plinth + product rotate together about the vertical axis
       root.add(model);
-      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 96), new THREE.MeshStandardMaterial({ color: 0xcfcfd2, roughness: 0.28, metalness: 0 }));
+      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.03, 96), new THREE.MeshStandardMaterial({ color: 0x9d9ca0, roughness: 0.28, metalness: 0 }));
       plinth.position.y = 0.015;
       root.add(plinth);
       // static floor (a wide disc, satin) and a back sweep so the sky/ground split does not dominate the frame
@@ -306,5 +302,3 @@ export function productKit(W: number, H: number, frames: number) {
   }, W, H);
 }
 
-// silence unused (kept for symmetrical kit signatures)
-void vec3; void select;

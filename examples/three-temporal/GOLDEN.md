@@ -45,7 +45,7 @@ visibility; G3/G4/G5: converged diffuse, AO and SSR specular); its limits are li
 
 `ours` takes review-bench option overrides: `options` = a `SideConfig` of option ids from
 `src/review/options.ts` (e.g. `{"gi.filter":"recurrent","shadows.lightMotion":1}`), resolved with
-`src/review/config.ts nodeOptions()`; `preset` names a decision preset. More denoisers register with
+`src/review/config.ts nodeOptions()`. More denoisers register with
 `registerGoldenDenoiser({ id, build })` in `src/golden/denoisers.ts` (OIDN 3 adapts there).
 `info().applies` says which signals a denoiser really processes.
 
@@ -55,9 +55,10 @@ visibility; G3/G4/G5: converged diffuse, AO and SSR specular); its limits are li
 
 `golden.html?scene=G3&path=orbit&mode=run&denoiser=ours&res=half&seed=1` (dev server; port 5301 for this track).
 One scene/path/mode/denoiser per page load (the graph is built for it). Parameters: `scene`, `path`, `mode`
-(`run|perfect|reference|capture`), `denoiser`, `options` (JSON), `preset`, `res` (`1080p` = 1920x1080, `half` = 960x540,
-default `half`) or `w`+`h`, `seed` (default 1), `referenceSpp` (4096), `perfectSpp` (256), `withReference` (0|1),
-`signals` (comma list; default all of the scene). `golden.html?list=1` builds nothing and only answers `list()`.
+(`run|perfect|reference|capture`), `denoiser`, `options` (JSON), `res` (`1080p` = 1920x1080, `half` = 960x540,
+default `half`) or `w`+`h`, `seed` (default 1), `referenceSpp` (4096), `perfectSpp` (256), `referenceSppSpec` (cap on the SSR reference frames, default 4096), `difRays` (diffuse rays per
+reference sub-frame, 8), `visGrid` (shadow rays per sub-frame = visGrid^2, 2x2), `withReference` (0|1), `lean` (0|1: no composites and
+guides, for timing runs), `signals` (comma list of the denoised signals to build; default all). `golden.html?list=1` builds nothing and only answers `list()`.
 The page runs headless without UI beyond a status line; frames are stepped **only** by `step()` (no free-running loop).
 Ready: `window.__golden.ready === true`; on failure `window.__error` holds the message.
 
@@ -106,7 +107,8 @@ use `readB64` (or the Node driver).
 | `reference` | the converged signal of this frame (`referenceSpp` samples; needs mode `reference`/`capture` or `withReference=1`) |
 
 Reading is only valid after a `step()` and before the next one. `step()` and every read are serialized by the page.
-Reading all signals of one frame costs ~10 ms at half resolution.
+`read` goes through a chunked transfer (`readStart` + `readChunk`, 1 MB per CDP message: Node's WebSocket stalls on single
+messages of several MB); `readB64` is the one-message variant for small buffers.
 
 **Frame stepping.** `step()` advances one path frame; at 1080p `run` costs about the real-time cost of the scene
 (milliseconds); `perfect` and `reference` hold the pose and accumulate (`perfectSpp` / `referenceSpp` samples over
@@ -146,9 +148,18 @@ CLI (writes the file layout below): `node src/golden/driver.mjs record --scene=G
 
 `mode=capture` (or the driver's `capture` command) writes `tools/rt-capture/captures/<name>/` (`$RT_CAPTURE_DIR/captures/`)
 in CAPTURE-FORMAT v0 (v1 for G5: `normal_geom`), 33 floats per pixel, `referenceSpp` references for diffuse, specular
-(`specular_ref`), visibility and AO (`ao_ref`), frame 0 a reset, per-frame `lights` (G4's lantern, G2's moving
-nothing). Validate with `node tools/rt-capture/validate.mjs <name>`. Default capture size is `half` (68 MB/frame at
+(`specular_ref`), visibility and AO (`ao_ref`), frame 0 a reset, per-frame `lights` (G4's lantern power changes at frame 32). Validate with `node tools/rt-capture/validate.mjs <name>`. Default capture size is `half` (68 MB/frame at
 960x540, 275 MB/frame at 1080p).
+
+## Recommended scoring flow
+
+References depend only on (scene, path, resolution, seed, `referenceSpp`), never on the denoiser. So: (1) once per scene/path/resolution
+run `record --mode=reference --reads=diffuse:reference,specular:reference,shadow:reference,ao:reference,display:reference --guides=1`
+and keep the files; (2) per denoiser run `record --mode=run --denoiser=<id> --reads=<signal>:output,...` (and `--mode=perfect` for the
+same denoiser with `<signal>:input` as the perfect input); (3) the scorecard compares output files with the cached reference files
+frame by frame. In `perfect` mode `reference` reads return the `perfectSpp` converged signal (the same data as `input`), not the
+4096-spp one. `run` with `--withReference` produces references in the same pass, at the cost of holding every pose (slow).
+The reference of frame f is independent of which frames were rendered before it, so frame ranges can be split across processes.
 
 ## Scenes
 
