@@ -243,10 +243,10 @@ export function bistroLightKit(W: number, H: number, frames: number) {
 export const PRODUCT_CFG: SceneConfig = {
   id: 'sponza', // unused (AssetScene id of the shared type)
   label: 'Product turntable (Flight Helmet, CC0)',
-  fov: 32, near: 0.05, far: 30,
-  sun: { toLight: V3(0.55, 0.62, 0.55).normalize(), angularRadius: 0.07, irradiance: 3.2, color: [1.0, 0.97, 0.92] },
+  fov: 32, near: 0.05, far: 80,
+  sun: { toLight: V3(0.55, 0.62, 0.55).normalize(), angularRadius: 0.07, irradiance: 2.0, color: [1.0, 0.97, 0.92] },
   local: { position: V3(-1.1, 0.7, 0.9), radius: 0.12, power: 1.2, color: [0.75, 0.85, 1.0] },
-  sky: { zenith: [0.55, 0.62, 0.78], horizon: [0.9, 0.9, 0.88], ground: [0.28, 0.27, 0.26], glow: 1.2, intensity: 1.0 },
+  sky: { zenith: [0.45, 0.52, 0.68], horizon: [0.8, 0.8, 0.78], ground: [0.28, 0.27, 0.26], glow: 1.2, intensity: 0.9 },
   ssr: { maxDistance: 3, thickness: 0.06 },
   free: { position: V3(0.9, 0.5, 1.4), target: V3(0, 0.3, 0) },
   paths: [],
@@ -278,7 +278,7 @@ export function productKit(W: number, H: number, frames: number) {
       plinth.position.y = 0.015;
       root.add(plinth);
       // static floor (a wide disc, satin) and a back sweep so the sky/ground split does not dominate the frame
-      const floor = new THREE.Mesh(new THREE.CircleGeometry(6, 96), new THREE.MeshStandardMaterial({ color: 0x8c8a86, roughness: 0.4, metalness: 0 }));
+      const floor = new THREE.Mesh(new THREE.CircleGeometry(60, 96), new THREE.MeshStandardMaterial({ color: 0x6f6d6a, roughness: 0.4, metalness: 0 }));
       floor.rotation.x = -Math.PI / 2;
       const meshes: THREE.Mesh[] = [];
       const mats: THREE.Material[] = [];

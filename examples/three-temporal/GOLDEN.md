@@ -152,7 +152,50 @@ nothing). Validate with `node tools/rt-capture/validate.mjs <name>`. Default cap
 
 ## Scenes
 
-(Filled in with the implementation: paths, lights, assets and licences, limits per mode.)
+All scenes: 960x540 (`half`) or 1920x1080, 64 path frames, one blue-noise ray per signal per pixel, three's stochastic SSR for
+specular (with environment importance sampling, so the environment's reflection is part of `specular`, not only screen-space
+hits), no jitter, `reversedDepth: false`. Guides carry the previous pose exactly: `motion` / `motion_z` come from the
+previous path frame's camera and, for moving objects, the object's previous pose (not from three's velocity buffer, which
+cannot be right while a pose is held for references).
+
+### G1 reflection bench
+Owned by track R. `reflect-bench.html` (moved from `feat/interior-lab` by R's first commit, cherry-picked here as `16720b8`)
+has its own scripted API (`configure`, frame-locked `step`, GPU timings, orbit pose hold; `results/data/r/rb-run.mjs` is its
+runner). It is **registered** in the table and in `list()` as `kind: 'external'`; the golden engine does not render it, and
+`golden.html?scene=G1` says so. R and the scorecard agree between them how G1's numbers enter the dashboard.
+
+### G2 the knot over a floor (`occluder`, `orbit`)
+The furnished corner of the realtime pages (20,862 triangles, procedural, glossy floor roughness 0.12) with the 1.62 x 1.2 m area
+light (rectangular panel; the shadow denoiser gets the sphere of equal area). Torus knot on a pedestal rotating
+0.35/60 rad per frame about its tilted axis: its soft shadow sweeps the back wall and floor. `occluder` is the static close-up
+camera (`KNOT_VIEW`), `orbit` the orbit + pan camera of `src/realtime/path.ts`. Shadow light: the panel. Mover = the knot
+(`mask_mover`, object motion in `motion`).
+
+### G3 Sponza orbit (`orbit`, `pan`)
+Crytek Sponza, geometry only (262,267 triangles, flat colour per material, glossy floor), sun (angular radius 0.02 rad) as the
+shadow light, a warm lamp in the south aisle, sky gradient for misses. One-bounce diffuse GI with a sun shadow ray at the bounce
+point (`src/realtime/rays.ts`). Camera only. Needs the model (Git LFS; `$RT_SCENE_ASSETS`, CAPTURES.md).
+
+### G4 Bistro pan with a light switching on (`pan-light-on`)
+Amazon Lumberyard Bistro exterior, geometry only (2.83 M triangles). `bistro-pan` camera. The sun is the shadow light as in
+`bistro-pan`; a street lantern (sphere r 0.12 m at (-2.5, 2.4, -9.5), colour warm, power 60) is **off for frames 0-31 and on
+from frame 32**, a step. In the converged diffuse the frame-mean jumps from 0.262 to 0.649 (x2.5) between frames 31 and 32.
+`events` lists it (`light-on` at 32). References are converged per frame for that frame's lighting, so the reference steps too.
+Lag (the scorecard's number 3) is measured from frame 32 on `diffuse` (and `display`).
+
+### G5 product turntable (`turntable`)
+Flight Helmet (Microsoft, via Khronos glTF-Sample-Models; **CC0 1.0**; `src/golden/assets/g5-flight-helmet/NOTICE.md`): six materials
+with base-colour, normal and occlusion-roughness-metalness maps (glossy lenses and glass/plastic, rough leather and rubber,
+polished and brushed metal), textures downscaled to 1024 px. On a plinth that rotates with it, 1.5 deg/frame about the vertical
+axis (96 deg over the path); static 3/4 camera, a satin floor, a soft key (sun, angular radius 0.07 rad), a warm-cool fill sphere and a studio
+sky as the environment light. The shading normal (normal-mapped) is the denoiser guide and `normal`; `normal_geom` is the vertex
+normal (v1 capture buffer). Mover = plinth + helmet.
+
+## Cost of the reference modes
+
+Measured on the M5 Pro at 960x540 (see "Status" for the numbers and the lock protocol). A `reference` frame costs
+`difFrames x (rays/sub-frame) + visFrames + specFrames` sub-frames: at `referenceSpp = 4096` that is 512 diffuse sub-frames
+(8 rays each), 1024 shadow sub-frames (2x2 rays) and 4096 SSR frames. `referenceSppSpec` caps the SSR frames.
 
 ## Status
 
