@@ -10,8 +10,8 @@ No change under `packages/**`._
 |---|---|---|
 | Runner + metric library: the five numbers | `tools/scorecard/` (`run.mjs`, `lib/metrics.mjs`, `lib/cost.mjs`, `lib/native.mjs`, `lib/report.mjs`, `lib/crops.mjs`, `lib/gpu-lock.mjs`, `scenes.json`, `README.md`) | done, runs end to end |
 | Dashboard | `docs/research/rt-denoiser/scorecard/{latest.json, latest.md, index.html, crops/}` | first numbers on the kept captures (G2-G4 provisional + the two corner captures) |
-| Calibration mode (blind A/B) | review bench button "Blind A/B calibration": `examples/three-temporal/src/review/calibration.ts`, `calibration/{pairs.json, sheets/*.png}`; one `<script>` line in `review.html` | CALIBRATION_STATE |
-| Pair builder + agreement script | `tools/scorecard/calibration/{make-pairs.mjs, analyze.mjs, sources.json, key.json}` | CALIBRATION_STATE |
+| Calibration mode (blind A/B) | review bench button "Blind A/B calibration": `examples/three-temporal/src/review/calibration.ts`, `calibration/{pairs.json, sheets/*.png}`; one `<script>` line in `review.html` | built and tested in the bench with synthetic pairs (answers, keys, copy button, analysis script); the real pair set is NOT generated yet: the committed `pairs.json` is an empty stub until `make-pairs.mjs` has run (GPU queue) |
+| Pair builder + agreement script | `tools/scorecard/calibration/{make-pairs.mjs, analyze.mjs, sources.json, key.json}` | built and tested in the bench with synthetic pairs (answers, keys, copy button, analysis script); the real pair set is NOT generated yet: the committed `pairs.json` is an empty stub until `make-pairs.mjs` has run (GPU queue) |
 | Golden scenes G1 / G5, G2-G4 golden paths | waiting for T0-scenes (see "Next") | not started here: `GOLDEN.md` is on `track/t0-scenes` (contract only so far) |
 
 ## Commands
@@ -23,11 +23,12 @@ node tools/scorecard/run.mjs                    # every scene: replay -> score -
 node tools/scorecard/run.mjs --scenes G2-knot-static,corner-orbit
 node tools/scorecard/run.mjs --cost-only        # 1080p cost, rule 11 protocol (lock + idle GPU), keeps the scene tables
 node tools/scorecard/run.mjs --report-only      # rebuild latest.md / index.html from latest.json
+tools/scorecard/regenerate.sh                   # everything, step by step under tools/gpu-lock.sh
 node tools/scorecard/calibration/make-pairs.mjs # rebuild the blind pairs (replays, windowed scoring, sheets)
 node tools/scorecard/calibration/analyze.mjs results.json   # agreement per metric from the bench's "Copy results"
 ```
 
-Defaults and options are in `tools/scorecard/README.md`. Raw outputs go to `../scorecard-work-t0c/` (outside git; captures are
+Defaults and options are in `tools/scorecard/README.md`. Raw outputs go to `../scorecard-work-track-t0c/` (outside git; captures are
 symlinked from `Denoiser-nrd-cleanroom/tools/rt-capture/captures/`, never copied) and are deleted after scoring.
 
 ## The five numbers as implemented
@@ -50,7 +51,27 @@ lag tolerance, and that lag on a continuously moving camera (orbit, pan) is only
 
 ## First dashboard numbers (kept captures, M5 Pro, ours = shipped defaults)
 
-NUMBERS_TABLE
+From the first full run (commit 8a35e62; before the dense-geometry region, tails, bilinear history and the golden G4 capture, which a regeneration adds; boil in that run used the nearest tap and showed a ratio to the reference): ours vs FFX on shadows, boil moving / static, FLIP.
+
+| scene | ours moving / static boil | FFX moving / static boil | FLIP ours / FFX / native sigma |
+|---|---|---|---|
+| G2 knot static camera | 0.0177 / 0.0021 | 0.0352 / 0.0020 | 0.0174 / 0.0470 / 0.0496 |
+| G2 knot orbit | 0.0634 / 0.0117 | 0.0405 / 0.0065 | 0.0193 / 0.0545 / 0.0495 |
+| G3 Sponza moving knot | 0.0844 / 0.0058 | 0.0465 / 0.0035 | 0.0264 / 0.0682 / - |
+| G4 Bistro moving lantern | 0.0619 / 0.0055 | 0.0417 / 0.0041 | 0.0285 / 0.1089 / - |
+
+Reading: on a static camera ours is calmer than FFX in the moving-occluder region and level in static penumbrae; on moving cameras
+ours boils more than FFX (the gap Dennis sees) while keeping 2-4x less FLIP error. Diffuse on corner-orbit: ours FLIP 0.037 vs
+native REBLUR 0.078 / RELAX 0.056 (default settings). Full tables: `docs/research/rt-denoiser/scorecard/latest.md`.
+
+**Regenerating with the current code is pending the GPU queue.** The coordinator's four metric requests are implemented (commit
+8de3257 and eea..46c: dense-geometry region reported separately; absolute boil with the reference floor as context, no ratio shown;
+bilinear two-hop motion compensation; p99 and pop fraction per region; a "calm vs sharp" trade-off pair type in the calibration set;
+wall time with timestamps off where the registry honours `timestamps=0`), but T0-scenes' long captures held the lock for over an hour
+without using the queue, so `tools/scorecard/regenerate.sh` (replays, scoring, calibration replays, 1080p cost, pairs; each step under
+`tools/gpu-lock.sh`) has not run. Run it once the queue is free; it rewrites `latest.*` and the calibration set, and the cost table
+(none yet) fills the cost gate. The bilinear / tail code was only syntax-checked and run on one capture without replays, so expect a
+fix round on the first run.
 
 ## Caveats
 
