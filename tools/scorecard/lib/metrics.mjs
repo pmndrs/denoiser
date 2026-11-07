@@ -29,6 +29,7 @@ export const DEFAULTS = {
   lagTolerance: 0.10, // TRACKS.md: within 10 % of the settled level
   sigmaStaticMax: 0.01, // pixels whose reference sigma is below this are "static content" for the still-camera sigma
   tonemap: 'reinhard',
+  strides: [8],       // extra boil / sigma strides k (k = 1 is always computed): x_t - 2 x_(t-k) + x_(t-2k) along the chained reprojection
 };
 
 const tm = (x, ch, mode = 'reinhard') => {
@@ -163,6 +164,64 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
   let winMask = null;
   if (o.window) { winMask = new Uint8Array(N); for (let y = o.window.y; y < o.window.y + o.window.h; y++) for (let x = o.window.x; x < o.window.x + o.window.w; x++) winMask[y * W + x] = 1; }
   const doSigma = info.staticCamera;
+  // strided calm: per-pixel chained reprojection over k and 2k frames (every hop must be valid), bilinear sample at the end
+  const KS = o.strides ?? [], KMAX = Math.max(1, ...KS), SK = [...new Set([1, ...KS])];
+  const FR = new Map(), refRing = new Map();
+  const mkSA = () => Object.fromEntries(REGIONS.map((r) => [r, { s: 0, n: 0, px: 0, tot: 0 }]));
+  for (const x of [...S, R]) { x.sk = {}; x.sq = {}; x.nsq = {}; x.ring = new Map(); for (const k of KS) x.sk[k] = mkSA(); if (doSigma) for (const k of SK) { x.sq[k] = new Float64Array(N); x.nsq[k] = 0; } }
+  const bl = (arr, u, v, out) => {
+    const x0 = Math.floor(u), y0 = Math.floor(v);
+    if (x0 < 0 || y0 < 0 || x0 + 1 >= W || y0 + 1 >= H) return false;
+    const fx = u - x0, fy = v - y0, i00 = y0 * W + x0;
+    for (let c = 0; c < ch; c++) out[c] = (1 - fy) * ((1 - fx) * arr[i00 * ch + c] + fx * arr[(i00 + 1) * ch + c]) + fy * ((1 - fx) * arr[(i00 + W) * ch + c] + fx * arr[(i00 + W + 1) * ch + c]);
+    return true;
+  };
+  const chainsFor = (f, k, region) => {
+    const valid = new Uint8Array(N), U1 = new Float32Array(N), V1 = new Float32Array(N), U2 = new Float32Array(N), V2 = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!region[i]) continue;
+      let u = x, v = y, ok = true;
+      for (let h = 1; h <= 2 * k && ok; h++) {
+        const g = f - h + 1, fg = FR.get(g), fq = FR.get(g - 1);
+        if (g < 1 || info.resets[g] || !fg || !fq) { ok = false; break; }
+        const ui = Math.round(u), vi = Math.round(v);
+        if (ui < 0 || vi < 0 || ui >= W || vi >= H) { ok = false; break; }
+        const j = vi * W + ui;
+        if (!isScored(fg.depth[j])) { ok = false; break; }
+        const zExp = fg.vz[j] + (fg.mz ? fg.mz[j] : 0);
+        u -= 0.5 * fg.mo[2 * j] * W; v += 0.5 * fg.mo[2 * j + 1] * H;
+        const un = Math.round(u), vn = Math.round(v);
+        if (un < 0 || vn < 0 || un >= W || vn >= H) { ok = false; break; }
+        const q = vn * W + un;
+        if (!isScored(fq.depth[q]) || Math.abs(fq.vz[q] - zExp) > 0.02 * Math.abs(fg.vz[j])) { ok = false; break; }
+        if (h === k) { U1[i] = u; V1[i] = v; }
+      }
+      if (ok) { valid[i] = 1; U2[i] = u; V2[i] = v; }
+    }
+    return { valid, U1, V1, U2, V2 };
+  };
+  const strideFeed = (x, ring, cur, f, region, chains) => {
+    const ta = new Float32Array(ch), tb = new Float32Array(ch);
+    for (const k of KS) {
+      const A = ring.get(f - k), B = ring.get(f - 2 * k), c = chains[k];
+      if (!c || !A || !B) continue;
+      for (let i = 0; i < N; i++) {
+        const r = region[i]; if (!r) continue;
+        const acc = x.sk[k][REGIONS[r - 1]]; acc.tot++;
+        if (!c.valid[i] || !bl(A, c.U1[i], c.V1[i], ta) || !bl(B, c.U2[i], c.V2[i], tb)) continue;
+        let s2 = 0; for (let cc = 0; cc < ch; cc++) { const d = cur[i * ch + cc] - 2 * ta[cc] + tb[cc]; s2 += d * d; }
+        acc.s += s2; acc.n += ch; acc.px++;
+      }
+    }
+  };
+  const sigmaFeed = (x, ring, cur, f, sinceReset, lastReset, inRange) => {
+    if (!doSigma || sinceReset < o.settle || !inRange) return;
+    for (const k of SK) {
+      const A = ring.get(f - k); if (!A || f - k < lastReset) continue;
+      for (let i = 0; i < N; i++) { const d = lumaOf(cur, i) - lumaOf(A, i); x.sq[k][i] += d * d; }
+      x.nsq[k]++;
+    }
+  };
   if (doSigma) for (const x of [...S, R]) { x.mean = new Float64Array(N); x.m2 = new Float64Array(N); }
 
   let prev = null; // previous frame's {tapW, age, lag, refL, depth, vz}
@@ -216,6 +275,14 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
     }
     if (sinceReset >= o.settle && !reset && inRange) { regionFrames++; for (let i = 0; i < N; i++) if (region[i]) regionPx[REGIONS[region[i] - 1]]++; }
 
+    FR.set(f, { mo: readBuffer(capDir, f, 'motion'), vz: readBuffer(capDir, f, 'viewz'), mz: hasMz ? readBuffer(capDir, f, 'motion_z') : null, depth });
+    FR.delete(f - 2 * KMAX - 2);
+    const dropOld = (ring) => ring.delete(f - 2 * KMAX - 1);
+    refRing.set(f, refT); dropOld(refRing);
+    const chains = {};
+    if (!reset && inRange) for (const k of KS) chains[k] = chainsFor(f, k, region);
+    strideFeed(R, refRing, refT, f, region, chains);
+    sigmaFeed(R, refRing, refT, f, sinceReset, lastReset, inRange);
     // ---- reference's own stats (boil per region, legacy boil, sigma)
     const have3 = inRange && tapW && tapPrevForT2 && R.h1 && R.h2;
     if (have3) {
@@ -312,6 +379,9 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
           addPx(src.boil[REGIONS[rg - 1]], s2, ch, e2, mRef[i], Math.sqrt(s2 / ch / 6));
         }
       }
+      src.ring.set(f, outT); dropOld(src.ring);
+      strideFeed(src, src.ring, outT, f, region, chains);
+      sigmaFeed(src, src.ring, outT, f, sinceReset, lastReset, inRange);
       src.w1 = reset ? null : sa;
       if (doSigma && sinceReset >= o.settle && inRange) {
         src.nSig++;
@@ -359,6 +429,16 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       p99: pctl(acc.hist, acc.px, 0.99), refP99: pctl(refAcc.hist, refAcc.px, 0.99), popFrac: acc.px ? acc.pop / acc.px : NaN };
   };
   const sumAcc = (g) => REGIONS.reduce((t, r) => { const h = new Uint32Array(HB); for (let b = 0; b < HB; b++) h[b] = t.hist[b] + g[r].hist[b]; return { s: t.s + g[r].s, e: t.e + g[r].e, n: t.n + g[r].n, px: t.px + g[r].px, pop: t.pop + g[r].pop, hist: h }; }, newAcc());
+  const sigmaOfK = (x, k) => { if (!doSigma || !x.nsq[k] || x.nsq[k] < 4) return null; const o2 = new Float32Array(N); for (let i = 0; i < N; i++) o2[i] = Math.sqrt(x.sq[k][i] / (2 * x.nsq[k])); return o2; };
+  const refSk = Object.fromEntries(SK.map((k) => [k, sigmaOfK(R, k)]));
+  const stridedOf = (x) => Object.fromEntries(KS.map((k) => {
+    const res = (a, ra) => ({ boil: a.n ? Math.sqrt(a.s / a.n / 6) : NaN, refBoil: ra.n ? Math.sqrt(ra.s / ra.n / 6) : NaN, n: a.px, validFrac: a.tot ? a.px / a.tot : NaN });
+    const sum = (g) => REGIONS.reduce((t, r) => ({ s: t.s + g[r].s, n: t.n + g[r].n, px: t.px + g[r].px, tot: t.tot + g[r].tot }), { s: 0, n: 0, px: 0, tot: 0 });
+    const o3 = Object.fromEntries(REGIONS.map((r) => [r, res(x.sk[k][r], R.sk[k][r])]));
+    o3.all = res(sum(x.sk[k]), sum(R.sk[k]));
+    return [k, o3];
+  }));
+  const sigmaKOf = (x) => (sigmaMask ? Object.fromEntries(SK.map((k) => { const sg = sigmaOfK(x, k); return [k, sg && refSk[k] ? { sigma: meanMasked(sg, sigmaMask), refSigma: meanMasked(refSk[k], sigmaMask) } : null]; })) : null);
   const rows = {};
   for (const s of S) {
     const sig = sigmaOf(s);
@@ -374,6 +454,9 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
         moving: regionRes(s.boil.moving, R.boil.moving),
         disocc: regionRes(s.boil.disocc, R.boil.disocc),
         all: regionRes(sumAcc(s.boil), sumAcc(R.boil)),
+        k1: { static: regionRes(s.boil.static, R.boil.static), dense: regionRes(s.boil.dense, R.boil.dense), moving: regionRes(s.boil.moving, R.boil.moving), disocc: regionRes(s.boil.disocc, R.boil.disocc), all: regionRes(sumAcc(s.boil), sumAcc(R.boil)) },
+        strided: stridedOf(s),
+        sigmaK: sigmaKOf(s),
         legacyBoil: s.legacy.n ? Math.sqrt(s.legacy.s / s.legacy.n / 6) : NaN,
         sigma: sig && sigmaMask ? { sigma: meanMasked(sig, sigmaMask), refSigma: meanMasked(refSig, sigmaMask), pixels: sigmaMask.reduce((a, b) => a + b, 0) } : null,
       },
@@ -390,6 +473,8 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       regions: Object.fromEntries(REGIONS.map((r) => [r, { boil: R.boil[r].n ? Math.sqrt(R.boil[r].s / R.boil[r].n / 6) : NaN, n: R.boil[r].n }])),
       regionPixelsPerFrame: Object.fromEntries(REGIONS.map((r) => [r, regionFrames ? Math.round(regionPx[r] / regionFrames) : 0])),
       sigma: sigmaMask ? meanMasked(refSig, sigmaMask) : null,
+      strided: Object.fromEntries(KS.map((k) => [k, Object.fromEntries(REGIONS.map((r) => [r, R.sk[k][r].n ? Math.sqrt(R.sk[k][r].s / R.sk[k][r].n / 6) : NaN]))])),
+      sigmaK: sigmaMask ? Object.fromEntries(SK.map((k) => [k, refSk[k] ? meanMasked(refSk[k], sigmaMask) : null])) : null,
     },
     rows,
   };

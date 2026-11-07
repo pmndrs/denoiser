@@ -25,7 +25,11 @@ for (const f of files) for (const a of JSON.parse(readFileSync(f, 'utf8')).answe
 // definitions: [name, extractor(optionEntry), better = 'low' | 'high']
 const DEFS = {
   calm: [
-    ['boil (second difference, all regions)', (o) => o.calm.boil, 'low'],
+    ['boil stride 8 (second difference over 8 frames, chained reprojection)', (o) => o.calm.k8, 'low'],
+    ['boil stride 1 (frame to frame)', (o) => o.calm.k1 ?? o.calm.boil, 'low'],
+    ['boil stride 8 / reference boil stride 8', (o) => (o.calm.refK8 > 1e-4 ? o.calm.k8 / o.calm.refK8 : null), 'low'],
+    ['still sigma at stride 8 (static cameras only)', (o) => o.calm.sigK8, 'low'],
+    ['still sigma at stride 1 (static cameras only)', (o) => o.calm.sigK1, 'low'],
     ['error boil (second difference of out - ref)', (o) => o.calm.errBoil, 'low'],
     ['boil / reference boil', (o) => (o.calm.refBoil > 1e-4 ? o.calm.boil / o.calm.refBoil : null), 'low'],
     ['legacy boil (smooth-reference mask)', (o) => o.calm.legacyBoil, 'low'],
@@ -59,15 +63,17 @@ for (const metric of ['calm', 'detail', 'lag']) {
       if (chosen) decided++;
       const ok = chosen !== null && pref === chosen;
       if (ok) agree++;
-      detail.push({ pair: a.pair, chosen, metricPrefers: pref, agree: ok, a: va, b: vb, capture: p.capture, signal: p.signal, variants: [p.a.variant, p.b.variant] });
+      detail.push({ dis: !!p.dis, pair: a.pair, chosen, metricPrefers: pref, agree: ok, a: va, b: vb, capture: p.capture, signal: p.signal, variants: [p.a.variant, p.b.variant] });
     }
     const rate = scored ? agree / scored : NaN;
     const verdict = !scored ? 'no pairs' : rate >= 0.8 ? 'PASS' : 'FAIL (fix this metric before it gates anything)';
-    out[metric][name] = { scored, decided, agree, rateAnswered: rate, rateDecided: decided ? agree / decided : NaN, verdict, pairs: detail };
-    lines.push(`| ${name} | ${scored} | ${agree} / ${scored} (${Number.isFinite(rate) ? (rate * 100).toFixed(0) : '–'} %) | ${agree} / ${decided} | ${verdict} |`);
+    const dd = detail.filter((x) => x.dis);
+    out[metric][name] = { disagreePairs: dd.length, disAgree: dd.filter((x) => x.agree).length, scored, decided, agree, rateAnswered: rate, rateDecided: decided ? agree / decided : NaN, verdict, pairs: detail };
+    lines.push(`| ${name} | ${scored} | ${agree} / ${scored} (${Number.isFinite(rate) ? (rate * 100).toFixed(0) : '–'} %) | ${agree} / ${decided} | ${verdict}${dd.length ? ` (on the ${dd.length} stride-disagreement pairs: ${dd.filter((x) => x.agree).length})` : ''} |`);
   }
   // disagreements, for fixing the metric
   const worst = DEFS[metric][0][0];
+  if (metric === 'calm') { const dis = mine.filter((a) => byId.get(a.pair).dis); lines.push(`Of these, ${dis.length} are pairs where stride 1 and stride 8 disagree on the winner: agree-with-Dennis there is the direct test of which stride matches his eye (see the two stride rows; their counts on those pairs are in the last column).`, ''); }
   const bad = out[metric][worst].pairs.filter((x) => !x.agree);
   if (bad.length) { lines.push('', `Pairs where "${worst}" and Dennis differ (${bad.length}): ${bad.map((x) => `${x.pair} (${x.capture}/${x.signal}: ${x.variants.join(' vs ')}; he chose ${x.chosen ?? "can't tell"})`).join('; ')}`); }
   lines.push('');

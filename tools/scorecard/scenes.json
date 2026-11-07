@@ -185,25 +185,26 @@
       "capture": "three-knot-static",
       "native": "three-knot-static",
       "signals": [
-        "visibility"
+        "visibility",
+        "specular"
       ],
       "gates": [
         {
-          "name": "calm: moving boil <= FFX",
+          "name": "calm k=8: moving boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.moving.boil",
+          "metric": "calm.strided.8.moving.boil",
           "op": "<=",
           "vs": "ffx"
         },
         {
-          "name": "calm: static boil <= FFX",
+          "name": "calm k=8: smooth boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.static.boil",
+          "metric": "calm.strided.8.static.boil",
           "op": "<=",
           "vs": "ffx"
         },
         {
-          "name": "calm tail: moving p99 <= FFX",
+          "name": "calm tail (k=1): moving p99 <= FFX",
           "signal": "visibility",
           "metric": "calm.moving.p99",
           "op": "<=",
@@ -212,7 +213,7 @@
         {
           "name": "calm: still-camera sigma <= FFX",
           "signal": "visibility",
-          "metric": "calm.sigma.sigma",
+          "metric": "calm.sigmaK.8.sigma",
           "op": "<=",
           "vs": "ffx"
         },
@@ -245,21 +246,21 @@
       ],
       "gates": [
         {
-          "name": "calm: moving boil <= FFX",
+          "name": "calm k=8: moving boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.moving.boil",
+          "metric": "calm.strided.8.moving.boil",
           "op": "<=",
           "vs": "ffx"
         },
         {
-          "name": "calm: static boil <= FFX",
+          "name": "calm k=8: smooth boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.static.boil",
+          "metric": "calm.strided.8.static.boil",
           "op": "<=",
           "vs": "ffx"
         },
         {
-          "name": "calm tail: moving p99 <= FFX",
+          "name": "calm tail (k=1): moving p99 <= FFX",
           "signal": "visibility",
           "metric": "calm.moving.p99",
           "op": "<=",
@@ -315,9 +316,9 @@
       ],
       "gates": [
         {
-          "name": "calm: moving boil <= FFX",
+          "name": "calm k=8: moving boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.moving.boil",
+          "metric": "calm.strided.8.moving.boil",
           "op": "<=",
           "vs": "ffx"
         },
@@ -371,9 +372,9 @@
       ],
       "gates": [
         {
-          "name": "calm: moving boil <= FFX",
+          "name": "calm k=8: moving boil <= FFX",
           "signal": "visibility",
-          "metric": "calm.moving.boil",
+          "metric": "calm.strided.8.moving.boil",
           "op": "<=",
           "vs": "ffx"
         },

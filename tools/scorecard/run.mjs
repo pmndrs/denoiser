@@ -144,7 +144,7 @@ try {
   }
 
   // ---- cost at 1080p (rule 11: lock + idle GPU)
-  if (flag('cost')) {
+  if (flag('cost') || flag('cost-only')) {
     const capName = cfg.captureTimingScene;
     const src = path.join(SRC_CAPTURES, capName), dst = path.join(WORK, 'captures', capName);
     if (!existsSync(path.join(dst, 'capture.json')) && !existsSync(path.join(src, 'capture.json'))) {

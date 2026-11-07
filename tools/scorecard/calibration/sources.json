@@ -1,27 +1,255 @@
 {
-  "_about": "Where calibration pairs are drawn from. Each source = one capture + signal and the variants (registry id + settings) whose outputs can be paired. Variants differ from each other by small-to-moderate amounts on the metrics; make-pairs.mjs scores every variant in several crop windows and keeps the pairs whose primary metric differs by 10-60 % (calm / detail) or 1-6 frames (lag).",
-  "size": 80,
-  "perMetric": 12,
-  "sources": [
-    { "capture": "three-knot-static", "signal": "visibility", "metrics": ["calm", "detail", "lag"], "variants": [
-      { "id": "shadows" }, { "id": "ffx-shadows", "denoiser": "ffx-shadows" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" },
-      { "id": "shadows-nostabilize", "denoiser": "shadows", "query": "sh.stabilize=0" }, { "id": "shadows-noisecap", "denoiser": "shadows", "query": "sh.noiseCap=2" } ] },
-    { "capture": "sponza-move", "signal": "visibility", "metrics": ["calm", "detail"], "variants": [
-      { "id": "shadows" }, { "id": "ffx-shadows", "denoiser": "ffx-shadows" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" },
-      { "id": "shadows-nostabilize", "denoiser": "shadows", "query": "sh.stabilize=0" } ] },
-    { "capture": "bistro-move", "signal": "visibility", "metrics": ["calm", "detail"], "variants": [
-      { "id": "shadows" }, { "id": "ffx-shadows", "denoiser": "ffx-shadows" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" },
-      { "id": "shadows-nostabilize", "denoiser": "shadows", "query": "sh.stabilize=0" } ] },
-    { "capture": "sponza-orbit", "signal": "diffuse", "metrics": ["calm", "detail", "lag"], "variants": [
-      { "id": "svgf" }, { "id": "svgf-auto", "denoiser": "svgf-auto" }, { "id": "svgf-aloff", "denoiser": "svgf", "query": "antiLag=off" }, { "id": "accumulate-8", "denoiser": "accumulate-8" },
-      { "id": "accumulate-32", "denoiser": "accumulate-32" }, { "id": "recurrent", "denoiser": "recurrent" } ] },
-    { "capture": "bistro-pan", "signal": "diffuse", "metrics": ["calm", "detail", "lag"], "variants": [
-      { "id": "svgf" }, { "id": "svgf-aloff", "denoiser": "svgf", "query": "antiLag=off" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" }, { "id": "recurrent", "denoiser": "recurrent" } ] },
-    { "capture": "three-orbit", "signal": "diffuse", "metrics": ["calm", "detail", "lag"], "variants": [
-      { "id": "svgf" }, { "id": "svgf-aloff", "denoiser": "svgf", "query": "antiLag=off" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" }, { "id": "recurrent", "denoiser": "recurrent" } ] },
-    { "capture": "three-orbit", "signal": "specular", "metrics": ["calm", "detail", "lag"], "variants": [
-      { "id": "svgf" }, { "id": "ffx-reflections", "denoiser": "ffx-reflections" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" }, { "id": "recurrent", "denoiser": "recurrent" } ] },
-    { "capture": "sponza-orbit", "signal": "specular", "metrics": ["calm", "detail"], "variants": [
-      { "id": "svgf" }, { "id": "ffx-reflections", "denoiser": "ffx-reflections" }, { "id": "accumulate-8", "denoiser": "accumulate-8" }, { "id": "accumulate-32", "denoiser": "accumulate-32" } ] }
-  ]
+ "_about": "Where calibration pairs are drawn from. Each source = one capture + signal and the variants (registry id + settings) whose outputs can be paired. Variants differ from each other by small-to-moderate amounts on the metrics; make-pairs.mjs scores every variant in several crop windows and keeps the pairs whose primary metric differs by 10-60 % (calm / detail) or 1-6 frames (lag).",
+ "size": 256,
+ "perMetric": 10,
+ "sources": [
+  {
+   "capture": "three-knot-static",
+   "signal": "visibility",
+   "metrics": [
+    "calm",
+    "detail",
+    "lag"
+   ],
+   "variants": [
+    {
+     "id": "shadows"
+    },
+    {
+     "id": "ffx-shadows",
+     "denoiser": "ffx-shadows"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "shadows-nostabilize",
+     "denoiser": "shadows",
+     "query": "sh.stabilize=0"
+    },
+    {
+     "id": "shadows-noisecap",
+     "denoiser": "shadows",
+     "query": "sh.noiseCap=2"
+    }
+   ]
+  },
+  {
+   "capture": "sponza-move",
+   "signal": "visibility",
+   "metrics": [
+    "calm",
+    "detail"
+   ],
+   "variants": [
+    {
+     "id": "shadows"
+    },
+    {
+     "id": "ffx-shadows",
+     "denoiser": "ffx-shadows"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "shadows-nostabilize",
+     "denoiser": "shadows",
+     "query": "sh.stabilize=0"
+    }
+   ]
+  },
+  {
+   "capture": "bistro-move",
+   "signal": "visibility",
+   "metrics": [
+    "calm",
+    "detail"
+   ],
+   "variants": [
+    {
+     "id": "shadows"
+    },
+    {
+     "id": "ffx-shadows",
+     "denoiser": "ffx-shadows"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "shadows-nostabilize",
+     "denoiser": "shadows",
+     "query": "sh.stabilize=0"
+    }
+   ]
+  },
+  {
+   "capture": "sponza-orbit",
+   "signal": "diffuse",
+   "metrics": [
+    "calm",
+    "detail",
+    "lag"
+   ],
+   "variants": [
+    {
+     "id": "svgf"
+    },
+    {
+     "id": "svgf-auto",
+     "denoiser": "svgf-auto"
+    },
+    {
+     "id": "svgf-aloff",
+     "denoiser": "svgf",
+     "query": "antiLag=off"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "recurrent",
+     "denoiser": "recurrent"
+    }
+   ]
+  },
+  {
+   "capture": "bistro-pan",
+   "signal": "diffuse",
+   "metrics": [
+    "calm",
+    "detail",
+    "lag"
+   ],
+   "variants": [
+    {
+     "id": "svgf"
+    },
+    {
+     "id": "svgf-aloff",
+     "denoiser": "svgf",
+     "query": "antiLag=off"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "recurrent",
+     "denoiser": "recurrent"
+    }
+   ]
+  },
+  {
+   "capture": "three-orbit",
+   "signal": "diffuse",
+   "metrics": [
+    "calm",
+    "detail",
+    "lag"
+   ],
+   "variants": [
+    {
+     "id": "svgf"
+    },
+    {
+     "id": "svgf-aloff",
+     "denoiser": "svgf",
+     "query": "antiLag=off"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "recurrent",
+     "denoiser": "recurrent"
+    }
+   ]
+  },
+  {
+   "capture": "three-orbit",
+   "signal": "specular",
+   "metrics": [
+    "calm",
+    "detail",
+    "lag"
+   ],
+   "variants": [
+    {
+     "id": "svgf"
+    },
+    {
+     "id": "ffx-reflections",
+     "denoiser": "ffx-reflections"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    },
+    {
+     "id": "recurrent",
+     "denoiser": "recurrent"
+    }
+   ]
+  },
+  {
+   "capture": "sponza-orbit",
+   "signal": "specular",
+   "metrics": [
+    "calm",
+    "detail"
+   ],
+   "variants": [
+    {
+     "id": "svgf"
+    },
+    {
+     "id": "ffx-reflections",
+     "denoiser": "ffx-reflections"
+    },
+    {
+     "id": "accumulate-8",
+     "denoiser": "accumulate-8"
+    },
+    {
+     "id": "accumulate-32",
+     "denoiser": "accumulate-32"
+    }
+   ]
+  }
+ ]
 }

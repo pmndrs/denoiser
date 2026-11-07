@@ -34,7 +34,7 @@ const SIZE = cfg.size ?? 80, PER = cfg.perMetric ?? 12;
 const SHEETS = path.join(REPO, 'examples', 'three-temporal', 'src', 'review', 'calibration', 'sheets');
 const PAIRS_JSON = path.join(REPO, 'examples', 'three-temporal', 'src', 'review', 'calibration', 'pairs.json');
 const KEY_JSON = path.join(HERE, 'key.json');
-const CLIP = 12, LAG_FRAMES = 16, SETTLE = 8;
+const SETTLE = 8, FPS = 24;   // clips run from the settle frame to the end of the capture (the longest the kept captures allow)
 const log = (...a) => console.log(...a);
 
 // tiny seeded PRNG (mulberry32) so reruns pick the same pairs
@@ -86,7 +86,7 @@ for (const s of cfg.sources) {
   const outRoot = path.join(WORK, 'outputs', s.capture);
   const have = s.variants.filter((v) => existsSync(path.join(outRoot, outName(v), 'frame_0000', `${s.signal}.f32`)));
   if (have.length < 2) { log(`skip ${s.capture}/${s.signal}: ${have.length} variants with outputs`); continue; }
-  const f0 = Math.min(m.frames.length - CLIP, SETTLE + 4), fDetail = Math.min(m.frames.length - 1, Math.floor(m.frames.length * 0.7));
+  const f0 = SETTLE, fDetail = Math.min(m.frames.length - 1, Math.floor(m.frames.length * 0.7));
   // windows: top reference-gradient windows (spread out) + a calmer one
   const fRef = fDetail;
   const ref = readBuffer(capDir, fRef, REF_BUFFER[s.signal]), depth = readBuffer(capDir, fRef, 'depth');
@@ -105,18 +105,20 @@ for (const s of cfg.sources) {
   const apart = (w) => wins.every((q) => Math.abs(q.x - w.x) >= SIZE + 20 || Math.abs(q.y - w.y) >= SIZE + 20);
   for (const w of scored) { if (wins.length >= 3) break; if (apart(w)) wins.push({ x: w.x, y: w.y, kind: 'edges' }); }
   const mid = scored[Math.floor(scored.length * 0.4)]; if (mid && apart(mid)) wins.push({ x: mid.x, y: mid.y, kind: 'smooth' });
-  sourceMeta.push({ capture: s.capture, signal: s.signal, windows: wins, f0, fDetail });
+  sourceMeta.push({ capture: s.capture, signal: s.signal, windows: wins, f0, fDetail, last: m.frames.length - 1 });
   log(`scoring ${s.capture}/${s.signal}: ${have.length} variants x ${wins.length} windows`);
   const srcList = () => have.map((v) => outputSource(outRoot, outName(v), s.signal)).map((x, k) => ({ ...x, id: have[k].id }));
   for (const win of wins) {
     const window = { x: win.x, y: win.y, w: SIZE, h: SIZE };
     // calm clip + detail frame in one pass; lag from the same pass's windowed error series
-    const sc = scoreSignal({ capDir, m, info, signal: s.signal, sources: srcList(), opts: { window, countFrames: [f0, f0 + CLIP - 1], flipFrames: [fDetail], settle: SETTLE }, log: () => {} });
+    const sc = scoreSignal({ capDir, m, info, signal: s.signal, sources: srcList(), opts: { window, countFrames: [f0, m.frames.length - 1], flipFrames: [fDetail], settle: SETTLE, strides: [8] }, log: () => {} });
     for (const v of have) {
       const r = sc.rows[v.id];
       const lagEv = r.lag[0];
       const entry = { source: `${s.capture}/${s.signal}`, capture: s.capture, signal: s.signal, window: win, variant: v.id,
-        calm: { boil: r.calm.all.boil, refBoil: r.calm.all.refBoil, errBoil: r.calm.all.errBoil, legacyBoil: r.calm.legacyBoil, sigma: r.calm.sigma?.sigma ?? null, n: r.calm.all.n },
+        calm: { boil: r.calm.all.boil, refBoil: r.calm.all.refBoil, errBoil: r.calm.all.errBoil, legacyBoil: r.calm.legacyBoil, sigma: r.calm.sigma?.sigma ?? null, n: r.calm.all.n,
+          k1: r.calm.k1.all.boil, k8: r.calm.strided[8].all.boil, refK1: r.calm.k1.all.refBoil, refK8: r.calm.strided[8].all.refBoil, valid8: r.calm.strided[8].all.validFrac,
+          sigK1: r.calm.sigmaK?.[1]?.sigma ?? null, sigK8: r.calm.sigmaK?.[8]?.sigma ?? null },
         detail: { flip: r.detail.flip, psnr: r.detail.psnrSettledPooled },
         lag: { lag: lagEv?.lag ?? null, settled: lagEv?.settled ?? null, start: lagEv?.start ?? null } };
       (candidates._v ??= []).push(entry);
@@ -144,6 +146,14 @@ for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
         if (ok2) cands.push({ key: k, a, b, r: rnd() });
         continue;
       }
+      if (metric === 'calm') {
+        // calm: stride 1 and stride 8 boil; `dis` = they disagree on the winner (calibration then says which one matches his eye)
+        if (!(a.calm.valid8 > 0.5 && b.calm.valid8 > 0.5) || a.calm.n < 20000) continue;
+        const r1 = rel(a.calm.k1, b.calm.k1), r8 = rel(a.calm.k8, b.calm.k8);
+        const dis = (a.calm.k1 < b.calm.k1) !== (a.calm.k8 < b.calm.k8);
+        if (r1 >= 0.08 && r8 >= 0.08 && Math.max(r1, r8) <= 0.7) cands.push({ key: k, a, b, r: rnd(), dis });
+        continue;
+      }
       const va = metricsOf[metric](a), vb = metricsOf[metric](b);
       if (!Number.isFinite(va) || !Number.isFinite(vb)) continue;
       let ok;
@@ -157,13 +167,17 @@ for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
   cands.sort((x, y) => x.r - y.r);
   const perSource = new Map(), perWin = new Map(), used = new Set();
   const seenPair = new Set();
-  for (const pass of [0, 1]) for (const c of cands) {
-    if (picks[metric].length >= (metric === 'tradeoff' ? 10 : PER)) break;
+  const half = Math.floor(PER / 2);
+  for (const pass of metric === 'calm' ? [0, 1, 2, 3] : [0, 1]) for (const c of cands) {
+    if (picks[metric].length >= PER) break;
+    // calm: first fill half the set with stride-1 / stride-8 disagreements, then the rest with agreements, then anything
+    if (metric === 'calm') { const nd = picks.calm.filter((x) => x.dis).length; if (pass <= 1 && !c.dis) continue; if (pass <= 1 && nd >= half) continue; if (pass >= 2 && c.dis && nd >= half + 1 && false) continue; }
     const src = c.a.source, ps = perSource.get(src) ?? 0, pw = perWin.get(c.key) ?? 0;
     const id = `${c.key}|${[c.a.variant, c.b.variant].sort().join(',')}`;
     if (seenPair.has(id)) continue;
-    if (pass === 0 && (ps >= 3 || pw >= 1)) continue;
-    if (pass === 1 && (ps >= 4 || pw >= 2)) continue;
+    const lo = pass % 2 === 0;
+    if (lo && (ps >= 3 || pw >= 1)) continue;
+    if (!lo && (ps >= 4 || pw >= 2)) continue;
     seenPair.add(id); perSource.set(src, ps + 1); perWin.set(c.key, pw + 1); picks[metric].push(c); used.add(id);
   }
   log(`${metric}: ${cands.length} candidate pairs, ${picks[metric].length} picked from ${new Set(picks[metric].map((c) => c.a.source)).size} sources`);
@@ -175,7 +189,7 @@ mkdirSync(SHEETS, { recursive: true });
 const pairsOut = [], key = [];
 const TITLES = {
   tradeoff: { title: 'Calm vs sharp', question: 'Which would you rather ship?', hint: 'One is calmer but softer, the other sharper but boils. Compare each with the reference on the right and pick the one you would accept in a real scene.' },
-  calm: { title: 'Calmer', question: 'Which one is calmer?', hint: 'Look for flicker, boiling, crawling or shimmer over time. A steady image counts as calm even when it is a bit soft or lags the motion. Noise and speckle count against it.' },
+  calm: { title: 'Calmer', question: 'Which one is calmer?', hint: 'Watch the whole loop for flicker, boiling, crawling and slow rippling or swimming of shapes. A steady image counts as calm even when it is a bit soft. Noise and speckle count against it.' },
   detail: { title: 'More detail', question: 'Which one is closer to the reference?', hint: 'Compare each with the reference on the right: edges, texture and small shapes kept, and no noise or blotches. Not a time question: these are still frames.' },
   lag: { title: 'Settles faster', question: 'Which one settles faster?', hint: 'Each clip starts cold, from a noisy first frame. Which one reaches its final, clean look sooner? (Use the speed menu to slow it down.)' },
 };
@@ -188,7 +202,8 @@ for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
     const outRoot = path.join(WORK, 'outputs', sc.capture);
     const meta = sourceMeta.find((x) => x.capture === sc.capture && x.signal === sc.signal);
     const still = metric === 'detail', clip = metric === 'calm' || metric === 'tradeoff';
-    const frames = still ? [meta.fDetail] : clip ? Array.from({ length: CLIP }, (_, k) => meta.f0 + k) : Array.from({ length: LAG_FRAMES }, (_, k) => k);
+    const nClip = meta.last - meta.f0 + 1;
+    const frames = still ? [meta.fDetail] : clip ? Array.from({ length: nClip }, (_, k) => meta.f0 + k) : Array.from({ length: nClip }, (_, k) => k);
     const flip = rnd() < 0.5; // which variant is row 0 ("a")
     const [va, vb] = flip ? [c.b, c.a] : [c.a, c.b];
     const rows = still || metric === 'tradeoff' ? 3 : 2;
@@ -204,9 +219,9 @@ for (const metric of ['calm', 'detail', 'lag', 'tradeoff']) {
     });
     const sheet = `${id}.png`;
     writeFileSync(path.join(SHEETS, sheet), encodePng(rgb, W2, H2));
-    pairsOut.push({ id, metric, sheet, frames: frames.length, size: SIZE, rows, fps: metric === 'lag' ? 12 : 24, ...(still ? { still: true } : {}) });
+    pairsOut.push({ id, metric, sheet, frames: frames.length, size: SIZE, rows, fps: FPS, ...(still ? { still: true } : {}) });
     key.push({ id, metric, capture: sc.capture, signal: sc.signal, window: c.a.window, frames: [frames[0], frames[frames.length - 1]],
-      a: { variant: va.variant, calm: va.calm, detail: va.detail, lag: va.lag }, b: { variant: vb.variant, calm: vb.calm, detail: vb.detail, lag: vb.lag } });
+      dis: c.dis ?? null, a: { variant: va.variant, calm: va.calm, detail: va.detail, lag: va.lag }, b: { variant: vb.variant, calm: vb.calm, detail: vb.detail, lag: vb.lag } });
   });
 }
 mkdirSync(path.dirname(PAIRS_JSON), { recursive: true });
