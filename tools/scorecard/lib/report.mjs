@@ -26,7 +26,7 @@ export function costFor(row, signal, results) {
 export function evaluateGates(gates, scene, results) {
   return gates.map((g) => {
     const sig = scene.signals[g.signal];
-    const base = { name: g.name, signal: g.signal, metric: g.metric };
+    const base = { name: g.name, signal: g.signal, metric: g.metric, op: g.op };
     if (!sig) return { ...base, pass: null, note: 'signal not scored' };
     const value = (row) => {
       if (!row) return undefined;
@@ -44,7 +44,7 @@ export function evaluateGates(gates, scene, results) {
     }
     if (!fin(a) || !fin(b)) return { ...base, pass: null, ours: a ?? null, vs: b ?? null, vsLabel: label, note: !fin(a) ? 'no value for ours' : `no ${label} value on this capture` };
     const pass = g.op === '<=' ? a <= b : g.op === '<' ? a < b : g.op === '>=' ? a >= b : a > b;
-    return { ...base, pass, ours: a, vs: b, vsLabel: label, op: g.op };
+    return { ...base, pass, ours: a, vs: b, vsLabel: label };
   });
 }
 

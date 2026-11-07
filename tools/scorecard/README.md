@@ -10,6 +10,7 @@ yarn install && yarn build:lib                 # once
 node tools/scorecard/run.mjs                   # all scenes (cost reused from the last --cost run)
 node tools/scorecard/run.mjs --scenes G2-knot-static,corner-orbit
 node tools/scorecard/run.mjs --cost            # also time every row at 1080p (rule 11: GPU lock + idle GPU)
+node tools/scorecard/run.mjs --cost-only       # only the 1080p cost; keeps the scene tables
 node tools/scorecard/run.mjs --report-only     # rebuild latest.md / index.html from latest.json
 ```
 

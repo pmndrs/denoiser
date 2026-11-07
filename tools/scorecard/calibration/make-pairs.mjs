@@ -59,15 +59,17 @@ try {
       const set = byCap.get(s.capture) ?? new Map(); byCap.set(s.capture, set);
       for (const v of s.variants) { const key = outName(v) + '|' + s.signal; set.set(key, { v, signal: s.signal }); }
     }
-    for (const [cap, set] of byCap) {
-      // one output folder per variant id; a variant used for two signals of one capture shares the folder, so group by (variant, signals)
-      const q = new Map();
-      for (const { v, signal } of set.values()) { const k = outName(v) + (v.query ?? ''); const e = q.get(k) ?? { v, signals: new Set() }; e.signals.add(signal); q.set(k, e); }
-      const queries = [...q.values()].map(({ v, signals }) => `mode=replay&capture=${cap}&denoiser=${v.denoiser ?? v.id}&signals=${[...signals].join(',')}&output=${outName(v)}${v.query ? '&' + v.query : ''}`);
-      log(`replaying ${queries.length} variants over ${cap}`);
-      const release = await acquireGpu(`calibration ${cap}`, { log });
-      try { replayQueries(queries, { base: BASE, captureDir: WORK, log }); } finally { release(); }
-    }
+    const release = await acquireGpu('calibration replays', { log });
+    try {
+      for (const [cap, set] of byCap) {
+        // one output folder per variant id; a variant used for two signals of one capture shares the folder, so group by (variant, signals)
+        const q = new Map();
+        for (const { v, signal } of set.values()) { const k = outName(v) + (v.query ?? ''); const e = q.get(k) ?? { v, signals: new Set() }; e.signals.add(signal); q.set(k, e); }
+        const queries = [...q.values()].map(({ v, signals }) => `mode=replay&capture=${cap}&denoiser=${v.denoiser ?? v.id}&signals=${[...signals].join(',')}&output=${outName(v)}${v.query ? '&' + v.query : ''}`);
+        log(`replaying ${queries.length} variants over ${cap}`);
+        replayQueries(queries, { base: BASE, captureDir: WORK, log });
+      }
+    } finally { release(); }
   }
 } finally { await server.stop(); }
 

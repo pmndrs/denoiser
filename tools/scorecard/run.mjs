@@ -5,6 +5,7 @@
 //   node tools/scorecard/run.mjs                         # every scene in scenes.json; cost reused from latest.json
 //   node tools/scorecard/run.mjs --scenes G2-knot-static,corner-pan
 //   node tools/scorecard/run.mjs --cost                  # also (re-)measure cost at 1080p (GPU lock + idle GPU, rule 11)
+//   node tools/scorecard/run.mjs --cost-only             # only the cost; scenes and gates are taken from latest.json
 //   node tools/scorecard/run.mjs --skip-replay           # score existing outputs in the work dir
 //   node tools/scorecard/run.mjs --keep                  # keep the raw outputs (default: deleted after scoring)
 //   node tools/scorecard/run.mjs --report-only           # rebuild latest.md / index.html from latest.json
@@ -41,7 +42,7 @@ const PORT = opt('port', '5302');
 const BASE = `http://127.0.0.1:${PORT}/`;
 const SETTLE = Number(opt('settle', 8)), FLIP_EVERY = Number(opt('flip-every', 4));
 const cfg = JSON.parse(readFileSync(path.resolve(opt('scenes-file', path.join(HERE, 'scenes.json'))), 'utf8'));
-const wanted = opt('scenes') ? opt('scenes').split(',') : null;
+const wanted = flag('cost-only') ? [] : opt('scenes') ? opt('scenes').split(',') : null;
 const scenes = cfg.scenes.filter((s) => !wanted || wanted.includes(s.id));
 const prev = existsSync(path.join(OUT, 'latest.json')) ? JSON.parse(readFileSync(path.join(OUT, 'latest.json'), 'utf8')) : null;
 
@@ -73,9 +74,9 @@ const results = { generated: new Date().toISOString(), repoCommit: sh('git rev-p
   params: { settle: SETTLE, flipEvery: FLIP_EVERY, captures: SRC_CAPTURES }, gpu: null, cost: prev?.cost ?? null, scenes: [] };
 
 try {
-  // ---- replays (one GPU lock per capture batch; short jobs, released between captures)
+  // ---- replays: all of them under one GPU lock (a few minutes of short jobs, rule 11), released before scoring
   if (!flag('skip-replay')) {
-    for (const s of scenes) {
+    const batches = scenes.map((s) => {
       const needs = new Map(); // denoiser id -> Set(signals)
       for (const signal of s.signals) for (const rowId of Object.keys(cfg.rows)) {
         const d = rowDenoiser(rowId, signal); if (!d) continue;
@@ -83,11 +84,15 @@ try {
         needs.get(d).add(signal);
       }
       const man = readManifest(path.join(WORK, 'captures', s.capture));
-      const queries = [...needs].map(([d, sigs]) => `mode=replay&capture=${s.capture}&denoiser=${d}&signals=${[...sigs].filter((x) => hasSignal(man, x)).join(',')}`);
-      log(`[${s.id}] replaying ${queries.length} denoisers over ${s.capture}`);
-      const release = await acquireGpu(`replay ${s.capture}`, { log });
-      try { replayQueries(queries, { base: BASE, captureDir: WORK, log }); } finally { release(); }
-    }
+      return { s, queries: [...needs].map(([d, sigs]) => `mode=replay&capture=${s.capture}&denoiser=${d}&signals=${[...sigs].filter((x) => hasSignal(man, x)).join(',')}`) };
+    });
+    const release = await acquireGpu(`replays for ${scenes.length} scenes`, { log });
+    try {
+      for (const { s, queries } of batches) {
+        log(`[${s.id}] replaying ${queries.length} denoisers over ${s.capture}`);
+        replayQueries(queries, { base: BASE, captureDir: WORK, log });
+      }
+    } finally { release(); }
   }
 
   // ---- scoring (CPU)
@@ -156,11 +161,11 @@ try {
   results.nativeCost = Object.fromEntries(Object.entries(cfg.nativeCost).map(([g, id]) => [g, { id, ...loadNativeCost(id) }]));
   results.config = { rows: cfg.rows, cost: cfg.cost, nativeCost: cfg.nativeCost };
 
-  // ---- gates, reports
-  for (const sc of results.scenes) sc.gates = evaluateGates(cfg.scenes.find((x) => x.id === sc.id).gates ?? [], sc, results, cfg);
-  // keep scenes not re-run this time
+  // ---- merge scenes not re-run this time, then gates (they depend on cost), reports
   if (prev && wanted) for (const ps of prev.scenes) if (!results.scenes.some((x) => x.id === ps.id)) results.scenes.push(ps);
+  results.scenes = results.scenes.filter((x) => cfg.scenes.some((c) => c.id === x.id));
   results.scenes.sort((a, b) => cfg.scenes.findIndex((x) => x.id === a.id) - cfg.scenes.findIndex((x) => x.id === b.id));
+  for (const sc of results.scenes) sc.gates = evaluateGates(cfg.scenes.find((x) => x.id === sc.id).gates ?? [], sc, results);
   mkdirSync(OUT, { recursive: true });
   writeReports(OUT, results);
   log(`done in ${((Date.now() - t0) / 60000).toFixed(1)} min -> ${OUT}/latest.{json,md} + index.html`);
