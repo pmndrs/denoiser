@@ -16,7 +16,8 @@ mkdir -p "$QUEUE"
 TICKET="$QUEUE/$(date +%s%N 2>/dev/null || date +%s)000-$$"
 echo "$WHO" > "$TICKET"
 cleanup() { rm -f "$TICKET"; if [ "$(cat "$LOCK/owner" 2>/dev/null)" = "$WHO pid $$" ]; then rm -rf "$LOCK"; fi; }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 143' INT TERM   # exit (runs cleanup); a bare cleanup trap would keep looping without a ticket
 while :; do
   # Drop tickets whose process is gone (the pid is the suffix after the last '-').
   for t in "$QUEUE"/*; do
@@ -31,6 +32,9 @@ while :; do
   fi
   sleep 5
 done
-"$@"
+"$@" &
+child=$!
+trap 'kill $child 2>/dev/null; exit 143' INT TERM   # killing the lock holder stops its command too
+wait $child
 status=$?
 exit $status
