@@ -35,7 +35,7 @@ import { storageTex } from './gpu';
 import { writeFrameUniform } from './guides';
 import { FRAME_SIZE } from './shaders/common';
 import {
-  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE,
+  SF_ANISO, SF_CATMULL, SF_SNAP, SF_SNAP_CHANGE, SF_HAS_HIT, SF_MERGE_MIN, SF_NOISE, SF_NO_SKIP, SF_SPHERE, SHADOW_STABILIZE_WGSL, SHADOW_TILES_WGSL, SP_SIZE, shadowStabilizeDebugWgsl,
   TR_HAS_HIT, TR_HAS_T, TR_OWN_ANTILAG, TR_OWN_GATE, shadowSpatialWgsl, shadowStabilizeTrWgsl, shadowTemporalWgsl, shadowTilesWgsl, type SpatialVariant, type TemporalVariant, type TrVariant,
 } from './shaders/shadow';
 
@@ -308,9 +308,23 @@ export interface ShadowDenoiserOptions {
    * before every store (src/f16.ts; diagnostic / candidate option, results/DISTANCE-LONG.md).
    */
   f16Rounding?: F16Rounding;
+  /**
+   * Diagnostics (track S phase 1; opaque path with stabilize > 0 only; default off, WGSL unchanged when off): the denoiser
+   * returns 2 + the stabilization pass's blend weight of this frame's spatial output ('weight': 1 = not stabilized) or
+   * 2 + the temporal history length A / maxHistory ('age') in the penumbra tiles, 0 in the tiles the pass skips. The
+   * stabilized output and every history are computed as without it.
+   */
+  debugStabilize?: 'weight' | 'age';
+  /**
+   * Experiment (track S phase 1, our design; default 0 = off, WGSL unchanged): widen the temporal clamp window by
+   * clampHistoryNoise x sigma / sqrt(A + 1), the standard error of the reprojected history (an (A + 1)-sample mean of
+   * 1-ray samples), so the clamp (and the anti-lag restart it triggers) stops firing on statistical disagreement in
+   * static penumbrae. Opaque path only.
+   */
+  clampHistoryNoise?: number;
 }
 
-type Resolved = Required<Omit<ShadowDenoiserOptions, 'light' | 'antiLag'>> & { light?: ShadowLight };
+type Resolved = Required<Omit<ShadowDenoiserOptions, 'light' | 'antiLag' | 'debugStabilize'>> & { light?: ShadowLight; debugStabilize?: 'weight' | 'age' };
 
 export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
   return {
@@ -366,6 +380,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     floorE: o.floorE ?? 0.05, // q29 (a)
     horizonSnap: o.horizonSnap ?? true, // q24 (a)
     lightMotion: o.lightMotion ?? 0,
+    clampHistoryNoise: o.clampHistoryNoise ?? 0,
     backfacePass: o.backfacePass ?? true,
     terminatorRadius: o.terminatorRadius ?? 16,
     translucency: o.translucency ?? false,
@@ -378,6 +393,7 @@ export function resolveShadowOptions(o: ShadowDenoiserOptions = {}): Resolved {
     timestamps: o.timestamps ?? true,
     f16Rounding: o.f16Rounding ?? 'store',
     ...(o.light ? { light: o.light } : {}),
+    ...(o.debugStabilize ? { debugStabilize: o.debugStabilize } : {}),
   };
 }
 
@@ -495,6 +511,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   private trT?: GPUTexture;                 // packed: tau scratch of the spatial passes
   private trOut?: GPUTexture;
   private visResult?: GPUTexture;
+  private dbgTex?: GPUTexture;              // debugStabilize
 
   constructor(device: GPUDevice, options: ShadowDenoiserOptions = {}) {
     this.device = device;
@@ -523,6 +540,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     let spatialKinds: Kind[] = ['u', 'u', 'i', 'f', 'f', 'sbr', 'sbr', 'r32float'];
     if (tr) spatialKinds = tr.packed ? ['u', 'u', 'i', 'i', 'f', 'sbr', 'sbr', 'r32float', 'sbr', 'f', 'rgba16float'] : [...spatialKinds, 'sbr', 'f', 'f', 'rgba16float'];
     let stabKinds: (Kind | null)[] = ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', 'r32float'];
+    const dbg = !tr && o.stabilize > 0 && o.spatialPasses > 0 ? o.debugStabilize : undefined;
+    if (dbg) stabKinds.push('r32float');
     if (tr?.packed) stabKinds = ['u', 'u', 'f', 'f', 'f', 'f', 'i', 'sbr', 'sbr', 'rgba16float', 'f'];
     else if (tr) stabKinds = ['u', 'u', 'f', 'f', 'f', 'f', 'f', 'sbr', 'sbr', tr.compose ? null : 'r32float', 'f', 'f', tr.compose ? null : 'f', 'rgba16float'];
     this.layouts = {
@@ -539,7 +558,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
         this.lastTauPipe = tr.compose ? this.lastPipe : this.mkPipe('shadows stabilize (translucency, tau tiles)', shadowStabilizeTrWgsl(tr, true), this.layouts.stabilize);
       }
     } else if (o.stabilize > 0 && o.spatialPasses > 0) {
-      this.stabPipe = this.mkPipe('shadows stabilize', SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
+      this.stabPipe = this.mkPipe('shadows stabilize', dbg ? shadowStabilizeDebugWgsl(dbg) : SHADOW_STABILIZE_WGSL, this.layouts.stabilize);
     }
     this.withE = o.noiseBlend > 0 || o.noiseYoung > 0;
     const sv: SpatialVariant = { noiseCap: this.withE && o.noiseCap > 0, noiseCapSettled: this.withE && o.noiseCap > 0 && o.noiseCapSettled, backface: o.backfacePass };
@@ -548,6 +567,7 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     if (!tr) {
       if (o.horizonSnap) this.temporalVariant.horizonSnap = true;
       if (o.lightMotion > 0) this.temporalVariant.lightMotion = true;
+      if (o.clampHistoryNoise > 0) this.temporalVariant.historyNoise = o.clampHistoryNoise;
     }
     this.tilesPipe = this.mkPipe('shadows tiles', tr ? shadowTilesWgsl(true) : SHADOW_TILES_WGSL, this.layouts.tiles);
     if (tr && !tr.packed) {
@@ -595,6 +615,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
     this.tTex = tex('T', 'r32float');
     this.out = tex('output', 'r32float');
     if (this.stabPipe || (tr && !tr.packed && !tr.compose && this.lastPipe)) this.stab = [0, 1].map((i) => tex(`stabilized ${i}`, 'r32float'));
+    this.dbgTex?.destroy();
+    this.dbgTex = this.stabPipe && this.options.debugStabilize && !tr ? tex('debug', 'r32float') : undefined;
     if (tr) {
       const pingPong = !tr.compose && !!this.lastPipe;
       this.fOut = (pingPong ? [0, 1] : [0]).map((i) => tex(`output (translucency) ${i}`, 'rgba16float'));
@@ -719,7 +741,12 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
       result = this.stab[cur];
       pass('stabilize', this.stabPipe, group(d, this.layouts.stabilize, [
         this.frame, this.params, this.out, this.tTex!, this.stab[prev], guides.motion, this.hist[cur], this.list!, this.activeTile!, result,
+        ...(this.dbgTex ? [this.dbgTex] : []),
       ]), 0, 1, true);
+      if (this.dbgTex) {
+        // debug output: 2 + the pass's debug value in the penumbra tiles, 0 elsewhere (never written)
+        result = this.dbgTex;
+      }
     }
     this.visResult = this.stab.length ? this.stab[cur] : this.out;
     if (tr) {
@@ -851,7 +878,8 @@ export class ShadowDenoiser implements TemporalDenoiser<ShadowInputs> {
   }
 
   private destroyTargets() {
-    for (const t of [...this.geo, ...this.hist, ...this.stab, ...this.trHist, ...this.fOut, this.tTex, this.out, this.trT, this.trOut]) t?.destroy();
+    for (const t of [...this.geo, ...this.hist, ...this.stab, ...this.trHist, ...this.fOut, this.tTex, this.out, this.trT, this.trOut, this.dbgTex]) t?.destroy();
+    this.dbgTex = undefined;
     this.stab = [];
     this.trHist = [];
     this.fOut = [];

@@ -174,7 +174,11 @@ const TILE = 8;
  * (whole light below the horizon and a 0 sample: the history is 0), `lightMotion` (history cap from the light's
  * motion, SP.q4 = light displacement / light size this frame, SP.q5 = the option's gain).
  */
-export interface TemporalVariant { horizonSnap?: boolean; lightMotion?: boolean }
+export interface TemporalVariant {
+  horizonSnap?: boolean; lightMotion?: boolean;
+  /** (option clampHistoryNoise, track S phase 1 experiment) clamp window += k x sigma / sqrt(A + 1): k baked into the WGSL. */
+  historyNoise?: number;
+}
 
 export function shadowTemporalWgsl(depthIsDepthFormat: boolean, young = false, youngRadius = 2, withE = false, clampGeo = false, tr?: TrVariant, stepTest = false, edgeBox = false, normalCos = 0, normalRelative = false, tv: TemporalVariant = {}): string {
   const HB = young ? Math.max(2, youngRadius) : 2;   // halo
@@ -600,7 +604,11 @@ ${tv.lightMotion ? `      // (lightMotion, results/SHADOWS-FOLLOWUPS.md, our des
       // step (up to ~0.4 off), so the window grows by up to 1 (no clamp) as the penumbra width
       // falls below clampEdgePx; such pixels keep a short history anyway (cap ~ W_px^2)
       let win = SP.clampSigma * sigma${clampGeo ? ' * sqrt(25.0 / nS)' : ''} + SP.clampFloor
-        + select(0.0, saturate(1.0 - wPx / SP.clampEdgePx), SP.clampEdgePx > 0.0);
+        + select(0.0, saturate(1.0 - wPx / SP.clampEdgePx), SP.clampEdgePx > 0.0)${tv.historyNoise ? `
+        // (clampHistoryNoise, track S experiment, our design) the history is itself a noisy (A + 1)-sample mean of the
+        // 1-ray samples: widen the window by its standard error, so statistical disagreement doesn't fire the clamp
+        // (and the anti-lag restart behind it) in static penumbrae
+        + ${tv.historyNoise.toFixed(6)} * sigma * inverseSqrt(max(A, 0.0) + 1.0)` : ''};
       var vC = clamp(vH, mu - win, mu + win);
 ${edgeBox ? `      // (edgeBox, results/SHADOWS-MOTION.md) at hard edges the window above opens toward no clamp; there clamp to the
       // 3x3 raw min / max instead (TAA neighbourhood clamping): a pixel the edge has left sees one value only
@@ -1172,6 +1180,20 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(local_invocation_inde
   textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));
 }
 `;
+
+/**
+ * Diagnostic variant of SHADOW_STABILIZE_WGSL (option `debugStabilize`, track S phase 1; never a default): the same pass,
+ * plus a debug store (binding 10; 2 + value, so 0 = a tile the pass skipped) of 'weight' = the blend weight a of this frame's spatial output (1 = no stabilization,
+ * also where there is no history) or 'age' = the temporal history length A / maxHistory. The stabilized output and its
+ * history are untouched (the denoiser returns the debug texture instead).
+ */
+export function shadowStabilizeDebugWgsl(debug: 'weight' | 'age'): string {
+  return SHADOW_STABILIZE_WGSL
+    .replace('var<workgroup> sC', '@group(0) @binding(10) var dbgTex: texture_storage_2d<r32float, write>;\nvar<workgroup> sC')
+    .replace('  var v = cur;\n', '  var v = cur;\n  var dbgW = 1.0;\n')
+    .replace('    v = mix(hc, cur, a);\n', '    v = mix(hc, cur, a);\n    dbgW = a;\n')
+    .replace('  textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));\n}', `  textureStore(outTex, p, vec4f(v, 0.0, 0.0, 0.0));\n  textureStore(dbgTex, p, vec4f(2.0 + ${debug === 'weight' ? 'dbgW' : 'A / SP.maxHistory'}, 0.0, 0.0, 0.0));\n}`);
+}
 
 /**
  * The last pass of the translucency variants (SPEC v0.3 §7.10, M8-7; indirect over the filtered tiles):
