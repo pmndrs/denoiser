@@ -132,8 +132,10 @@ metric has to agree with you on at least 8. If it doesn't, the metric gets fixed
 
 ### 5.3 Parallel tracks, each with a bench, a bar and a stop rule
 
-_Revised 2026-11-07 after Dennis's review: no waiting on OIDN 3, and the work runs as parallel
-tracks instead of a line of sprints._
+_Revised 2026-11-07 after Dennis's review: no waiting on OIDN 3; the work runs as parallel
+tracks instead of a line of sprints; and **work is bound to measures of success, not dates**.
+A track moves to its next phase when its gate is met, however long that takes. The time figures
+below are rough estimates only._
 
 **OIDN 3 is not a dependency.** NRD's family is out now, so our tools get built as well as we can
 build them now. When OIDN 3 ships (due late November), it joins as one more
@@ -141,16 +143,21 @@ build them now. When OIDN 3 ships (due late November), it joins as one more
 on every golden scene's scorecard. Track O below is the slot for that.
 
 ```
-week 1   T0 foundation ─────────────┐ (lanes 0a–0e in parallel)
-         R/S/D diagnosis ───────────┤ (read-only + measurement, start day 1)
-         T1 calibration ────────────┘ (needs 0a + review-bench toggles; ~day 4–5)
-week 2   R reflections ─┐
+phase 1 (gate: dashboard live + metrics calibrated)
+         T0 foundation lanes ──────┐   in parallel
+         R / S / D diagnosis ──────┤   read-only + measurement, start immediately
+         T1 calibration ───────────┘   needs the dashboard and bench toggles
+phase 2 (gate per track: its exit measures, below)
+         R reflections ─┐
          S shadows      ├─ fixes in parallel, gated by calibrated metrics
          D diffuse + AO ┘
-week 3   each track: prune its own options → Opus review → Dennis's visual OK → merge
-         T6 ship (after the first track merges; others follow)
+phase 3 (gate per track: Opus review + Dennis's visual OK)
+         each track prunes its options → review → merge; T6 ships the first one
 any time O OIDN 3 adapter, when it's released
 ```
+
+Rough estimates, for planning only: phase 1 a few days; phase 2 a few days to a week per track;
+phase 3 a day or two per track.
 
 | track | lanes / steps | owner model | depends on | exit |
 |---|---|---|---|---|
@@ -197,16 +204,19 @@ written before the switch to Sonnet on 10-27, by Opus subagents.** The problems 
 from the goals and the ruler, not from the model. Opus authoring is still the right call for the
 algorithm work, but the scorecard and your visual gate are what change the outcome.
 
-## 6. Decisions needed now
+## 6. Decisions (made 2026-11-07)
 
-1. **Approve the reset** as revised: parallel tracks, Opus for algorithm authoring and review,
-   OIDN 3 joining when it ships.
-2. **Golden scenes:** keep G1–G5 as listed, or change them.
-3. **Concurrency cap:** three authoring agents at once, or a different number?
-4. **Storage:** OK to delete the 306 GB in `tools/rt-capture/` and the stale worktrees
-   (`Denoiser-interior-lab` after the bench moves, `-review`, `-shadow-bench`, `-jitter-study`)?
-5. **The 5 unpushed commits** on this branch (dropoutGuard and the 10-28 handoff): push them
-   as a record, or drop dropoutGuard now (it was tuned on the wrong scene)?
+1. **Reset approved** as revised: parallel tracks gated by measures (not dates), Opus for
+   algorithm authoring and review, OIDN 3 joining when it ships.
+2. **Golden scenes:** G1–G5 as listed.
+3. **Concurrency cap:** three authoring agents at once (R, S, D), plus Sonnet helpers.
+4. **Storage:** done 2026-11-07. Replay outputs (228 GB) and the non-golden captures deleted;
+   the golden-scene captures (Sponza, Bistro, the knot, the corner scene: 33 GB) and the small
+   synthetic smoke captures kept until T0 replaces them. Worktrees `-review`, `-shadow-bench`,
+   `-jitter-study` removed (their branches stay); `-interior-lab` goes once the reflection bench
+   has moved.
+5. **The unpushed commits** are pushed as a record. dropoutGuard stays opt-in and gets removed
+   in track R's simplify step unless it wins on the scorecard.
 
 ## Sources
 
