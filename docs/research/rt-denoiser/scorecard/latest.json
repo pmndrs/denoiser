@@ -1,13 +1,13 @@
 {
- "generated": "2026-11-07T14:25:51.297Z",
- "repoCommit": "c175f0e",
+ "generated": "2026-11-07T15:25:14.975Z",
+ "repoCommit": "6fcb5d7",
  "packageCommit": "ae853ef",
  "params": {
   "settle": 8,
   "flipEvery": 4,
   "captures": "/Users/dex/Developer/Denoiser-nrd-cleanroom/tools/rt-capture/captures"
  },
- "gpu": "Apple M5 Pro",
+ "gpu": null,
  "cost": null,
  "scenes": [
   {

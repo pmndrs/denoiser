@@ -1,6 +1,6 @@
 # Scorecard (latest)
 
-_Generated 2026-11-07T14:25:51.297Z by `node tools/scorecard/run.mjs` (repo c175f0e, packages ae853ef). GPU: Apple M5 Pro. Details: [tools/scorecard/README.md](../../../../tools/scorecard/README.md)._
+_Generated 2026-11-07T15:25:14.975Z by `node tools/scorecard/run.mjs` (repo 6fcb5d7, packages ae853ef). GPU: n/a. Details: [tools/scorecard/README.md](../../../../tools/scorecard/README.md)._
 
 Five numbers per scene and signal (TRACKS.md): **calm** = motion-compensated boil per region (value, and ×the clean reference's own boil in the same pixels) plus still-camera σ of luma where the camera is static; **detail** = FLIP vs the capture's reference (PSNR secondary); **lag** = frames until the error is within 10 % of its settled level after the event; **bias** = mean display luma minus the reference, 8-bit levels; **cost** = GPU ms and wall ms at 1080p on this Mac.
 
