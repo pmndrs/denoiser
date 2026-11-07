@@ -21,6 +21,8 @@ export interface DenoiserCtx {
 export interface BuiltDenoiser {
   /** Every node of this denoiser (history reset, GPU timings, kept in the graph). */
   nodes: N[];
+  /** One name per node: the prefix of its passes in the timings (`<name>.<pass>`). */
+  names: string[];
   /** TSL value of each denoised signal for the composite (diffuse / specular rgb, shadow / ao as a vec4 with the value in .r). */
   out: Partial<Record<Signal, N>>;
   /** Output texture of each signal (valid after a render). */
@@ -43,7 +45,7 @@ registerGoldenDenoiser({
   id: 'raw',
   label: 'No denoiser: the input as is',
   applies: { diffuse: 'raw', specular: 'raw', shadow: 'raw', ao: 'raw' },
-  build: () => ({ nodes: [], out: {}, tex: {} }),
+  build: () => ({ nodes: [], names: [], out: {}, tex: {} }),
 });
 
 registerGoldenDenoiser({
@@ -53,6 +55,7 @@ registerGoldenDenoiser({
   build(c) {
     const no = nodeOptions(c.options);
     const nodes: N[] = [];
+    const names: string[] = [];
     const out: BuiltDenoiser['out'] = {};
     const tex: BuiltDenoiser['tex'] = {};
     if (c.want.has('diffuse') || c.want.has('specular')) {
@@ -60,19 +63,19 @@ registerGoldenDenoiser({
         { diffuse: { radiance: c.inputs.dif, hitDistance: c.inputs.difHit }, specular: { radiance: c.inputs.ssr } },
         { ...c.guides, roughness: c.roughness, denoiser: no.gi as N },
       ) as N;
-      nodes.push(gi);
+      nodes.push(gi); names.push('diffuse+specular');
       out.diffuse = gi.diffuse; out.specular = gi.specular;
       tex.diffuse = () => gi.getOutputTexture(0); tex.specular = () => gi.getOutputTexture(1);
     }
     if (c.want.has('ao')) {
       const ao = realtimeOcclusion(c.inputs.difHit, { ...c.guides, denoiser: no.ao as N }) as N;
-      nodes.push(ao); out.ao = ao; tex.ao = () => ao.getOutputTexture(0);
+      nodes.push(ao); names.push('ao'); out.ao = ao; tex.ao = () => ao.getOutputTexture(0);
     }
     if (c.want.has('shadow')) {
       const sh = realtimeShadows(c.inputs.sh, { ...c.guides, hitDistance: c.inputs.shDist, light: c.light, denoiser: no.shadows as N }) as N;
-      nodes.push(sh); out.shadow = sh; tex.shadow = () => sh.getOutputTexture(0);
+      nodes.push(sh); names.push('shadow'); out.shadow = sh; tex.shadow = () => sh.getOutputTexture(0);
     }
-    return { nodes, out, tex };
+    return { nodes, names, out, tex };
   },
 });
 
@@ -82,16 +85,17 @@ registerGoldenDenoiser({
   applies: { diffuse: 'raw', specular: 'denoised', shadow: 'denoised', ao: 'raw' },
   build(c) {
     const nodes: N[] = [];
+    const names: string[] = [];
     const out: BuiltDenoiser['out'] = {};
     const tex: BuiltDenoiser['tex'] = {};
     if (c.want.has('specular')) {
       const r = ffxReflections(c.inputs.ssr, { ...c.guides, roughness: c.roughness }) as N;
-      nodes.push(r); out.specular = r; tex.specular = () => r.getOutputTexture(0);
+      nodes.push(r); names.push('specular'); out.specular = r; tex.specular = () => r.getOutputTexture(0);
     }
     if (c.want.has('shadow')) {
       const s = ffxShadows(c.inputs.sh, c.guides) as N;
-      nodes.push(s); out.shadow = s; tex.shadow = () => s.getOutputTexture(0);
+      nodes.push(s); names.push('shadow'); out.shadow = s; tex.shadow = () => s.getOutputTexture(0);
     }
-    return { nodes, out, tex };
+    return { nodes, names, out, tex };
   },
 });

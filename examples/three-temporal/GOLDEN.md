@@ -116,7 +116,8 @@ several rendered sub-frames: rays per sub-frame are fixed per signal, see "Cost"
 frame. The denoiser runs exactly once per path frame in every mode (the accumulation sub-frames never touch its history).
 
 **Timings.** `gpuMs` are WebGPU timestamp-query durations per pass of the denoiser nodes (the package's own
-`gpuTimings`, per-pass names, `total`), refreshed by each `step()` (the previous dispatch's values, as everywhere in this
+`gpuTimings`), keyed `<node>.<pass>` with node one of `diffuse+specular`, `ao`, `shadow` (ours) or `specular`, `shadow` (ffx), a
+`<node>.total` each and an overall `total` (the sum), refreshed by each `step()` (the previous dispatch's values, as everywhere in this
 project); `wallMs` is submit-to-done wall time of the denoised frame including the queue sync (`device.queue.onSubmittedWorkDone`),
 so it contains overhead the GPU timestamps don't. For protocol-grade timing use `time(n)`, which steps `n` frames of
 `run` (no reads, no references) and returns median / min / mean per pass and wall (TASKS rule 11: hold the GPU lock).

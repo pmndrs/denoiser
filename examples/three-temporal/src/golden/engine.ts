@@ -310,7 +310,7 @@ export async function createEngine(canvas: HTMLCanvasElement, o: EngineOptions) 
     built.nodes.forEach((n: N, i: number) => {
       const t = n.denoiser?.gpuTimings as ReadonlyMap<string, number> | undefined;
       if (!t) return;
-      for (const [k, v] of t) r[`${i}.${k}`] = v;
+      for (const [k, v] of t) r[`${built.names[i] ?? i}.${k}`] = v;
     });
     const tot = built.nodes.reduce((a: number, n: N) => a + ((n.denoiser?.gpuTimings as ReadonlyMap<string, number> | undefined)?.get('total') ?? 0), 0);
     if (built.nodes.length) r.total = tot;
