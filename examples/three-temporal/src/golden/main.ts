@@ -49,8 +49,8 @@ async function main() {
   log(`building ${sceneInfo.id}/${pathInfo.name} ${W}x${H} mode ${mode}...`);
   let kit: Kit;
   switch (sceneInfo.id) {
-    case 'G2': kit = await cornerKit(pathInfo.source as 'knot-static' | 'knot-orbit', W, H, frames); break;
-    case 'G3': kit = await sponzaKit(pathInfo.name as 'orbit' | 'pan' | 'hold', W, H, frames); break;
+    case 'G2': kit = await cornerKit((['drift', 'drift-held', 'drift-frozen'].includes(pathInfo.name) ? pathInfo.name : pathInfo.source) as never, W, H, frames); break;
+    case 'G3': kit = await sponzaKit(pathInfo.name as 'orbit' | 'pan' | 'hold' | 'move', W, H, frames); break;
     case 'G4': kit = await bistroLightKit(pathInfo.name as never, W, H, frames); break;
     case 'G5': kit = await productKit(W, H, frames); break;
     default: throw new Error(`no kit for ${sceneInfo.id}`);

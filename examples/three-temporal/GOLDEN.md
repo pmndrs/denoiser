@@ -13,8 +13,8 @@ Existing scene code is reused, not rewritten (`src/realtime/*`: corner, Sponza/B
 | id | scene | judges | paths (default first) | frames | events |
 |---|---|---|---|---|---|
 | **G1** | reflection bench (Ben's camera model, normal-mapped metal, traced + hybrid) | specular | _external page_ (`reflect-bench.html`, owned by R) | - | - |
-| **G2** | the knot over a floor, area light, **moving occluder** | shadows | `occluder` (static close-up camera, knot rotates), `orbit` (orbit camera, knot rotates) | 64 | - |
-| **G3** | Sponza orbit | diffuse GI + AO | `orbit`, `pan`, `hold` (still camera, 32 frames: boil against a static scene) | 64 / 32 | - |
+| **G2** | the knot over a floor, area light, **moving occluder** | shadows | `occluder` (static close-up camera, knot rotates), `orbit` (orbit camera, knot rotates), `drift` (the live demo's ~0.25 px/frame camera drift, knot rotating), `drift-held` (control: camera held), `drift-frozen` (control: knot frozen) | 64 | - |
+| **G3** | Sponza orbit | diffuse GI + AO | `orbit`, `pan`, `move` (static camera, a torus knot swings through the sun: directional-sun moving occluder, wide penumbrae on static receivers; object motion in `mask_mover`), `hold` (still camera, 32 frames: boil against a static scene) | 64 / 32 | - |
 | **G4** | Bistro pan with a **light change** | diffuse, light-change lag | `pan-light-on` (step), `pan-light-colour` (colour step at constant luminance), `pan-light-fade` (ramp 24-40), `pan-lamp-switch` (lamp A off, lamp B on), `hold-light-on` (still camera, step at 16) | 64 / 32 | at frame 32 (fade: 24, hold: 16); see `events` |
 | **G5** | product turntable (glossy + rough, normal maps, environment light) | specular + diffuse | `turntable` | 64 | - |
 

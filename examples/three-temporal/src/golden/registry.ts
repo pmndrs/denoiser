@@ -61,6 +61,17 @@ export const SCENE_REGISTRY: SceneInfo[] = [
         events: [], motion: 'torus knot rotates (object motion); receivers of its shadow are static',
       },
       {
+        name: 'drift', frames: 64, source: 'knot-drift',
+        description: 'the live demo\'s slow camera drift (free-running page camera pose(camera, 0, f/60), about 0.25 px/frame) with the knot rotating',
+        events: [], motion: 'tiny camera drift; torus knot rotates',
+      },
+      {
+        name: 'drift-held', frames: 64, source: 'knot-wide', description: 'control: the drift path\'s camera held at its frame-0 pose, knot rotating', events: [], motion: 'torus knot rotates',
+      },
+      {
+        name: 'drift-frozen', frames: 64, source: 'knot-drift-frozen', description: 'control: the drift path\'s camera, knot frozen', events: [], motion: 'camera drift only',
+      },
+      {
         name: 'orbit', frames: 64, source: 'knot-orbit',
         description: 'frames 0-39 slow orbit around the wide shot (0.46 deg/frame, dolly in), 40-63 fast pan (6 cm/frame slide + 1.6 deg/frame yaw); the knot rotates the whole time',
         events: [], motion: 'camera orbit + pan; torus knot rotates',
@@ -77,6 +88,7 @@ export const SCENE_REGISTRY: SceneInfo[] = [
     judges: 'diffuse GI + AO', kind: 'engine', signals: ['diffuse', 'ao', 'shadow', 'specular'],
     paths: [
       { name: 'orbit', frames: 64, source: 'sponza-orbit', description: 'slow arc in the nave around its centre, dollying in (~5-8 px/frame at 960 px); the sun is the shadow light', events: [], motion: 'camera only' },
+      { name: 'move', frames: 64, source: 'sponza-move', description: 'static camera on the sunlit nave floor; a torus knot (R 0.45 m) swings 1.6 m along X and spins in the sun shaft: directional sun, wide penumbrae sweeping static receivers (track S\'s worst case)', events: [], motion: 'torus knot (object motion)' },
       { name: 'hold', frames: 32, source: 'sponza-orbit', description: 'still camera (orbit frame 20), nothing moves: boil of the denoiser (and of the reference) is measured against a static scene', events: [], motion: 'none' },
       { name: 'pan', frames: 64, source: 'sponza-pan', description: '8 frames of drift, then 6 cm/frame slide + 2 deg/frame yaw toward the south arcade (disocclusion behind the columns every frame)', events: [], motion: 'camera only' },
     ],
