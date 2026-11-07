@@ -3,7 +3,8 @@ Every run renders the same still pose (or orbit) from a rebuilt graph; `still` =
 import json
 import sys
 
-STILL = {'warm': 60, 'frames': 16}
+STILL = {'warm': 60, 'frames': 24, 'stride': 8}
+STILL1 = {'warm': 60, 'frames': 16, 'stride': 1}  # consecutive frames (high-frequency flicker only)
 ORBIT = {'samples': [60, 61, 90, 91, 120, 121, 150, 151]}
 DEN = ['none', 'ffx', 'recurrent', 'svgf']
 
@@ -11,7 +12,7 @@ DEN = ['none', 'ffx', 'recurrent', 'svgf']
 def run(name, cfg, still=True, orbit=False, timing=False, ref=True):
     r = {'name': name, 'cfg': cfg, 'ref': ref}
     if still:
-        r['still'] = STILL
+        r['still'] = STILL if still is True else still
     if orbit:
         r['orbit'] = ORBIT
     if timing:
@@ -28,7 +29,8 @@ def plans():
     # baseline: presets x sources x denoisers, still + orbit + timing (rb-lock.sh baseline)
     p['baseline'] = {'base': {'resolve': '1.5', 'tableRough': 0}, 'runs': [
         run(f'{pr}-{src}-{d}', side(d, preset=pr, refl=src), orbit=True, timing=d != 'none')
-        for pr in ['defaults', 'ben'] for src in ['rt', 'hybrid'] for d in DEN]}
+        for pr in ['defaults', 'ben'] for src in ['rt', 'hybrid'] for d in DEN]
+        + [run(f'{pr}-{src}-{d}-consec', side(d, preset=pr, refl=src), still=STILL1) for pr in ['defaults'] for src in ['rt'] for d in DEN]}
     base = {'resolve': '1.5', 'tableRough': 0, 'preset': 'defaults', 'refl': 'rt'}
     # jitter: no resolver (no jitter, no FSR) and FSR3 with the denoisers seeing the jittered projection
     p['jitter'] = {'base': base, 'runs': [run(f'nofsr-{d}', side(d, resolve='off')) for d in DEN]

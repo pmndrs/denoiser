@@ -9,7 +9,7 @@
 //
 // Plan: { base: {...configure fields}, runs: [ { name, cfg: {...}, still?: { warm, frames }, orbit?: { warm, samples: [k...] },
 //         timing?: { frames }, ref?: true } ] }
-//   still  : `warm` frames, then `frames` grabbed frames at the still pose  -> <out>/<name>/s-NN.png
+//   still  : `warm` frames, then `frames` grabs (default 24), `stride` frames apart (default 8), still pose -> <out>/<name>/s-NN.png
 //   orbit  : the scripted orbit from t = 0; frames grabbed at the listed frame indices -> <out>/<name>/o-KKK.png
 //   timing : `frames` more frames with per-pass GPU timestamps -> medians in <out>/<name>/timing.json
 //   ref    : also render the accumulated traced reference (same scene / resolver / pose; shared per scene key) and the
@@ -83,7 +83,13 @@ for (const run of plan.runs) {
     const r = await configure({ ...cfg, orbit: false, orbitHold: false, view: cfg.view ?? 'image' });
     info.size = r.size;
     await step(run.still.warm ?? 60);
-    for (let k = 0; k < (run.still.frames ?? 16); k++) await grabTo(path.join(dir, `s-${String(k).padStart(2, '0')}.png`));
+    // stride: frames between grabs. Temporal filters correlate neighbouring frames, so a std over consecutive frames
+    // misses slow undulation; stride 8 over 24 grabs (192 frames) sees it (the 2026-10-28 screenshots were ~6 apart).
+    const stride = run.still.stride ?? 8;
+    for (let k = 0; k < (run.still.frames ?? 24); k++) {
+      if (stride > 1) await step(stride - 1);
+      await grabTo(path.join(dir, `s-${String(k).padStart(2, '0')}.png`));
+    }
   }
   if (run.timing) {
     if (!run.still) { await configure({ ...cfg, orbit: false }); await step(30); }
@@ -104,6 +110,7 @@ for (const run of plan.runs) {
     if (!fs.existsSync(path.join(rdir, 'still.png'))) {
       await configure({ ...cfg, refl: 'ref', orbit: false, orbitHold: false, view: 'image' });
       await step(run.refFrames ?? 200);
+      info.refCount = await ev('__rb.refCount()');
       await grabTo(path.join(rdir, 'still.png'));
       await configure({ ...cfg, orbit: false, view: 'regions' });
       await step(3);
@@ -112,7 +119,8 @@ for (const run of plan.runs) {
     for (const k of run.orbit?.samples ?? []) {
       const file = path.join(rdir, `o-${String(k).padStart(3, '0')}.png`);
       if (fs.existsSync(file)) continue;
-      await configure({ ...cfg, refl: 'ref', orbit: true, orbitHold: true, orbitT: k / 60, view: 'image' });
+      // the orbit run's frame k is drawn after k + 1 animate() steps: tCam = (k + 1) / 60
+      await configure({ ...cfg, refl: 'ref', orbit: true, orbitHold: true, orbitT: (k + 1) / 60, view: 'image' });
       await step(run.refFrames ?? 200);
       await grabTo(file);
     }

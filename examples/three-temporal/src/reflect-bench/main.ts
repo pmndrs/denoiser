@@ -378,7 +378,7 @@ async function main() {
     const guides = { camera, depth: depthTex, velocity: velTex, normal: nTex, normalSpace: 'view' as const, normalEncoding: 'packed' as const, resolutionScale: scale };
     const denoisers = new Map<Denoiser, N>();
     const denoised = (k: Denoiser): N => {
-      if (k === 'none') return reflIn;
+      if (k === 'none') return vec4((reflIn as N).rgb.max(vec3(0)).min(vec3(6e4)), (reflIn as N).a); // sanitized like every denoiser's input
       let n = denoisers.get(k);
       if (!n) {
         const node = Object.keys(exp.node).length ? { node: { ...exp.node } } : {};
@@ -390,7 +390,11 @@ async function main() {
     };
     const reflRef = new AccumulateNode(Fn(() => {
       const o = vec4(0).toVar();
-      If(surface().sky.lessThan(0.5), () => { for (let k = 0; k < 4; k++) o.addAssign(traced(lobeSample(k + 1)).mul(0.25)); });
+      // each sample sanitized as the denoisers' inputs are (finite, >= 0): a non-finite sample at a grazing silhouette
+      // would stay in the running mean for good (black halos through FSR3)
+      If(surface().sky.lessThan(0.5), () => {
+        for (let k = 0; k < 4; k++) { const t = traced(lobeSample(k + 1)).toVar(); o.addAssign(vec4(t.rgb.max(vec3(0)).min(vec3(6e4)), t.a).mul(0.25)); }
+      });
       return o;
     })(), scale);
     const tracedHit = () => traceRaw(lobeSample(0)).w.greaterThanEqual(0);
@@ -500,25 +504,25 @@ async function main() {
     for (const [k, d] of g.denoisers) { const m = d.denoiser?.gpuTimings as Map<string, number> | undefined; if (m) t[k] = Object.fromEntries(m); }
     return t;
   };
-  const step = async (n: number, opts: { grab?: boolean; timings?: boolean } = {}) => {
-    let png: string | undefined;
-    const times: Record<string, Record<string, number>>[] = [];
-    for (let i = 0; i < n; i++) {
-      animate();
-      pipeline.render();
-      frame++;
-      if (opts.grab && i === n - 1) png = grab();
-      await device.queue.onSubmittedWorkDone();
-      if (opts.timings) { await new Promise((r) => setTimeout(r, 0)); times.push(timingsOf()); }
-    }
-    return { png, times, frame };
-  };
+  // Frames are rendered by the animation loop only: three advances its node frame id there, and FRAME-type nodes (the
+  // denoisers, FSR3, the reference accumulator) update once per frame id. A render outside the loop would run them
+  // once per display tick instead of once per frame.
+  type StepReq = { n: number; grab: boolean; timings: boolean; times: Record<string, Record<string, number>>[]; done: (r: N) => void };
+  let req: StepReq | null = null;
+  const step = (n: number, opts: { grab?: boolean; timings?: boolean } = {}) => new Promise<N>((done) => {
+    req = { n: Math.max(1, n), grab: !!opts.grab, timings: !!opts.timings, times: [], done };
+  });
   let manual = false;
   renderer.setAnimationLoop(() => {
-    if (manual) return;
+    if (manual && !req) return;
     animate();
     pipeline.render();
     frame++;
+    if (req) {
+      const r = req;
+      if (r.timings) r.times.push(timingsOf());
+      if (--r.n === 0) { req = null; r.done({ png: r.grab ? grab() : undefined, times: r.times, frame }); }
+    }
     const now = performance.now();
     fps += (1000 / (now - last) - fps) * 0.05;
     last = now;
@@ -608,6 +612,8 @@ async function main() {
       if (c[k] !== undefined) (ui as N)[k] = c[k];
     }
     if (c.orbitT !== undefined) tCam = c.orbitT;
+    // the still pose is always the page's start pose (an orbit run leaves the camera where its path ended)
+    if (!ui.orbit) { camera.position.set(3, 2, 3); controls.target.set(0, 0, 0); camera.lookAt(0, 0, 0); controls.update(); }
     if (c.orbitHold !== undefined) orbitHold = !!c.orbitHold;
     uRoughCut.value = ui.roughCut;
     setResolve();
