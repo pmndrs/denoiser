@@ -7,8 +7,9 @@ import { float, vec2, vec4, uniform, uint, hash } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshBVH, SAH } from 'three-mesh-bvh';
 import { BVHComputeData } from 'three-mesh-bvh/webgpu';
+import { pose as freePose } from '../realtime/scene';
 import { LIGHT_C, LIGHT_N, LIGHT_U, LIGHT_V, LIGHT_ASPECT, buildScene, equivalentSphereRadius } from '../realtime/scene';
-import { scenePose, type PathName } from '../realtime/path';
+import { scenePose, KNOT_RATE, KNOT_TILT, type PathName } from '../realtime/path';
 import { loadAsset } from '../realtime/assets';
 import { SCENES, makeSkyEnvironment, pathOf, type SceneConfig } from '../realtime/scenes';
 import { cornerRays, assetRays } from '../realtime/rays';
@@ -36,7 +37,8 @@ function stratified(grid: number, seed: N, ray: (xi: N) => N): N {
 
 // ---- G2: the corner with the knot ---------------------------------------------------------------------------------
 
-export async function cornerKit(path: PathName, W: number, H: number, frames: number): Promise<Kit> {
+export type G2Path = PathName | 'drift' | 'drift-held' | 'drift-frozen';
+export async function cornerKit(path: G2Path, W: number, H: number, frames: number): Promise<Kit> {
   const ENV_I = 0.28;
   const { scene, camera, env, room, knot } = buildScene(W, H);
   scene.environment = null; // indirect light comes from the traced diffuse signal and SSR only
@@ -77,7 +79,12 @@ export async function cornerKit(path: PathName, W: number, H: number, frames: nu
       };
     },
     setFrame(f) {
-      scenePose(path, camera, knot, clampF(f, frames));
+      const fc = clampF(f, frames);
+      if (path === 'drift' || path === 'drift-held' || path === 'drift-frozen') {
+        // the live demo's own camera drift (pose(camera, 0, t), t = f / 60: about 0.25 px/frame), knot rotating at the page's rate
+        freePose(camera, 0, path === 'drift-held' ? 0 : fc / 60);
+        knot.rotation.set(KNOT_TILT, path === 'drift-frozen' ? 0 : KNOT_RATE * fc, 0);
+      } else scenePose(path, camera, knot, fc);
       knot.updateMatrixWorld();
       camera.updateMatrixWorld();
       (bvh as N).updateTransforms();
@@ -211,13 +218,24 @@ async function loadAssetGeometry(id: 'sponza' | 'bistro') {
   return { add: asset.meshes as THREE.Object3D[], bvhMeshes: [bvhMesh], triangles: asset.triangles, info: { triangles: asset.triangles } };
 }
 
-export function sponzaKit(path: 'orbit' | 'pan' | 'hold', W: number, H: number, frames: number) {
+export function sponzaKit(path: 'orbit' | 'pan' | 'hold' | 'move', W: number, H: number, frames: number) {
   const cfg = SCENES.sponza;
-  const def = pathOf(cfg, path === 'pan' ? 'sponza-pan' : 'sponza-orbit')!;
+  const def = pathOf(cfg, path === 'pan' ? 'sponza-pan' : path === 'move' ? 'sponza-move' : 'sponza-orbit')!;
   const at = (f: number) => def.pose(path === 'hold' ? 20 : f);
   return assetKit({
     id: 'G3', label: 'Sponza orbit', cfg, frames, events: [], shadow: 'sun',
-    load: () => loadAssetGeometry('sponza'),
+    async load() {
+      const g = await loadAssetGeometry('sponza');
+      if (path !== 'move') return g;
+      // sponza-move: a torus knot swings through the sun shaft (moving occluder over static receivers), object motion
+      const mat = new THREE.MeshStandardMaterial({ color: cfg.mover!.color, roughness: cfg.mover!.roughness, metalness: cfg.mover!.metalness });
+      const mesh = new THREE.Mesh(cfg.mover!.geometry(), mat);
+      mesh.matrixAutoUpdate = false;
+      const setMover = (f: number) => { const m = def.mover!(f); mesh.matrix.copy(m); mesh.matrixWorld.copy(m); };
+      setMover(0);
+      return { ...g, add: [...g.add, mesh], bvhMeshes: [...g.bvhMeshes, mesh], triangles: g.triangles + (mesh.geometry.index!.count / 3),
+        mover: mesh, moverMaterials: [mat], setMover };
+    },
     pose: at,
     local: () => ({ position: cfg.local.position, on: 1 }),
   }, W, H);
