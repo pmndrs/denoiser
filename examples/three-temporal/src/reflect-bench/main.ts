@@ -47,7 +47,7 @@ type N = any; // TSL's node typings are too strict for hand-written shader maths
 type ReflMode = 'probe' | 'ssr' | 'hybrid' | 'rt' | 'ref';
 type Denoiser = 'none' | 'ffx' | 'recurrent' | 'svgf';
 type Resolve = 'off' | '1' | '1.5' | '2';
-type View = 'image' | 'specular' | 'source';
+type View = 'image' | 'specular' | 'source' | 'regions';
 const REFL_LABEL: Record<ReflMode, string> = {
   probe: 'environment only (prefiltered)', ssr: 'SSR, environment on miss', hybrid: 'hybrid: SSR, ray traced on miss',
   rt: 'ray traced, every pixel', ref: 'reference (traced, accumulated)',
@@ -267,6 +267,9 @@ async function main() {
     roughCut: 0.5, ssrThickness: 0.03, ssrDistance: 5, ssrQuality: 0.5, ssrStepExponent: 2, ssrBinaryRefine: false,
     modelRough: 'Ben: forced 0', normalMaps: true, tableRough: 0, turntable: false, orbit: false,
   };
+  // Scripted experiments (track R, headless runner): extra options per denoiser and for the TSL node, applied when the
+  // graph is (re)built. Empty = the libraries' defaults, exactly what the GUI runs.
+  const exp: { ffx: N; recurrent: N; svgf: N; node: N } = { ffx: {}, recurrent: {}, svgf: {}, node: {} };
   const SRC = { ssr: vec3(0.15, 0.8, 0.25), rt: vec3(0.2, 0.5, 1), miss: vec3(1, 0.2, 0.15), probe: vec3(1, 0.6, 0.05) };
 
   function buildGraph(resolve: Resolve) {
@@ -366,8 +369,9 @@ async function main() {
       if (k === 'none') return reflIn;
       let n = denoisers.get(k);
       if (!n) {
-        n = k === 'ffx' ? ffxReflections(reflIn, { ...guides, roughness: nTex.a })
-          : realtimeSpecular(reflIn, { ...guides, roughness: nTex.a, denoiser: { filter: k } } as N);
+        const node = Object.keys(exp.node).length ? { node: { ...exp.node } } : {};
+        n = k === 'ffx' ? ffxReflections(reflIn, { ...guides, roughness: nTex.a, ...node, ...(Object.keys(exp.ffx).length ? { denoiser: { ...exp.ffx } } : {}) })
+          : realtimeSpecular(reflIn, { ...guides, roughness: nTex.a, ...node, denoiser: { filter: k, ...exp[k] } } as N);
         denoisers.set(k, n);
       }
       return n;
@@ -414,6 +418,18 @@ async function main() {
     const split = isStochastic(m);
     const spec: N = split ? left.select(specOf(ui.left), specOf(ui.right)) : specOf('none');
     let out: N = ui.view === 'specular' ? spec : g.sceneColor.rgb.add(spec);
+    if (ui.view === 'regions') {
+      // runner masks: r = the table disc (world y = -0.8, facing up), g = the model, b = perceptual roughness; sky black
+      const s = g.surface();
+      const isTable = s.P.y.add(0.8).abs().lessThan(0.01).and(s.N.y.greaterThan(0.99));
+      const isSurf = s.sky.lessThan(0.5);
+      out = vec3(isSurf.and(isTable).select(float(1), float(0)), isSurf.and(isTable.not()).select(float(1), float(0)), isSurf.select(g.roughOf(), float(0)));
+      g.colorRTT.node = vec4(out, 1);
+      pipeline.outputNode = renderOutput(g.colorRTT, THREE.NoToneMapping, THREE.LinearSRGBColorSpace) as N;
+      pipeline.needsUpdate = true;
+      updateOverlay();
+      return;
+    }
     if (ui.view === 'source') {
       g.srcAccum.sample = vec4(g.sourceOf(m), 1);
       const lum = g.sceneColor.rgb.add(spec).dot(vec3(0.2126, 0.7152, 0.0722));
@@ -440,11 +456,12 @@ async function main() {
   controls.enableDamping = false; // a camera that stops means the histories settle
   controls.target.set(0, 0, 0);
   let tCam = 0, tModel = 0, frame = 0;
+  let orbitHold = false; // scripted: keep the orbit's pose at tCam (reference frames at a pose of the path)
   const prevView = new THREE.Matrix4();
   let prevModel = 0;
   const animate = () => {
     if (ui.orbit) {
-      tCam += 1 / 60;
+      if (!orbitHold) tCam += 1 / 60;
       const a = Math.PI / 4 + 0.45 * Math.sin(tCam * 0.25), r = 4.69;
       camera.position.set(r * Math.sin(a), 2 + 0.2 * Math.sin(tCam * 0.17), r * Math.cos(a));
       camera.lookAt(controls.target);
@@ -457,7 +474,36 @@ async function main() {
     uFrame.value = frame;
   };
   let fps = 0, last = performance.now();
+  // ---- scripted stepping (headless runner): the loop stops, frames render on request, the canvas is read back in the
+  // same task as the render that drew it (a read after an await sees the presented, cleared texture) ---------------
+  const grabCanvas = document.createElement('canvas');
+  const grab = (): string => {
+    grabCanvas.width = canvas.width; grabCanvas.height = canvas.height;
+    const c = grabCanvas.getContext('2d')!;
+    c.drawImage(canvas, 0, 0);
+    return grabCanvas.toDataURL('image/png');
+  };
+  const timingsOf = () => {
+    const t: Record<string, Record<string, number>> = {};
+    for (const [k, d] of g.denoisers) { const m = d.denoiser?.gpuTimings as Map<string, number> | undefined; if (m) t[k] = Object.fromEntries(m); }
+    return t;
+  };
+  const step = async (n: number, opts: { grab?: boolean; timings?: boolean } = {}) => {
+    let png: string | undefined;
+    const times: Record<string, Record<string, number>>[] = [];
+    for (let i = 0; i < n; i++) {
+      animate();
+      pipeline.render();
+      frame++;
+      if (opts.grab && i === n - 1) png = grab();
+      await device.queue.onSubmittedWorkDone();
+      if (opts.timings) { await new Promise((r) => setTimeout(r, 0)); times.push(timingsOf()); }
+    }
+    return { png, times, frame };
+  };
+  let manual = false;
   renderer.setAnimationLoop(() => {
+    if (manual) return;
     animate();
     pipeline.render();
     frame++;
@@ -505,7 +551,7 @@ async function main() {
   gui.add(ui, 'left', { raw: 'none', 'FFX reflections': 'ffx', 'ours: recurrent': 'recurrent', 'ours: SVGF': 'svgf' }).name('left denoiser').onChange(buildOutput);
   gui.add(ui, 'right', { raw: 'none', 'FFX reflections': 'ffx', 'ours: recurrent': 'recurrent', 'ours: SVGF': 'svgf' }).name('right denoiser').onChange(buildOutput);
   gui.add(ui, 'resolve', { 'FSR3 2x (50 %)': '2', 'FSR3 1.5x (67 %)': '1.5', 'FSR3 native (TAA)': '1', 'none': 'off' }).name('resolver').onChange(setResolve);
-  gui.add(ui, 'view', { image: 'image', 'specular only': 'specular', 'where reflections come from': 'source' }).name('show').onChange(buildOutput);
+  gui.add(ui, 'view', { image: 'image', 'specular only': 'specular', 'where reflections come from': 'source', 'regions (runner masks)': 'regions' }).name('show').onChange(buildOutput);
   gui.add(ui, 'roughCut', 0, 1, 0.01).name('hybrid roughness cutoff').onChange((v: number) => { uRoughCut.value = v; });
   const fs = gui.addFolder('Scene');
   fs.add(ui, 'modelRough', ['Ben: forced 0', 'from the file']).name('model roughness').onChange((v: string) => {
@@ -531,7 +577,40 @@ async function main() {
 
   buildOutput();
   void table;
-  (window as N).__rb = { ready: true, ui, apply: () => { setResolve(); }, rebuild, gui };
+  // presets: Ben's scene (everything roughness 0) and the model's own roughness maps ("model defaults"); the table
+  // roughness is separate (the sweep: 0 / 0.05 / 0.15 / 0.3)
+  const setModelRough = (v: string) => { ui.modelRough = v; for (const m of materials) m.roughness = v === 'from the file' ? 1 : 0; };
+  const setNormalMaps = (on: boolean) => { ui.normalMaps = on; for (const m of materials) { m.normalMap = on ? normalMaps.get(m) ?? null : null; m.needsUpdate = true; } };
+  /** Scripted configuration: any ui field, `preset` ('ben' | 'defaults'), per-denoiser options (`ffx` / `recurrent` /
+   * `svgf`, merged over the defaults) and TSL node options (`node`, e.g. ignoreViewOffset); rebuilds the graph and
+   * drops every history. */
+  const configure = (cfg: N = {}) => {
+    const c = { ...cfg };
+    if (c.preset) setModelRough(c.preset === 'ben' ? 'Ben: forced 0' : 'from the file');
+    if (c.modelRough !== undefined) setModelRough(c.modelRough);
+    if (c.normalMaps !== undefined) setNormalMaps(!!c.normalMaps);
+    if (c.tableRough !== undefined) { ui.tableRough = c.tableRough; tableMat.roughness = c.tableRough; }
+    for (const k of ['ffx', 'recurrent', 'svgf', 'node'] as const) if (c[k] !== undefined) exp[k] = { ...c[k] };
+    for (const k of ['refl', 'left', 'right', 'resolve', 'view', 'roughCut', 'ssrThickness', 'ssrDistance', 'ssrQuality', 'orbit', 'turntable'] as const) {
+      if (c[k] !== undefined) (ui as N)[k] = c[k];
+    }
+    if (c.orbitT !== undefined) tCam = c.orbitT;
+    if (c.orbitHold !== undefined) orbitHold = !!c.orbitHold;
+    uRoughCut.value = ui.roughCut;
+    setResolve();
+    g.ssrNode.thickness.value = ui.ssrThickness; g.ssrNode.maxDistance.value = ui.ssrDistance; g.ssrNode.quality.value = ui.ssrQuality;
+    resetHistories();
+    gui.controllersRecursive().forEach((ctl: N) => ctl.updateDisplay());
+    return { ui: { ...ui }, exp: JSON.parse(JSON.stringify(exp)), size: [canvas.width, canvas.height] };
+  };
+  (window as N).__rb = {
+    ready: true, ui, apply: () => { setResolve(); }, rebuild, gui, configure, step, grab, timingsOf,
+    setManual: (m: boolean) => { manual = m; },
+    setOrbitT: (t: number) => { tCam = t; },
+    get frame() { return frame; },
+    refCount: () => g.reflRef.count.value,
+    features: () => [...device.features],
+  };
 }
 
 main().catch((e) => { console.error(e); log(String(e?.stack ?? e)); });
