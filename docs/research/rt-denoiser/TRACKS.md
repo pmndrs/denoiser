@@ -16,7 +16,7 @@ binding), [TASKS.md](TASKS.md) "How agents work here" (rules 1–12 still apply,
 | T1 calibration: Dennis blind A/B | – | Dennis | 1 | waits for T0-scorecard |
 | R reflections (G1, G5) | `track/r-reflections` · `../Denoiser-track-r` | Opus | 1: diagnosis | running |
 | S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | running |
-| D diffuse + AO + cost (G3, G4) | `track/d-diffuse` · `../Denoiser-track-d` | Opus | 1: diagnosis | running |
+| D diffuse + AO + cost (G3, G4) | `track/d-diffuse` · `../Denoiser-track-d` | Opus | 1: diagnosis | **diagnosis done** (tracks/d.md on its branch, 02154b7). Waits for T1 + native runs on G3/G4 |
 | O OIDN 3 | – | Opus | – | waits for the OIDN 3 release |
 
 ## Gates (measures, not dates)
