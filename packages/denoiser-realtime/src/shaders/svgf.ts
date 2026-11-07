@@ -714,6 +714,98 @@ ${kinds.map((_, i) => (rv(i) ? perSignalVirt(i, refl(i), hitT(i)) : perSignal(i)
   return { code, entries: b.entries };
 }
 
+// ---- output stabilization (track D phase-1 experiment, option `stabilize`) --------------------------
+
+/** Per signal: blend floor (stabilizeAlpha) and clip width in standard deviations (stabilizeClip). */
+export interface StabilizeVariant { alpha: number[]; clip: number[]; maxHistory: number[] }
+
+/**
+ * Temporal stabilization of the filtered output (track D experiment, tracks/d.md; our design after the TAA literature:
+ * Karis 2014, "High-Quality Temporal Supersampling", SIGGRAPH Advances: reproject the previous output and clamp it to the
+ * current neighbourhood; Salvi 2016, "An Excursion in Temporal Supersampling", GDC: clip to the neighbourhood mean +-
+ * gamma sigma instead of the min / max box). The previous stabilized output is fetched through the same 2x2 plane / normal
+ * test as the temporal pass (bilinear over valid taps), clipped in YCoCg to the 3x3 mean +- clip x sigma of this frame's
+ * filtered output, and blended with weight max(alpha, 1 / n) (n its own history length, capped), raised to 1 by the
+ * anti-lag lambda. A-SVGF's own history is untouched (the stabilized image is never fed back into the filter).
+ */
+export function stabilizePass(kinds: SignalKind[], sv: StabilizeVariant): PassDef {
+  const b = baseBindings(kinds);
+  b.add('geoPrev', 'texture_2d<u32>', 'i');
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('motionZTex', 'texture_2d<f32>', 'f');
+  kinds.forEach((_, i) => {
+    b.add(`cur${i}`, 'texture_2d<f32>', 'f');
+    b.add(`hist${i}`, 'texture_2d<f32>', 'f');
+    b.add(`grad${i}`, 'texture_2d<f32>', 'f');
+    b.add(`dst${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+  });
+  const I = kinds.map((_, i) => i);
+  const k6 = (x: number) => x.toFixed(6);
+  const code = /* wgsl */ `
+${header(b)}
+${REPROJECT_WGSL}
+${I.map((i) => antilagWgsl(i)).join('\n')}
+fn toYCoCg(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
+fn fromYCoCg(c: vec3f) -> vec3f { return vec3f(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z); }
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoCenter(p);
+  ${I.map((i) => `let c${i} = finite3(max(textureLoad(cur${i}, p, 0).rgb, vec3f(0.0)));`).join('\n  ')}
+  if (g.z <= 0.0 || hasFlag(FRAME_RESET)) {
+    ${I.map((i) => `textureStore(dst${i}, p, vec4f(c${i}, 1.0));`).join('\n    ')}
+    return;
+  }
+  let r = reproject(p, g, P0.planeTol, P0.normalTol);
+  ${I.map((i) => /* wgsl */ `
+  {
+    var m1 = vec3f(0.0);
+    var m2 = vec3f(0.0);
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        let y = toYCoCg(finite3(max(textureLoad(cur${i}, clampPix(p + vec2i(dx, dy)), 0).rgb, vec3f(0.0))));
+        m1 += y;
+        m2 += y * y;
+      }
+    }
+    m1 /= 9.0;
+    let sd = sqrt(max(m2 / 9.0 - m1 * m1, vec3f(0.0)));
+    var col = c${i};
+    var n = 1.0;
+    if (r.sumW > 0.01) {
+      var h = vec3f(0.0);
+      var hn = 0.0;
+      for (var k = 0; k < 4; k++) {
+        let w = r.w[k];
+        let t = textureLoad(hist${i}, clampPix(r.base + TAP_OFFS[k]), 0);
+        h += t.rgb * w;
+        hn += t.a * w;
+      }
+      h /= r.sumW;
+      hn /= r.sumW;
+      // variance clipping toward the mean (Salvi 2016)
+      let yh = toYCoCg(h);
+      let ext = ${k6(sv.clip[i])} * sd + vec3f(1e-6);
+      let d = yh - m1;
+      let s = max(max(abs(d.x) / ext.x, abs(d.y) / ext.y), abs(d.z) / ext.z);
+      let hc = fromYCoCg(select(yh, m1 + d / s, s > 1.0));
+      n = min(hn + 1.0, ${k6(sv.maxHistory[i])});
+      var a = max(${k6(sv.alpha[i])}, 1.0 / n);
+      if ((P${i}.flags & P_ANTILAG) != 0u) {
+        let lam = antilagLambda${i}(p);
+        a = mix(a, 1.0, lam);
+        n = min(n, 1.0 / a);
+      }
+      col = mix(max(hc, vec3f(0.0)), c${i}, a);
+    }
+    textureStore(dst${i}, p, vec4f(col, n));
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
 // ---- variance estimation --------------------------------------------------------
 
 /**
