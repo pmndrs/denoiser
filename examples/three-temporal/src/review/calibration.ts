@@ -15,7 +15,7 @@ type MetricId = 'calm' | 'detail' | 'lag' | 'tradeoff';
 interface Pair { id: string; metric: MetricId; sheet: string; frames: number; size: number; rows: number; fps: number; still?: boolean }
 interface Manifest { version: number; generated: string; metrics: Record<MetricId, { title: string; question: string; hint: string }>; pairs: Pair[] }
 interface Answer { pair: string; metric: MetricId; leftIs: 'a' | 'b'; pick: 'left' | 'right' | 'tie'; ms: number; at: string }
-interface State { manifest?: string; session: string; order: Record<string, string[]>; leftIs: Record<string, 'a' | 'b'>; answers: Record<string, Answer> }
+interface State { manifest?: string; session: string; order: Record<string, string[]>; leftIs: Record<string, 'a' | 'b'>; answers: Record<string, Answer>; notes?: Record<string, string> }
 
 const M = manifest as unknown as Manifest;
 const sheets = import.meta.glob('./calibration/sheets/*.{png,webp}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
@@ -26,7 +26,7 @@ const METRICS: MetricId[] = (['calm', 'detail', 'lag', 'tradeoff'] as MetricId[]
 function load(): State {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? 'null') as State | null;
-    if (s && s.order && s.answers && s.manifest === M.generated && METRICS.every((m) => Array.isArray(s.order[m]))) return s;   // a new pair set starts fresh
+    if (s && s.order && s.answers && s.manifest === M.generated && METRICS.every((m) => Array.isArray(s.order[m]))) return { ...s, notes: s.notes ?? {} };   // a new pair set starts fresh
   } catch { /* private window or cleared site data */ }
   return fresh();
 }
@@ -36,7 +36,7 @@ function fresh(): State {
   for (const m of METRICS) order[m] = M.pairs.filter((p) => p.metric === m).map((p) => p.id).sort(rnd);
   const leftIs: Record<string, 'a' | 'b'> = {};
   for (const p of M.pairs) leftIs[p.id] = Math.random() < 0.5 ? 'a' : 'b';
-  return { manifest: M.generated, session: new Date().toISOString(), order, leftIs, answers: {} };
+  return { manifest: M.generated, session: new Date().toISOString(), order, leftIs, answers: {}, notes: {} };
 }
 let state = load();
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* storage unavailable: the copy button still works */ } };
@@ -57,6 +57,9 @@ const STYLE = `
 #rv-calibration .cal-prog { color: var(--dn-muted); font-size: .85rem; }
 #rv-calibration textarea { width: 100%; min-height: 6rem; font: .75rem var(--dn-mono); background: var(--dn-inset); color: var(--dn-text); border: 1px solid var(--dn-border); border-radius: 6px; }
 #rv-calibration .cal-ref { color: var(--dn-muted); font-size: .8rem; }
+#rv-calibration .cal-notes { display: flex; flex-direction: column; gap: .3rem; margin-top: .6rem; max-width: 820px; }
+#rv-calibration .cal-notes label { color: var(--dn-muted); font-size: .85rem; }
+#rv-calibration textarea.cal-note { min-height: 3.6rem; font: .9rem/1.4 inherit; font-family: inherit; padding: .4rem .5rem; resize: vertical; }
 `;
 
 export function mountCalibration(): void {
@@ -164,6 +167,18 @@ export function mountCalibration(): void {
     row.append(tie, prev, next, play, speed, prog);
     panel.appendChild(row);
 
+    // ---- per-pair notes: for "some parts better, some worse". Saved as you type; exported with the pair (with which
+    // option was on the left, so the analysis can turn "left" / "right" back into the options).
+    const notes = document.createElement('div'); notes.className = 'cal-notes';
+    const nl = document.createElement('label'); nl.htmlFor = `cal-note-${p.id}`;
+    nl.textContent = 'Notes on this pair (optional). Say left / right and where, e.g. "left calmer on the wall, but its floor shadow ripples". The arrow keys type here while the box has focus: press Esc to leave it, then pick.';
+    const note = document.createElement('textarea'); note.className = 'cal-note'; note.id = `cal-note-${p.id}`;
+    note.value = state.notes?.[p.id] ?? '';
+    note.oninput = () => { state.notes ??= {}; const v = note.value.trim(); if (v) state.notes[p.id] = note.value; else delete state.notes[p.id]; save(); };
+    note.onkeydown = (e) => { if (e.key === 'Escape') { note.blur(); e.preventDefault(); } };
+    notes.append(nl, note);
+    panel.appendChild(notes);
+
     // ---- sheet playback: row 0 = option a, row 1 = option b, (row 2 = reference); left / right by the stored coin flip
     const size = p.size;
     for (const cv of [L.cv, R.cv, ...(refCv ? [refCv] : [])]) { cv.width = size; cv.height = size; cv.style.width = `${Math.min(size * 4, p.rows === 3 ? 300 : 400)}px`; }
@@ -205,8 +220,12 @@ export function mountCalibration(): void {
   }
 
   function resultsJson(): string {
-    const answers = Object.values(state.answers).sort((a, b) => a.pair.localeCompare(b.pair));
-    return JSON.stringify({ version: 1, kind: 'rt-scorecard-calibration', session: state.session, manifest: M.generated, exported: new Date().toISOString(), answers }, null, 1);
+    const notes = state.notes ?? {};
+    const answers = Object.values(state.answers).map((a) => (notes[a.pair]?.trim() ? { ...a, note: notes[a.pair].trim() } : a)).sort((a, b) => a.pair.localeCompare(b.pair));
+    // notes on pairs not answered yet still go out, with the side order needed to read them
+    const unanswered = Object.keys(notes).filter((id) => !state.answers[id] && notes[id].trim())
+      .map((id) => ({ pair: id, metric: M.pairs.find((x) => x.id === id)?.metric, leftIs: state.leftIs[id], note: notes[id].trim() })).sort((a, b) => a.pair.localeCompare(b.pair));
+    return JSON.stringify({ version: 2, kind: 'rt-scorecard-calibration', session: state.session, manifest: M.generated, exported: new Date().toISOString(), answers, notes: unanswered }, null, 1);
   }
   async function copyResults(button: HTMLButtonElement) {
     const text = resultsJson();
@@ -214,9 +233,9 @@ export function mountCalibration(): void {
     try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall through to the text box */ }
     button.textContent = ok ? 'Copied' : 'Copy failed: use the box';
     setTimeout(() => { button.textContent = 'Copy results'; }, 1800);
-    let box = panel.querySelector<HTMLTextAreaElement>('textarea');
+    let box = panel.querySelector<HTMLTextAreaElement>('textarea.cal-results');
     if (!ok) {
-      if (!box) { box = document.createElement('textarea'); panel.appendChild(box); }
+      if (!box) { box = document.createElement('textarea'); box.className = 'cal-results'; panel.appendChild(box); }
       box.value = text; box.focus(); box.select();
     }
   }

@@ -20,7 +20,9 @@ if (!files.length) { console.error('usage: analyze.mjs <results.json> [...] [--k
 const key = JSON.parse(readFileSync(path.resolve(opt('key', path.join(HERE, 'key.json'))), 'utf8'));
 const byId = new Map(key.pairs.map((p) => [p.id, p]));
 const answers = new Map();
-for (const f of files) for (const a of JSON.parse(readFileSync(f, 'utf8')).answers ?? []) answers.set(a.pair, a);
+const looseNotes = new Map();   // notes on pairs he didn't answer (results version 2)
+for (const f of files) { const r = JSON.parse(readFileSync(f, 'utf8')); for (const a of r.answers ?? []) answers.set(a.pair, a); for (const n of r.notes ?? []) looseNotes.set(n.pair, n); }
+const sideOf = (p, leftIs, side) => { const o = (side === 'left') === (leftIs === 'a') ? p.a : p.b; return o.variant; };
 
 // definitions: [name, extractor(optionEntry), better = 'low' | 'high']
 const DEFS = {
@@ -91,6 +93,21 @@ for (const metric of ['calm', 'detail', 'lag']) {
   }
   out.tradeoff = { calmer, sharper, tie, pairs: det };
   lines.push(`## trade-off (calmer but blurrier vs sharper but boils): ${mine.length} answered`, '', `He picked the calmer option ${calmer}x, the sharper option ${sharper}x, "can't tell" ${tie}x. This is the weight to give calm vs detail when a change trades one for the other.`, '');
+}
+// his notes, with left / right turned back into the options (the page randomised the sides per pair)
+{
+  const noted = [...answers.values(), ...looseNotes.values()].filter((a) => a.note && byId.has(a.pair)).sort((x, y) => x.pair.localeCompare(y.pair));
+  out.notes = [];
+  if (noted.length) {
+    lines.push(`## notes (${noted.length})`, '');
+    for (const a of noted) {
+      const p = byId.get(a.pair), L = sideOf(p, a.leftIs, 'left'), R = sideOf(p, a.leftIs, 'right');
+      const pick = a.pick === undefined ? 'not answered' : a.pick === 'tie' ? "can't tell" : `picked ${a.pick} (${a.pick === 'left' ? L : R})`;
+      out.notes.push({ pair: a.pair, metric: a.metric ?? p.metric, capture: p.capture, signal: p.signal, left: L, right: R, pick: a.pick ?? null, note: a.note });
+      lines.push(`- **${a.pair}** (${a.metric ?? p.metric}, ${p.capture}/${p.signal}; left = ${L}, right = ${R}; ${pick}): ${a.note.replace(/\s+/g, ' ')}`);
+    }
+    lines.push('');
+  }
 }
 const unanswered = key.pairs.filter((p) => !answers.has(p.id)).length;
 lines.push(`${answers.size} answers merged from ${files.length} file(s); ${unanswered} of ${key.pairs.length} pairs unanswered.`);
