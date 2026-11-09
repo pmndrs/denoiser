@@ -14,8 +14,9 @@ timings and settings names only; nothing from NRD is in this repo. Machine, conv
 
 **Status.** Every capture in GOLDEN-BRIEF step 1 is done: captured, validated, replayed, scored. Group 1 (G3 orbit +
 the four G4 light-change paths) is pushed first. Group 2 adds the two 16384-spp holds (the clean calm floor and a
-still-camera light step), plus G2 occluder (with SIGMA, ours `shadows` and `ffx-shadows`) and G5 turntable. **Cost
-(step 4) is not in yet**: it needs locked GPU clocks (admin shell; see "Cost" below).
+still-camera light step), plus G2 occluder (with SIGMA, ours `shadows` and `ffx-shadows`) and G5 turntable. Group 3
+is cost (step 4), measured at locked clocks. The golden driver's `time` throttles on this laptop, so ours was timed on
+the same 1080p bytes as native instead; see "Cost" below.
 
 **Raw outputs** (every frame of every denoiser, `.f32`, CAPTURE-FORMAT replay layout) are on the Windows machine in
 `C:\dev\nrd-reference\outputs\<capture>\<denoiser>\frame_NNNN\` and the captures in `C:\dev\nrd-reference\captures\<capture>\`
@@ -223,25 +224,119 @@ G5 included). This was not re-checked bit-for-bit against a CPU running mean her
 | shadows: SIGMA vs ours / ffx | inputs equal and checked (ROUND2); **integration unverified** | no known-good SIGMA integration to compare with; SIGMA's G2 numbers match round 2's knot captures |
 | G5 guides | same capture bytes | native gets the capture's `normal` buffer, which on G5 is the shading normal (GOLDEN.md known limits); the v1 `normal_geom` extra buffer is not given to NRD |
 | lag | yes, two definitions | settled band (track D) misreads late camera drift as "never"; lag-to-pre misreads paths where the settled level legitimately differs from the pre-event level (light-on). Both are given |
-| cost (pending) | GPU ms yes; wall no | native wall is fence-to-fence in-process; ours is `onSubmittedWorkDone` in Chrome (tracks/d.md §6) |
+| cost: wall, native vs ours replay | **yes**, as far as two runtimes allow | same 1080p bytes, same GPU, 1200 MHz, dispatch → fence on both; native's fence is D3D12 in-process, ours is `onSubmittedWorkDone` in Chrome / Dawn (0.1 ms timer) |
+| cost: GPU ms, native vs ours | **no** | native = one span around the denoise call (gaps between dispatches included); ours = sum of per-pass timestamps (gaps excluded) |
+| cost: golden driver `time` | **no** | thermally throttled to 300–1100 MHz despite the lock; whole-frame wall noise exceeds the denoiser |
 
-## Cost (step 4): pending
+## Cost (step 4)
 
-Not measured yet. The cost runs need both clocks locked from an admin shell
-(`nvidia-smi -lgc 1200,1200`, `nvidia-smi -lmc 7001,7001`): unlocked, the driver clocks Chrome's WebGPU work at ≤ 780 MHz
-and native at ~1.9 GHz, which made round 1's timings bimodal (SETUP.md). This session isn't elevated. Ready to run:
-[tools/time-golden.ps1](tools/time-golden.ps1) (1080p timing captures of G3 orbit / G4 pan-light-on; native with
-`--loops 8`; golden `time` for ours / ffx / raw, 3 alternating rounds, cool-down gate; then track D's bench pages via
-[tools/bench-win.mjs](tools/bench-win.mjs)).
+_2026-11-09, clocks locked from an admin shell (`nvidia-smi -lgc 1200,1200`, `-lmc 7001,7001`; the board reports memory
+at 7151 MHz), no other GPU job, cool-down gate before every run. Everything is in [cost/](cost/): [cost.md](cost/cost.md)
+(all tables, made by [tools/cost.mjs](tools/cost.mjs)), raw per-frame `timings*.csv` / `run.json` per run, golden
+`time` JSON, bench JSONL, and nvidia-smi logs every 200 ms for every run ([cost/smi/](cost/smi/)). Scripts:
+[tools/time-golden.ps1](tools/time-golden.ps1), then [tools/time-replay.ps1](tools/time-replay.ps1)._
 
-- The golden `time` command has no timestamps-off switch and its `wall` is the whole frame (rays + denoiser), so the
-  denoiser's wall share is taken as ours − `raw` on the same page config. Timestamps on / off come from track D's bench.
+**Blocker, written up rather than worked around: the golden driver's `time` can't run at locked clocks on this
+laptop.** Its whole-frame path tracer (≈ 125 ms / frame on G3 and ≈ 373 ms on G4 at 1200 MHz) heats the GPU to
+87–90 °C within seconds even when started at 65 °C, and the driver then pulls graphics clocks down to 300–1100 MHz in
+**82–83 % of busy samples** (`SW thermal slowdown`, some `SW power cap`). Native and the replays below stayed at
+1200 MHz (0–1 % of samples below, ≤ 75 °C). So the golden `time` numbers ([cost/golden-time/](cost/golden-time/),
+summarized in cost.md) are kept but are **not cost numbers**. Also, their round-to-round spread (15–35 ms of
+whole-frame wall) is larger than the whole denoiser, so "ours − `raw`" can't isolate the denoiser's wall share (G4:
+ours − raw = 1.6 ms for 17 ms of denoiser GPU time). Instead, ours was timed on **the same 1080p capture bytes as
+native** through the test bed's `mode=replay`, which runs no path tracer and stays cool.
+
+### Same bytes, same GPU, 1200 MHz: native vs ours
+
+1080p timing captures `golden-G3-orbit-1080t` (frames 0–7) and `golden-G4-pan-light-on-1080t` (frames 28–35, the light
+comes on at 32), made with the golden driver at 16 spp (inputs only; both VALID). Steady frames = frames 1–7 after
+each reset, for both. Native: harness `--loops 8`, 3 rounds (56 frames each). Ours: 5 rounds of 7 frames, `svgf-auto`
+(diffuse + specular) and `occlusion-svgf-auto` (AO) at `3138168`. Wall is dispatch → fence: native = D3D12 fence,
+in-process; ours = `onSubmittedWorkDone` in Chrome 157, 0.1 ms timer resolution. Both run 50 ms of GPU warm-up work
+right before each timed frame (native harness `warmMs: 50`, replay `warm=50`). Ours without warm-up is in brackets.
+Medians of round medians.
+
+| ms per frame | G3 GPU | G3 wall | G4 GPU | G4 wall |
+|---|---|---|---|---|
+| REBLUR_DIFFUSE_SPECULAR, defaults | 7.16 | **7.32** | 8.11 | **8.34** |
+| REBLUR, tuned D | 7.09 | **7.28** | 8.04 | **8.24** |
+| RELAX_DIFFUSE_SPECULAR | 9.03 | **9.20** | 9.67 | **9.97** |
+| ours `svgf-auto` (diffuse + specular) | 7.77 | **11.6** (11.2) | 9.33 | **13.3** (13.0) |
+| REBLUR_DIFFUSE_SPECULAR_OCCLUSION | 4.46 | **4.61** | 5.37 | **5.68** |
+| ours `occlusion-svgf-auto` (AO) | 3.26 | **6.3** (7.1) | 3.66 | **6.2** (7.3) |
+
+- **Wall, the like-for-like number:** ours diffuse + specular costs **1.6× REBLUR** and **1.3× RELAX** (11.6 vs
+  7.3 / 9.2 on G3; 13.3 vs 8.3 / 10.0 on G4). Ours AO costs 1.1–1.4× native's occlusion REBLUR, but that comparison is
+  loose because the two AOs aren't the same signal (see "AO" above).
+- **GPU columns are not like-for-like.** Native's GPU number is one timestamp span around the whole denoise call, so
+  any idle time between its dispatches is inside it. Ours is the **sum of its per-pass timestamps** (14 passes for
+  diffuse + specular, 13 for AO; the sum matches `total` to 0.01 ms), so time between passes is not counted. On the
+  passes alone, ours sits between REBLUR and RELAX.
+- **Rounds with interference.** In 2 of 5 G3 diffuse + specular rounds (both warm-up settings), some frames ran every
+  pass 3–5× slower at the locked clock (frame GPU sums of 30–47 ms instead of 7.8). That looks like another GPU client
+  (Chrome, Cursor, Camera Hub held GPU contexts) cutting in, not ours. The table uses rounds whose GPU median is within
+  2 % of the best round (3–5 of 5 per arm). Every round is in cost.md and `cost/replay-r*/`.
+- The reset frame (frame 0) costs ours 105–130 ms wall and native 5.9–9.9 ms GPU. Ours probably pays first-use work
+  there; reset cost wasn't in scope and isn't analysed further.
+
+### Where ours' extra wall time comes from
+
+Native's wall is only **0.16–0.30 ms** above its GPU span. Ours' wall is **2.5–4.0 ms** above its pass sum: 3.4–4.0 ms
+for diffuse + specular, 2.5–3.8 ms for AO, and 2.6 ms on track D's bench page. Split as far as can be done from
+outside, using track D's bench pages (test bed solo, 1080p orbit, diffuse `c-v0`, 200 frames × 6 rounds, all rounds
+within 0.01 ms of GPU time):
+
+| part | ms | from |
+|---|---|---|
+| GPU work inside the 14 timed passes | 6.49 | bench `gpuMs` (timestamps on) |
+| timestamp queries | ≤ 0.1 (inside the 0.1 ms timer resolution) | wall 9.1 timestamps on vs 9.0 off |
+| CPU encode + submit (the wall clock starts before encoding) | 0.3–0.4 | bench `passesMs.cpu` |
+| submit → fence round trip, nothing on the GPU | 0.2 | `c-empty` page |
+| **left over: GPU-side time outside every timed pass** | **≈ 2.0** (≈ 0.14 ms per pass boundary) | 9.1 − 6.49 − 0.35 − 0.2 |
+| = wall | 9.1 | bench `wallMs` |
+
+- The **left-over ≈ 2 ms is the main part.** It's GPU time not inside any timestamped pass: the start of the first
+  pass, the gaps between passes (barriers, pipeline switches, Dawn's per-pass work), and the end of the last. From
+  outside it can't be split further. Telling startup apart from gaps needs a single timestamp span from the first
+  pass's begin to the last pass's end, which the package doesn't report today. That's a suggestion for the package
+  owners; nothing here touches our code.
+- **Not the GPU waking from idle,** at least for diffuse + specular. With 50 ms of GPU work right before each timed
+  frame (replay `warm=50`), its wall doesn't drop (11.6 vs 11.2, 13.3 vs 13.0). For the smaller AO workload, warm-up
+  removes about 1 ms (7.1 → 6.3, 7.3 → 6.2).
+- **The one-tiny-dispatch page (`c-tiny`) is bimodal:** 0.8 ms wall in rounds 0–2 and 3.0 ms in rounds 3–5 (`c-empty`
+  stays 0.2 in all). So a single dispatch can cost 0.6–2.8 ms of wall beyond an empty submit, depending on a state
+  outside the page's control. This is one source of round-to-round wall noise.
+- **The replays show a larger gap than the bench page** (3.4–4.0 ms vs 2.6 ms). The replay's wall covers only the
+  denoiser's dispatch (input uploads happen before the clock starts). The extra may be the replay adapter's own
+  untimed work, or just the 7-frame samples. Not resolved.
+- **Native is not "faster at submitting" by this measure.** Its gaps are inside its GPU span, and its wall − GPU only
+  covers the fence and CPU side. On wall, the fair comparison, native REBLUR is ≈ 4.3–5.0 ms per frame cheaper than
+  ours on these captures (11.6 − 7.32, 13.3 − 8.34). About 0.6–1.2 ms of that is pass time; the rest is the ≈ 3.5 ms
+  of untimed GPU and submit time above.
+
+Track D's bench variants, at the same settings (full table in cost.md):
+
+| page | GPU ms | wall ms |
+|---|---|---|
+| default (`c-v0`, timestamps on) | 6.49 | 9.1 |
+| default, timestamps off | – | 9.0 |
+| chroma anti-lag off | 6.35 | 9.0 |
+| anti-lag off, α 0.1 | 5.85 | 8.1 |
+| `x-auto` default | 6.49 | 9.1 |
+| `x-auto` + stabilize | 7.32 | 10.0 |
+| empty submit (`c-empty`) | – | 0.2 |
+| one tiny dispatch (`c-tiny`) | – | 1.9 (0.8 or 3.0, bimodal) |
+
 - Of track D's 13 cost pages, **3 can't be reproduced here**: `c-bg`, `c-one`, `c-bgone` were built from frozen package
   copies with local patches that were never committed (track D's `tools/wrap.ts` imports them from a Mac scratchpad). The
   other variants run through [tools/wrap-win.ts](tools/wrap-win.ts) (a copy of track D's wrapper pointing at the package
-  in a scratch worktree of `track/d-diffuse`) and [tools/cost-pages-win.json](tools/cost-pages-win.json).
-- The per-frame `gpuMs` / `wallMs` in these replays' `timings.csv` and `compare.md` are **not cost numbers**: clocks were
-  unlocked and the laptop was thermally limited (88–89 °C, `SW thermal slowdown`) during the whole session.
+  in a scratch worktree of `track/d-diffuse` @ `02154b7`) and [tools/cost-pages-win.json](tools/cost-pages-win.json).
+- On the bench pages, 26 % of busy nvidia-smi samples were below 1200 MHz, peaking at 89 °C. The bench page also path
+  traces its scene, before the timed region. The denoiser's own pass times were identical, to 0.1 %, from the first
+  round (60–65 °C) to the last, so the timed passes ran at a constant clock.
+- The per-frame `gpuMs` / `wallMs` in the quality replays' `timings.csv` and `compare.md` (per-capture folders above)
+  are **not cost numbers**: those ran with unlocked clocks on a thermally limited laptop (88–89 °C).
+- **Clocks were left locked.** Reset with `nvidia-smi -rgc` and `nvidia-smi -rmc` from an admin shell.
 
 ## How this was run
 

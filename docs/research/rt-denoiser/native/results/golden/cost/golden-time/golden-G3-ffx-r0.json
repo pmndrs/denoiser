@@ -1,0 +1,159 @@
+{
+ "info": {
+  "scene": "G3",
+  "path": "orbit",
+  "mode": "run",
+  "denoiser": "ffx",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "raw",
+   "specular": "denoised",
+   "shadow": "denoised",
+   "ao": "raw"
+  },
+  "events": [],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.45921248275176946,
+     0.8829475928589271,
+     0.09760862640967047
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.95,
+     0.86
+    ],
+    "intensity": 6,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -7,
+     2.3,
+     3.6
+    ],
+    "radius": 0.15,
+    "color": [
+     1,
+     0.72,
+     0.45
+    ],
+    "intensity": 5,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 60,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "sponza",
+   "attribution": "Sponza (c) 2016 Crytek, improved model by Frank Meinl after Marko Dabrovic's original, glTF by Khronos (glTF-Sample-Assets); Cryengine Limited License Agreement; geometry only, not redistributed",
+   "triangles": 262267
+  },
+  "triangles": 262267,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 125.5,
+   "min": 99.7999999821186,
+   "mean": 120.49250000094374
+  },
+  "gpu": {
+   "specular.prepare": {
+    "median": 0.126976,
+    "min": 0.12288,
+    "mean": 0.1270698666666667
+   },
+   "specular.reproject": {
+    "median": 2.033664,
+    "min": 1.544192,
+    "mean": 1.8906538666666652
+   },
+   "specular.prefilter": {
+    "median": 1.012736,
+    "min": 0.759808,
+    "mean": 0.9332224000000013
+   },
+   "specular.resolve_temporal": {
+    "median": 1.47968,
+    "min": 1.11104,
+    "mean": 1.3630208000000015
+   },
+   "specular.total": {
+    "median": 4.65408,
+    "min": 3.538944,
+    "mean": 4.313966933333333
+   },
+   "shadow.prepare": {
+    "median": 0.210944,
+    "min": 0.160768,
+    "mean": 0.19675306666666675
+   },
+   "shadow.tile_classification": {
+    "median": 0.29696,
+    "min": 0.228352,
+    "mean": 0.2862165333333334
+   },
+   "shadow.filter_0": {
+    "median": 0.229376,
+    "min": 0.173056,
+    "mean": 0.22381226666666656
+   },
+   "shadow.filter_1": {
+    "median": 0.22016,
+    "min": 0.165888,
+    "mean": 0.21597013333333337
+   },
+   "shadow.filter_2": {
+    "median": 0.233472,
+    "min": 0.176128,
+    "mean": 0.22857386666666676
+   },
+   "shadow.total": {
+    "median": 1.19296,
+    "min": 0.9062399999999999,
+    "mean": 1.1513258666666666
+   },
+   "total": {
+    "median": 5.850112,
+    "min": 4.447232,
+    "mean": 5.4652928
+   }
+  }
+ }
+}

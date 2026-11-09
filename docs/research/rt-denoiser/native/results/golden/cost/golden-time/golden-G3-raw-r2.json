@@ -1,0 +1,98 @@
+{
+ "info": {
+  "scene": "G3",
+  "path": "orbit",
+  "mode": "run",
+  "denoiser": "raw",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "raw",
+   "specular": "raw",
+   "shadow": "raw",
+   "ao": "raw"
+  },
+  "events": [],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.45921248275176946,
+     0.8829475928589271,
+     0.09760862640967047
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.95,
+     0.86
+    ],
+    "intensity": 6,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -7,
+     2.3,
+     3.6
+    ],
+    "radius": 0.15,
+    "color": [
+     1,
+     0.72,
+     0.45
+    ],
+    "intensity": 5,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 60,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "sponza",
+   "attribution": "Sponza (c) 2016 Crytek, improved model by Frank Meinl after Marko Dabrovic's original, glTF by Khronos (glTF-Sample-Assets); Cryengine Limited License Agreement; geometry only, not redistributed",
+   "triangles": 262267
+  },
+  "triangles": 262267,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 124.60000002384186,
+   "min": 97.40000000596046,
+   "mean": 127.18166666701435
+  },
+  "gpu": {}
+ }
+}

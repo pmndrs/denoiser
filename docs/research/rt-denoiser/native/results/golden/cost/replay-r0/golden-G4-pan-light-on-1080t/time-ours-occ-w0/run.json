@@ -1,0 +1,27 @@
+{
+ "capture": "golden-G4-pan-light-on-1080t",
+ "denoiser": "occlusion-svgf-auto",
+ "output": "time-ours-occ-w0",
+ "description": "denoiser/realtime OcclusionDenoiser, A-SVGF (antiLag 'auto') on the normalized hit distance",
+ "version": null,
+ "commit": "3138168",
+ "dirty": false,
+ "settings": {},
+ "warmMs": 0,
+ "signals": [
+  "ao"
+ ],
+ "frames": 8,
+ "width": 1920,
+ "height": 1080,
+ "gpu": {
+  "vendor": "nvidia",
+  "architecture": "ampere",
+  "device": "0x2520",
+  "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+ },
+ "driver": null,
+ "os": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+ "runner": "tools/rt-capture replay (WebGPU, browser)",
+ "date": "2026-11-09T07:40:26.333Z"
+}

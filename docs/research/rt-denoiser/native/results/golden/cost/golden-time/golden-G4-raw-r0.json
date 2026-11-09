@@ -1,0 +1,104 @@
+{
+ "info": {
+  "scene": "G4",
+  "path": "pan-light-on",
+  "mode": "run",
+  "denoiser": "raw",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "raw",
+   "specular": "raw",
+   "shadow": "raw",
+   "ao": "raw"
+  },
+  "events": [
+   {
+    "frame": 32,
+    "type": "light-on",
+    "note": "lantern at (-2.5, 2.4, -9.5) switches on"
+   }
+  ],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.183012701892219,
+     0.7071067811865475,
+     -0.6830127018922195
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.82,
+     0.62
+    ],
+    "intensity": 4.5,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -2.5,
+     2.4,
+     -9.5
+    ],
+    "radius": 0.12,
+    "color": [
+     1,
+     0.8,
+     0.55
+    ],
+    "intensity": 0,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 200,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "bistro",
+   "attribution": "Amazon Lumberyard Bistro, Open Research Content Archive (ORCA), Amazon Lumberyard, 2017, http://developer.nvidia.com/orca/amazon-lumberyard-bistro, CC BY 4.0; glTF conversion by Cody Bennett; modified: geometry only (no textures), flat colours, BLEND decal removed",
+   "triangles": 2827910
+  },
+  "triangles": 2827910,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 383.19999998807907,
+   "min": 287,
+   "mean": 386.63416666587193
+  },
+  "gpu": {}
+ }
+}
