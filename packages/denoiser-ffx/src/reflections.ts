@@ -9,11 +9,54 @@
 //   reproject         -> reprojected radiance, variance, sample count[cur], 8x8 avg radiance[cur]
 //   prefilter         noisy radiance + variance -> prefiltered radiance/variance
 //   resolve_temporal  -> result[cur] (= output, and next frame's radiance history), variance[cur]
+//
+// Given `inputs.tiles` (FFX SSSR's denoiser tile list + indirect args), reproject,
+// prefilter and resolve_temporal run indirectly over the listed tiles only, as in FFX;
+// prepare stays full-screen.
 import type {
   FrameCamera, FrameGuides, SpecularInputs, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
 import { invert, isDepthFormat, mat4, mul, PassTimer } from './common';
-import { PREFILTER_WGSL, reflectionPrepareWgsl, REPROJECT_WGSL, RESOLVE_TEMPORAL_WGSL } from './shaders/reflections';
+import {
+  PREFILTER_WGSL, reflectionPrepareWgsl, REPROJECT_WGSL, RESOLVE_TEMPORAL_WGSL, tiledWgsl,
+} from './shaders/reflections';
+
+/**
+ * An indirect list of the 8x8 tiles to denoise, in FFX SSSR's denoiser tile list
+ * layout. Offsets are in bytes and must be multiples of 4.
+ */
+export interface FfxReflectionTileList {
+  /** STORAGE buffer of u32 tiles: the tile's origin in pixels, `x | y << 16`. */
+  list: GPUBuffer;
+  listOffset?: number;
+  /**
+   * STORAGE buffer holding the number of tiles as a u32 at `countOffset`. Workgroups
+   * past it do nothing, so the args may round up (2-D args). Omit it when the args are
+   * exact, i.e. FFX's 1-D `(count, 1, 1)`.
+   */
+  count?: GPUBuffer;
+  countOffset?: number;
+  /**
+   * INDIRECT buffer with `(x, y, z)` workgroup counts at `indirectOffset`: one 8x8
+   * workgroup per tile, workgroup `(wx, wy)` takes tile `wy * x + wx`, and
+   * `x * y >= count`.
+   */
+  indirect: GPUBuffer;
+  indirectOffset?: number;
+}
+
+/** `SpecularInputs`, plus an optional tile list. */
+export interface FfxReflectionInputs extends SpecularInputs {
+  /**
+   * Denoise only these tiles (reproject, prefilter, resolve_temporal; the cheap
+   * prepare pass stays full-screen). As in FFX, the output, the variance and the
+   * other history targets are not written outside the listed tiles that frame and
+   * keep older contents there: read the output only where the tracer listed tiles,
+   * and list every tile with a pixel you will read (FFX lists every tile with a
+   * glossy reflective pixel). Omit for a full-screen dispatch (the default).
+   */
+  tiles?: FfxReflectionTileList;
+}
 
 export interface FfxReflectionDenoiserOptions {
   /**
@@ -46,7 +89,7 @@ export interface FfxReflectionDenoiserOptions {
 const PARAMS_SIZE = 256;
 const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
 
-export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
+export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInputs> {
   readonly name = 'ffx-reflections';
   readonly device: GPUDevice;
   private opts: Required<Omit<FfxReflectionDenoiserOptions, 'missDistance'>> & { missDistance?: number };
@@ -60,6 +103,8 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   private sampler: GPUSampler;
   private layouts: Record<string, GPUBindGroupLayout> = {};
   private pipes: Record<string, GPUComputePipeline> = {};
+  private tiledPipes?: Record<string, GPUComputePipeline>; // created on the first tiled dispatch
+  private noCount?: GPUBuffer; // u32 0xffffffff: tile count when the args are exact
 
   private depth: GPUTexture[] = [];
   private normRough: GPUTexture[] = [];
@@ -119,6 +164,10 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       label: 'ffx-reflections resolve_temporal',
       entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), tex(6), smp(7), sto(8, 'rgba16float'), sto(9, 'r32float')],
     });
+    this.layouts.tiles = d.createBindGroupLayout({
+      label: 'ffx-reflections tiles',
+      entries: [0, 1].map((binding) => ({ binding, visibility: C, buffer: { type: 'read-only-storage' as const } })),
+    });
     const make = (name: string, code: string, layout: GPUBindGroupLayout) => {
       this.pipes[name] = d.createComputePipeline({
         label: `ffx-reflections ${name}`,
@@ -131,6 +180,22 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     make('reproject', REPROJECT_WGSL, this.layouts.reproject);
     make('prefilter', PREFILTER_WGSL, this.layouts.prefilter);
     make('resolve', RESOLVE_TEMPORAL_WGSL, this.layouts.resolve);
+  }
+
+  private createTiledPipelines() {
+    const d = this.device;
+    const pipes: Record<string, GPUComputePipeline> = {};
+    for (const [name, code] of [['reproject', REPROJECT_WGSL], ['prefilter', PREFILTER_WGSL], ['resolve', RESOLVE_TEMPORAL_WGSL]] as const) {
+      pipes[name] = d.createComputePipeline({
+        label: `ffx-reflections ${name} (tiles)`,
+        layout: d.createPipelineLayout({ bindGroupLayouts: [this.layouts[name], this.layouts.tiles] }),
+        compute: { module: d.createShaderModule({ label: `ffx-reflections ${name} (tiles)`, code: tiledWgsl(code) }), entryPoint: 'main' },
+      });
+    }
+    this.noCount = d.createBuffer({ label: 'ffx-reflections no tile count', size: 4, usage: GPUBufferUsage.STORAGE, mappedAtCreation: true });
+    new Uint32Array(this.noCount.getMappedRange()).fill(0xffffffff);
+    this.noCount.unmap();
+    return (this.tiledPipes = pipes);
   }
 
   configure({ width, height }: TemporalConfig): void {
@@ -159,7 +224,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
 
   resetHistory(): void { this.needsReset = true; }
 
-  dispatch(inputs: SpecularInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
+  dispatch(inputs: FfxReflectionInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     if (!this.reprojected) throw new Error('FfxReflectionDenoiser: call configure() before dispatch()');
     if (!guides.roughness) throw new Error('FfxReflectionDenoiser: guides.roughness is required');
     const { width: W, height: H } = this;
@@ -168,6 +233,13 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       if (t.width !== W || t.height !== H) throw new Error(`FfxReflectionDenoiser: ${k} is ${t.width}x${t.height}, configured ${W}x${H}`);
     }
     const d = this.device;
+    const tiles = inputs.tiles;
+    if (tiles) {
+      for (const k of ['listOffset', 'countOffset', 'indirectOffset'] as const) {
+        if ((tiles[k] ?? 0) % 4) throw new Error(`FfxReflectionDenoiser: tiles.${k} must be a multiple of 4`);
+      }
+    }
+    const tiledPipes = tiles ? this.tiledPipes ?? this.createTiledPipelines() : undefined;
 
     // ---- constants (DenoiserReflectionsConstants)
     const V = mat4(camera.view), Pm = mat4(camera.projection);
@@ -182,6 +254,8 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     f[57] = this.opts.temporalStabilityFactor;
     f[58] = this.opts.roughnessThreshold;
     f[59] = this.opts.missDistance ?? camera.far;
+    u32[60] = tiles?.count ? (tiles.countOffset ?? 0) / 4 : 0;
+    u32[61] = (tiles?.listOffset ?? 0) / 4;
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-reflections' });
@@ -205,11 +279,26 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       layout: this.layouts[layout], entries: [P, ...entries.map((resource, i) => ({ binding: i + 1, resource }))],
     });
     const groups: [number, number] = [Math.ceil(W / 8), Math.ceil(H / 8)];
-    const run = (name: string, pipe: string, group: GPUBindGroup) => {
+    const tilesGroup = tiles && d.createBindGroup({
+      layout: this.layouts.tiles,
+      entries: [
+        { binding: 0, resource: { buffer: tiles.list } },
+        { binding: 1, resource: { buffer: tiles.count ?? this.noCount! } },
+      ],
+    });
+    // `tiled`: reproject / prefilter / resolve take the tile list when one is given
+    const run = (name: string, pipe: string, group: GPUBindGroup, tiled = false) => {
       const pass = enc.beginComputePass({ label: `ffx-reflections ${name}`, timestampWrites: this.timer?.pass(name) });
-      pass.setPipeline(this.pipes[pipe]);
-      pass.setBindGroup(0, group);
-      pass.dispatchWorkgroups(groups[0], groups[1]);
+      if (tiled && tiles && tiledPipes) {
+        pass.setPipeline(tiledPipes[pipe]);
+        pass.setBindGroup(0, group);
+        pass.setBindGroup(1, tilesGroup!);
+        pass.dispatchWorkgroupsIndirect(tiles.indirect, tiles.indirectOffset ?? 0);
+      } else {
+        pass.setPipeline(this.pipes[pipe]);
+        pass.setBindGroup(0, group);
+        pass.dispatchWorkgroups(groups[0], groups[1]);
+      }
       pass.end();
     };
     // statistics read by prefilter / resolve: FFX's one-frame-late SRVs, or this frame's
@@ -223,15 +312,15 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       v(this.depth[cur]), v(this.normRough[cur]), v(guides.motion), v(inputs.radiance), v(inputs.hitDistance),
       v(this.result[prev]), v(this.depth[prev]), v(this.normRough[prev]), v(this.finalVariance[prev]), v(this.sampleCount[prev]),
       this.sampler, v(this.reprojected), v(this.reprojVariance!), v(this.sampleCount[cur]), v(this.avgRadiance[cur]),
-    ]));
+    ]), true);
     run('prefilter', 'prefilter', bg('prefilter', [
       v(this.depth[cur]), v(this.normRough[cur]), v(inputs.radiance), v(this.reprojVariance!), v(this.avgRadiance[statIdx]),
       this.sampler, v(this.prefiltered!), v(this.prefilterVariance!),
-    ]));
+    ]), true);
     run('resolve_temporal', 'resolve', bg('resolve', [
       v(this.normRough[cur]), v(this.prefiltered!), v(this.prefilterVariance!), v(this.sampleCount[statIdx]),
       v(this.avgRadiance[statIdx]), v(this.reprojected), this.sampler, v(this.result[cur]), v(this.finalVariance[cur]),
-    ]));
+    ]), true);
     const after = this.timer?.end(enc);
     d.queue.submit([enc.finish()]);
     after?.();
@@ -251,6 +340,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   dispose(): void {
     this.destroyTargets();
     this.params.destroy();
+    this.noCount?.destroy();
     this.timer?.destroy();
   }
 }

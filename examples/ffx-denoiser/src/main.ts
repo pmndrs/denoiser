@@ -9,7 +9,7 @@
 //   &mode=bench   denoiser GPU time per frame (timestamps) + wall time w/ queue sync
 //   &w=1920&h=1080&frames=120&refspp=256&stopAt=N (view: freeze at frame N)
 import * as FFX from '@pmndrs/denoiser-ffx';
-import type { FrameCamera, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
+import type { FfxReflectionTileList, FrameCamera, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
 import { camState, CUT, FAR, NEAR, VIEW_CUT, VIEW_FRAMES, viewPathFrame, mul, invert } from './camera';
 import { METRICS_WGSL, VIEW_WGSL } from './eval';
 import { REFLECTION_SCENE_WGSL, SHADOW_SCENE_WGSL } from './scene';
@@ -150,6 +150,43 @@ async function main() {
     if (frame === 0 || frame === (view ? VIEW_CUT : CUT) || NO_HISTORY || forceReset) denoiser.resetHistory();
     return denoiser.dispatch(inputs as never, guides, cam);
   };
+
+  // &tiles=all|checker (reflections): dispatch through an indirect tile list (FFX layout,
+  // 2-D args 37 wide, count and args at byte 12 as @pmndrs/reflections lays them out).
+  // all: every tile, in shuffled order; the results must match the default bit for bit.
+  // checker: every other tile (the rest stays black). &shuffle=0 keeps raster order.
+  function tileList(): FfxReflectionTileList | undefined {
+    const which = q.get('tiles');
+    if (!which) return undefined;
+    const tx = Math.ceil(W / 8), ty = Math.ceil(H / 8);
+    const tiles: number[] = [];
+    for (let y = 0; y < ty; y++) for (let x = 0; x < tx; x++) {
+      if (which === 'all' || (x + y) % 2 === 0) tiles.push(((y * 8) << 16) | (x * 8));
+    }
+    // shuffle (fixed seed): the denoiser must not depend on the tile order; &shuffle=0
+    // keeps raster order (better cache locality, closer to a classifier's list for timing)
+    let seed = 12345;
+    for (let i = q.get('shuffle') === '0' ? 0 : tiles.length - 1; i > 0; i--) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      const j = seed % (i + 1);
+      [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+    }
+    const n = tiles.length;
+    const gx = 37, gy = Math.ceil(n / gx); // 2-D args that overshoot the count
+    const buf = (data: Uint32Array<ArrayBuffer>, usage: number) => {
+      const b = device.createBuffer({ size: data.byteLength, usage: usage | GPUBufferUsage.COPY_DST });
+      device.queue.writeBuffer(b, 0, data);
+      return b;
+    };
+    const list = buf(new Uint32Array([0, 0, 0, 0, ...tiles]), GPUBufferUsage.STORAGE);
+    const count = buf(new Uint32Array([0, 0, 0, n]), GPUBufferUsage.STORAGE);
+    const indirect = buf(new Uint32Array([0, 0, 0, gx, gy, 1]), GPUBufferUsage.INDIRECT);
+    log(`tile list: ${n} of ${tx * ty} tiles, args ${gx} x ${gy}`);
+    return { list, listOffset: 16, count, countOffset: 12, indirect, indirectOffset: 12 };
+  }
+
+  const tiles = signal === 'reflections' ? tileList() : undefined;
+  if (tiles) Object.assign(inputs, { tiles });
 
   // ---- metrics
   const metricsPipe = device.createComputePipeline({ layout: 'auto', compute: { module: device.createShaderModule({ code: METRICS_WGSL }), entryPoint: 'main' } });
