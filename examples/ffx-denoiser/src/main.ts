@@ -205,7 +205,8 @@ async function main() {
     fragment: { module: viewModule, entryPoint: 'fs', targets: [{ format: fmt }] },
   });
   const viewUs = canvases.map(() => device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }));
-  // debug: replace the middle panel with a denoiser internal (e.g. debug=sampleCount.0&dscale=0.1)
+  // debug: replace the middle panel with a denoiser internal (e.g. debug=sampleCount.0&dscale=0.1),
+  // or a public texture (reflections: debug=variance, the last dispatch's variance)
   const DEBUG = q.get('debug');
   const DSCALE = Number(q.get('dscale') ?? 1);
   const internal = (): GPUTexture | undefined => {

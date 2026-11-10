@@ -411,7 +411,11 @@ new FfxReflectionDenoiser(device: GPUDevice, options?: FfxReflectionDenoiserOpti
 | `currentFrameStatistics` | `true` | read this frame's 8x8 average radiance and sample count; `false` reproduces FFX SDK v1.1.4 exactly (dark first frame after a reset) |
 | `timestamps` | `true` | per-pass GPU timestamps into `gpuTimings` when supported |
 
-`FfxReflectionDenoiser` requires `guides.roughness`. The shadow `dispatch`
+`FfxReflectionDenoiser` requires `guides.roughness`. Its read-only `variance`
+property is the `r32float` temporal variance written by the last `dispatch()`
+(`undefined` before the first one), for a tracer that spends more rays where the
+denoiser is unsure, as FFX SSSR's classifier does. It alternates between two
+textures, so fetch it every frame. The shadow `dispatch`
 returns an `rgba16float` texture whose `.r` is the denoised visibility.
 
 ### `denoiser/three` helpers
