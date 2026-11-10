@@ -29,6 +29,15 @@ export interface FfxReflectionDenoiserOptions {
   roughnessThreshold?: number;
   /** `guides.roughness` is perceptual (squared before use). Default true (three.js convention). */
   roughnessIsPerceptual?: boolean;
+  /**
+   * Maps `guides.motion` to the history offset in uv (y down):
+   * `previous uv = uv + motionVectorScale * motion`. Default `[-0.5, 0.5]`, for
+   * denoiser-core's convention (NDC delta, current - previous, y up). For uv-space
+   * motion (current - previous, y down) pass `[-1, -1]`; for uv-space motion stored
+   * as previous - current pass `[1, 1]`. Can also be changed later through the
+   * `motionVectorScale` property.
+   */
+  motionVectorScale?: readonly [number, number];
   /** Ray length used for misses (hitDistance <= 0). Default: camera.far. */
   missDistance?: number;
   /**
@@ -49,7 +58,12 @@ const STORAGE_TEX = GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BI
 export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   readonly name = 'ffx-reflections';
   readonly device: GPUDevice;
-  private opts: Required<Omit<FfxReflectionDenoiserOptions, 'missDistance'>> & { missDistance?: number };
+  private opts: Required<Omit<FfxReflectionDenoiserOptions, 'missDistance' | 'motionVectorScale'>> & { missDistance?: number };
+  /**
+   * `previous uv = uv + motionVectorScale * guides.motion` (see the option of the
+   * same name). Read at every dispatch(), so it can be set between frames.
+   */
+  motionVectorScale: [number, number];
   private timer?: PassTimer;
   private width = 0;
   private height = 0;
@@ -82,6 +96,8 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
       currentFrameStatistics: options.currentFrameStatistics ?? true,
       timestamps: options.timestamps ?? true,
     };
+    const mvs = options.motionVectorScale ?? [-0.5, 0.5];
+    this.motionVectorScale = [mvs[0], mvs[1]];
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
@@ -176,7 +192,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     const f = new Float32Array(buf), u32 = new Uint32Array(buf);
     f.set(invert(Pm), 0); f.set(invert(V), 16); f.set(prevVP, 32);
     u32[48] = W; u32[49] = H; f[50] = 1 / W; f[51] = 1 / H;
-    f[52] = -0.5; f[53] = 0.5; // NDC delta (current - previous) -> previous_uv - current_uv
+    f[52] = this.motionVectorScale[0]; f[53] = this.motionVectorScale[1]; // motion -> previous_uv - current_uv
     f[54] = 1; f[55] = 0;       // normals already in [-1, 1]
     u32[56] = this.opts.roughnessIsPerceptual ? 1 : 0;
     f[57] = this.opts.temporalStabilityFactor;
