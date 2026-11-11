@@ -163,7 +163,7 @@
         <div class="box">
           <h3>How this demo is built</h3>
           <ul>
-            <li>Probes: our port of <a href="https://github.com/mrdoob/three.js/pull/35046">three.js #35046</a> to three r186 (see <a href="reflection-probes.html">reflection probes on r186</a>). The materials get them as <code>scene.environmentNode</code>; the reflection passes sample them at any point with <code>sampleReflectionProbes()</code>.</li>
+            <li>Probes: <code>@pmndrs/reflections</code>, our port of <a href="https://github.com/mrdoob/three.js/pull/35046">three.js #35046</a>, on three r187 (see <a href="reflection-probes.html">reflection probes</a>). The materials get them as <code>scene.environmentNode</code>; the reflection passes sample them at any point with <code>sampleReflectionProbes()</code>.</li>
             <li>The room animates as in the PR's example: the lights drift through the hues and the knot turns. Both are in the captures; the mirror ball is hidden during a bake, like the moving objects in engines.</li>
             <li>SSR: three's <code>SSRNode</code>. Rays: three-mesh-bvh's WebGPU BVH, refitted every frame for the ball and the turning knot. Hits get direct light from both lamps (one shadow ray each), no highlights.</li>
             <li>The same pipeline as the one-room <a href="reflections-hybrid.html">reflections explainer</a>, which compares each method on its own.</li>
@@ -182,7 +182,7 @@
 
       <nav class="links">
         <a href="reflections-hybrid.html">Reflections, explained (one room)</a>
-        <a href="reflection-probes.html">Reflection probes on r186</a>
+        <a href="reflection-probes.html">Reflection probes</a>
         <a href="https://pmndrs.github.io/denoiser/docs/guides/realtime-temporal-denoising">Guide: real-time (temporal) denoising</a>
         <a href="https://github.com/pmndrs/denoiser/tree/main/examples/three-temporal/src/reflections-rooms.ts">Source</a>
       </nav>
