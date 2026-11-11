@@ -3921,6 +3921,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"three-mesh-bvh@npm:^0.9.18":
+  version: 0.9.18
+  resolution: "three-mesh-bvh@npm:0.9.18"
+  peerDependencies:
+    three: ">= 0.159.0"
+  checksum: 10c0/7f4cff1f7aab1d6d295d7acd10b478b86c774fbe980945a070de6f8066260548bd6813d525b85cea539fb61bfad3c706d4f67cd6ad16918f51507d3c81386f54
+  languageName: node
+  linkType: hard
+
 "three-pathtracer-webgpu@workspace:examples/three-pathtracer-webgpu":
   version: 0.0.0-use.local
   resolution: "three-pathtracer-webgpu@workspace:examples/three-pathtracer-webgpu"
@@ -3944,8 +3953,8 @@ __metadata:
     "@pmndrs/upscaler": "npm:0.5.0"
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
-    three: "npm:^0.186.1"
-    three-mesh-bvh: "npm:^0.9.16"
+    three: "npm:^0.187.0"
+    three-mesh-bvh: "npm:^0.9.18"
     typescript: "npm:^5.9.3"
     vite: "npm:^8.1.4"
   languageName: unknown
@@ -3955,6 +3964,13 @@ __metadata:
   version: 0.186.1
   resolution: "three@npm:0.186.1"
   checksum: 10c0/8c8ed2d421da7cb4459bf3ad2961770d35173ef80885a594cb22fb44d275a9ba534b7ae92e93c99f50691b67febb913363ec5b64105fb7647289771d2bd32bc8
+  languageName: node
+  linkType: hard
+
+"three@npm:^0.187.0":
+  version: 0.187.0
+  resolution: "three@npm:0.187.0"
+  checksum: 10c0/5c2cfeacbbf7203c3b34305d439cc5c7e9b1a3c2844528c708b2afa36788d25665fabc562212e09cc3981d5d591a31cb20ed3aa506d7cbf6c1720d21e3ea4f3f
   languageName: node
   linkType: hard
 
