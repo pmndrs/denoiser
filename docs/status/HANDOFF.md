@@ -102,7 +102,9 @@ Main was pushed to `origin/main` on this date, including everything above.
   - His PR needs `CubeArrayTexture` (#35053, open) and cube-array sampling (#35045, merged after r186).
 - **Ben's probes on r186, as example code (merged 2026-10-20).** `three-temporal/src/probes` stands in
   for three.js #35046 until it lands (same API; swap the imports for three's then). Not part of the published
-  `denoiser` package. A 2D array of 6 × N faces with roughness mips, our own cube lookup with a 'warp' seam fix,
+  `denoiser` package. **Moved to `@pmndrs/reflections`** (branch `reflections-package`, draft PR, not to merge
+  until that package is released): the three reflection pages import the probes and the GGX sampling
+  (`src/reflections/common.ts`) from it, `src/probes` and `common.ts` are deleted, three-temporal is on r187. A 2D array of 6 × N faces with roughness mips, our own cube lookup with a 'warp' seam fix,
   and a compute prefilter. Extensions over #35046: `sampleReflectionProbes(probes, P, dir, rough)` (any shader;
   the environment node uses the same lookup), `ReflectionProbe.originOffset`, `bake({ environment: false })`.
   - **`reflection-probes.html`:** Ben's two-room example on that code. Matches his PR build within 8-bit noise;

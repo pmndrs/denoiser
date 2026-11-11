@@ -342,7 +342,7 @@
           <h3>How this demo is built</h3>
           <ul>
             <li>three.js <code>WebGPURenderer</code> raster pass with a G-buffer; the panel light's shadows are ray traced (see the <a href="shadows.html">shadows demo</a>).</li>
-            <li>Probe: the <a href="reflection-probes.html">reflection probes</a> of three.js PR #35046, ported to three r186: six renders, a GGX prefilter in a compute pass, a box-projected lookup in TSL. SSR: three's <code>SSRNode</code>. Rays: three-mesh-bvh's WebGPU BVH, called from a WGSL function.</li>
+            <li>Probe: the <a href="reflection-probes.html">reflection probes</a> of three.js PR #35046, from <code>@pmndrs/reflections</code> on three r187: six renders, a GGX prefilter in a compute pass, a box-projected lookup in TSL. SSR: three's <code>SSRNode</code>. Rays: three-mesh-bvh's WebGPU BVH, called from a WGSL function.</li>
             <li>Every noisy mode draws its one direction per pixel with the same GGX sampler three's SSR uses, so they carry the same energy.</li>
             <li>Ray hits are shaded cheaply, as hybrid renderers do: albedo and metalness stored per vertex in the BVH, one shadow ray, ambient from the environment. Metals at the hit mirror the environment (no second bounce). The reference uses the same shading with many rays: it shows what the 1-sample modes should converge to, not a path-traced ground truth.</li>
           </ul>

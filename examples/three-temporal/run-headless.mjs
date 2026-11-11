@@ -6,8 +6,12 @@
 //                                     # crop, flicker, NaN checks, measured per-pass GPU costs
 //   node run-headless.mjs shadows --diag   # + the FSR3 flicker diagnosis (__t.diag with FSR3 on)
 //   node run-headless.mjs ssr         # index.html: webgpu_postprocessing_ssr_denoise port, three vs FFX
+//   node run-headless.mjs reflections probes|rooms|hybrid [--ref DIR]
+//                                     # reflection-probes / reflections-rooms / reflections-hybrid: every
+//                                     # lookup or mode per scenario, same frame counts each run; --ref DIR
+//                                     # diffs each shot against the same-named PNG in DIR (another build)
 //
-// Screenshots go to ./out/ (or $OUT). Exit code 1 if a sanity check fails.
+// Screenshots go to ./out/ (or $OUT). Exit code 1 if a sanity check fails. $PORT overrides 5220.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,10 +19,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 5220;
+const PORT = Number(process.env.PORT ?? 5220);
 const OUT = process.env.OUT ?? path.join(path.dirname(fileURLToPath(import.meta.url)), 'out');
 const scenario = process.argv[2] ?? 'shadows';
 const flags = new Set(process.argv.slice(3));
+const argAfter = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : null; };
+const REFL_PAGES = { probes: 'reflection-probes.html', rooms: 'reflections-rooms.html', hybrid: 'reflections-hybrid.html' };
+const reflPage = scenario === 'reflections' ? (process.argv[3] ?? 'rooms') : null;
+const refDir = argAfter('--ref');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function httpJson(url, timeoutMs = 15000) {
@@ -71,7 +79,7 @@ async function main() {
   // a hung GPU process must not hang CI forever
   setTimeout(() => { console.error('FAILED: timed out'); process.exit(3); }, 600_000).unref();
   const port = 9300 + Math.floor(Math.random() * 500);
-  const page = scenario === 'ssr' ? 'index.html' : 'shadows.html';
+  const page = reflPage ? REFL_PAGES[reflPage] : scenario === 'ssr' ? 'index.html' : 'shadows.html';
   const url = `http://127.0.0.1:${PORT}/${page}?manual=1${scenario === 'ssr' && flags.has('--timing') ? '&timing=1' : ''}`;
   const chrome = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
@@ -97,16 +105,16 @@ async function main() {
     const deadline = Date.now() + 240_000;
     let state;
     while (Date.now() < deadline) {
-      state = await cdp.evalJs('JSON.stringify({ ready: !!window.__t?.ready, err: window.__error ?? null })', false).then(JSON.parse).catch(() => null);
+      state = await cdp.evalJs('JSON.stringify({ ready: !!(window.__t?.ready || window.__p), err: window.__error ?? null })', false).then(JSON.parse).catch(() => null);
       if (state?.ready || state?.err) break;
       await sleep(500);
     }
     if (!state?.ready) throw new Error(`page not ready: ${JSON.stringify(state)}\n${results.logs.join('\n')}`);
     console.log(`page ${page} ready`);
 
-    if (scenario === 'ssr') await runSsr(cdp); else await runShadows(cdp);
+    if (reflPage) await runReflections(cdp); else if (scenario === 'ssr') await runSsr(cdp); else await runShadows(cdp);
 
-    const gpuErrors = await cdp.evalJs('JSON.stringify(window.__t.gpuErrors)').then(JSON.parse);
+    const gpuErrors = await cdp.evalJs('JSON.stringify(window.__t?.gpuErrors ?? [])').then(JSON.parse);
     const validation = [...gpuErrors, ...results.logs.filter((l) => /invalid|validation|uncaptured/i.test(l))];
     check('no WebGPU validation errors', validation.length === 0, validation.slice(0, 3).join(' | '));
     if (results.logs.length) console.log('console warnings/errors:\n  ' + [...new Set(results.logs)].slice(0, 12).join('\n  '));
@@ -223,6 +231,84 @@ async function runSsr(cdp) {
   console.log('  temporal std:', JSON.stringify(st));
   check('FFX temporal flicker below raw noisy', st.ffx.std < 0.6 * st.noisy.std, `${st.noisy.std.toFixed(4)} -> ${st.ffx.std.toFixed(4)}`);
   if (flags.has('--timing')) console.log('  GPU ms/frame (render passes via timestamp queries; FFX compute via gpuTimings):', JSON.stringify(await T('window.__t.timings()')));
+}
+
+/** Mean / max abs difference (0-255, rgb) and the share of channels off by more than 8, of two PNG data URLs, decoded in the page. */
+const IMAGE_DIFF = `async (a, b) => {
+  const load = (u) => new Promise((r, j) => { const i = new Image(); i.onload = () => r(i); i.onerror = j; i.src = u; });
+  const px = async (u) => { const i = await load(u); const c = new OffscreenCanvas(i.width, i.height); const g = c.getContext('2d'); g.drawImage(i, 0, 0); return g.getImageData(0, 0, i.width, i.height).data; };
+  const A = await px(a), B = await px(b);
+  if (A.length !== B.length) return { sizeMismatch: true };
+  let s = 0, m = 0, over = 0, n = 0, la = 0, lb = 0;
+  for (let k = 0; k < A.length; k++) { if ((k & 3) === 3) continue; const d = Math.abs(A[k] - B[k]); s += d; n++; la += A[k]; lb += B[k]; if (d > m) m = d; if (d > 8) over++; }
+  return { mean: s / n, max: m, over8: over / n, lumA: la / n, lumB: lb / n };
+}`;
+
+/**
+ * The reflection pages (W24 of @pmndrs/reflections: they switched from local copies of the probes and
+ * the GGX sampling to the package). Same calls, same frame counts every run, so two builds can be
+ * diffed shot by shot with --ref. The lookups / modes that take no random samples (probe lookups, the
+ * probe mode) should match closely; the 1-sample modes are denoised noise and only match on average.
+ */
+async function runReflections(cdp) {
+  const T = (expr) => cdp.evalJs(`(async () => JSON.stringify(await (${expr})))()`).then((s) => (s === undefined ? undefined : JSON.parse(s)));
+  const diffs = [];
+  const shoot = async (name, dataUrl) => {
+    savePng(name, dataUrl);
+    const ref = refDir && path.join(refDir, name);
+    if (ref && fs.existsSync(ref)) {
+      const d = await T(`(${IMAGE_DIFF})(${JSON.stringify(dataUrl)}, ${JSON.stringify('data:image/png;base64,' + fs.readFileSync(ref).toString('base64'))})`);
+      diffs.push({ name, ...d });
+      console.log(`    vs ref: mean ${d.mean?.toFixed(3)}, max ${d.max}, >8: ${((d.over8 ?? 0) * 100).toFixed(2)}%, luminance ${d.lumB?.toFixed(2)} -> ${d.lumA?.toFixed(2)}`);
+    }
+  };
+  if (reflPage === 'probes') {
+    console.log('  ', await cdp.evalJs("document.querySelector('#status').textContent"));
+    await T("(window.__p.stop(), window.__p.setObject('None'), true)");
+    const poses = [
+      ['wide', { pos: [0, 2.5, 16], target: [0, 2.5, 0] }],
+      ['left-room', { pos: [-1.2, 1.6, 3.6], target: [-5, 0.8, -1] }],
+      ['doorway', { pos: [5, 1.5, 2.5], target: [-3, 1, -0.5] }],
+    ];
+    for (const lookup of ['warp', 'none', 'hw']) {
+      await T(`window.__p.setLookup('${lookup}')`);
+      for (const [pn, pose] of poses) {
+        await T(`window.__p.setPose(${JSON.stringify(pose)})`);
+        for (const [gn, rough] of [['plain', null], ['grid-mirror', 0.08], ['grid-rough', 0.6]]) {
+          await T(rough === null ? 'window.__p.setGrid(false)' : `window.__p.setGrid(true, ${rough})`);
+          await shoot(`probes-${lookup}-${pn}-${gn}.png`, await T('window.__p.shot()'));
+        }
+      }
+      await T('window.__p.setGrid(false)');
+      await T("window.__p.setPose({ pos: [0, 2.5, 16], target: [0, 2.5, 0] })");
+      await T("window.__p.setObject('Sphere', [-4, 1.6, 2], 0)");
+      await shoot(`probes-${lookup}-mirror-sphere.png`, await T('window.__p.shot()'));
+      await T("window.__p.setObject('None')");
+    }
+    console.log('  ', await cdp.evalJs("document.querySelector('#status').textContent"));
+  } else {
+    const info = await T('window.__t.info');
+    console.log('  ', JSON.stringify(info));
+    const ids = reflPage === 'rooms' ? ['rooms', 'ball', 'table', 'stale', 'doorway'] : ['mirror', 'offscreen', 'moving', 'contact', 'rough', 'sources'];
+    const modes = reflPage === 'rooms' ? ['probe', 'ssr', 'hybrid'] : ['probe', 'ssr', 'hybrid', 'rt'];
+    for (const id of ids) {
+      for (const m of modes) {
+        await T(`window.__t.scenario('${id}')`);
+        await T(`window.__t.setModes(${JSON.stringify({ refl: m, compare: 'none' })})`);
+        await T('window.__t.step(40)');
+        await shoot(`${reflPage}-${id}-${m}.png`, await cdp.evalJs('window.__t.capture()'));
+      }
+      // the scenario's own split view (its two modes side by side), as a visitor sees it
+      await T(`window.__t.scenario('${id}')`);
+      await T('window.__t.step(40)');
+      await shoot(`${reflPage}-${id}-split.png`, await cdp.evalJs('window.__t.capture()'));
+    }
+  }
+  if (diffs.length) {
+    const worst = diffs.reduce((a, b) => (b.mean > a.mean ? b : a));
+    console.log(`  ${diffs.length} shots diffed; worst mean ${worst.mean.toFixed(3)} (${worst.name}), max of max ${Math.max(...diffs.map((d) => d.max))}`);
+    fs.writeFileSync(path.join(OUT, `${reflPage}-diffs.json`), JSON.stringify(diffs, null, 1));
+  }
 }
 
 main().catch((e) => { console.error('FAILED:', e.stack ?? e); process.exit(2); });

@@ -21,10 +21,10 @@
 // capture", which re-bakes the probes every frame the room changed (a bake of all three is about
 // 2 ms here), so the reflections follow; off, they keep showing the room as it was captured. The
 // knot is part of the room and in the captures; only the mirror ball is kept out. Light colour is
-// a uniform, so animating it re-keys nothing. The probe code is ./probes (our r186 stand-in for #35046), sampled at arbitrary points with
-// sampleReflectionProbes(). The pipeline (G-buffer, SSR, 1-sample estimators, the denoiser, the split
-// view, the GPU timing) follows reflections-hybrid.ts, the one-room explainer; the pieces both use are
-// in ./reflections/common.ts, the rest is adapted here (see the comments pointing at the source).
+// a uniform, so animating it re-keys nothing. The probes are @pmndrs/reflections' (API-compatible with
+// #35046), sampled at arbitrary points with sampleReflectionProbes(). The pipeline (G-buffer, SSR, 1-sample estimators, the denoiser, the split
+// view, the GPU timing) follows reflections-hybrid.ts, the one-room explainer; the pieces both use (GGX lobe
+// sample, firefly clamp, accumulation) come from @pmndrs/reflections, the rest is adapted here (see the comments pointing at the source).
 
 import * as THREE from 'three/webgpu';
 import {
@@ -37,10 +37,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { ffxReflections } from 'denoiser/three';
 import { mountShell } from '../../_shared/shell';
-import { ReflectionProbe, ReflectionProbes } from './probes/ReflectionProbes';
-import { reflectionProbes, sampleReflectionProbes } from './probes/ReflectionProbesNode';
-import { ReflectionProbesHelper } from './probes/ReflectionProbesHelper';
-import { AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from './reflections/common';
+import {
+  ReflectionProbe, ReflectionProbes, ReflectionProbesHelper, reflectionProbes, sampleReflectionProbes,
+  AccumulateNode, clampSample, ggxLobeSample, pixelSeed,
+} from '@pmndrs/reflections/three';
 
 mountShell({ id: 'three-temporal-reflections-rooms' });
 
@@ -79,7 +79,7 @@ const SCENARIOS: Scenario[] = [
     verdicts: [
       ['probe', 'good', 'Right room, right colours, walls in the right place, at the cost of one texture lookup per pixel. The doorway probe blends the two where they meet.'],
     ],
-    why: 'One cubemap for a whole level would show the warm room in the cool one. Engines place a probe per room (and per corridor, doorway, ...) and blend them where their boxes overlap. three.js gets this with PR #35046; this page runs our port of it on three r186.',
+    why: 'One cubemap for a whole level would show the warm room in the cool one. Engines place a probe per room (and per corridor, doorway, ...) and blend them where their boxes overlap. three.js gets this with PR #35046; this page runs @pmndrs/reflections, our port of it, on three r187.',
   },
   {
     id: 'ball', short: 'Something moves', title: 'The mirror ball',

@@ -1,24 +1,24 @@
-// three-temporal/reflection-probes: Ben Houston's reflection probes (three.js PR #35046) on three r186.
+// three-temporal/reflection-probes: Ben Houston's reflection probes (three.js PR #35046) on three r187.
 //
 // A port of three's webgpu_reflection_probes.html from that PR (same two rooms, lights, probes,
-// test grid and camera), running our r186 stand-in from ./probes instead of the PR's
-// CubeArrayTexture build. Two rooms joined by a doorway; one probe per room plus a smaller doorway
+// test grid and camera), running @pmndrs/reflections (API-compatible with #35046) instead of the
+// PR's CubeArrayTexture build. Two rooms joined by a doorway; one probe per room plus a smaller doorway
 // probe that takes priority where they overlap. Box projection onto each room's walls.
 //
-// Extra over the original: the seam handling of the manual cube lookup ('warp' / 'none'), and a
-// diagnostic 'hw' mode that copies every probe into its own cube texture and samples those with
-// the hardware (seamless) cube sampler, i.e. what #35046's cube array gives, from the same bake.
+// Extra over the original: the seam handling of the manual cube lookup in the 2D array ('warp' /
+// 'none'), and a diagnostic 'hw' mode that bakes into a real cube array (the package's runtime port
+// of three.js #35053, installed at start-up) and samples it with the hardware (seamless) cube
+// sampler, i.e. what #35046's cube array gives.
 // `window.__p` drives the page headlessly (poses, roughness, bake and frame timing, screenshots).
 
 import * as THREE from 'three/webgpu';
-import { cubeTexture } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { ReflectionProbe, ReflectionProbes, type SeamFix } from './probes/ReflectionProbes';
-import { ReflectionProbesNode, reflectionProbes } from './probes/ReflectionProbesNode';
-import { ReflectionProbesHelper } from './probes/ReflectionProbesHelper';
+import {
+  ReflectionProbe, ReflectionProbes, ReflectionProbesHelper, reflectionProbes, installCubeArraySupport, cubeArraySupportStatus, type SeamFix,
+} from '@pmndrs/reflections/three';
 import { mountShell } from '../../_shared/shell';
 
-mountShell({ id: 'three-temporal-reflection-probes', title: 'Reflection probes (#35046 on r186)' });
+mountShell({ id: 'three-temporal-reflection-probes', title: 'Reflection probes (#35046 on r187)' });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for hand-written shader maths
@@ -31,22 +31,6 @@ const params = {
   showProbes: false, showGrid: q.has('grid'), gridResolution: 6, gridSize: 0.12,
   boxProjection: true, dynamicObject: (q.get('obj') ?? 'Sphere') as 'None' | 'Sphere', pause: q.has('pause'), liveCapture: false,
 };
-
-/**
- * Diagnostic: the same probes sampled through the hardware cube sampler. Each baked slot is copied
- * into its own cube texture (all mips), so face edges are filtered seamlessly, as #35046's cube
- * array does. Needs a 'none' bake (the warp moves texel centres, which a plain cube can't undo).
- */
-class HardwareCubeNode extends ReflectionProbesNode {
-  private readonly cubes: N[];
-  constructor(probes: ReflectionProbes, cubes: THREE.CubeTexture[]) {
-    super(probes);
-    this.cubes = cubes.map((c) => cubeTexture(c));
-  }
-  protected sampleProbe(slot: number, dir: N, lod: N): N {
-    return this.cubes[slot].sample(dir).level(lod).rgb;
-  }
-}
 
 async function main() {
   const status = document.querySelector<HTMLElement>('#status')!;
@@ -110,6 +94,9 @@ async function main() {
   renderer.shadowMap.enabled = true;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   await renderer.init();
+  // 'hw' lookup: a real cube array on stock r187 through the package's port of #35053, self-tested
+  // here; if it fails it reports false and patches nothing, and 'hw' falls back to the 2D array
+  const cubeArrays = await installCubeArraySupport(renderer);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const device: GPUDevice = (renderer.backend as any).device;
 
@@ -119,7 +106,13 @@ async function main() {
 
   // one probe per room plus a smaller doorway probe, which takes priority where they overlap
   const probes = new ReflectionProbes();
-  probes.seamFix = params.lookup === 'warp' ? 'warp' : 'none';
+  /** Storage per lookup: 'warp' / 'none' bake into the 2D array with that seam fix, 'hw' into a cube array. */
+  function configure() {
+    const hw = params.lookup === 'hw' && cubeArrays;
+    probes.layout = hw ? 'cube-array' : 'cube2d';
+    probes.seamFix = params.lookup === 'warp' ? 'warp' : 'none';
+  }
+  configure();
   for (const s of [
     { position: [-4, 2.5, 0], influenceSize: [8.4, 5.4, 8.4], projectionSize: [8, 5, 8] },
     { position: [4, 2.5, 0], influenceSize: [8.4, 5.4, 8.4], projectionSize: [8, 5, 8] },
@@ -172,37 +165,6 @@ async function main() {
   updateGrid();
 
   // ---- bake + node -------------------------------------------------------------------------
-  let hwCubes: THREE.CubeRenderTarget[] = [];
-
-  /** Copy every baked slot (6 layers, all mips) into its own cube texture, for the 'hw' lookup. */
-  function copyToCubes() {
-    const tex = probes.texture!;
-    const size = (tex.image as { width: number }).width, mips = tex.mipmaps.length, slots = probes.bakedProbes.length + 1;
-    if (hwCubes.length !== slots || hwCubes[0].width !== size) {
-      for (const c of hwCubes) c.dispose();
-      hwCubes = Array.from({ length: slots }, () => {
-        const c = new THREE.CubeRenderTarget(size, { type: THREE.HalfFloatType, generateMipmaps: false, depthBuffer: false, minFilter: THREE.LinearMipmapLinearFilter });
-        // a cube texture lists its mips past level 0
-        for (let lod = 1; lod < mips; lod++) c.texture.mipmaps.push({ width: size >> lod, height: size >> lod } as never);
-        renderer.initRenderTarget(c);
-        return c;
-      });
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const backend = renderer.backend as any;
-    const src: GPUTexture = backend.get(tex).texture;
-    const encoder = device.createCommandEncoder();
-    hwCubes.forEach((c, slot) => {
-      const dst: GPUTexture = backend.get(c.texture).texture;
-      if (dst.mipLevelCount < mips) throw new Error(`hw cube has ${dst.mipLevelCount} mips, need ${mips}`);
-      for (let lod = 0; lod < mips; lod++) {
-        const s = size >> lod;
-        encoder.copyTextureToTexture({ texture: src, mipLevel: lod, origin: [0, 0, slot * 6] }, { texture: dst, mipLevel: lod }, [s, s, 6]);
-      }
-    });
-    device.queue.submit([encoder.finish()]);
-  }
-
   function capture(live = false) {
     // keep helpers and test objects out of the reflections; a live capture keeps the moving object
     probesHelper.visible = grid.visible = false;
@@ -211,15 +173,15 @@ async function main() {
     probesHelper.visible = params.showProbes;
     grid.visible = params.showGrid;
     dynamicObject.visible = params.dynamicObject !== 'None';
-    if (params.lookup === 'hw') copyToCubes();
   }
 
   let node: N = null;
   function install() {
-    probes.seamFix = params.lookup === 'warp' ? 'warp' : 'none';
+    configure();
     capture();
-    node = params.lookup === 'hw' ? new HardwareCubeNode(probes, hwCubes.map((c) => c.texture)) : reflectionProbes(probes);
+    node = reflectionProbes(probes);
     scene.environmentNode = node;
+    showStatus();
   }
   install();
 
@@ -261,7 +223,12 @@ async function main() {
     renderer.render(scene, camera);
   }
   renderer.setAnimationLoop(animate);
-  status.textContent = `three r${THREE.REVISION}, ${probes.bakedProbes.length} probes at ${params.resolution} px, lookup: ${params.lookup}`;
+  function showStatus() {
+    const atlas = probes.bakedLayout === 'cube-array' ? 'cube array (hardware cube sampler)' : `2D array (seam fix ${probes.bakedSeamFix})`;
+    const s = cubeArraySupportStatus(renderer);
+    status.textContent = `three r${THREE.REVISION}, ${probes.bakedProbes.length} probes at ${params.resolution} px, lookup: ${params.lookup}, ${atlas}`
+      + (params.lookup === 'hw' && !cubeArrays ? `\ncube arrays unavailable (${s.reason}): 'hw' falls back to the 2D array` : '');
+  }
 
   // ---- headless hooks (same shape as the harness for the PR build) --------------------------
   const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };
