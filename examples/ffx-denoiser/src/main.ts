@@ -8,6 +8,9 @@
 //                 reference) + flicker, results in window.__ffx
 //   &mode=bench   denoiser GPU time per frame (timestamps) + wall time w/ queue sync
 //   &w=1920&h=1080&frames=120&refspp=256&stopAt=N (view: freeze at frame N)
+//   &motion=uv    (reflections) hand the denoiser uv-space motion (current - previous,
+//                 y down) with motionVectorScale [-1, -1] instead of the NDC delta;
+//                 the results must match the default bit for bit
 import * as FFX from '@pmndrs/denoiser-ffx';
 import type { FrameCamera, TemporalDenoiser } from '@pmndrs/denoiser-ffx';
 import { camState, CUT, FAR, NEAR, VIEW_CUT, VIEW_FRAMES, viewPathFrame, mul, invert } from './camera';
@@ -92,6 +95,30 @@ async function main() {
     entries: [{ binding: 0, resource: { buffer: sceneU } }, { binding: 7, resource: reference.createView() }],
   });
 
+  // &motion=uv: uv-space copy of the scene's NDC motion (x * 0.5, y * -0.5, exact in fp32)
+  const MOTION_UV = signal === 'reflections' && q.get('motion') === 'uv';
+  const motionUv = MOTION_UV ? tex('rg32float', 'motion (uv)') : undefined;
+  const motionUvPipe = MOTION_UV ? device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      entryPoint: 'main',
+      module: device.createShaderModule({
+        code: /* wgsl */ `
+@group(0) @binding(0) var t_ndc: texture_2d<f32>;
+@group(0) @binding(1) var o_uv: texture_storage_2d<rg32float, write>;
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  if (any(id.xy >= textureDimensions(t_ndc))) { return; }
+  textureStore(o_uv, id.xy, vec4f(textureLoad(t_ndc, id.xy, 0).xy * vec2f(0.5, -0.5), 0.0, 0.0));
+}`,
+      }),
+    },
+  }) : undefined;
+  const motionUvBG = motionUvPipe && device.createBindGroup({
+    layout: motionUvPipe.getBindGroupLayout(0),
+    entries: [{ binding: 0, resource: motion.createView() }, { binding: 1, resource: motionUv!.createView() }],
+  });
+
   // ---- denoiser
   let denoiser: TemporalDenoiser<object>;
   if (signal === 'shadows') {
@@ -101,12 +128,13 @@ async function main() {
     const stats = q.get('stats');
     denoiser = new FFX.FfxReflectionDenoiser(device, {
       ...(stats ? { currentFrameStatistics: stats === 'current' } : {}),
+      ...(MOTION_UV ? { motionVectorScale: [-1, -1] as const } : {}),
       ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
     });
   }
   denoiser.configure({ width: W, height: H });
   const inputs = signal === 'shadows' ? { visibility: noisy, hitDistance: hitDist } : { radiance: noisy, hitDistance: hitDist };
-  const guides = { depth, normal, motion, roughness: rough };
+  const guides = { depth, normal, motion: motionUv ?? motion, roughness: rough };
 
   const aspect = W / H;
   // `frame` = displayed/noise-seed frame; the camera path frame defaults to it (eval/bench),
@@ -136,6 +164,11 @@ async function main() {
     pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
     if (withRef) { pass.setPipeline(refPipe); pass.setBindGroup(0, refBG); pass.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8)); }
     pass.end();
+    if (motionUvPipe) {
+      const mp = enc.beginComputePass();
+      mp.setPipeline(motionUvPipe); mp.setBindGroup(0, motionUvBG!); mp.dispatchWorkgroups(Math.ceil(W / 8), Math.ceil(H / 8));
+      mp.end();
+    }
     device.queue.submit([enc.finish()]);
     return cam;
   };

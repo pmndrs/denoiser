@@ -199,8 +199,9 @@ Input requirements:
 
 Options (`FfxReflectionDenoiserOptions`): `temporalStabilityFactor` (default 0.7;
 higher is more stable and more ghosting), `roughnessThreshold` (default 1),
-`roughnessIsPerceptual` (default true), `missDistance`, `currentFrameStatistics`
-(default true), `timestamps` (default true).
+`roughnessIsPerceptual` (default true), `missDistance`, `motionVectorScale`
+(default `[-0.5, 0.5]`), `currentFrameStatistics` (default true), `timestamps`
+(default true).
 
 `currentFrameStatistics` fixes a one-frame-off ping-pong in the v1.1.4 host code
 that blends zeroed history at disocclusions (dark speckles) and outputs a
@@ -211,7 +212,7 @@ near-black first frame after a reset. `false` reproduces the SDK exactly.
 
 | FFX concept | what you pass |
 |---|---|
-| motion vector scale (-0.5, 0.5) | motion as an NDC delta, current minus previous |
+| motion vector scale (-0.5, 0.5) | motion as an NDC delta, current minus previous; other conventions set `motionVectorScale` (`[-1, -1]` for uv-space motion, current minus previous) |
 | normals unpack mul/add 1 / 0 | world normals already in [-1, 1] |
 | inverted depth | `camera.reversedDepth` |
 | jitter | ignored: positions are reconstructed from the unjittered projection, and the sub-pixel error is within FFX's tolerances |

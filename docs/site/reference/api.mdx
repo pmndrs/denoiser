@@ -408,6 +408,7 @@ new FfxReflectionDenoiser(device: GPUDevice, options?: FfxReflectionDenoiserOpti
 | `roughnessThreshold` | `1` | pixels with linear roughness at or above this pass through untouched; 1 denoises all pixels |
 | `roughnessIsPerceptual` | `true` | `guides.roughness` is perceptual (squared before use); `false` for linear |
 | `missDistance` | `camera.far` | ray length used where `hitDistance <= 0` |
+| `motionVectorScale` | `[-0.5, 0.5]` | `previous uv = uv + motionVectorScale * motion`; the default reads an NDC delta (current minus previous, y up), `[-1, -1]` reads uv-space motion (current minus previous, y down). Also a writable property |
 | `currentFrameStatistics` | `true` | read this frame's 8x8 average radiance and sample count; `false` reproduces FFX SDK v1.1.4 exactly (dark first frame after a reset) |
 | `timestamps` | `true` | per-pass GPU timestamps into `gpuTimings` when supported |
 
