@@ -1,0 +1,2 @@
+wrote C:\dev\nrd-reference\golden\wt-results\docs\research\rt-denoiser\native\results\golden\golden-G4-hold-light-on\crop_f20_diffuse.png: noisy | nrd-reblur | nrd-reblur-tunedD | nrd-relax | ours-auto | reference at (448, 0) frame 20, exposure 0.537
+wrote C:\dev\nrd-reference\golden\wt-results\docs\research\rt-denoiser\native\results\golden\golden-G4-hold-light-on\crop_f20_specular.png: noisy | nrd-reblur | nrd-reblur-tunedD | nrd-relax | ours-auto | reference at (512, 256) frame 20, exposure 1.678

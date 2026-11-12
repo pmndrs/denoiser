@@ -1,0 +1,165 @@
+{
+ "info": {
+  "scene": "G4",
+  "path": "pan-light-on",
+  "mode": "run",
+  "denoiser": "ffx",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "raw",
+   "specular": "denoised",
+   "shadow": "denoised",
+   "ao": "raw"
+  },
+  "events": [
+   {
+    "frame": 32,
+    "type": "light-on",
+    "note": "lantern at (-2.5, 2.4, -9.5) switches on"
+   }
+  ],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.183012701892219,
+     0.7071067811865475,
+     -0.6830127018922195
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.82,
+     0.62
+    ],
+    "intensity": 4.5,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -2.5,
+     2.4,
+     -9.5
+    ],
+    "radius": 0.12,
+    "color": [
+     1,
+     0.8,
+     0.55
+    ],
+    "intensity": 0,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 200,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "bistro",
+   "attribution": "Amazon Lumberyard Bistro, Open Research Content Archive (ORCA), Amazon Lumberyard, 2017, http://developer.nvidia.com/orca/amazon-lumberyard-bistro, CC BY 4.0; glTF conversion by Cody Bennett; modified: geometry only (no textures), flat colours, BLEND decal removed",
+   "triangles": 2827910
+  },
+  "triangles": 2827910,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 378.90000000596046,
+   "min": 315.80000001192093,
+   "mean": 381.45583333348236
+  },
+  "gpu": {
+   "specular.prepare": {
+    "median": 0.128,
+    "min": 0.12288,
+    "mean": 0.12948480000000004
+   },
+   "specular.reproject": {
+    "median": 2.11456,
+    "min": 1.627136,
+    "mean": 2.101640533333334
+   },
+   "specular.prefilter": {
+    "median": 1.014784,
+    "min": 0.758784,
+    "mean": 1.0085120000000003
+   },
+   "specular.resolve_temporal": {
+    "median": 1.480704,
+    "min": 1.108992,
+    "mean": 1.4738688000000006
+   },
+   "specular.total": {
+    "median": 4.723712,
+    "min": 3.61984,
+    "mean": 4.713506133333332
+   },
+   "shadow.prepare": {
+    "median": 0.221184,
+    "min": 0.166912,
+    "mean": 0.21946026666666665
+   },
+   "shadow.tile_classification": {
+    "median": 0.407552,
+    "min": 0.321536,
+    "mean": 0.4222037333333334
+   },
+   "shadow.filter_0": {
+    "median": 0.354304,
+    "min": 0.277504,
+    "mean": 0.37079040000000024
+   },
+   "shadow.filter_1": {
+    "median": 0.356352,
+    "min": 0.2816,
+    "mean": 0.3757653333333334
+   },
+   "shadow.filter_2": {
+    "median": 0.36864,
+    "min": 0.289792,
+    "mean": 0.3868672000000001
+   },
+   "shadow.total": {
+    "median": 1.7090560000000001,
+    "min": 1.342464,
+    "mean": 1.775086933333333
+   },
+   "total": {
+    "median": 6.464512,
+    "min": 4.97664,
+    "mean": 6.488593066666667
+   }
+  }
+ }
+}

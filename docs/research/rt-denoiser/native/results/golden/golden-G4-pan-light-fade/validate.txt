@@ -1,0 +1,15 @@
+capture C:\dev\nrd-reference\captures\golden-G4-pan-light-fade
+  ok   files                  {"frames":64,"buffers":18,"missing":0,"badSize":0}
+  ok   finite                 {"nonFinite":{}}
+  ok   ranges                 {"violations":{}}
+  ok   viewzNegativeInFront   {"scored":33001072,"positive":0,"beyondFar":0}
+  ok   normalsUnit            {"notUnit":0,"skyNonZero":0}
+  ok   normalsFaceCamera      {"backfacing":37539,"tested":8249839}
+  ok   depthMatchesViewz      {"maxRelErr":0.00001475}
+  ok   cameraContinuity       {"mismatches":[]}
+  ok   motionReprojection     {"static":true,"meanPx":0.0000556,"p99Px":0.0002376,"maxPx":0.0008267,"over0_1px":0,"tested":8249839}
+  ok   motionZReprojection    {"static":true,"meanAbs":5.334e-7,"maxAbs":0.000009241,"p99Rel":4.327e-7}
+  ok   historyConsistency     {"consistentFraction":0.9575,"tested":7899022,"usedMotionZ":true}
+  warn unknown buffer "ao_ref" (1 ch): ignored by v0 readers
+  warn unknown specular demodulation "none"
+VALID

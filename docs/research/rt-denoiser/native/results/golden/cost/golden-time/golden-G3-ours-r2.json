@@ -1,0 +1,279 @@
+{
+ "info": {
+  "scene": "G3",
+  "path": "orbit",
+  "mode": "run",
+  "denoiser": "ours",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "denoised",
+   "specular": "denoised",
+   "shadow": "denoised",
+   "ao": "denoised"
+  },
+  "events": [],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.45921248275176946,
+     0.8829475928589271,
+     0.09760862640967047
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.95,
+     0.86
+    ],
+    "intensity": 6,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -7,
+     2.3,
+     3.6
+    ],
+    "radius": 0.15,
+    "color": [
+     1,
+     0.72,
+     0.45
+    ],
+    "intensity": 5,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 60,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "sponza",
+   "attribution": "Sponza (c) 2016 Crytek, improved model by Frank Meinl after Marko Dabrovic's original, glTF by Khronos (glTF-Sample-Assets); Cryengine Limited License Agreement; geometry only, not redistributed",
+   "triangles": 262267
+  },
+  "triangles": 262267,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 135.69999998807907,
+   "min": 105.59999999403954,
+   "mean": 126.63833333353202
+  },
+  "gpu": {
+   "diffuse+specular.prepass": {
+    "median": 0.379904,
+    "min": 0.3072,
+    "mean": 0.3502677333333332
+   },
+   "diffuse+specular.gradient_create": {
+    "median": 0.436224,
+    "min": 0.23552,
+    "mean": 0.4330666666666667
+   },
+   "diffuse+specular.gradient_atrous_0": {
+    "median": 0.115712,
+    "min": 0.091136,
+    "mean": 0.10648746666666664
+   },
+   "diffuse+specular.gradient_atrous_1": {
+    "median": 0.10752,
+    "min": 0.088064,
+    "mean": 0.10019840000000006
+   },
+   "diffuse+specular.gradient_atrous_2": {
+    "median": 0.10752,
+    "min": 0.08704,
+    "mean": 0.09987413333333335
+   },
+   "diffuse+specular.gradient_atrous_3": {
+    "median": 0.139264,
+    "min": 0.109568,
+    "mean": 0.12850346666666662
+   },
+   "diffuse+specular.gradient_lambda": {
+    "median": 0.135168,
+    "min": 0.090112,
+    "mean": 0.1238528
+   },
+   "diffuse+specular.temporal": {
+    "median": 1.152,
+    "min": 0.370688,
+    "mean": 1.0368597333333336
+   },
+   "diffuse+specular.variance": {
+    "median": 0.654336,
+    "min": 0.503808,
+    "mean": 0.7996245333333333
+   },
+   "diffuse+specular.atrous_0": {
+    "median": 1.21856,
+    "min": 0.929792,
+    "mean": 1.100014933333333
+   },
+   "diffuse+specular.atrous_1": {
+    "median": 1.29536,
+    "min": 0.982016,
+    "mean": 1.1661738666666674
+   },
+   "diffuse+specular.atrous_2": {
+    "median": 1.327104,
+    "min": 1.005568,
+    "mean": 1.1946751999999996
+   },
+   "diffuse+specular.atrous_3": {
+    "median": 1.08032,
+    "min": 0.816128,
+    "mean": 0.9705130666666677
+   },
+   "diffuse+specular.atrous_4": {
+    "median": 1.02912,
+    "min": 0.780288,
+    "mean": 0.9244586666666657
+   },
+   "diffuse+specular.total": {
+    "median": 9.192448,
+    "min": 7.145472000000001,
+    "mean": 8.534570666666665
+   },
+   "ao.prepass": {
+    "median": 0.362496,
+    "min": 0.289792,
+    "mean": 0.33221973333333354
+   },
+   "ao.normalize": {
+    "median": 0.145408,
+    "min": 0.140288,
+    "mean": 0.14376960000000005
+   },
+   "ao.gradient_create": {
+    "median": 0.267264,
+    "min": 0.147456,
+    "mean": 0.2660437333333333
+   },
+   "ao.gradient_atrous_0": {
+    "median": 0.053248,
+    "min": 0.043008,
+    "mean": 0.04975786666666669
+   },
+   "ao.gradient_atrous_1": {
+    "median": 0.0512,
+    "min": 0.041984,
+    "mean": 0.048401066666666596
+   },
+   "ao.gradient_atrous_2": {
+    "median": 0.0512,
+    "min": 0.04096,
+    "mean": 0.047675733333333255
+   },
+   "ao.gradient_atrous_3": {
+    "median": 0.05632,
+    "min": 0.045056,
+    "mean": 0.053145599999999966
+   },
+   "ao.gradient_lambda": {
+    "median": 0.062464,
+    "min": 0.049152,
+    "mean": 0.057241600000000115
+   },
+   "ao.temporal": {
+    "median": 0.817152,
+    "min": 0.216064,
+    "mean": 0.7288234666666665
+   },
+   "ao.variance": {
+    "median": 0.313344,
+    "min": 0.257024,
+    "mean": 0.41292799999999996
+   },
+   "ao.atrous_0": {
+    "median": 0.56832,
+    "min": 0.429056,
+    "mean": 0.511624533333334
+   },
+   "ao.atrous_1": {
+    "median": 0.613376,
+    "min": 0.462848,
+    "mean": 0.5517312000000001
+   },
+   "ao.atrous_2": {
+    "median": 0.656384,
+    "min": 0.493568,
+    "mean": 0.5897898666666663
+   },
+   "ao.total": {
+    "median": 4.02944,
+    "min": 3.192832,
+    "mean": 3.7931519999999996
+   },
+   "shadow.temporal": {
+    "median": 1.069056,
+    "min": 0.818176,
+    "mean": 0.9874858666666667
+   },
+   "shadow.tiles": {
+    "median": 0.008192,
+    "min": 0.007168,
+    "mean": 0.008140799999999995
+   },
+   "shadow.spatial0": {
+    "median": 0.165888,
+    "min": 0.118784,
+    "mean": 0.1704533333333333
+   },
+   "shadow.spatial1": {
+    "median": 0.165888,
+    "min": 0.119808,
+    "mean": 0.1704362666666667
+   },
+   "shadow.stabilize": {
+    "median": 0.084992,
+    "min": 0.059392,
+    "mean": 0.08677546666666665
+   },
+   "shadow.total": {
+    "median": 1.4776319999999998,
+    "min": 1.130496,
+    "mean": 1.423291733333333
+   },
+   "total": {
+    "median": 14.723072,
+    "min": 11.490304,
+    "mean": 13.751014399999997
+   }
+  }
+ }
+}

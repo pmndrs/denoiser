@@ -1,0 +1,285 @@
+{
+ "info": {
+  "scene": "G4",
+  "path": "pan-light-on",
+  "mode": "run",
+  "denoiser": "ours",
+  "options": {},
+  "width": 1920,
+  "height": 1080,
+  "seed": 1,
+  "frames": 64,
+  "referenceSpp": 4096,
+  "perfectSpp": 256,
+  "referenceFrames": {
+   "diffuse": 512,
+   "visibility": 1024,
+   "specular": 4096
+  },
+  "refSeed": "fixed",
+  "signals": [
+   "diffuse",
+   "specular",
+   "shadow",
+   "ao"
+  ],
+  "applies": {
+   "diffuse": "denoised",
+   "specular": "denoised",
+   "shadow": "denoised",
+   "ao": "denoised"
+  },
+  "events": [
+   {
+    "frame": 32,
+    "type": "light-on",
+    "note": "lantern at (-2.5, 2.4, -9.5) switches on"
+   }
+  ],
+  "lights": [
+   {
+    "id": "sun",
+    "type": "directional",
+    "direction": [
+     0.183012701892219,
+     0.7071067811865475,
+     -0.6830127018922195
+    ],
+    "angularRadius": 0.02,
+    "color": [
+     1,
+     0.82,
+     0.62
+    ],
+    "intensity": 4.5,
+    "shadow": true
+   },
+   {
+    "id": "local",
+    "type": "sphere",
+    "position": [
+     -2.5,
+     2.4,
+     -9.5
+    ],
+    "radius": 0.12,
+    "color": [
+     1,
+     0.8,
+     0.55
+    ],
+    "intensity": 0,
+    "shadow": false
+   }
+  ],
+  "camera": {
+   "near": 0.1,
+   "far": 200,
+   "fov": 55
+  },
+  "three": "186",
+  "gpu": {
+   "vendor": "nvidia",
+   "architecture": "ampere",
+   "description": "NVIDIA GeForce RTX 3060 Laptop GPU"
+  },
+  "kit": {
+   "scene": "bistro",
+   "attribution": "Amazon Lumberyard Bistro, Open Research Content Archive (ORCA), Amazon Lumberyard, 2017, http://developer.nvidia.com/orca/amazon-lumberyard-bistro, CC BY 4.0; glTF conversion by Cody Bennett; modified: geometry only (no textures), flat colours, BLEND decal removed",
+   "triangles": 2827910
+  },
+  "triangles": 2827910,
+  "lean": true,
+  "withReference": false
+ },
+ "time": {
+  "frames": 120,
+  "wall": {
+   "median": 369.19999998807907,
+   "min": 279.69999998807907,
+   "mean": 366.0541666666667
+  },
+  "gpu": {
+   "diffuse+specular.prepass": {
+    "median": 0.379904,
+    "min": 0.3072,
+    "mean": 0.36730026666666693
+   },
+   "diffuse+specular.gradient_create": {
+    "median": 0.411648,
+    "min": 0.21504,
+    "mean": 0.4020650666666666
+   },
+   "diffuse+specular.gradient_atrous_0": {
+    "median": 0.116736,
+    "min": 0.091136,
+    "mean": 0.11234133333333333
+   },
+   "diffuse+specular.gradient_atrous_1": {
+    "median": 0.108544,
+    "min": 0.088064,
+    "mean": 0.10502826666666665
+   },
+   "diffuse+specular.gradient_atrous_2": {
+    "median": 0.108544,
+    "min": 0.088064,
+    "mean": 0.10500266666666667
+   },
+   "diffuse+specular.gradient_atrous_3": {
+    "median": 0.140288,
+    "min": 0.110592,
+    "mean": 0.1354922666666666
+   },
+   "diffuse+specular.gradient_lambda": {
+    "median": 0.136192,
+    "min": 0.089088,
+    "mean": 0.1305343999999999
+   },
+   "diffuse+specular.temporal": {
+    "median": 1.21856,
+    "min": 0.354304,
+    "mean": 1.188650666666667
+   },
+   "diffuse+specular.variance": {
+    "median": 1.662976,
+    "min": 1.376256,
+    "mean": 1.9278506666666666
+   },
+   "diffuse+specular.atrous_0": {
+    "median": 1.221632,
+    "min": 0.930816,
+    "mean": 1.1774207999999997
+   },
+   "diffuse+specular.atrous_1": {
+    "median": 1.298432,
+    "min": 0.982016,
+    "mean": 1.2512768
+   },
+   "diffuse+specular.atrous_2": {
+    "median": 1.330176,
+    "min": 1.006592,
+    "mean": 1.284642133333333
+   },
+   "diffuse+specular.atrous_3": {
+    "median": 1.081344,
+    "min": 0.81408,
+    "mean": 1.0454869333333332
+   },
+   "diffuse+specular.atrous_4": {
+    "median": 1.02912,
+    "min": 0.77824,
+    "mean": 0.9958997333333334
+   },
+   "diffuse+specular.total": {
+    "median": 10.243072000000002,
+    "min": 8.054784,
+    "mean": 10.228992000000003
+   },
+   "ao.prepass": {
+    "median": 0.361472,
+    "min": 0.288768,
+    "mean": 0.35326293333333325
+   },
+   "ao.normalize": {
+    "median": 0.146432,
+    "min": 0.140288,
+    "mean": 0.1460565333333334
+   },
+   "ao.gradient_create": {
+    "median": 0.259072,
+    "min": 0.147456,
+    "mean": 0.2573141333333335
+   },
+   "ao.gradient_atrous_0": {
+    "median": 0.054272,
+    "min": 0.043008,
+    "mean": 0.0530090666666667
+   },
+   "ao.gradient_atrous_1": {
+    "median": 0.052224,
+    "min": 0.041984,
+    "mean": 0.05141333333333328
+   },
+   "ao.gradient_atrous_2": {
+    "median": 0.0512,
+    "min": 0.04096,
+    "mean": 0.05072213333333327
+   },
+   "ao.gradient_atrous_3": {
+    "median": 0.058368,
+    "min": 0.045056,
+    "mean": 0.05696853333333329
+   },
+   "ao.gradient_lambda": {
+    "median": 0.063488,
+    "min": 0.049152,
+    "mean": 0.06156800000000009
+   },
+   "ao.temporal": {
+    "median": 0.88064,
+    "min": 0.217088,
+    "mean": 0.8745215999999995
+   },
+   "ao.variance": {
+    "median": 0.781312,
+    "min": 0.613376,
+    "mean": 0.9106602666666663
+   },
+   "ao.atrous_0": {
+    "median": 0.570368,
+    "min": 0.429056,
+    "mean": 0.5547946666666667
+   },
+   "ao.atrous_1": {
+    "median": 0.6144,
+    "min": 0.461824,
+    "mean": 0.6004565333333339
+   },
+   "ao.atrous_2": {
+    "median": 0.658432,
+    "min": 0.493568,
+    "mean": 0.6430805333333337
+   },
+   "ao.total": {
+    "median": 4.557824,
+    "min": 3.6474879999999996,
+    "mean": 4.613828266666666
+   },
+   "shadow.temporal": {
+    "median": 1.311744,
+    "min": 0.984064,
+    "mean": 1.3404416000000006
+   },
+   "shadow.tiles": {
+    "median": 0.009216,
+    "min": 0.007168,
+    "mean": 0.009129333333333333
+   },
+   "shadow.spatial0": {
+    "median": 0.393216,
+    "min": 0.3072,
+    "mean": 0.4234581333333333
+   },
+   "shadow.spatial1": {
+    "median": 0.392192,
+    "min": 0.305152,
+    "mean": 0.42396160000000005
+   },
+   "shadow.stabilize": {
+    "median": 0.1792,
+    "min": 0.130048,
+    "mean": 0.18984960000000003
+   },
+   "shadow.total": {
+    "median": 2.290688,
+    "min": 1.755136,
+    "mean": 2.3868402666666677
+   },
+   "total": {
+    "median": 17.031168,
+    "min": 13.744128000000002,
+    "mean": 17.229660533333334
+   }
+  }
+ }
+}

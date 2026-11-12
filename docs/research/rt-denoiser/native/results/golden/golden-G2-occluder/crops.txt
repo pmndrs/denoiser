@@ -1,0 +1,3 @@
+wrote C:\dev\nrd-reference\golden\wt-results\docs\research\rt-denoiser\native\results\golden\golden-G2-occluder\crop_f40_diffuse.png: noisy | nrd-reblur | nrd-reblur-tunedD | nrd-relax | ours-auto | reference at (192, 256) frame 40, exposure 0.388
+wrote C:\dev\nrd-reference\golden\wt-results\docs\research\rt-denoiser\native\results\golden\golden-G2-occluder\crop_f40_specular.png: noisy | nrd-reblur | nrd-reblur-tunedD | nrd-relax | ours-auto | reference at (576, 64) frame 40, exposure 2.244
+wrote C:\dev\nrd-reference\golden\wt-results\docs\research\rt-denoiser\native\results\golden\golden-G2-occluder\crop_f40_visibility.png: noisy | ffx-shadows | nrd-sigma | ours-shadows | reference at (576, 64) frame 40, exposure 1.000
