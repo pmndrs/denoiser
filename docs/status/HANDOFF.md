@@ -4,6 +4,21 @@ Where the project is and what's left, written for a fresh session in this folder
 Older history: [STATUS.md](STATUS.md) (next actions, known issues), [ROADMAP.md](ROADMAP.md),
 eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 
+## 2026-11-12: branches consolidated onto main
+
+- **FFX reflections:** #24 (`motionVectorScale`), #25 (read-only `variance`) and #26 (optional indirect tile list) merged.
+  The `ffx-denoiser` reflections eval is identical to the old baseline on every path (default, `motion=uv`, `tiles=all`,
+  both): 23.4556 dB, flicker 0.00803.
+- **`denoiser/realtime` (the clean-room GI / per-signal denoisers) is on main, experimental.** It came in through
+  `feat/rt-denoiser-cleanroom`, with the phase-1 diagnosis tracks D, S and R and the native results folded in first.
+  The next npm release ships `denoiser/realtime` and the `realtime*` nodes in `denoiser/three`, unless the release
+  drops them. The project's own status is in `docs/research/rt-denoiser/STOCKTAKE-2026-11-06.md`: experimental,
+  about 200 options still to prune, and visually behind FFX on the reflection bench. Phase-2 work branches from main now.
+- **Retired (superseded, kept on origin as a record):** `feat/interior-lab`, `feat/shadow-bench`, `track/t0-scenes`,
+  `track/t0-scorecard`, the track branches above.
+- **Still open:** #29 (hit-source affinity, draft), #27 (reflection pages on `@pmndrs/reflections`; do not merge
+  until that package is released), #15 (jitter study, stale and conflicting).
+
 ## Where the repo lives
 
 - **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`.
