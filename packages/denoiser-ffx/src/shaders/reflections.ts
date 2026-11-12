@@ -34,9 +34,12 @@
 //
 // Port notes (deviations from the source):
 // - The fp32 (non-FFX_HALF) paths are ported; LDS holds f32 instead of packed half.
-// - No tile list / indirect dispatch: the classifier that builds FFX's denoiser
-//   tile list belongs to SSSR / hybrid reflections, not the denoiser. Every 8x8
-//   tile is dispatched; the per-pixel roughness gates (IsGlossyReflection /
+// - The tile list is optional: the classifier that builds FFX's denoiser tile list
+//   belongs to SSSR / hybrid reflections, not the denoiser. Without one, every 8x8
+//   tile is dispatched. With one (tiledWgsl), reproject / prefilter / resolve run
+//   indirectly over the listed tiles only, as FFX does; the args may be 2-D (tile
+//   index = wg.y * nwg.x + wg.x, bounded by the tile count). The prepare pass stays
+//   full-screen. The per-pixel roughness gates (IsGlossyReflection /
 //   IsMirrorReflection) are unchanged.
 // - Ray length comes from a separate hit-distance texture instead of radiance.w;
 //   misses (0) map to Params.missDistance (environment ~ at infinity).
@@ -64,6 +67,8 @@ struct Params {
   temporalStabilityFactor: f32,
   roughnessThreshold: f32,
   missDistance: f32,
+  tileCountIndex: u32,  // tiled passes: u32 index of the tile count in tile_count
+  tileListBase: u32,    // tiled passes: u32 index of the first tile in tile_list
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -160,6 +165,29 @@ fn bilinear1(t: texture_2d<f32>, uv: vec2f) -> f32 {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 `;
+
+const FULL_SCREEN_MAIN = '@compute @workgroup_size(8, 8)\n' +
+  'fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id) gdid: vec3u) {';
+
+/**
+ * Tile-list variant of a reproject / prefilter / resolve shader: each 8x8 workgroup
+ * takes one tile from tile_list (FFX packing: the tile's origin in pixels, x | y << 16)
+ * instead of its grid position, as FFX's denoiser passes do. Workgroups past the tile count return before any barrier (the
+ * count comes from a read-only buffer, so the branch is workgroup-uniform).
+ */
+export function tiledWgsl(code: string): string {
+  if (!code.includes(FULL_SCREEN_MAIN)) throw new Error('tiledWgsl: entry point not found');
+  return code.replace(FULL_SCREEN_MAIN, /* wgsl */ `
+@group(1) @binding(0) var<storage, read> tile_list: array<u32>;
+@group(1) @binding(1) var<storage, read> tile_count: array<u32>;
+@compute @workgroup_size(8, 8)
+fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wg: vec3u,
+        @builtin(num_workgroups) nwg: vec3u) {
+  let tile_index = wg.y * nwg.x + wg.x;
+  if (tile_index >= tile_count[P.tileCountIndex]) { return; }
+  let tile = tile_list[P.tileListBase + tile_index];
+  let gdid = vec3u(vec2u(tile & 0xffffu, tile >> 16u) + lid.xy, 0u);`);
+}
 
 /** Prepare: depth -> r32float, normal (unpacked) + roughness -> rgba16float (this frame's copies = next frame's history). */
 export function reflectionPrepareWgsl(depthIsDepthFormat: boolean) {

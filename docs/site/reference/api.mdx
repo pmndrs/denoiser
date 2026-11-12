@@ -419,6 +419,13 @@ denoiser is unsure, as FFX SSSR's classifier does. It alternates between two
 textures, so fetch it every frame. The shadow `dispatch`
 returns an `rgba16float` texture whose `.r` is the denoised visibility.
 
+The reflection inputs may carry an optional `tiles` (`FfxReflectionTileList`):
+FFX SSSR's denoiser tile list (`u32` tile origins in pixels, `x | y << 16`), an
+optional tile count and indirect `(x, y, z)` args, one 8x8 workgroup per tile with
+workgroup `(wx, wy)` taking tile `wy * x + wx`. Reproject, prefilter and resolve
+then run over the listed tiles only, as in FFX; the output and history are not
+written elsewhere that frame. Without `tiles` every tile is dispatched.
+
 ### `denoiser/three` helpers
 
 | export | meaning |

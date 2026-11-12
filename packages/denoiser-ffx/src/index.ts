@@ -3,7 +3,7 @@
 export { FfxShadowDenoiser } from './shadows';
 export type { FfxShadowDenoiserOptions } from './shadows';
 export { FfxReflectionDenoiser } from './reflections';
-export type { FfxReflectionDenoiserOptions } from './reflections';
+export type { FfxReflectionDenoiserOptions, FfxReflectionInputs, FfxReflectionTileList } from './reflections';
 export type {
   TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, ShadowInputs, SpecularInputs, Mat4,
 } from '@pmndrs/denoiser-core';
