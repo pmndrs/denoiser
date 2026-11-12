@@ -21,7 +21,7 @@ import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
+  PARAMS_SIZE, stabilizePass, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -259,6 +259,19 @@ export interface SvgfOptions {
    * A-SVGF's n = 1 / alpha (our design, results/SVGF-FOLLOWUPS.md). Per signal; default false.
    */
   antiLagHistoryScale?: boolean;
+  /**
+   * Track D phase-1 experiment (tracks/d.md, our design after Karis 2014 / Salvi 2016): a temporal stabilization pass on
+   * the filtered output (reprojected previous output, variance-clipped to this frame's 3x3, blended with
+   * max(stabilizeAlpha, 1 / n), flushed by the anti-lag lambda). Default false (pipeline unchanged). Payload 'radiance'
+   * without remodulate only. Structural.
+   */
+  stabilize?: boolean;
+  /** stabilize: blend floor of the current filtered frame. Default 0.1. Per signal. */
+  stabilizeAlpha?: number;
+  /** stabilize: clip half-width in standard deviations of the 3x3 neighbourhood (YCoCg). Default 1. Per signal. */
+  stabilizeClip?: number;
+  /** stabilize: history length cap (frames). Default 32. Per signal. */
+  stabilizeMaxHistory?: number;
 }
 
 /** Specular SH resolve settings (SPEC M7-10, all tune guesses). */
@@ -395,6 +408,10 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     normalSoftHistory: o.normalSoftHistory === undefined || o.normalSoftHistory < 0 ? -1 : Math.max(1, o.normalSoftHistory),
     historyNormal: o.historyNormal ?? 'normal',
     antiLagHistoryScale: o.antiLagHistoryScale ?? false,
+    stabilize: o.stabilize ?? false,
+    stabilizeAlpha: o.stabilizeAlpha ?? 0.1,
+    stabilizeClip: o.stabilizeClip ?? 1,
+    stabilizeMaxHistory: o.stabilizeMaxHistory ?? 32,
   };
 }
 
@@ -439,13 +456,18 @@ class SignalState {
   ping: GPUTexture[] = [];
   grad: GPUTexture[] = [];   // g0a, g1a, g0b, g1b, lambda
   out?: GPUTexture;
+  /** stabilize: stabilized output ping-pong (current = stab[cur]) */
+  stab: GPUTexture[] = [];
+  /** the texture returned for the last frame (out, or stab[cur] with stabilize) */
+  final?: GPUTexture;
 
   constructor(device: GPUDevice, readonly kind: SignalKind, readonly opts: ResolvedOptions, readonly label: string) {
     this.params = device.createBuffer({ label: `${label} params`, size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   }
 
   destroyTargets() {
-    for (const t of [...this.accum, ...this.moments, ...this.ping, ...this.grad]) t.destroy();
+    for (const t of [...this.accum, ...this.moments, ...this.ping, ...this.grad, ...this.stab]) t.destroy();
+    this.stab = []; this.final = undefined;
     this.hist?.destroy();
     if (!this.ping.includes(this.out!)) this.out?.destroy();   // outputAliasing: out is a ping-pong texture
     this.accum = []; this.moments = []; this.ping = []; this.grad = [];
@@ -464,6 +486,7 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
   if (o.normalTest === 'soft') k.push(o.normalSoftThreshold);
   if (o.historyNormal !== 'normal') k.push(`hn-${o.historyNormal}`);
+  if (o.stabilize) k.push('stab');
   return k.join('|');
 }
 
@@ -589,6 +612,11 @@ export class SvgfPipeline {
         make('glambda', (v1 ? gradientLambdaPass : gradientLambdaPassV2)(kinds.length));
       }
     }
+    if (o.stabilize) {
+      if (this.sh || signals.some((s) => s.opts.remodulate)) throw new Error(`${label}: stabilize needs payload 'radiance' without remodulate`);
+      make('stabilize', stabilizePass(kinds, { alpha: signals.map((s) => s.opts.stabilizeAlpha), clip: signals.map((s) => s.opts.stabilizeClip),
+        maxHistory: signals.map((s) => s.opts.stabilizeMaxHistory) }));
+    }
     if (o.antiLag !== 'off' && this.sh) {
       make('gatrous', gradientAtrousPassV2(kinds.length));
       make('glambda', gradientLambdaPassV2(kinds.length));
@@ -650,6 +678,7 @@ export class SvgfPipeline {
         // antiLagChroma: chroma gradients, rg32uint ping-pong after lambda (grad[3], grad[4])
         if (this.gradVariant?.chroma) s.grad.push(tex('ca', 'rg32uint', this.gw, this.gh), tex('cb', 'rg32uint', this.gw, this.gh));
       }
+      if (this.opts.stabilize) s.stab = [tex('stab0', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC), tex('stab1', 'rgba16float', width, height, GPUTextureUsage.COPY_SRC)];
       this.writeParams(s);
     }
     this.cur = 0;
@@ -685,13 +714,14 @@ export class SvgfPipeline {
   }
 
   /** Outputs of the last frame, one per signal. */
-  get outputs(): (GPUTexture | undefined)[] { return this.sigs.map((s) => s.out); }
+  get outputs(): (GPUTexture | undefined)[] { return this.sigs.map((s) => s.final ?? s.out); }
 
   /** @internal Debug access (signal 0): 'accum' (rgb, history length) of the last frame, 'gradient' (lambda). */
   debugTexture(name: 'accum' | 'gradient', signal = 0): GPUTexture | undefined {
     const s = this.sigs[signal];
     if (name === 'accum') return s.accum[this.cur ^ 1];
-    return s.grad[s.grad.length - 1];
+    // lambda: grad[4] in v1 (g0a, g1a, g0b, g1b, lambda), grad[2] in v2 (ga, gb, lambda[, ca, cb with antiLagChroma])
+    return s.grad[this.opts.antiLagVersion === 1 ? 4 : 2];
   }
 
   private group(name: string, res: Record<string, Res>): GPUBindGroup {
@@ -803,6 +833,12 @@ export class SvgfPipeline {
       res.I = this.iterParams[it];
       runPass(enc, timer, name(`atrous_${it}`), this.pipes[key], this.group(key, res), gx, gy);
       src ^= 1;
+    }
+    if (o.stabilize) {
+      runPass(enc, timer, name('stabilize'), this.pipes.stabilize, this.group('stabilize', per((s, _f, i) => ({
+        cur: s.out!, hist: s.stab[c ^ 1], grad: gradResult[i], dst: s.stab[c],
+      }))), gx, gy);
+      this.sigs.forEach((s) => { s.final = s.stab[c]; });
     }
   }
 

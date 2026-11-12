@@ -122,7 +122,7 @@ function makePipe(device: GPUDevice, signals: { kind: Kind; r: Resolved }[], lab
   const o = signals[0].r.o as ResolvedOptions;
   const p = new SvgfPipeline(device, signals.map((s) => ({ kind: s.kind, opts: s.r.o as ResolvedOptions })), label);
   return {
-    passes: 2 + o.atrousIterations + (o.antiLag !== 'off' ? 2 + o.gradientIterations : 0),
+    passes: 2 + o.atrousIterations + (o.antiLag !== 'off' ? 2 + o.gradientIterations : 0) + (o.stabilize ? 1 : 0),
     get outputs() { return p.outputs; },
     configure: (w, h) => p.configure(w, h),
     encode: (enc, timer, gp, frames, guides, _camera, prefix) => p.encode(enc, timer, gp, frames, guides.motion, guides.motionZ, prefix,
