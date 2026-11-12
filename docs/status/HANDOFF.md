@@ -17,7 +17,8 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 - **Retired (superseded, kept on origin as a record):** `feat/interior-lab`, `feat/shadow-bench`, `track/t0-scenes`,
   `track/t0-scorecard`, the track branches above.
 - **Still open:** #29 (hit-source affinity, draft), #27 (reflection pages on `@pmndrs/reflections`; do not merge
-  until that package is released), #15 (jitter study, stale and conflicting).
+  until that package is released). #15 (jitter study) was closed. The denoiser → upscaler chain is tracked in #30,
+  and the branch `exp/jitter-study` is kept.
 
 ## Where the repo lives
 
