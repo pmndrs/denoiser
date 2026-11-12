@@ -54,3 +54,6 @@ tools/eval/out/
 
 # yarn: per-machine install cache, rewritten by every install
 .yarn/install-state.gz
+
+# calibration clips: regenerated locally (node tools/scorecard/calibration/make-pairs.mjs --skip-replay); ~44 MB of WebP, kept out of git
+examples/three-temporal/src/review/calibration/sheets/

@@ -1,0 +1,104 @@
+{
+ "query": "path=orbit&w=1920&h=1080&det=svgf,svgf@normalTest=relative,svgf@normalTest=relative@historyFallback=off,svgf@historyFallback=off,recurrent,recurrent@normalThreshold=0.95@normalTest=relative,recurrent@normalThreshold=0.8@normalTest=relative,recurrent@normalThreshold=0.95",
+ "W": 1920,
+ "H": 1080,
+ "frames": 96,
+ "channels": {
+  "svgf": {
+   "TP": 1284750,
+   "FP": 2084,
+   "FN": 670994,
+   "TN": 152024252,
+   "TPi": 871337,
+   "FPi": 764,
+   "FNi": 32406,
+   "TNi": 150400172,
+   "hard": 1284206,
+   "FNhard": 25
+  },
+  "svgf@normalTest=relative": {
+   "TP": 1284748,
+   "FP": 2013,
+   "FN": 670996,
+   "TN": 152024323,
+   "TPi": 871337,
+   "FPi": 714,
+   "FNi": 32406,
+   "TNi": 150400222,
+   "hard": 1284206,
+   "FNhard": 27
+  },
+  "svgf@normalTest=relative@historyFallback=off": {
+   "TP": 1594089,
+   "FP": 3532,
+   "FN": 361655,
+   "TN": 152022804,
+   "TPi": 903694,
+   "FPi": 1321,
+   "FNi": 49,
+   "TNi": 150399615,
+   "hard": 1284206,
+   "FNhard": 4
+  },
+  "svgf@historyFallback=off": {
+   "TP": 1594091,
+   "FP": 3625,
+   "FN": 361653,
+   "TN": 152022711,
+   "TPi": 903694,
+   "FPi": 1392,
+   "FNi": 49,
+   "TNi": 150399544,
+   "hard": 1284206,
+   "FNhard": 2
+  },
+  "recurrent": {
+   "TP": 1585124,
+   "FP": 3155,
+   "FN": 370620,
+   "TN": 152023181,
+   "TPi": 903652,
+   "FPi": 993,
+   "FNi": 91,
+   "TNi": 150399943,
+   "hard": 1284206,
+   "FNhard": 69
+  },
+  "recurrent@normalThreshold=0.95@normalTest=relative": {
+   "TP": 1585151,
+   "FP": 3157,
+   "FN": 370593,
+   "TN": 152023179,
+   "TPi": 903667,
+   "FPi": 993,
+   "FNi": 76,
+   "TNi": 150399943,
+   "hard": 1284206,
+   "FNhard": 47
+  },
+  "recurrent@normalThreshold=0.8@normalTest=relative": {
+   "TP": 1585145,
+   "FP": 3156,
+   "FN": 370599,
+   "TN": 152023180,
+   "TPi": 903663,
+   "FPi": 993,
+   "FNi": 80,
+   "TNi": 150399943,
+   "hard": 1284206,
+   "FNhard": 53
+  },
+  "recurrent@normalThreshold=0.95": {
+   "TP": 1585193,
+   "FP": 3540,
+   "FN": 370551,
+   "TN": 152022796,
+   "TPi": 903686,
+   "FPi": 1352,
+   "FNi": 57,
+   "TNi": 150399584,
+   "hard": 1284206,
+   "FNhard": 6
+  }
+ }
+}

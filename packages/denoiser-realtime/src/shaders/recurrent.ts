@@ -1,0 +1,1558 @@
+// Recurrent blur passes (`filter: 'recurrent'`), one or two signals per
+// dispatch (diffuse + specular share every pass, SPEC §5.1). Provisional: built
+// against SPEC v0, which Dennis has not reviewed yet.
+//
+//   R1 pre_blur     raw radiance + hit distance -> pre (rgb, raw normalized hit distance)
+//   R2 temporal     pre + reprojected history -> acc (rgb, ĥ), fast history F, data (A)
+//   R3 mips         acc -> 3-level mip atlases (signals, depth)
+//   R4 history_fix  mip repair, anti-firefly, fast-history clamp + anti-lag (data in place)
+//   R5 blur         rotated 8-tap disk, radius ∝ 1/(1+A)
+//   R6 post_blur    unrotated, radius scaled by how much the blur changed things -> next history
+//   R7 stabilize    own history, neighbourhood clamp, never fed back -> output
+//
+// Design: docs/research/rt-denoiser/SPEC.md §2 (front end F-1/F-3), §3 (shared
+// temporal core C-6..C-10), §5 (recurrent pipeline R-1..R-6, D1..D15), §10.1
+// (formats, buffer rotation). Public sources behind it (full table in
+// docs/research/rt-denoiser/PROVENANCE.md):
+// - Zhdan, "ReBLUR: A Hierarchical Recurrent Denoiser", Ray Tracing Gems II
+//   ch. 49 (2021), prose and equations only (its numbered listings are not a
+//   source for this project): §49.3 recurrent loop (post-blur output is next
+//   frame's history), §49.5.1 pre-blur, §49.5.2 accumulation, Eq. 49.1 running
+//   mean 1/(1+A), §49.5.3 mips in one pass, §49.5.4 p.829 history fix (3x3,
+//   viewZ-only weights), p.830 anti-firefly / faster-history clamp, §49.5.5
+//   8-tap Poisson disk with animated 4x4 Bayer rotation, §49.5.6 post-blur,
+//   §49.5.7 stabilization with its own history, §49.6 plane-distance
+//   disocclusion, §49.7 Catmull-Rom history, §49.9 world-space kernel plane,
+//   Eq. 49.2/49.3 weights w = Π smoothstep(0, 1, 1 − x).
+// - Zhdan, "Fast Denoising with Self-Stabilizing Recurrent Blurs", GTC 2020
+//   (s22699): s.9 normalized hit distance = AO/SO, s.20-22 radius 1/(1+A),
+//   s.27-30 custom-weighted bilinear, s.35 history-fix start level, s.38-40
+//   kernel plane, s.60 hit distance not filtered in the pre-blur.
+// - Vogel 1979 (golden-angle spiral, our 4+4 antipodal disk); Duff et al.,
+//   JCGT 6(1) 2017 (orthonormal basis); Lagarde & de Rousiers 2014 (Frostbite)
+//   Listing 22 (dominant direction, specular kernel plane only).
+// - Our design (SPEC): rational hit-distance curve ĥ = h/(h + a + b·d), pre-blur
+//   clamp by last frame's denoised hit distance, fast-history anti-lag with
+//   min-combined luminance / ĥ detectors in history fix, rank-based firefly
+//   clamp, A packed as fixed point in an r32uint, mip atlas, stabilization
+//   clamp widening with A, post-blur radius function.
+// - Our measured deviations from SPEC v0 (TASKS "Found along the way"): fast-history
+//   clamp window from the standard error of the 3x3 mean; a current-frame anti-lag
+//   detector in the temporal pass; affine (screen-Jacobian) tap placement and plane
+//   distance linear in the tap pixel; stabilization reuses the temporal pass's 2x2
+//   validity (stored in data); branchless taps and neighbourhoods.
+// - Specular (M3): virtual (reflected-image) motion R-9..R-12 from RTG2 §49.8.2 prose
+//   (virtual image: RTG1 ch. 25 p.451, Stachowiak 2015 slide 67), curvature-corrected
+//   virtual distance with the mirror equation (RTG1 ch. 32 §32.4.3, D12c); confidence,
+//   clamp and alpha-space blend are our designs. Measured M3 changes: virtual clamp
+//   always on (window widening with confidence); specular anti-lag / detector mean
+//   centred on the pixel as roughness -> 0 and detector floor A_fast f_r (clean mirror
+//   input); f_r-scaled minimum radius; no virtual candidate in stabilization; 4-tap
+//   post-blur (both) and pre-blur (specular); 10x10 shared tiles for the 3x3
+//   neighbourhoods; cheaper recurrent-only reprojection (REPROJECT_R).
+import { Bindings, type PassDef } from './bindings';
+import { FRAME_WGSL, HISTORY_SAMPLE_WGSL, REL_NORMAL_WGSL, REPROJECT_WGSL } from './common';
+
+/**
+ * Signal kinds. `ao` / `so` are the occlusion-only mode (SPEC §8 O-2, M5): the same passes
+ * with the radiance channels dropped, one r32float channel per signal (the normalized hit
+ * distance ĥ of diffuse / specular rays). `ao` takes the diffuse kernel, `so` the
+ * specular one (roughness, lobe plane, virtual motion).
+ */
+export type RecurrentKind = 'diffuse' | 'specular' | 'ao' | 'so';
+/** Specular kernel / temporal logic (radiance or occlusion). */
+export const isSpecKind = (k: RecurrentKind) => k === 'specular' || k === 'so';
+/** Occlusion-only signal: buffers hold ĥ alone (r32float), no radiance. */
+export const isOccKind = (k: RecurrentKind) => k === 'ao' || k === 'so';
+/** Storage format of a signal's rotation buffers. */
+export const formatOf = (k: RecurrentKind): GPUTextureFormat => (isOccKind(k) ? 'r32float' : 'rgba16float');
+// WGSL snippets per kind: value type, ĥ of a value, a buffer load, a computed value's store
+// argument, the zero value. Radiance kinds emit exactly the code they did before M5.
+const VT = (k: RecurrentKind) => (isOccKind(k) ? 'f32' : 'vec4f');
+const hOf = (k: RecurrentKind, x: string) => (isOccKind(k) ? x : `${x}.a`);
+const LD = (k: RecurrentKind, tex: string, q: string) => (isOccKind(k) ? `textureLoad(${tex}, ${q}, 0).r` : `textureLoad(${tex}, ${q}, 0)`);
+const ST = (k: RecurrentKind, v: string) => (isOccKind(k) ? `vec4f(${v})` : v);
+const ZERO = (k: RecurrentKind) => (isOccKind(k) ? '0.0' : 'vec4f(0.0)');
+const BIG = (k: RecurrentKind, x: string) => (isOccKind(k) ? x : `vec4f(${x})`);
+
+/** RParams.flags */
+export const RP_HAS_HIT = 1;
+export const RP_REMODULATE = 2;
+export const RP_NO_ANTILAG = 4;   // option `historyAntiLag: false` (was `antiLag`)
+export const RP_NO_FIREFLY = 8;
+export const RP_NO_HISTORY_FIX = 16;
+export const RP_NO_STABILIZE = 32;
+export const RP_NO_VIRTUAL = 64;
+
+/** Uniform sizes in bytes. */
+export const RP_SIZE = 48 * 4;
+export const RF_SIZE = 48 * 4;
+
+/** Disk taps used for a kernel with n taps (R-3 table indices; 4 = two antipodal pairs ~90° apart). */
+export const tapSet = (n: number) => (n <= 4 ? [0, 2, 4, 6] : [0, 1, 2, 3, 4, 5, 6, 7]);
+
+/** Slot in the packed data / fast-history channels: diffuse 0, specular 1. */
+export const slotOf = (k: RecurrentKind) => (isSpecKind(k) ? 1 : 0);
+
+const RSTRUCTS = /* wgsl */ `
+struct RFrame {
+  proj: mat4x4f,     // current projection (unjittered), view -> clip
+  unp: vec4f,        // 1/P0, 1/P5, P8, P9   (view position from linear depth)
+  unp2: vec4f,       // P12, P13, ortho (0/1), 2/(P5 H) (world size of a pixel per unit depth)
+  rot: f32,          // golden-ratio rotation offset of this frame (SPEC D3b)
+  pad0: f32, pad1: f32, pad2: f32,
+  prevProj: mat4x4f, // previous projection (unjittered), previous view -> clip (virtual motion, R-9)
+  prevUnp: vec4f,    // 1/P0, 1/P5, P8, P9 of the previous projection
+}
+struct RParams {
+  hitA: f32, hitB: f32, maxRadiance: f32, preRadius: f32,
+  maxRadius: f32, minRadius: f32, aCap: f32, aFast: f32,
+  aFix: f32, fixTol: f32, fixMinWeight: f32, fireflyK: f32,
+  lagGamma: f32, lagEMax: f32, lagHitTol: f32, stabFrames: f32,
+  stabGammaLo: f32, stabGammaHi: f32, stabBeta: f32, planeTol: f32,
+  geoTolLo: f32, geoTolHi: f32, normalTight: f32, lobeFraction: f32,
+  postLo: f32, postHi: f32, postDelta: f32, hitTolLo: f32,
+  hitTolHi: f32, hitTolTight: f32, specScale: f32, flags: u32,
+  lagCurSigma: f32, lagCurHitTol: f32, lagStdErr: f32, virtGamma: f32,
+  virtAngle: f32, virtHitLo: f32, virtHitHi: f32, specMinRadius: f32,
+  virtCurv: f32, virtWiden: f32, detRough: f32, specCentre: f32,
+  elong: f32, occClamp: f32, pad7: f32, pad8: f32,
+}
+const RP_HAS_HIT = ${RP_HAS_HIT}u;
+const RP_REMODULATE = ${RP_REMODULATE}u;
+const RP_NO_ANTILAG = ${RP_NO_ANTILAG}u;
+const RP_NO_FIREFLY = ${RP_NO_FIREFLY}u;
+const RP_NO_HISTORY_FIX = ${RP_NO_HISTORY_FIX}u;
+const RP_NO_STABILIZE = ${RP_NO_STABILIZE}u;
+const RP_NO_VIRTUAL = ${RP_NO_VIRTUAL}u;
+`;
+
+// Helpers shared by every recurrent pass (need F, RF in scope).
+const RCOMMON = /* wgsl */ `
+fn finiteR(c: vec3f) -> vec3f {
+  let b = bitcast<vec3u>(c) & vec3u(0x7f800000u);
+  return select(c, vec3f(0.0), b == vec3u(0x7f800000u));
+}
+// F-1: non-finite / negative -> 0, safety clamp (not the firefly filter).
+fn sanitize(c: vec3f, maxR: f32) -> vec3f { return min(max(finiteR(c), vec3f(0.0)), vec3f(maxR)); }
+// SPEC R-6 / RTG II Eq. 49.3: W(x) = smoothstep(0, 1, saturate(1 - x)).
+fn Wt(x: f32) -> f32 { return smoothstep(0.0, 1.0, clamp(1.0 - x, 0.0, 1.0)); }
+fn isOrtho() -> bool { return RF.unp2.z > 0.5; }
+// SPEC C-1 (pixel centre; jitter ignored like the shared core).
+fn viewPosAt(uv: vec2f, d: f32) -> vec3f {
+  let ndc = ndcOf(uv);
+  if (isOrtho()) { return vec3f((ndc.x - RF.unp2.x) * RF.unp.x, (ndc.y - RF.unp2.y) * RF.unp.y, -d); }
+  return vec3f(d * (ndc.x + RF.unp.z) * RF.unp.x, d * (ndc.y + RF.unp.w) * RF.unp.y, -d);
+}
+// World size of one pixel at depth d (SPEC §5.2 pixSize).
+fn pixSize(d: f32) -> f32 { return select(d, 1.0, isOrtho()) * RF.unp2.w; }
+// GGX lobe half-angle containing fraction E of the projected microfacet area (SPEC R-1, our derivation).
+fn thetaL(alpha: f32, E: f32) -> f32 { return atan(alpha * sqrt(E / (1.0 - E))); }
+// Dominant-direction factor (SPEC R-2, Lagarde & de Rousiers 2014 Listing 22, fed with GGX alpha).
+fn domFactor(alpha: f32) -> f32 { return (1.0 - alpha) * (sqrt(1.0 - alpha) + alpha); }
+// R-9: uv in the previous frame of the virtual (reflected) image of a surface point:
+// X_virt = X + normalize(X - camPos) * h * F_dom (world space; static reflected world).
+// Returns (-1, -1) behind the previous camera.
+fn virtualPrevUV(world: vec3f, hDist: f32, fdom: f32) -> vec2f {
+  let wv = world + normalize(world - F.camPos) * (hDist * fdom);
+  let clip = RF.prevProj * (F.prevView * vec4f(wv, 1.0));
+  if (!(clip.w > 1e-6)) { return vec2f(-1.0); }
+  let ndc = clip.xy / clip.w;
+  return vec2f(0.5 + 0.5 * ndc.x, 0.5 - 0.5 * ndc.y);
+}
+fn onScreen(uv: vec2f) -> bool { return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)); }
+fn viewNormal(n: vec3f) -> vec3f { return normalize((F.view * vec4f(n, 0.0)).xyz); }
+// Orthonormal basis (Duff et al. 2017).
+fn onbT(n: vec3f) -> vec3f {
+  let s = select(-1.0, 1.0, n.z >= 0.0);
+  let a = -1.0 / (s + n.z);
+  return vec3f(1.0 + s * n.x * n.x * a, s * n.x * n.y * a, -s * n.x);
+}
+fn onbB(n: vec3f) -> vec3f {
+  let s = select(-1.0, 1.0, n.z >= 0.0);
+  let a = -1.0 / (s + n.z);
+  return vec3f(n.x * n.y * a, s + n.y * n.y * a, -n.y);
+}
+// data texture (SPEC §5.12, D14): A_d, A_s as 10-bit fixed point A*16, m 8-bit unorm
+// (m*c_v, written by temporal and kept by history fix; no pass reads it since R7's virtual
+// candidate was removed), and the temporal pass's 2x2 history validity mask (4 bits,
+// reused by stabilization).
+fn unpackA(v: u32, slot: u32) -> f32 { return f32((v >> (10u * slot)) & 1023u) / 16.0; }
+fn unpackM(v: u32) -> f32 { return f32((v >> 20u) & 255u) / 255.0; }
+fn packData(ad: f32, as_: f32, m: f32, mask: u32) -> u32 {
+  let a = u32(round(clamp(ad, 0.0, 63.9375) * 16.0));
+  let b = u32(round(clamp(as_, 0.0, 63.9375) * 16.0));
+  let c = u32(round(clamp(m, 0.0, 1.0) * 255.0));
+  return a | (b << 10u) | (c << 20u) | ((mask & 15u) << 28u);
+}
+
+// Plane distance of a tap (pixel q, depth z) from the centre's plane {X, n}, relative
+// to the view distance: dot(n, X_q) is linear in q for a fixed depth, so the per-tap
+// cost is a few FMAs (perspective: X_q = z (lin(q), -1); orthographic: X_q = (lin(q), -z)).
+struct Plane { a: vec3f, b: vec3f, c0: f32, invLen: f32 }
+fn makePlaneU(X: vec3f, nv: vec3f, unp: vec4f) -> Plane {
+  var pl: Plane;
+  let kx = 2.0 * F.invDims.x;
+  let cx = F.invDims.x - 1.0;
+  let ky = -2.0 * F.invDims.y;
+  let cy = 1.0 - F.invDims.y;
+  let ex = nv.x * unp.x;
+  let ey = nv.y * unp.y;
+  if (isOrtho()) {
+    pl.a = vec3f(-nv.z, 0.0, 0.0);
+    pl.b = vec3f(ex * (cx - RF.unp2.x) + ey * (cy - RF.unp2.y), ex * kx, ey * ky);
+  } else {
+    pl.a = vec3f(ex * (cx + unp.z) + ey * (cy + unp.w) - nv.z, ex * kx, ey * ky);
+    pl.b = vec3f(0.0);
+  }
+  pl.c0 = dot(nv, X);
+  pl.invLen = 1.0 / length(X);
+  return pl;
+}
+fn makePlane(X: vec3f, nv: vec3f) -> Plane { return makePlaneU(X, nv, RF.unp); }
+fn planeDist(pl: Plane, q: vec2i, z: f32) -> f32 {
+  let qf = vec2f(q);
+  return abs(z * (pl.a.x + pl.a.y * qf.x + pl.a.z * qf.y) + pl.b.x + pl.b.y * qf.x + pl.b.z * qf.y - pl.c0) * pl.invLen;
+}
+
+// ---- spatial kernel (SPEC §5.9)
+struct Kern {
+  jx: vec2f, jy: vec2f,   // screen-space (pixel) images of the kernel axes T*R, B*R at the centre
+  pl: Plane,
+  invGeoTol: f32, invOneMinusCos: f32, invHitTol: f32, invRoughTol: f32,
+  hh: f32, rough: f32,
+}
+// R-3: 8 taps in 4 antipodal pairs (golden-angle spiral, radii sqrt((i + 0.5)/4)).
+const DISK = array<vec2f, 8>(
+  vec2f(0.3536, 0.0), vec2f(-0.4515, 0.4137), vec2f(0.0691, -0.7875), vec2f(0.5691, 0.7423),
+  vec2f(-0.3536, 0.0), vec2f(0.4515, -0.4137), vec2f(-0.0691, 0.7875), vec2f(-0.5691, -0.7423));
+// D3b: animated 4x4 Bayer rotation (blur only).
+const BAYER4 = array<f32, 16>(0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+fn blurRotation(p: vec2i) -> mat2x2f {
+  let phi = 6.2831853 * fract(BAYER4[(p.y & 3) * 4 + (p.x & 3)] / 16.0 + RF.rot);
+  let c = cos(phi);
+  let s = sin(phi);
+  return mat2x2f(c, s, -s, c);
+}
+// Pixel a kernel offset o (unit disk) lands in; x = -1 when rejected (off-screen,
+// centre pixel). Affine: the projected kernel axes at the centre (our approximation
+// of projecting each world-space tap, SPEC R-4).
+fn tapPixel(p: vec2i, k: Kern, o: vec2f) -> vec2i {
+  let q = vec2i(floor(vec2f(p) + 0.5 + k.jx * o.x + k.jy * o.y));
+  if (all(q == p) || !inside(q)) { return vec2i(-1); }
+  return q;
+}
+// Geometry (plane distance relative to view distance) x normal (lobe angle) weights.
+fn tapGeoW(k: Kern, n: vec3f, gq: Geo, q: vec2i) -> f32 {
+  let xg = planeDist(k.pl, q, gq.z) * k.invGeoTol;
+  // angle ratio theta/theta0 in cosine space: sqrt((1 - cos)/(1 - cos0)) (no acos per tap)
+  let xn = sqrt(max(0.0, 1.0 - dot(n, gq.n)) * k.invOneMinusCos);
+  return Wt(xg) * Wt(xn);
+}
+`;
+
+/** Per-signal helpers: hit-distance curve, kernel construction, radius factors. */
+function signalWgsl(kind: RecurrentKind, i: number): string {
+  const P = `P${i}`;
+  const spec = isSpecKind(kind);
+  return /* wgsl */ `
+// F-3: ĥ = h / (h + a + b d); miss (0 or non-finite) -> 1.
+fn hNorm${i}(h: f32, d: f32) -> f32 {
+  if (!(h > 0.0) || h > 1e30) { return 1.0; }
+  return h / (h + ${P}.hitA + ${P}.hitB * d);
+}
+fn hDenorm${i}(x: f32, d: f32) -> f32 {
+  let c = clamp(x, 0.0, 0.999);
+  return (${P}.hitA + ${P}.hitB * d) * c / (1.0 - c);
+}
+fn alpha${i}(g: Geo) -> f32 { return ${spec ? 'g.rough * g.rough' : '1.0'}; }
+// R-5 factors: f_r (radius vs roughness) and c_h (hit-distance clamp scale).
+fn radiusRough${i}(g: Geo) -> f32 { return ${spec ? 'sqrt(clamp(alpha' + i + '(g) / 0.25, 0.0, 1.0))' : '1.0'}; }
+fn hitClamp${i}(g: Geo) -> f32 { return ${spec ? `tan(thetaL(alpha${i}(g), ${P}.lobeFraction))` : '1.0'}; }
+fn kern${i}(g: Geo, X: vec3f, nv: vec3f, R: f32, An: f32, hh: f32) -> Kern {
+  var k: Kern;
+  let alpha = alpha${i}(g);
+  var T: vec3f;
+  var B: vec3f;
+  ${spec ? /* wgsl */ `
+  // R-4: kernel plane around a = reflect(-D, n), D the dominant direction (R-2);
+  // T shrunk perpendicular to the plane of incidence at mid roughness / grazing view.
+  let v = -normalize(X);
+  let NoV = max(dot(nv, v), 1e-4);
+  let fd = (1.0 - alpha) * (sqrt(1.0 - alpha) + alpha);
+  let D = normalize(mix(nv, reflect(-v, nv), fd));
+  let a = reflect(-D, nv);
+  if (abs(dot(a, nv)) > 0.999) { T = onbT(nv); B = onbB(nv); }
+  else { T = normalize(cross(nv, a)); B = cross(a, T); }
+  T *= 1.0 - ${P}.elong * (1.0 - NoV) * 4.0 * g.rough * (1.0 - g.rough);` : /* wgsl */ `
+  T = onbT(nv);   // diffuse: tangent plane (a = n)
+  B = onbB(nv);`}
+  // screen-space Jacobian of the kernel plane at the centre, offsets capped at 2 R_max
+  let c = RF.proj * vec4f(X, 1.0);
+  let t = RF.proj * vec4f(T * R, 0.0);
+  let b = RF.proj * vec4f(B * R, 0.0);
+  let sc = vec2f(0.5, -0.5) * F.dims / (c.w * c.w);
+  k.jx = (t.xy * c.w - c.xy * t.w) * sc;
+  k.jy = (b.xy * c.w - c.xy * b.w) * sc;
+  let mx = max(length(k.jx), length(k.jy));
+  let maxPx = 2.0 * max(${P}.maxRadius, ${P}.preRadius);
+  if (mx > maxPx) { k.jx *= maxPx / mx; k.jy *= maxPx / mx; }
+  k.pl = makePlane(X, nv);
+  k.invGeoTol = 1.0 / mix(${P}.geoTolLo, ${P}.geoTolHi, An);
+  let thN = min(thetaL(alpha, ${P}.lobeFraction) * mix(1.0, ${P}.normalTight, An) + 0.0174533, 1.5);
+  k.invOneMinusCos = 1.0 / max(1.0 - cos(thN), 1e-6);
+  k.invHitTol = 1.0 / (mix(${P}.hitTolLo, ${P}.hitTolHi, ${spec ? 'g.rough' : '1.0'}) * mix(1.0, ${P}.hitTolTight, An));
+  k.invRoughTol = 1.0 / (0.05 + 0.25 * g.rough);
+  k.hh = hh;
+  k.rough = g.rough;
+  return k;
+}
+`;
+}
+
+/** One unrolled kernel tap for signal i. */
+function tapWgsl(kind: RecurrentKind, i: number, t: number, o: { rotate: boolean; hitWeight: boolean; load: (q: string) => string; rgbOnly: boolean }) {
+  const off = o.rotate ? `rot * DISK[${t}]` : `DISK[${t}]`;
+  const acc = o.rgbOnly ? '.rgb' : '';
+  // Branchless: both loads issue together (latency-bound otherwise); rejected taps get w = 0.
+  return /* wgsl */ `
+    {
+      let q0 = tapPixel(p, k${i}, ${off});
+      let q = select(p, q0, q0.x >= 0);
+      let gq = geoTap(geoCur, q);
+      let s = ${o.load('q')};
+      var w = select(0.0, tapGeoW(k${i}, g.n, gq, q), q0.x >= 0 && gq.z > 0.0);${o.hitWeight ? `
+      w *= Wt(abs(${hOf(kind, 's')} - k${i}.hh) * k${i}.invHitTol);` : ''}${isSpecKind(kind) ? `
+      w *= Wt(abs(gq.rough - k${i}.rough) * k${i}.invRoughTol);` : ''}
+      sum${i} += s${acc} * w;
+      sw${i} += w;
+    }`;
+}
+
+const head = (b: Bindings, extra = '') => /* wgsl */ `
+${FRAME_WGSL}
+${RSTRUCTS}
+${b.wgsl}
+${extra}
+${RCOMMON}
+`;
+
+/**
+ * Workgroup-shared 10x10 tile (8x8 workgroup + 1-pixel halo) for 3x3 neighbourhoods:
+ * each texel is loaded (and decoded) once per workgroup instead of once per
+ * neighbouring thread. loadTile() must be called from uniform control flow.
+ */
+interface TileField { name: string; type: string; load: (q: string) => string }
+function tileWgsl(fields: TileField[]): string {
+  return /* wgsl */ `
+${fields.map((f) => `var<workgroup> tile_${f.name}: array<${f.type}, 100>;`).join('\n')}
+fn loadTile(lid: vec3u, wid: vec3u) {
+  let origin = vec2i(wid.xy) * 8 - 1;
+  for (var k = lid.y * 8u + lid.x; k < 100u; k += 64u) {
+    let q = clampPix(origin + vec2i(i32(k % 10u), i32(k / 10u)));
+    ${fields.map((f) => `tile_${f.name}[k] = ${f.load('q')};`).join('\n    ')}
+  }
+  workgroupBarrier();
+}
+fn tidx(lid: vec3u, dx: i32, dy: i32) -> u32 { return u32(i32(lid.y) + 1 + dy) * 10u + u32(i32(lid.x) + 1 + dx); }
+`;
+}
+const TILE_MAIN = '@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u, @builtin(workgroup_id) wid: vec3u';
+
+function base(kinds: RecurrentKind[]) {
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  b.uniform('RF', 'RFrame');
+  kinds.forEach((_, i) => b.uniform(`P${i}`, 'RParams'));
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  return b;
+}
+function addReproj(b: Bindings) {
+  b.add('geoPrev', 'texture_2d<u32>', 'i');
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('motionZTex', 'texture_2d<f32>', 'f');
+}
+
+// ---- R1 pre-blur (SPEC §5.4, D1) ------------------------------------------------
+
+export function preBlurPass(kinds: RecurrentKind[], taps: number[] = kinds.map(() => 8)): PassDef {
+  const b = base(kinds);
+  addReproj(b);
+  kinds.forEach((_, i) => {
+    b.add(`input${i}`, 'texture_2d<f32>', 'f');
+    b.add(`hit${i}`, 'texture_2d<f32>', 'f');
+    b.add(`histPrev${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outPre${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+  });
+  const I = kinds.map((_, i) => i);
+  const code = /* wgsl */ `
+${head(b)}
+${kinds.map((k, i) => signalWgsl(k, i)).join('\n')}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoTap(geoCur, p);
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outPre${i}, p, vec4f(0.0));`).join(' ')}
+    return;
+  }
+  let uv = uvOf(p);
+  let X = viewPosAt(uv, g.z);
+  let nv = viewNormal(g.n);
+  let ps = pixSize(g.z);
+  // D1b: last frame's denoised hit distance at the nearest reprojected texel, if
+  // that texel's depth matches (raw hitT is too noisy to size kernels). A 5 %
+  // relative-depth check instead of the plane test (only sizes a kernel; keeps the
+  // loads parallel).
+  let mv = textureLoad(motionTex, p, 0).xy;
+  let prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+  let gq0 = vec2i(floor(prevUV * F.dims));
+  let guideQ = clampPix(gq0);
+  let zPrevTap = bitcast<f32>(textureLoad(geoPrev, guideQ, 0).x);
+  var zPrev: f32;
+  if (hasFlag(FRAME_HAS_MOTIONZ)) { zPrev = g.z - textureLoad(motionZTex, p, 0).r; }
+  else { zPrev = -(F.prevView * (F.viewInv * vec4f(X, 1.0))).z; }
+  let guideOk = !hasFlag(FRAME_RESET) && all(gq0 == guideQ) && zPrevTap > 0.0 && abs(zPrevTap - zPrev) < 0.05 * zPrev;
+  ${I.map((i) => /* wgsl */ `
+  {
+    let c = sanitize(textureLoad(input${i}, p, 0).rgb, P${i}.maxRadiance);
+    var hh = 1.0;
+    if ((P${i}.flags & RP_HAS_HIT) != 0u) { hh = hNorm${i}(textureLoad(hit${i}, p, 0).r, g.z); }
+    var R = P${i}.preRadius * radiusRough${i}(g) * ps;
+    let hPrev${i} = textureLoad(histPrev${i}, guideQ, 0).a;
+    if (guideOk) { R = min(R, hitClamp${i}(g) * hDenorm${i}(hPrev${i}, g.z)); }
+    var sum${i} = c;
+    var sw${i} = 1.0;
+    if (R > 0.5 * ps) {   // smaller kernels land on the centre pixel
+      let k${i} = kern${i}(g, X, nv, R, 0.0, hh);
+      ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
+        rotate: false, hitWeight: false, rgbOnly: true,
+        load: (q) => `vec4f(sanitize(textureLoad(input${i}, ${q}, 0).rgb, P${i}.maxRadiance), 0.0)`,
+      })).join('')}
+    }
+    // ĥ passes through unfiltered (GTC20 s.60)
+    textureStore(outPre${i}, p, vec4f(sum${i} / sw${i}, hh));
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- R2 temporal accumulation (SPEC §5.5, C-6..C-10) ----------------------------
+
+
+// (luminance, ĥ) of a value: the moments the anti-lag detectors and the fast history use.
+const mvec = (k: RecurrentKind, x: string) => (isOccKind(k) ? `vec2f(0.0, ${x})` : `vec2f(luma(${x}.rgb), ${x}.a)`);
+
+// Current-frame anti-lag detector (our addition to C-10, measured: the fast history
+// alone reacts at its own EMA speed): 3x3 mean of this frame's pre-blurred luminance
+// and ĥ vs the reprojected history Hd, in units of the mean's standard error.
+// Reduces the variable `a` in place (SPEC C-10 reduction form).
+// Occlusion kinds (ao / so) have no luminance: the ĥ detector alone (SPEC O-2).
+const detector = (i: number, a: string, Hd: string, floor = `P${i}.aFast`, meanW = '', kind: RecurrentKind = 'diffuse') => /* wgsl */ `
+      if ((P${i}.flags & RP_NO_ANTILAG) == 0u && P${i}.lagCurSigma > 0.0 && nn >= 4.0) {
+        let m3 = m1_${i} / nn;
+        let se = sqrt(max(m2_${i} / nn - m3 * m3, vec2f(0.0)) / nn);
+        let mu = ${meanW ? `mix(${mvec(kind, `pc${i}`)}, m3, ${meanW})` : 'm3'};${isOccKind(kind) ? `
+        let rI = 0.0;` : `
+        let lh = luma(${Hd}.rgb);
+        let rI = abs(mu.x - lh) / (P${i}.lagCurSigma * se.x + 0.02 * max(lh, mu.x) + 1e-4);`}
+        let rH = abs(mu.y - ${hOf(kind, Hd)}) / (P${i}.lagCurSigma * se.y + P${i}.lagCurHitTol);
+        ${a} = mix(min(${a}, ${floor}), ${a}, clamp(2.0 - max(rI, rH), 0.0, 1.0));
+      }`;
+
+// R2 per-signal body, diffuse (SPEC §5.5).
+const temporalDiffuse = (i: number, sl: number, kind: RecurrentKind = 'diffuse') => /* wgsl */ `
+  {
+    let pre = pc${i};
+    var a = 0.0;
+    if (hasHist) {
+      a = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // C-9: A = frames in the output - 1
+      ${detector(i, 'a', `H${i}`, `P${i}.aFast`, '', kind)}
+    }
+    let acc = mix(H${i}, pre, 1.0 / (1.0 + a));     // RTG2 Eq. 49.1, rgb and ĥ
+    textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
+    A[${sl}] = a;
+    // C-10 fast history: luminance and ĥ of the pre-blurred input, short cap.
+    let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
+    let fPrev = vec2f(Fh[${2 * sl}], Fh[${2 * sl + 1}]);
+    let fNew = mix(fPrev, ${mvec(kind, 'pre')}, fw);
+    fastOut[${2 * sl}] = fNew.x;
+    fastOut[${2 * sl + 1}] = fNew.y;
+  }`;
+
+// R2 per-signal body, specular (SPEC §5.6, R-7..R-12): surface and virtual history
+// candidates, virtual confidence and clamp, blended in alpha space by the amount of
+// virtual motion m = F_dom(alpha).
+/**
+ * Temporal-pass variant (review target 6, results/T6-boundaries.md), compiled in only when set:
+ * `normalCos` (option normalThreshold): history taps whose normal is within acos(normalCos) of this pixel's
+ * (SVGF sec. 4.1's normal test; default: backfacing taps only); `virtualHitTest` (option virtualHitTest): each virtual
+ * footprint tap's stored fast ĥ must agree with this frame's pre-blurred ĥ within a·(virtual ĥ tolerance) + b·(3x3
+ * spread of this frame's ĥ), else the tap is dropped (a reflected-world disocclusion, our design after the SVGF
+ * option reflectionHitTest).
+ */
+export interface RecurrentTemporalVariant { normalCos?: number; normalRelative?: boolean; virtualHitTest?: { a: number; b: number }; dropoutGuard?: DropoutGuard }
+
+/**
+ * Option dropoutGuard (our design): the specular filter's low-roughness rules assume clean mirror input (the detector
+ * and the history-fix window centre on the pixel and the detector floor goes to 0 as roughness -> 0). Screen-space
+ * tracing breaks that where a pixel keeps flipping between an SSR hit and a miss (a probe / environment fill, which
+ * the app passes as hit distance 0, ĥ = 1) from frame to frame.
+ * v2 trigger (v1, the 3x3 ĥ spread, also fired on clean mirrors with depth variation: results/DROPOUT-GUARD.md):
+ * - persistence: a per-pixel EMA phi of hit/miss state changes (rate 1/8), kept with the last state in data's m bits
+ *   (written but read by no other pass), nearest-tap reprojected. A one-off change (a moving edge, a disocclusion)
+ *   adds one event; dropout keeps adding them.
+ * - mix: the 3x3 (geometry-valid taps) holds both hits and misses.
+ * w = smoothstep(lo, hi, phi) x mix raises the mirror factor f_r to at least w in the detector (floor and centring)
+ * and the roughness in the virtual hit test's and the virtual confidence's ĥ tolerances to at least w; the history
+ * fix window uses smoothstep(lo, hi, phi). Never the kernels' weights or radii. On a perfect mirror the surface
+ * history is capped at 0 (lobe half-angle 0), so the virtual footprint is the only history, and the hit test dropping
+ * it under dropout is what costs the most. w = 0 leaves the arithmetic unchanged.
+ */
+/** parts (ablation; default 15 = all): 1 detector (f_r), 2 virtual hit test, 4 virtual confidence, 8 history fix */
+export interface DropoutGuard { lo: number; hi: number; parts?: number }
+const dgOn = (dg: DropoutGuard | undefined, bit: number) => !!dg && ((dg.parts ?? 15) & bit) !== 0;
+const dropW = (dg: DropoutGuard, phi: string) => `smoothstep(${dg.lo.toFixed(6)}, ${dg.hi.toFixed(6)}, ${phi})`;
+/** ĥ of a miss is exactly 1 (hNorm); any finite hit is below this */
+const DG_MISS = '0.9999';
+
+const temporalSpecular = (i: number, sl: number, kind: RecurrentKind = 'specular', vht?: { a: number; b: number }, dg?: DropoutGuard) => /* wgsl */ `
+  {
+    let pre = pc${i};
+    var a = 0.0;
+    var acc = pre;
+    var fPrev = vec2f(Fh[${2 * sl}], Fh[${2 * sl + 1}]);
+    if (hasHist) {
+      let aS = min(Ahist[${sl}] + 1.0, P${i}.aCap);   // A_s after the +1 of C-9 (D12d)
+      let alpha = g.rough * g.rough;
+      let fdom = domFactor(alpha);${dg && kind === 'specular' ? `
+      // dropoutGuard: a pixel that keeps flipping hit / miss inside a hit / miss mix is SSR dropout, not a clean mirror (our design)
+      let dW${i} = ${dropW(dg, 'dgPhi')} * clamp(min(dgMiss, nn - dgMiss), 0.0, 1.0);` : ''}
+      var Hv = H${i};
+      var cv = 0.0;
+      var m = 0.0;
+      if ((P${i}.flags & RP_NO_VIRTUAL) == 0u) {
+        // R-9: this frame's fast hit distance (surface-reprojected fast history + this frame's ĥ)
+        let hF = mix(fPrev.y, ${hOf(kind, "pre")}, 1.0 / (1.0 + min(aS, P${i}.aFast)));
+        var hV = hDenorm${i}(hF, g.z);
+        // D12c: curved reflector, mirror equation 1/d_o + 1/d_i = 2 kappa (thin lens, RTG1 ch. 32 §32.4.3):
+        // the virtual image of a point at distance h lies at h / (1 + 2 kappa h) (convex: closer)
+        let kappa = curvSum / max(curvN, 1.0) * P${i}.virtCurv;
+        hV = hV / max(1.0 + 2.0 * kappa * hV, 0.05);
+        let uvV = virtualPrevUV(r.world, hV, fdom);
+        if (onScreen(uvV)) {${vht ? `
+          // virtualHitTest (T6): this frame's pre-blurred ĥ and its 3x3 spread; taps whose stored fast ĥ disagrees drop out
+          let hMu${i} = m1_${i}.y / nn;
+          let hTol${i} = ${vht.a.toFixed(6)} * (P${i}.virtHitLo + P${i}.virtHitHi * ${dgOn(dg, 2) && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}) + ${vht.b.toFixed(6)} * sqrt(max(m2_${i}.y / nn - hMu${i} * hMu${i}, 0.0));
+          let v = virt${i}(g, r.expPrev, uvV, ${hOf(kind, 'pre')}, hTol${i});` : `
+          let v = virt${i}(g, r.expPrev, uvV);`}
+          if (v.vg > 0.0) {
+            m = fdom;   // R-12: amount of virtual motion
+            Hv = v.H;
+            // virtual-reprojected fast luminance; fast ĥ stays surface-reprojected (it sizes R-9)
+            fPrev.x = mix(fPrev.x, v.Fv[${2 * sl}], m);
+            // R-10 confidence: footprint validity x normal x roughness x fast-ĥ agreement
+            let nb = select(g.n, normalize(v.n), dot(v.n, v.n) > 1e-8);
+            let angN = acos(clamp(dot(g.n, nb), -1.0, 1.0));
+            let thL = thetaL(alpha, P${i}.lobeFraction);
+            cv = v.vg * Wt(angN / (P${i}.virtAngle * thL + 0.0174533))
+               * Wt(abs(v.r - g.rough) / (0.05 + 0.25 * g.rough))
+               * Wt(abs(v.Fv[${2 * sl + 1}] - hF) / (P${i}.virtHitLo + P${i}.virtHitHi * ${dgOn(dg, 4) && kind === 'specular' ? `max(g.rough, dW${i})` : 'g.rough'}));${isOccKind(kind) ? `
+            // occlusion: ĥ is the signal and history fix clamps it to the fast ĥ, so the fast ĥ
+            // follows the virtual reprojection as far as it is trusted (hF above is already sized)
+            fPrev.y = mix(fPrev.y, v.Fv[${2 * sl + 1}], m * cv);` : ''}
+            // R-11: clamp to this frame's 3x3 mean +- gamma sigma, the harder the lower the confidence
+            ${isOccKind(kind) ? `let mu = m1_${i}.y / nn;
+            let sd = sqrt(max(m2_${i}.y / nn - mu * mu, 0.0));` : `let mu = vec4f(c1_${i}, m1_${i}.y) / nn;
+            let sd = sqrt(max(vec4f(c2_${i}, m2_${i}.y) / nn - mu * mu, vec4f(0.0)));`}
+            // our variant: always clamped, window widening with confidence (mirror input is clean, so a tight clamp is free there)
+            let gv = P${i}.virtGamma * (1.0 + P${i}.virtWiden * cv);
+            Hv = mix(clamp(Hv, mu - gv * sd, mu + gv * sd), Hv, cv * step(P${i}.virtWiden, 0.0));
+          }
+        }
+      }
+      var aD = aS;
+      let Hb = mix(H${i}, Hv, m);
+      // low-roughness input is nearly noise-free: on a mismatch drop history further (our addition)
+      // and compare against the pixel's own value rather than the 3x3 mean as roughness -> 0
+      // (a clean mirror's 3x3 mean is a blur of its reflected edges; our addition)
+      ${dgOn(dg, 1) && kind === 'specular' ? `let fr = max(sqrt(clamp(alpha / 0.25, 0.0, 1.0)), dW${i});` : `let fr = sqrt(clamp(alpha / 0.25, 0.0, 1.0));`}
+      ${detector(i, 'aD', 'Hb', `P${i}.aFast * mix(1.0, fr, P${i}.detRough)`, `mix(1.0, fr, P${i}.specCentre)`, kind)}
+      // R-8 surface cap (parallax), R-12 blend in alpha space
+      let aSurf = min(aD, specCap${i}(g, r.world, r.expPrev));
+      let alphaSurf = 1.0 / (1.0 + aSurf);
+      let alphaVirt = mix(1.0 / (1.0 + min(aD, P${i}.aFast)), 1.0 / (1.0 + aD), cv);
+      acc = mix(mix(H${i}, pre, alphaSurf), mix(Hv, pre, alphaVirt), m);
+      a = 1.0 / mix(alphaSurf, alphaVirt, m) - 1.0;
+      ${dg && kind === 'specular' ? '' : 'mVirt = m * cv;   // m*c_v into data\'s m bits; no pass reads them (R7\'s virtual candidate was removed, SPEC v0.2 5.11-5.12)'}
+    }
+    textureStore(outAcc${i}, p, ${ST(kind, 'acc')});
+    A[${sl}] = a;
+    let fw = 1.0 / (1.0 + min(a, P${i}.aFast));
+    let fNew = mix(fPrev, ${mvec(kind, 'pre')}, fw);
+    fastOut[${2 * sl}] = fNew.x;
+    fastOut[${2 * sl + 1}] = fNew.y;
+  }`;
+
+
+// SPEC C-6/C-7 for the recurrent filter (our cheaper variant of the shared core's
+// reproject()): previous view-space positions from the linear unprojection with the
+// previous projection, and the plane test against the plane {Xp, np} of this pixel
+// (current normal only; SPEC averages it pairwise with each tap's normal), its
+// distance linear in the tap pixel (as the kernels). Backfacing taps rejected (or, with the T6 option
+// normalThreshold, taps beyond that normal angle).
+const reprojectRWgsl = (normalCos?: number, relative = false) => /* wgsl */ `
+fn viewPosPrevAt(uv: vec2f, d: f32) -> vec3f {
+  let ndc = ndcOf(uv);
+  if (isOrtho()) { return vec3f((ndc.x - RF.unp2.x) * RF.prevUnp.x, (ndc.y - RF.unp2.y) * RF.prevUnp.y, -d); }
+  return vec3f(d * (ndc.x + RF.prevUnp.z) * RF.prevUnp.x, d * (ndc.y + RF.prevUnp.w) * RF.prevUnp.y, -d);
+}
+fn reprojectR(p: vec2i, g: Geo, tol: f32) -> Reproj {
+  var r: Reproj;
+  let uv = uvOf(p);
+  let mv = textureLoad(motionTex, p, 0).xy;   // NDC delta, current - previous, +y up
+  r.prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+  r.world = (F.viewInv * vec4f(viewPosAt(uv, g.z), 1.0)).xyz;
+  var dPrev: f32;
+  if (hasFlag(FRAME_HAS_MOTIONZ)) { dPrev = g.z - textureLoad(motionZTex, p, 0).r; }
+  else { dPrev = -(F.prevView * vec4f(r.world, 1.0)).z; }
+  r.expPrev = viewPosPrevAt(r.prevUV, dPrev);
+  let pp = r.prevUV * F.dims - 0.5;
+  r.base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  r.bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  let pl = makePlaneU(r.expPrev, (F.prevView * vec4f(g.n, 0.0)).xyz, RF.prevUnp);
+  ${[0, 1, 2, 3].map((k) => `{
+    let q0 = r.base + TAP_OFFS[${k}];
+    let q = clampPix(q0);
+    let gq = geoTap(geoPrev, q);
+    r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > ${normalCos ? normalCos.toFixed(6) : '0.0'} && planeDist(pl, q, gq.z) <= tol);
+  }`).join('\n  ')}${relative ? `
+  // normalTest 'relative' (T6): where a tap failed, retest with the threshold relaxed to this pixel's neighbourhood
+  // (a relaxed threshold keeps every tap the full one passed: equal to testing with it everywhere)
+  if (any(r.valid < vec4f(0.5))) {
+    let nTolR = max(relNormalTol(p, g, ${(normalCos ?? 0).toFixed(6)}), 0.0);
+    ${[0, 1, 2, 3].map((k) => `{
+      let q0 = r.base + TAP_OFFS[${k}];
+      let q = clampPix(q0);
+      let gq = geoTap(geoPrev, q);
+      r.valid[${k}] = select(0.0, 1.0, all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > nTolR && planeDist(pl, q, gq.z) <= tol);
+    }`).join('\n    ')}
+  }` : ''}
+  r.w = r.bil * r.valid;
+  r.sumW = r.w.x + r.w.y + r.w.z + r.w.w;
+  r.allValid = all(r.valid > vec4f(0.5));
+  return r;
+}
+`;
+
+// Occlusion histories are r32float, which core WebGPU cannot filter: the same Catmull-Rom
+// (RTG2 §49.7) as sampleCatmullRom, from 16 textureLoads of one channel (our code).
+const CATMULL_ROM_LOAD = /* wgsl */ `
+fn catmullRomLoad1(tex: texture_2d<f32>, uv: vec2f) -> f32 {
+  let pos = uv * F.dims - 0.5;
+  let t1 = floor(pos);
+  let f = pos - t1;
+  let w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  let w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  let w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  let w3 = f * f * (-0.5 + 0.5 * f);
+  let b = vec2i(t1) - 1;
+  ${[0, 1, 2, 3].map((y) => `let r${y} = ${[0, 1, 2, 3].map((x) => `textureLoad(tex, clampPix(b + vec2i(${x}, ${y})), 0).r * w${x}.x`).join(' + ')};`).join('\n  ')}
+  return r0 * w0.y + r1 * w1.y + r2 * w2.y + r3 * w3.y;
+}
+`;
+
+export function temporalPass(kinds: RecurrentKind[], tv: RecurrentTemporalVariant = {}): PassDef {
+  const b = base(kinds);
+  // dropoutGuard: the radiance specular signal whose hit / miss state data's m bits carry (-1: compiled out)
+  const dgi = tv.dropoutGuard ? kinds.indexOf('specular') : -1;
+  addReproj(b);
+  b.add('smp', 'sampler', 's');
+  b.add('fastPrev', 'texture_2d<f32>', 'f');
+  b.add('dataPrev', 'texture_2d<u32>', 'i');
+  b.add('outFast', 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+  b.add('outData', 'texture_storage_2d<r32uint, write>', 'r32uint');
+  // occlusion kinds: `pre` is the raw hit distance (no pre-blur pass; normalized on load),
+  // histories are r32float (unfilterable: Catmull-Rom from textureLoad)
+  kinds.forEach((k, i) => {
+    b.add(`pre${i}`, 'texture_2d<f32>', 'f');
+    b.add(`histPrev${i}`, 'texture_2d<f32>', isOccKind(k) ? 'f' : 'F');
+    b.add(`outAcc${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+  });
+  const I = kinds.map((_, i) => i);
+  const slot = (i: number) => slotOf(kinds[i]);
+  const hasSpec = kinds.some(isSpecKind);
+  const hasOcc = kinds.some(isOccKind);
+  const nb: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
+  const specCap = (i: number, V = isOccKind(kinds[i]) ? `Virt${i}` : 'Virt') => /* wgsl */ `
+// Specular surface-motion cap (SPEC R-7/R-8, our design): the reflection slides by
+// about the parallax angle per frame; history stays sharp while the accumulated
+// slide stays inside the lobe half-angle (applies to the surface candidate only).
+fn specCap${i}(g: Geo, world: vec3f, expPrev: vec3f) -> f32 {
+  let vCur = normalize(world - F.camPos);
+  let prevWorld = (F.prevViewInv * vec4f(expPrev, 1.0)).xyz;
+  let vPrev = normalize(prevWorld - F.prevCamPos);
+  let c = clamp(dot(vCur, vPrev), -1.0, 1.0);
+  let parallax = sqrt(max(0.0, 1.0 - c * c)) / max(c, 1e-4);
+  let NoV = max(dot(g.n, -vCur), 1e-4);
+  let aSpec = P${i}.specScale * thetaL(g.rough * g.rough, P${i}.lobeFraction) * sqrt(NoV) / max(parallax, 1e-4);
+  return min(aSpec, P${i}.aCap);
+}
+// R-10 virtual history: custom-weighted bilinear at the virtual uv, tap validity
+// against the current surface plane {Xp, np} (a flat reflector's previous texels
+// lie on it); bilinear only (Catmull-Rom here: +0.04 dB for 0.13 ms). Also returns
+// the valid-weighted previous normal, roughness and fast history there.
+struct ${V} { H: ${VT(kinds[i])}, Fv: vec4f, n: vec3f, r: f32, vg: f32 }
+fn virt${i}(g: Geo, expPrev: vec3f, uv: vec2f${tv.virtualHitTest ? ', hRef: f32, hTol: f32' : ''}) -> ${V} {
+  var o: ${V};
+  let pp = uv * F.dims - 0.5;
+  let base = vec2i(floor(pp));
+  let f = pp - floor(pp);
+  let bil = vec4f((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  // plane {Xp, np} in previous view space; distance linear in the tap pixel (as the kernels)
+  let pl = makePlaneU(expPrev, (F.prevView * vec4f(g.n, 0.0)).xyz, RF.prevUnp);
+  var sw = 0.0;
+  ${[0, 1, 2, 3].map((k) => `{
+    let q0 = base + TAP_OFFS[${k}];
+    let q = clampPix(q0);
+    let gq = geoTap(geoPrev, q);
+    let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
+    let fq = textureLoad(fastPrev, q, 0);
+    let ok = all(q0 == q) && gq.z > 0.0 && dot(g.n, gq.n) > 0.0 && planeDist(pl, q, gq.z) <= P0.planeTol${tv.virtualHitTest ? ` && abs(fq[${2 * slotOf(kinds[i])} + 1] - hRef) <= hTol` : ''};
+    let w = select(0.0, max(bil[${k}], 1e-3), ok);
+    o.vg += select(0.0, bil[${k}], ok);
+    o.H += h * w;
+    o.Fv += fq * w;
+    o.n += gq.n * w;
+    o.r += gq.rough * w;
+    sw += w;
+  }`).join('\n  ')}
+  if (sw > 0.0) { o.H /= sw; o.Fv /= sw; o.n /= sw; o.r /= sw; }
+  return o;
+}`;
+  const code = /* wgsl */ `
+${head(b, REPROJECT_WGSL)}
+${tv.normalRelative ? REL_NORMAL_WGSL : ''}${reprojectRWgsl(tv.normalCos, tv.normalRelative)}${hasOcc ? CATMULL_ROM_LOAD : ''}
+${kinds.map((k, i) => (isSpecKind(k) || isOccKind(k) ? signalWgsl(k, i) + (isSpecKind(k) ? specCap(i) : '') : '')).join('\n')}
+${tileWgsl([
+  { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
+  ...(hasSpec ? [{ name: 'nv', type: 'vec3f', load: (q: string) => `viewNormal(geoTap(geoCur, ${q}).n)` }] : []),
+  // occlusion: F-3 normalization of the raw hit distance on load (tile_z[k] is this texel's depth)
+  ...I.map((i) => ({ name: `pre${i}`, type: VT(kinds[i]), load: (q: string) => (isOccKind(kinds[i])
+    ? `hNorm${i}(textureLoad(pre${i}, ${q}, 0).r, tile_z[k])` : `textureLoad(pre${i}, ${q}, 0)`) })),
+])}
+
+@compute @workgroup_size(8, 8)
+fn main(${TILE_MAIN}) {
+  loadTile(lid, wid);
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoTap(geoCur, p);
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outAcc${i}, p, vec4f(0.0));`).join(' ')}
+    textureStore(outFast, p, vec4f(0.0));
+    textureStore(outData, p, vec4u(0u));
+    return;
+  }
+  var hasHist = false;
+  var r: Reproj;
+  if (!hasFlag(FRAME_RESET)) {
+    r = reprojectR(p, g, P0.planeTol);   // C-7: plane distance + backface only (no SVGF normal test)
+    hasHist = r.sumW > 0.0 || any(r.valid > vec4f(0.5));
+  }
+  // C-8: custom-weighted bilinear; valid taps with tiny bilinear weight still count.
+  var Ahist = vec2f(0.0);
+  var Fh = vec4f(0.0);${dgi >= 0 ? `
+  var dgBest = 0.0;
+  var dgPrev = 0u;` : ''}
+  ${I.map((i) => `var H${i} = ${ZERO(kinds[i])};\n  var lo${i} = ${BIG(kinds[i], '1e30')};\n  var hi${i} = ${BIG(kinds[i], '-1e30')};`).join('\n  ')}
+  if (hasHist) {
+    let wts = max(r.bil, vec4f(1e-3)) * r.valid;
+    let sw = wts.x + wts.y + wts.z + wts.w;
+    // branchless (all loads in flight; LESSONS): invalid taps get weight 0, clamped coordinates
+    ${[0, 1, 2, 3].map((k) => `{
+      let wk = wts[${k}];
+      let ok = wk > 0.0;
+      let q = clampPix(r.base + TAP_OFFS[${k}]);
+      let dv = textureLoad(dataPrev, q, 0).r;
+      Ahist += vec2f(unpackA(dv, 0u), unpackA(dv, 1u)) * wk;${dgi >= 0 ? `
+      dgPrev = select(dgPrev, (dv >> 20u) & 255u, wk > dgBest);   // dropoutGuard: the nearest valid tap's state
+      dgBest = max(dgBest, wk);` : ''}
+      Fh += textureLoad(fastPrev, q, 0) * wk;
+      ${I.map((i) => `{
+        let h = ${LD(kinds[i], `histPrev${i}`, 'q')};
+        H${i} += h * wk;
+        lo${i} = select(lo${i}, min(lo${i}, h), ok);
+        hi${i} = select(hi${i}, max(hi${i}, h), ok);
+      }`).join('\n      ')}
+    }`).join('\n    ')}
+    Ahist /= sw;
+    Fh /= sw;
+    ${I.map((i) => `H${i} /= sw;`).join(' ')}
+    if (r.allValid) {   // RTG2 §49.7: Catmull-Rom when the footprint is valid, clamped (no ringing)
+      ${I.map((i) => `H${i} = clamp(${isOccKind(kinds[i]) ? `catmullRomLoad1(histPrev${i}, r.prevUV)` : `sampleCatmullRom(histPrev${i}, smp, r.prevUV)`}, lo${i}, hi${i});`).join('\n      ')}
+    }
+  }
+  var A = vec2f(0.0);
+  var fastOut = vec4f(0.0);
+  var mVirt = 0.0;   // amount of virtual motion (specular), packed into data; currently unread
+  // Current-frame anti-lag detector (our addition to C-10, measured: the fast
+  // history alone reacts at its own EMA speed): 3x3 mean of this frame's
+  // pre-blurred luminance and ĥ vs the reprojected history, in units of the
+  // mean's standard error. Geometry-valid neighbours only.
+  let X = viewPosAt(uvOf(p), g.z);
+  let nv = viewNormal(g.n);
+  let pl = makePlane(X, nv);
+  ${I.map((i) => `let pc${i} = tile_pre${i}[tidx(lid, 0, 0)];
+  var m1_${i} = ${mvec(kinds[i], `pc${i}`)};
+  var m2_${i} = m1_${i} * m1_${i};${kinds[i] === 'specular' ? `
+  var c1_${i} = pc${i}.rgb;
+  var c2_${i} = pc${i}.rgb * pc${i}.rgb;` : ''}`).join('\n  ')}
+  var nn = 1.0;${dgi >= 0 ? `
+  var dgMiss = select(0.0, 1.0, pc${dgi}.a > ${DG_MISS});   // dropoutGuard: misses among the valid 3x3` : ''}
+  var curvSum = 0.0;
+  var curvN = 0.0;
+  if (hasHist) {
+    ${nb.map(([x, y]) => /* wgsl */ `
+    {
+      let qq = p + vec2i(${x}, ${y});
+      let q = clampPix(qq);
+      let ti = tidx(lid, ${x}, ${y});
+      let zq = tile_z[ti];
+      let ok = select(0.0, 1.0, inside(qq) && zq > 0.0 && planeDist(pl, q, zq) < P0.geoTolLo);
+      nn += ok;${dgi >= 0 ? `
+      dgMiss += select(0.0, ok, tile_pre${dgi}[ti].a > ${DG_MISS});` : ''}
+      ${I.map((i) => `{ let s = tile_pre${i}[ti]; let v = ${mvec(kinds[i], 's')} * ok; m1_${i} += v; m2_${i} += v * v;${kinds[i] === 'specular' ? ` let sc = s.rgb * ok; c1_${i} += sc; c2_${i} += sc * sc;` : ''} }`).join('\n      ')}${hasSpec && (x === 0 || y === 0) ? `
+      { // curvature along this axis neighbour: dot(n_q - n, dX) / |dX|^2 (positive = convex)
+        let dX = viewPosAt(uvOf(q), zq) - X;
+        curvSum += dot(tile_nv[ti] - nv, dX) / max(dot(dX, dX), 1e-12) * ok;
+        curvN += ok;
+      }` : ''}
+    }`).join('')}
+  }
+  ${dgi >= 0 ? `// dropoutGuard persistence: EMA (rate 1/8) of hit / miss changes, with this frame's state, in data's m bits
+  let dgNow = select(0u, 1u, pc${dgi}.a > ${DG_MISS});
+  var dgPhi = 0.0;
+  if (hasHist && dgBest > 0.0) { dgPhi = mix(f32(dgPrev >> 1u) / 127.0, select(0.0, 1.0, dgNow != (dgPrev & 1u)), 0.125); }
+  mVirt = f32((u32(round(dgPhi * 127.0)) << 1u) | dgNow) / 255.0;
+  ` : ''}${I.map((i) => (isSpecKind(kinds[i]) ? temporalSpecular(i, slot(i), kinds[i], tv.virtualHitTest, tv.dropoutGuard) : temporalDiffuse(i, slot(i), kinds[i]))).join('')}
+  textureStore(outFast, p, fastOut);
+  var mask = 0u;
+  if (hasHist) { mask = select(0u, 1u, r.valid.x > 0.5) | select(0u, 2u, r.valid.y > 0.5) | select(0u, 4u, r.valid.z > 0.5) | select(0u, 8u, r.valid.w > 0.5); }
+  textureStore(outData, p, vec4u(packData(A.x, A.y, mVirt, mask), 0u, 0u, 0u));
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- R3 mips (SPEC §5.7, R-13 atlas) ----------------------------------------------
+
+const ATLAS = /* wgsl */ `
+// R-13: level 1 at (0, 0), level 2 at (ceil(W/2), 0), level 3 at (ceil(W/2), ceil(H/4)).
+fn atlasCoord(L: i32, t: vec2i) -> vec2i {
+  let d = vec2i(F.dims);
+  let w1 = (d.x + 1) / 2;
+  let h2 = (d.y + 3) / 4;
+  if (L == 1) { return t; }
+  if (L == 2) { return vec2i(w1 + t.x, t.y); }
+  return vec2i(w1 + t.x, h2 + t.y);
+}
+fn levelDims(L: i32) -> vec2i { return (vec2i(F.dims) + (1 << u32(L)) - 1) >> vec2u(u32(L)); }
+`;
+
+export function mipsPass(kinds: RecurrentKind[]): PassDef {
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  b.add('outMipZ', 'texture_storage_2d<r32float, write>', 'r32float');
+  kinds.forEach((k, i) => {
+    b.add(`acc${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outMip${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+  });
+  const I = kinds.map((_, i) => i);
+  const level = (L: number) => {
+    const n = 16 >> L, s = 1 << (L - 1);
+    return /* wgsl */ `
+  if (lid.x < ${n}u && lid.y < ${n}u) {
+    let idx = (lid.y << ${L}u) * 16u + (lid.x << ${L}u);
+    let zz = sz[idx] + sz[idx + ${s}u] + sz[idx + ${16 * s}u] + sz[idx + ${17 * s}u];
+    sz[idx] = zz;
+    ${I.map((i) => `let c${i} = sc${i}[idx] + sc${i}[idx + ${s}u] + sc${i}[idx + ${16 * s}u] + sc${i}[idx + ${17 * s}u];
+    sc${i}[idx] = c${i};`).join('\n    ')}
+    let t = vec2i(wid.xy) * ${n} + vec2i(lid.xy);
+    if (all(t < levelDims(${L}))) {
+      let a = atlasCoord(${L}, t);
+      let inv = select(0.0, 1.0 / zz.y, zz.y > 0.0);
+      textureStore(outMipZ, a, vec4f(zz.x * inv));
+      ${I.map((i) => `textureStore(outMip${i}, a, ${ST(kinds[i], `c${i} * inv`)});`).join('\n      ')}
+    }
+  }
+  workgroupBarrier();`;
+  };
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${b.wgsl}
+${ATLAS}
+var<workgroup> sz: array<vec2f, 256>;   // (sum depth, count of non-sky pixels)
+${I.map((i) => `var<workgroup> sc${i}: array<${VT(kinds[i])}, 256>;`).join('\n')}
+
+// One dispatch, 16x16 workgroups, shared-memory reduction 16 -> 8 -> 4 -> 2
+// (RTG2 §49.5.3), averaging non-sky pixels only.
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) gid: vec3u, @builtin(local_invocation_id) lid: vec3u,
+        @builtin(workgroup_id) wid: vec3u) {
+  let p = vec2i(gid.xy);
+  let li = lid.y * 16u + lid.x;
+  var w = 0.0;
+  var z = 0.0;
+  if (inside(p)) {
+    let gz = bitcast<f32>(textureLoad(geoCur, p, 0).x);
+    if (gz > 0.0) { w = 1.0; z = gz; }
+  }
+  sz[li] = vec2f(z, w);
+  ${I.map((i) => `sc${i}[li] = select(${ZERO(kinds[i])}, ${LD(kinds[i], `acc${i}`, 'p')}, w > 0.0);`).join('\n  ')}
+  workgroupBarrier();
+  ${[1, 2, 3].map(level).join('\n')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- R4 history fix (SPEC §5.8: mip repair D7, anti-firefly D9, anti-lag C-10/D11) --
+
+// R4 per-signal body, occlusion kinds (ĥ only): (a) mip repair as radiance, no
+// anti-firefly, (c) the fast-history window on ĥ itself (O-2: ĥ detector only); the slow
+// ĥ is clamped into it when occClamp > 0 (our design, as the radiance luminance clamp).
+const histFixOcc = (i: number, kind: RecurrentKind, sl: number, repair = `mipRepair${i}(p, g.z, a, ${isSpecKind(kind) ? 'g.rough' : '1.0'})`) => /* wgsl */ `
+  {
+    var c = textureLoad(acc${i}, p, 0).r;
+    var a = A[${sl}];
+    if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
+      let m = ${repair};
+      if (m >= 0.0) { c = m; }
+    }
+    if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
+      ${isSpecKind(kind) ? `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);
+      let muH = mix(fc[${2 * sl + 1}], fMean[${2 * sl + 1}], cw);` : `let muH = fMean[${2 * sl + 1}];`}
+      let sdH = fStd[${2 * sl + 1}];
+      let Lc = clamp(c, muH - P${i}.lagGamma * sdH, muH + P${i}.lagGamma * sdH);
+      let e = abs(c - Lc) / (max(c, Lc) + 1e-3);
+      let cI = clamp(1.0 - e / P${i}.lagEMax, 0.0, 1.0);
+      let cH = clamp(1.0 - abs(c - Lc) / P${i}.lagHitTol, 0.0, 1.0);
+      c = mix(c, Lc, P${i}.occClamp);
+      a = mix(min(a, P${i}.aFast), a, min(cI, cH));
+    }
+    A[${sl}] = a;
+    textureStore(outFix${i}, p, vec4f(c));
+  }`;
+
+/** D7 mip repair functions (the default history fix). */
+function mipRepairWgsl(kinds: RecurrentKind[]): string {
+  const I = kinds.map((_, i) => i);
+  return /* wgsl */ `// D7 mip repair: start level L = floor(3 (1 - A/A_fix) rho + 0.5) (GTC20 s.35),
+// 3x3 tent at level L with viewZ-only weights (RTG2 p.829), finer level if the
+// normalized weight sum is below the threshold. Returns (value, 1) or (_, 0).
+${I.map((i) => /* wgsl */ `
+fn mipRepair${i}(p: vec2i, d: f32, A: f32, rho: f32) -> ${VT(kinds[i])} {
+  var L = i32(floor(3.0 * clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho + 0.5));
+  loop {
+    if (L < 1) { break; }
+    let scale = f32(1 << u32(L));
+    let f = (vec2f(p) + 0.5) / scale - 0.5;
+    let c = vec2i(round(f));
+    let dims = levelDims(L);
+    let tol = 1.0 / (P${i}.fixTol * scale * d);
+    var sumB = 0.0;
+    var sumW = 0.0;
+    var sumC = ${ZERO(kinds[i])};
+    // unrolled, branchless 3x3 (all loads in flight together)
+    ${[...Array(9).keys()].map((k) => `{
+      let t = c + vec2i(${(k % 3) - 1}, ${Math.floor(k / 3) - 1});
+      let dt = abs(f - vec2f(t));
+      let wb = max(0.0, 1.0 - dt.x / 1.5) * max(0.0, 1.0 - dt.y / 1.5);
+      let a = atlasCoord(L, clamp(t, vec2i(0), dims - 1));
+      let dm = textureLoad(mipZ, a, 0).r;
+      let v = ${LD(kinds[i], `mip${i}`, 'a')};
+      let w = select(0.0, wb * Wt(abs(dm - d) * tol), all(t >= vec2i(0)) && all(t < dims) && dm > 0.0);
+      sumB += wb;
+      sumW += w;
+      sumC += v * w;
+    }`).join('\n    ')}
+    if (sumW >= P${i}.fixMinWeight * sumB && sumW > 0.0) { return ${isOccKind(kinds[i]) ? 'sumC / sumW' : 'vec4f(sumC / sumW)'}; }
+    L -= 1;
+  }
+  return ${BIG(kinds[i], '-1.0')};
+}`).join('\n')}
+`;
+}
+
+/**
+ * 'spatial' history fix (target 1 candidate; our design): rebuild a young pixel from its own accumulated
+ * value plus 16 disk taps of this frame's accumulated signal (no mips), rotated per pixel and frame
+ * (blurRotation), weighted by the plane distance at the A = 0 geometry tolerance (relative to view
+ * distance, the blur's test) and the normal (cos > 0.9, the same smooth Wt falloff). Radius
+ * r0 · 2^(3 (s - 1)) px with s = (1 - A / A_fix) · rho (r0 = 8 by default; 12 matches the mips' level-3
+ * tent (±12 px), halving per frame like the mip level does (RTG2 p.829: full reconstruction for
+ * 1-3 frames). No repair below a 1.5 px radius or with < 0.5 tap weight. r0 = historyFixRadius (RParams.pad7).
+ */
+function spatialRepairWgsl(kinds: RecurrentKind[]): string {
+  return kinds.map((k, i) => /* wgsl */ `
+fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} {
+  let s = clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho;
+  let R = P${i}.pad7 * exp2(3.0 * (s - 1.0));
+  if (s <= 0.0 || R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let rot = blurRotation(p);
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};
+  ${FIX_DISK.map(([x, y]) => `{
+    let o = rot * vec2f(${x.toFixed(6)}, ${y.toFixed(6)}) * R;
+    let qq = vec2i(floor(vec2f(p) + 0.5 + o));
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let v = ${LD(k, `acc${i}`, 'q')};
+    let xg = planeDist(pl, q, gq.z) / P${i}.geoTolLo;
+    let xn = sqrt(max(0.0, 1.0 - dot(g.n, gq.n)) / 0.1);
+    let w = select(0.0, Wt(xg) * Wt(xn), inside(qq) && gq.z > 0.0 && any(qq != p));
+    sumW += w;
+    sumC += v * w;
+  }`).join('\n  ')}
+  if (sumW < 0.5) { return ${BIG(k, '-1.0')}; }
+  return (${LD(k, `acc${i}`, 'p')} + sumC) / (1.0 + sumW);
+}`).join('\n');
+}
+
+/**
+ * T1b extensions of the 'spatial' history fix (results/T1b-spatial-repair.md; our design). All off by default: with
+ * the default config historyFixPass emits exactly the T1 code.
+ *   ageWeight  k > 0: each tap's weight x (1 + k min(A_tap, A_fast)) (an older tap's accumulated value is less noisy;
+ *              min(., A_fast) is race-free: history fix rewrites A in place only where A > A_fast, never below A_fast)
+ *   wide       f > 0: `rings` extra 16-tap rings (ring k at (1 + k (f - 1)) x the radius) where the young fraction y
+ *              (share of the first ring's geometry weight on taps with A_tap = 0) is >= youngT, i.e. inside full
+ *              resets and wide reveals (Mara et al. 2017 widen their last filter where temporal confidence is low);
+ *              wideUse 'all' (rgb + ĥ) or 'hit' (ĥ only)
+ *   mips       'young': the mip repair (D7) where y >= youngT; 'reset': on frames flagged reset; 'hit': ĥ always from
+ *              the mip repair, rgb from the taps (diagnostic); 'clamp': where y >= youngT, the mip repair's value with
+ *              its luminance clamped to the taps' weighted mean +- clampK standard errors (variance clipping, SAL16:
+ *              the wide mip average is kept where it agrees with the local taps within their noise, the taps win
+ *              where the mip average is biased by detail). The last three need the mips pass and depth atlas.
+ */
+export interface SpatialFixConfig {
+  ageWeight: number;
+  wide: number;
+  rings: number;
+  wideUse: 'all' | 'hit';
+  mips: 'off' | 'young' | 'reset' | 'hit' | 'clamp';
+  clampK: number;
+  youngT: number;
+  /** dense > 0: pixels with A = 0 average every pixel within `dense` px (a shared-memory tile, loaded only by
+   *  workgroups that hold an A = 0 pixel) with the same geometry / normal weights instead of the disk taps */
+  dense: number;
+  /** dense radius cap: 'disk' (the disk's r0 2^(3 (rho - 1)), default) or 'mip' (D7's level-L tent, 1.5 2^L px) */
+  denseCap: 'disk' | 'mip';
+}
+export const SPATIAL_FIX_DEFAULT: SpatialFixConfig = { ageWeight: 0, wide: 0, rings: 1, wideUse: 'all', mips: 'off', clampK: 1, youngT: 0.9, dense: 0, denseCap: 'disk' };
+const isDefaultFix = (c: SpatialFixConfig) => c.ageWeight === 0 && c.wide === 0 && c.mips === 'off' && !c.dense;
+const lit = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
+
+/** 'spatial' repair with the T1b extensions (only generated for a non-default config). */
+function spatialRepairWgslX(kinds: RecurrentKind[], c: SpatialFixConfig): string {
+  const needA = c.ageWeight > 0 || c.wide > 0 || c.mips === 'young' || c.mips === 'clamp';
+  const mom = c.mips === 'clamp';
+  const GA = 1.1999816148643266;   // half the golden angle: each extra ring falls between the previous one's taps
+  const ring = (k: RecurrentKind, i: number, r: number) => FIX_DISK.map(([x0, y0]) => {
+    const ca = Math.cos(r * GA), sa = Math.sin(r * GA);
+    const [x, y] = [ca * x0 - sa * y0, sa * x0 + ca * y0];
+    const hitOnly = r > 0 && c.wideUse === 'hit';
+    return `{
+    let o = rot * vec2f(${x.toFixed(6)}, ${y.toFixed(6)}) * ${r > 0 ? `R * ${lit(1 + r * (c.wide - 1))}` : 'R'};
+    let qq = vec2i(floor(vec2f(p) + 0.5 + o));
+    let q = clampPix(qq);
+    let gq = geoTap(geoCur, q);
+    let v = ${LD(k, `acc${i}`, 'q')};
+    let xg = planeDist(pl, q, gq.z) / P${i}.geoTolLo;
+    let xn = sqrt(max(0.0, 1.0 - dot(g.n, gq.n)) / 0.1);
+    var w = select(0.0, Wt(xg) * Wt(xn), inside(qq) && gq.z > 0.0 && any(qq != p));${needA ? `
+    let aq = min(unpackA(textureLoad(dataRW, q).r, ${slotOf(k)}u), P${i}.aFast);` : ''}${r === 0 && needA ? `
+    sumG += w;
+    sumY += select(0.0, w, aq < 0.5);` : ''}${c.ageWeight > 0 ? `
+    w *= 1.0 + ${lit(c.ageWeight)} * aq;` : ''}
+    ${hitOnly ? `sumWh += w;
+    sumH += ${hOf(k, 'v')} * w;` : `sumW += w;
+    sumC += v * w;`}${mom && !hitOnly ? `
+    { let l = ${isOccKind(k) ? 'v' : 'luma(v.rgb)'}; sumL2 += w * l * l; sumWW += w * w; }` : ''}
+  }`;
+  }).join('\n  ');
+  return `var<private> fixYoung: f32;
+var<private> fixSE: f32;
+` + kinds.map((k, i) => /* wgsl */ `
+fn spatialRepair${i}(p: vec2i, g: Geo, pl: Plane, A: f32, rho: f32) -> ${VT(k)} {
+  let s = clamp(1.0 - A / P${i}.aFix, 0.0, 1.0) * rho;
+  let R = P${i}.pad7 * exp2(3.0 * (s - 1.0));
+  fixYoung = 0.0;
+  fixSE = 0.0;
+  if (s <= 0.0 || R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let rot = blurRotation(p);
+  let own = ${LD(k, `acc${i}`, 'p')};
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};${needA ? `
+  var sumG = 0.0;
+  var sumY = 0.0;` : ''}${mom ? `
+  var sumL2 = 0.0;
+  var sumWW = 0.0;` : ''}${c.wide > 0 && c.wideUse === 'hit' ? `
+  var sumWh = 0.0;
+  var sumH = 0.0;` : ''}
+  ${ring(k, i, 0)}${needA ? `
+  fixYoung = sumY / max(sumG, 1e-6);` : ''}
+  if (sumW < 0.5) { return ${BIG(k, '-1.0')}; }${c.wide > 0 ? `
+  if (fixYoung >= ${lit(c.youngT)}) {
+  ${[...Array(c.rings).keys()].map((r) => ring(k, i, r + 1)).join('\n  ')}
+  }` : ''}${mom ? `
+  {
+    let lo = ${isOccKind(k) ? 'own' : 'luma(own.rgb)'};
+    let W = 1.0 + sumW;
+    let mu = ${isOccKind(k) ? '(own + sumC) / W' : 'luma((own.rgb + sumC.rgb) / W)'};
+    let vr = max((lo * lo + sumL2) / W - mu * mu, 0.0);
+    let ne = W * W / (1.0 + sumWW);
+    fixSE = sqrt(vr / ne);
+  }` : ''}${c.wide > 0 && c.wideUse === 'hit' ? (isOccKind(k) ? `
+  return (own + sumC + sumH) / (1.0 + sumW + sumWh);` : `
+  let m = (own + sumC) / (1.0 + sumW);
+  return vec4f(m.rgb, (own.a + sumC.a + sumH) / (1.0 + sumW + sumWh));`) : `
+  return (own + sumC) / (1.0 + sumW);`}
+}`).join('\n');
+}
+
+/** T1b `historyFixDense`: shared tile of z, normal and acc around the workgroup, and the dense A = 0 repair. */
+function denseRepairWgsl(kinds: RecurrentKind[], r: number, cap: 'disk' | 'mip' = 'disk'): string {
+  const D = 8 + 2 * r, T = D * D;
+  return /* wgsl */ `
+const DR: i32 = ${r};
+const DD: i32 = ${D};
+var<workgroup> dflag: atomic<u32>;
+var<workgroup> dneed: u32;
+var<workgroup> dt_z: array<f32, ${T}>;
+var<workgroup> dt_n: array<u32, ${T}>;
+${kinds.map((k, i) => `var<workgroup> dt_c${i}: array<${isOccKind(k) ? 'f32' : 'vec2u'}, ${T}>;`).join('\n')}
+var<private> denseOn: bool;
+fn loadDense(lid: vec3u, wid: vec3u) {
+  let origin = vec2i(wid.xy) * 8 - DR;
+  for (var k = lid.y * 8u + lid.x; k < ${T}u; k += 64u) {
+    let q = clampPix(origin + vec2i(i32(k % u32(DD)), i32(k / u32(DD))));
+    let gq = geoTap(geoCur, q);
+    dt_z[k] = gq.z;
+    dt_n[k] = pack4x8snorm(vec4f(gq.n, 0.0));
+    ${kinds.map((k, i) => (isOccKind(k) ? `dt_c${i}[k] = textureLoad(acc${i}, q, 0).r;` : `{ let v = textureLoad(acc${i}, q, 0); dt_c${i}[k] = vec2u(pack2x16float(v.xy), pack2x16float(v.zw)); }`)).join('\n    ')}
+  }
+  workgroupBarrier();
+}
+${kinds.map((k, i) => `
+fn denseRepair${i}(p: vec2i, lid: vec3u, g: Geo, pl: Plane, rho: f32) -> ${VT(k)} {
+  // the disk taps' radius at A = 0 (r0 2^(3 (rho - 1)): small on glossy specular), capped by the tile
+  let R = min(${cap === 'mip' ? 'select(0.0, 1.5 * exp2(floor(3.0 * rho + 0.5)), floor(3.0 * rho + 0.5) >= 1.0)' : `P${i}.pad7 * exp2(3.0 * (rho - 1.0))`}, f32(DR));
+  if (R < 1.5) { return ${BIG(k, '-1.0')}; }
+  let R2 = R * R;
+  var sumW = 0.0;
+  var sumC = ${ZERO(k)};
+  for (var dy = -DR; dy <= DR; dy++) {
+    for (var dx = -DR; dx <= DR; dx++) {
+      if (f32(dx * dx + dy * dy) > R2 || (dx == 0 && dy == 0)) { continue; }
+      let qq = p + vec2i(dx, dy);
+      let ti = u32((i32(lid.y) + DR + dy) * DD + i32(lid.x) + DR + dx);
+      let z = dt_z[ti];
+      if (!inside(qq) || z <= 0.0) { continue; }
+      let n = unpack4x8snorm(dt_n[ti]).xyz;
+      let xg = planeDist(pl, qq, z) / P${i}.geoTolLo;
+      let xn = sqrt(max(0.0, 1.0 - dot(g.n, n)) / 0.1);
+      let w = Wt(xg) * Wt(xn);
+      ${isOccKind(k) ? `let v = dt_c${i}[ti];` : `let c = dt_c${i}[ti];
+      let v = vec4f(unpack2x16float(c.x), unpack2x16float(c.y));`}
+      sumW += w;
+      sumC += v * w;
+    }
+  }
+  return (${LD(k, `acc${i}`, 'p')} + sumC) / (1.0 + sumW);
+}`).join('\n')}
+`;
+}
+
+/**
+ * History-fix repair of young pixels (A < A_fix): 'mips' (SPEC D7, the default) or 'spatial' (target 1
+ * candidate, results/T1-recovery.md; our design from SVGF sec. 4.2-4.3 and RTG II sec. 49.5.4 prose: the
+ * young pixel is rebuilt from a depth / normal guided full-resolution neighbourhood of this frame's
+ * accumulated signal, no mip pyramid).
+ */
+export type HistoryFixMode = 'mips' | 'spatial';
+
+/** Taps of the 'spatial' history fix: a 16-point Vogel disk (golden angle, radii sqrt((k + 0.5) / 16)). */
+export const FIX_DISK = Array.from({ length: 16 }, (_, k) => {
+  const r = Math.sqrt((k + 0.5) / 16), t = k * 2.399963229728653;
+  return [r * Math.cos(t), r * Math.sin(t)] as [number, number];
+});
+
+export function historyFixPass(kinds: RecurrentKind[], mode: HistoryFixMode = 'mips', fix: SpatialFixConfig = SPATIAL_FIX_DEFAULT, dg?: DropoutGuard): PassDef {
+  const spatial = mode === 'spatial';
+  const X = spatial && !isDefaultFix(fix);   // T1b extensions
+  const withMips = !spatial || (X && fix.mips !== 'off');
+  const b = base(kinds);
+  b.add('fastCur', 'texture_2d<f32>', 'f');
+  if (withMips) b.add('mipZ', 'texture_2d<f32>', 'f');
+  b.add('dataRW', 'texture_storage_2d<r32uint, read_write>', 'rw-r32uint');
+  kinds.forEach((k, i) => {
+    b.add(`acc${i}`, 'texture_2d<f32>', 'f');
+    if (withMips) b.add(`mip${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outFix${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+  });
+  const I = kinds.map((_, i) => i);
+  const slot = (i: number) => slotOf(kinds[i]);
+  const nb: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
+  // T1b: the repaired value `m` (radiance: `let m`; occlusion: an expression) with the mip fallbacks
+  const xRepair = (i: number, rho: string, occ: boolean) => {
+    const sp = `spatialRepair${i}(p, g, pl, a, ${rho})`, mp = `mipRepair${i}(p, g.z, a, ${rho})`;
+    const useMip = fix.mips === 'young' || fix.mips === 'clamp' ? `fixYoung >= ${lit(fix.youngT)}` : fix.mips === 'reset' ? 'hasFlag(FRAME_RESET)' : '';
+    if (fix.dense) {
+      if (occ) return `select(${sp}, denseRepair${i}(p, lid, g, pl, ${rho}), denseOn && a < 0.5)`;
+      return `var m = ${sp};
+      if (denseOn && a < 0.5) { m = denseRepair${i}(p, lid, g, pl, ${rho}); }`;
+    }
+    if (occ) {
+      if (fix.mips === 'off' || fix.mips === 'hit') return sp;
+      return `xRepairOcc${i}(p, g, pl, a, ${rho})`;
+    }
+    if (fix.mips === 'off') return `let m = ${sp};`;
+    if (fix.mips === 'hit') return `var m = ${sp};
+      if (m.a >= 0.0) { let mh = ${mp}; if (mh.a >= 0.0) { m.a = mh.a; } }`;
+    if (fix.mips === 'clamp') return `var m = ${sp};
+      if (m.a >= 0.0 && ${useMip}) {
+        let mm = ${mp};
+        if (mm.a >= 0.0) {
+          let mu = luma(m.rgb);
+          let lm = luma(mm.rgb);
+          let lc = clamp(lm, mu - ${lit(fix.clampK)} * fixSE, mu + ${lit(fix.clampK)} * fixSE);
+          m = vec4f(select(vec3f(lc), mm.rgb * (lc / lm), lm > 1e-6), mm.a);
+        }
+      }`;
+    return `var m = ${sp};
+      if (${useMip}) { let mm = ${mp}; if (mm.a >= 0.0) { m = mm; } }`;
+  };
+  const xOccFns = X && (fix.mips === 'young' || fix.mips === 'reset' || fix.mips === 'clamp') ? I.filter((i) => isOccKind(kinds[i])).map((i) => /* wgsl */ `
+fn xRepairOcc${i}(p: vec2i, g: Geo, pl: Plane, a: f32, rho: f32) -> f32 {
+  var m = spatialRepair${i}(p, g, pl, a, rho);
+  if (${fix.mips === 'reset' ? 'hasFlag(FRAME_RESET)' : `m >= 0.0 && fixYoung >= ${lit(fix.youngT)}`}) {
+    let mm = mipRepair${i}(p, g.z, a, rho);
+    if (mm >= 0.0) { m = ${fix.mips === 'clamp' ? `clamp(mm, m - ${lit(fix.clampK)} * fixSE, m + ${lit(fix.clampK)} * fixSE)` : 'mm'}; }
+  }
+  return m;
+}`).join('\n') : '';
+  const code = /* wgsl */ `
+${head(b, ATLAS)}${xOccFns}
+
+${X ? `${spatialRepairWgslX(kinds, fix)}${withMips ? mipRepairWgsl(kinds) : ''}${fix.dense ? denseRepairWgsl(kinds, fix.dense, fix.denseCap) : ''}` : spatial ? spatialRepairWgsl(kinds) : mipRepairWgsl(kinds)}
+${tileWgsl([
+  { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
+  { name: 'f', type: 'vec4f', load: (q) => `textureLoad(fastCur, ${q}, 0)` },
+  // anti-firefly luminance (radiance kinds only; ĥ in [0, 1] has no fireflies)
+  ...I.filter((i) => !isOccKind(kinds[i])).map((i) => ({ name: `l${i}`, type: 'f32', load: (q: string) => `luma(textureLoad(acc${i}, ${q}, 0).rgb)` })),
+])}
+
+@compute @workgroup_size(8, 8)
+fn main(${TILE_MAIN}) {
+  loadTile(lid, wid);${X && fix.dense ? `
+  // T1b dense repair: the tile is loaded only by workgroups holding an A = 0 pixel (uniform branch)
+  {
+    let p0 = vec2i(gid.xy);
+    if (inside(p0)) {
+      let d0 = textureLoad(dataRW, p0).r;
+      if (bitcast<f32>(textureLoad(geoCur, p0, 0).x) > 0.0 && (${[...new Set(kinds.map(slotOf))].map((sl) => `unpackA(d0, ${sl}u) < 0.5`).join(' || ')})) { atomicOr(&dflag, 1u); }
+    }
+    workgroupBarrier();
+    if (lid.x == 0u && lid.y == 0u) { dneed = atomicLoad(&dflag); }
+    let need = workgroupUniformLoad(&dneed);
+    denseOn = need != 0u;
+    if (need != 0u) { loadDense(lid, wid); }
+  }` : ''}
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoTap(geoCur, p);
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outFix${i}, p, vec4f(0.0));`).join(' ')}
+    return;
+  }
+  let X = viewPosAt(uvOf(p), g.z);
+  let nv = viewNormal(g.n);
+  let pl = makePlane(X, nv);
+  let dv = textureLoad(dataRW, p).r;
+  var A = vec2f(unpackA(dv, 0u), unpackA(dv, 1u));
+  // 3x3 neighbourhood, geometry-valid at the A = 0 plane tolerance:
+  // top-2 luminance of acc (anti-firefly) and fast-history moments (anti-lag).
+  let fc = tile_f[tidx(lid, 0, 0)];
+  var fSum = fc;
+  var fSq = fc * fc;
+  var nValid = 1.0;
+  ${I.filter((i) => !isOccKind(kinds[i])).map((i) => `var l1_${i} = 0.0;\n  var l2_${i} = 0.0;`).join('\n  ')}
+  ${nb.map(([x, y]) => /* wgsl */ `
+  {
+    let qq = p + vec2i(${x}, ${y});
+    let q = clampPix(qq);
+    let ti = tidx(lid, ${x}, ${y});
+    let zq = tile_z[ti];
+    let ok = select(0.0, 1.0, inside(qq) && zq > 0.0 && planeDist(pl, q, zq) < P0.geoTolLo);
+    let f = tile_f[ti] * ok;
+    fSum += f;
+    fSq += f * f;
+    nValid += ok;
+    ${I.filter((i) => !isOccKind(kinds[i])).map((i) => `{
+      let l = tile_l${i}[ti] * ok;
+      l2_${i} = max(l2_${i}, min(l1_${i}, l));
+      l1_${i} = max(l1_${i}, l);
+    }`).join('\n    ')}
+  }`).join('')}
+  let fMean = fSum / nValid;
+  // window from the spread of the fast history; optionally its standard error (our variant)
+  let fStd = sqrt(max(fSq / nValid - fMean * fMean, vec4f(0.0))) / mix(1.0, sqrt(nValid), P0.lagStdErr);
+  ${I.map((i) => (isOccKind(kinds[i]) ? histFixOcc(i, kinds[i], slot(i), ...(X ? [xRepair(i, isSpecKind(kinds[i]) ? 'g.rough' : '1.0', true)] : spatial ? [`spatialRepair${i}(p, g, pl, a, ${isSpecKind(kinds[i]) ? 'g.rough' : '1.0'})`] : [])) : /* wgsl */ `
+  {
+    var c = textureLoad(acc${i}, p, 0);
+    var a = A[${slot(i)}];
+    // (a) mip repair where history is young (replaces rgb and ĥ)
+    if ((P${i}.flags & RP_NO_HISTORY_FIX) == 0u && a < P${i}.aFix) {
+      ${X ? xRepair(i, kinds[i] === 'specular' ? 'g.rough' : '1.0', false) : `let m = ${spatial ? `spatialRepair${i}(p, g, pl, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})` : `mipRepair${i}(p, g.z, a, ${kinds[i] === 'specular' ? 'g.rough' : '1.0'})`};`}
+      if (m.a >= 0.0) { c = m; }
+    }
+    // (b) anti-firefly: centre luminance <= k * second-largest of >= 4 valid neighbours
+    if ((P${i}.flags & RP_NO_FIREFLY) == 0u && nValid >= 5.0${kinds[i] === 'specular' ? ' && g.rough >= 0.25' : ''}) {
+      let l = luma(c.rgb);
+      let lim = P${i}.fireflyK * l2_${i};
+      if (l > lim) { c = vec4f(c.rgb * (lim / l), c.a); }
+    }
+    // (c) C-10: clamp slow luminance to the fast history's mean +- gamma sigma; the
+    // relative excess and the ĥ excess (min-combined) shorten the history.
+    if ((P${i}.flags & RP_NO_ANTILAG) == 0u && a > P${i}.aFast) {
+      ${kinds[i] === 'specular' ? `// window centred on the pixel's own fast value as roughness -> 0 (clean mirror input:
+      // the 3x3 mean would blur reflected edges; our addition)
+      ${dgOn(dg, 8) ? `// dropoutGuard: this pixel's flip persistence (data's m bits, written by the temporal pass)
+      let cw = max(mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre),
+                   ${dropW(dg!, 'f32((dv >> 21u) & 127u) / 127.0')});` : `let cw = mix(1.0, sqrt(clamp(g.rough * g.rough / 0.25, 0.0, 1.0)), P${i}.specCentre);`}
+      let mu = mix(fc[${2 * slot(i)}], fMean[${2 * slot(i)}], cw);
+      let muH = mix(fc[${2 * slot(i) + 1}], fMean[${2 * slot(i) + 1}], cw);` : `let mu = fMean[${2 * slot(i)}];
+      let muH = fMean[${2 * slot(i) + 1}];`}
+      let sd = fStd[${2 * slot(i)}];
+      let Ls = luma(c.rgb);
+      let Lc = clamp(Ls, mu - P${i}.lagGamma * sd, mu + P${i}.lagGamma * sd);
+      if (Ls > 1e-6) { c = vec4f(c.rgb * (Lc / Ls), c.a); } else { c = vec4f(vec3f(Lc), c.a); }
+      let e = abs(Ls - Lc) / (max(Ls, Lc) + 1e-3);
+      let cI = clamp(1.0 - e / P${i}.lagEMax, 0.0, 1.0);
+      let sdH = fStd[${2 * slot(i) + 1}];
+      let eh = abs(c.a - clamp(c.a, muH - P${i}.lagGamma * sdH, muH + P${i}.lagGamma * sdH));
+      let cH = clamp(1.0 - eh / P${i}.lagHitTol, 0.0, 1.0);
+      a = mix(min(a, P${i}.aFast), a, min(cI, cH));
+    }
+    A[${slot(i)}] = a;
+    textureStore(outFix${i}, p, c);
+  }`)).join('')}
+  textureStore(dataRW, p, vec4u(packData(A.x, A.y, unpackM(dv), dv >> 28u), 0u, 0u, 0u));
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- R5 blur / R6 post-blur (SPEC §5.10, R-5, R-6) --------------------------------
+
+/**
+ * R5 blur / R6 post-blur. youngTaps (T1b option `youngBlurTaps`, blur only; 0 = off, the default): pixels with
+ * A = 0 (a reset or a reveal: the history fix had only this frame's signal) take 8 more taps, the same disk turned
+ * by pi/8, so the first frame after a reset averages twice as many samples (our design).
+ */
+export function blurPass(kinds: RecurrentKind[], post: boolean, taps: number[] = kinds.map(() => 8), youngTaps = 0): PassDef {
+  const b = base(kinds);
+  b.add('dataTex', 'texture_2d<u32>', 'i');
+  kinds.forEach((k, i) => {
+    b.add(`src${i}`, 'texture_2d<f32>', 'f');
+    if (post) b.add(`acc${i}`, 'texture_2d<f32>', 'f');
+    b.add(`outBlur${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+  });
+  const I = kinds.map((_, i) => i);
+  const code = /* wgsl */ `
+${head(b)}
+${kinds.map((k, i) => signalWgsl(k, i)).join('\n')}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoTap(geoCur, p);
+  if (g.z <= 0.0) {
+    ${I.map((i) => `textureStore(outBlur${i}, p, vec4f(0.0));`).join(' ')}
+    return;
+  }
+  let X = viewPosAt(uvOf(p), g.z);
+  let nv = viewNormal(g.n);
+  let ps = pixSize(g.z);
+  let dv = textureLoad(dataTex, p, 0).r;
+  ${post ? '' : 'let rot = blurRotation(p);'}
+  ${I.map((i) => /* wgsl */ `
+  {
+    let A = unpackA(dv, ${slotOf(kinds[i])}u);
+    let An = clamp(A / P${i}.aCap, 0.0, 1.0);
+    let c = ${LD(kinds[i], `src${i}`, 'p')};
+    // R-5: R = max(min(R_max f_A f_r pixSize, c_h h~), R_min pixSize), f_A = 1/(1 + A)
+    var R = max(min(P${i}.maxRadius * radiusRough${i}(g) / (1.0 + A) * ps, hitClamp${i}(g) * hDenorm${i}(${hOf(kinds[i], 'c')}, g.z)),
+                P${i}.minRadius * ${isSpecKind(kinds[i]) ? `mix(1.0, radiusRough${i}(g), P${i}.specMinRadius)` : '1.0'} * ps);
+    ${post ? `// D2c: post-blur radius grows where the blur still changed the signal (RTG2 §49.5.6)
+    ${isOccKind(kinds[i]) ? `let la = textureLoad(acc${i}, p, 0).r;   // occlusion: how much the blur changed ĥ
+    let lb = c;` : `let la = luma(textureLoad(acc${i}, p, 0).rgb);
+    let lb = luma(c.rgb);`}
+    R *= mix(P${i}.postLo, P${i}.postHi, clamp(abs(lb - la) / (max(lb, la) + 1e-3) / P${i}.postDelta, 0.0, 1.0));` : ''}
+    let k${i} = kern${i}(g, X, nv, R, An, ${hOf(kinds[i], 'c')});
+    var sum${i} = c;
+    var sw${i} = 1.0;
+    ${tapSet(taps[i]).map((t) => tapWgsl(kinds[i], i, t, {
+      rotate: !post, hitWeight: true, rgbOnly: false, load: (q) => LD(kinds[i], `src${i}`, q),
+    })).join('')}${!post && youngTaps > 0 ? `
+    if (A < 0.5) {
+      let rot2 = rot * mat2x2f(0.92388, 0.382683, -0.382683, 0.92388);
+      ${[0, 1, 2, 3, 4, 5, 6, 7].map((t) => tapWgsl(kinds[i], i, t, {
+        rotate: true, hitWeight: true, rgbOnly: false, load: (q) => LD(kinds[i], `src${i}`, q),
+      }).replace(`rot * DISK[${t}]`, `rot2 * DISK[${t}]`)).join('')}
+    }` : ''}
+    textureStore(outBlur${i}, p, ${ST(kinds[i], `sum${i} / sw${i}`)});
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- R7 temporal stabilization (SPEC §5.11, D10) ------------------------------------
+
+export function stabilizePass(kinds: RecurrentKind[], remodulate: boolean): PassDef {
+  const b = base(kinds);
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('smp', 'sampler', 's');
+  b.add('dataTex', 'texture_2d<u32>', 'i');
+  kinds.forEach((k, i) => {
+    b.add(`hCur${i}`, 'texture_2d<f32>', 'f');
+    b.add(`sPrev${i}`, 'texture_2d<f32>', isOccKind(k) ? 'f' : 'F');
+    b.add(`outS${i}`, `texture_storage_2d<${formatOf(k)}, write>`, formatOf(k));
+    if (remodulate) {
+      b.add(`demod${i}`, 'texture_2d<f32>', 'f');
+      b.add(`outRemod${i}`, 'texture_storage_2d<rgba16float, write>', 'rgba16float');
+    }
+  });
+  const I = kinds.map((_, i) => i);
+  const nb: [number, number][] = [];
+  for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) if (x || y) nb.push([x, y]);
+  const store = (i: number, v: string, raw = false) => `textureStore(outS${i}, p, ${raw ? v : ST(kinds[i], v)});${remodulate ? `
+    textureStore(outRemod${i}, p, vec4f(${v}.rgb * select(vec3f(1.0), textureLoad(demod${i}, p, 0).rgb, (P${i}.flags & RP_REMODULATE) != 0u), ${v}.a));` : ''}`;
+  const code = /* wgsl */ `
+${head(b, HISTORY_SAMPLE_WGSL)}
+
+${tileWgsl([
+  { name: 'z', type: 'f32', load: (q) => `bitcast<f32>(textureLoad(geoCur, ${q}, 0).x)` },
+  ...I.map((i) => ({ name: `h${i}`, type: VT(kinds[i]), load: (q: string) => LD(kinds[i], `hCur${i}`, q) })),
+])}
+
+@compute @workgroup_size(8, 8)
+fn main(${TILE_MAIN}) {
+  loadTile(lid, wid);
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let g = geoTap(geoCur, p);
+  if (g.z <= 0.0) {
+    ${I.map((i) => store(i, 'vec4f(0.0)', true)).join('\n    ')}
+    return;
+  }
+  let X = viewPosAt(uvOf(p), g.z);
+  let nv = viewNormal(g.n);
+  let pl = makePlane(X, nv);
+  let dv = textureLoad(dataTex, p, 0).r;
+  ${I.map((i) => `let h${i} = tile_h${i}[tidx(lid, 0, 0)];\n  var m1_${i} = h${i};\n  var m2_${i} = h${i} * h${i};`).join('\n  ')}
+  var n = 1.0;
+  ${nb.map(([x, y]) => /* wgsl */ `
+  {
+    let qq = p + vec2i(${x}, ${y});
+    let q = clampPix(qq);
+    let ti = tidx(lid, ${x}, ${y});
+    let zq = tile_z[ti];
+    let ok = select(0.0, 1.0, inside(qq) && zq > 0.0 && planeDist(pl, q, zq) < P0.geoTolLo);
+    n += ok;
+    ${I.map((i) => `{ let s = tile_h${i}[ti] * ok; m1_${i} += s; m2_${i} += s * s; }`).join('\n    ')}
+  }`).join('')}
+  // The temporal pass's 2x2 validity (same reprojection, stored in data): no second
+  // set of plane tests here.
+  let mask = dv >> 28u;
+  let hasHist = !hasFlag(FRAME_RESET) && mask != 0u;
+  let mv = textureLoad(motionTex, p, 0).xy;
+  let prevUV = uvOf(p) - vec2f(mv.x, -mv.y) * 0.5;
+  let pp = prevUV * F.dims - 0.5;
+  let base = vec2i(floor(pp));
+  let fr = pp - floor(pp);
+  let bil = vec4f((1.0 - fr.x) * (1.0 - fr.y), fr.x * (1.0 - fr.y), (1.0 - fr.x) * fr.y, fr.x * fr.y);
+  let valid = vec4f(f32(mask & 1u), f32((mask >> 1u) & 1u), f32((mask >> 2u) & 1u), f32((mask >> 3u) & 1u));
+  ${I.map((i) => /* wgsl */ `
+  {
+    var s = h${i};
+    if (hasHist && (P${i}.flags & RP_NO_STABILIZE) == 0u) {
+      let wts = max(bil, vec4f(1e-3)) * valid;
+      var sp = ${ZERO(kinds[i])};
+      var lo = ${BIG(kinds[i], '1e30')};
+      var hi = ${BIG(kinds[i], '-1e30')};
+      ${[0, 1, 2, 3].map((k) => `{
+        let v = ${LD(kinds[i], `sPrev${i}`, `clampPix(base + TAP_OFFS[${k}])`)};
+        let ok = wts[${k}] > 0.0;
+        sp += v * wts[${k}];
+        lo = select(lo, min(lo, v), ok);
+        hi = select(hi, max(hi, v), ok);
+      }`).join('\n      ')}
+      sp /= wts.x + wts.y + wts.z + wts.w;
+      ${kinds[i] === 'specular' ? 'if (mask == 15u) { sp = clamp(sampleCatmullRom(sPrev' + i + ', smp, prevUV), lo, hi); }' : (isOccKind(kinds[i]) ? '// occlusion: bilinear' : '// diffuse: bilinear (Catmull-Rom here: identical PSNR on the test bed, +0.07 ms)')}
+      let A = unpackA(dv, ${slotOf(kinds[i])}u);
+      let An = clamp(A / P${i}.aCap, 0.0, 1.0);
+      let mu = m1_${i} / n;
+      let sd = sqrt(max(m2_${i} / n - mu * mu, ${ZERO(kinds[i])}));
+      // window gamma_s sigma + beta_s mu, wider once the pixel has a long, trusted history
+      let wnd = mix(P${i}.stabGammaLo, P${i}.stabGammaHi, An) * sd + P${i}.stabBeta * An * abs(mu);
+      let spc = clamp(sp, mu - wnd, mu + wnd);
+      let a = max(1.0 / (1.0 + A), 1.0 / (1.0 + P${i}.stabFrames));
+      s = mix(spc, h${i}, a);
+    }
+    ${store(i, 's')}
+  }`).join('')}
+}
+`;
+  return { code, entries: b.entries };
+}
+
+// ---- skeleton: same bindings, centre loads + stores only (SPEC §10.3 timing) ---------
+
+/** A trivial kernel with exactly `def`'s bindings: loads each input at p, writes every output. */
+export function trivialPass(def: PassDef, workgroup = 8): PassDef {
+  const decls = def.code.split('\n').filter((l) => l.startsWith('@group(0)')).join('\n');
+  const body: string[] = [];
+  const stores: string[] = [];
+  for (const e of def.entries) {
+    if (e.kind === 'f' || e.kind === 'F') body.push(`v += textureLoad(${e.name}, p, 0);`);
+    else if (e.kind === 'i') body.push(`v += vec4f(textureLoad(${e.name}, p, 0));`);
+    else if (e.kind === 'rw-r32uint') stores.push(`textureStore(${e.name}, p, textureLoad(${e.name}, p) + vec4u(u32(v.x)));`);
+    else if (e.kind === 'r32uint') stores.push(`textureStore(${e.name}, p, vec4u(u32(v.x)));`);
+    else if (e.kind !== 'u' && e.kind !== 's' && e.kind !== 'd') stores.push(`textureStore(${e.name}, p, v);`);
+  }
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${RSTRUCTS}
+${decls}
+@compute @workgroup_size(${workgroup}, ${workgroup})
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (f32(p.x) >= F.dims.x || f32(p.y) >= F.dims.y) { return; }
+  var v = vec4f(0.0);
+  ${body.join('\n  ')}
+  ${stores.join('\n  ')}
+}
+`;
+  return { code, entries: def.entries };
+}

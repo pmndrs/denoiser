@@ -1,0 +1,451 @@
+{
+  "_about": "Scorecard scene registry. `capture` = a capture under the captures dir (replayed through the registry ids in `rows`, scored against its *_ref buffers). Provisional entries use the kept pre-golden captures; golden entries are added when T0-scenes lands GOLDEN.md (see tools/scorecard/README.md). Gates are the TRACKS.md exit measures; a gate with no data shows n/a.",
+  "captureTimingScene": "synthetic-plane-1080p",
+  "rows": {
+    "raw": {
+      "kind": "baseline",
+      "label": "raw 1-ray input"
+    },
+    "accumulate": {
+      "kind": "baseline",
+      "label": "accumulate-32",
+      "denoiser": {
+        "diffuse": "accumulate-32",
+        "specular": "accumulate-32",
+        "visibility": "accumulate-32",
+        "ao": "occlusion-accumulate-32"
+      }
+    },
+    "ours": {
+      "kind": "ours",
+      "label": "ours (shipped defaults)",
+      "denoiser": {
+        "diffuse": "svgf",
+        "specular": "svgf",
+        "visibility": "shadows",
+        "ao": "occlusion-svgf"
+      }
+    },
+    "ffx": {
+      "kind": "ffx",
+      "label": "FFX (MIT port)",
+      "denoiser": {
+        "specular": "ffx-reflections",
+        "visibility": "ffx-shadows"
+      }
+    }
+  },
+  "native": {
+    "diffuse": [
+      "nrd-reblur",
+      "nrd-relax"
+    ],
+    "specular": [
+      "nrd-reblur",
+      "nrd-relax"
+    ],
+    "visibility": [
+      "nrd-sigma"
+    ],
+    "ao": [
+      "nrd-reblur-occlusion"
+    ]
+  },
+  "cost": [
+    {
+      "id": "ours-diffuse-specular",
+      "label": "ours diffuse+specular (svgf)",
+      "denoiser": "svgf",
+      "signals": [
+        "diffuse",
+        "specular"
+      ],
+      "group": "ours:gi"
+    },
+    {
+      "id": "ours-diffuse",
+      "label": "ours diffuse only (svgf-diffuse)",
+      "denoiser": "svgf-diffuse",
+      "signals": [
+        "diffuse"
+      ],
+      "group": "ours:diffuse"
+    },
+    {
+      "id": "ours-specular",
+      "label": "ours specular only (svgf-specular)",
+      "denoiser": "svgf-specular",
+      "signals": [
+        "specular"
+      ],
+      "group": "ours:specular"
+    },
+    {
+      "id": "ours-shadows",
+      "label": "ours shadows",
+      "denoiser": "shadows",
+      "signals": [
+        "visibility"
+      ],
+      "group": "ours:visibility"
+    },
+    {
+      "id": "ours-ao",
+      "label": "ours AO (occlusion-svgf)",
+      "denoiser": "occlusion-svgf",
+      "signals": [
+        "ao"
+      ],
+      "group": "ours:ao"
+    },
+    {
+      "id": "ffx-shadows",
+      "label": "FFX shadows",
+      "denoiser": "ffx-shadows",
+      "signals": [
+        "visibility"
+      ],
+      "group": "ffx:visibility"
+    },
+    {
+      "id": "ffx-reflections",
+      "label": "FFX reflections",
+      "denoiser": "ffx-reflections",
+      "signals": [
+        "specular"
+      ],
+      "group": "ffx:specular"
+    },
+    {
+      "id": "accumulate-32",
+      "label": "accumulate-32 (baseline)",
+      "denoiser": "accumulate-32",
+      "signals": [
+        "diffuse",
+        "specular",
+        "visibility"
+      ],
+      "group": "baseline"
+    }
+  ],
+  "nativeCost": {
+    "ours:gi": "nrd-reblur",
+    "ours:visibility": "nrd-sigma"
+  },
+  "scenes": [
+    {
+      "id": "G3-golden-orbit",
+      "golden": "G3",
+      "status": "golden capture (T0-scenes, 4096 spp): Sponza orbit",
+      "title": "G3 Sponza orbit: diffuse + AO",
+      "capture": "golden-G3-orbit",
+      "capturesDir": "/Users/dex/Developer/Denoiser-track-t0s/tools/rt-capture/captures",
+      "tonemap": "aces",
+      "native": null,
+      "optional": true,
+      "signals": [
+        "diffuse",
+        "ao"
+      ],
+      "gates": [
+        {
+          "name": "calm: static boil <= native",
+          "signal": "diffuse",
+          "metric": "calm.legacyBoil",
+          "op": "<=",
+          "vs": "native"
+        },
+        {
+          "name": "lag <= native",
+          "signal": "diffuse",
+          "metric": "lag.0.lag",
+          "op": "<=",
+          "vs": "native"
+        }
+      ]
+    },
+    {
+      "id": "G4-golden-pan-light-on",
+      "golden": "G4",
+      "status": "golden capture (T0-scenes, 4096 spp, fixed reference seeds): Bistro pan, lantern switches on at frame 32",
+      "title": "G4 Bistro pan + light switching on",
+      "capture": "golden-G4-pan-light-on",
+      "capturesDir": "/Users/dex/Developer/Denoiser-track-t0s/tools/rt-capture/captures",
+      "tonemap": "aces",
+      "native": null,
+      "optional": true,
+      "signals": [
+        "diffuse",
+        "visibility"
+      ],
+      "gates": [
+        {
+          "name": "calm: static boil <= native",
+          "signal": "diffuse",
+          "metric": "calm.legacyBoil",
+          "op": "<=",
+          "vs": "native"
+        },
+        {
+          "name": "lag after light-on <= native",
+          "signal": "diffuse",
+          "metric": "lag.1.lag",
+          "op": "<=",
+          "vs": "native"
+        }
+      ]
+    },
+    {
+      "id": "G2-knot-static",
+      "golden": "G2",
+      "status": "provisional (kept capture three-knot-static; golden G2 pending T0-scenes)",
+      "title": "Knot over a floor, moving occluder (static camera, knot rotating)",
+      "capture": "three-knot-static",
+      "native": "three-knot-static",
+      "signals": [
+        "visibility",
+        "specular"
+      ],
+      "gates": [
+        {
+          "name": "calm k=8: moving boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.moving.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "calm k=8: smooth boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.static.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "calm tail (k=1): moving p99 <= FFX",
+          "signal": "visibility",
+          "metric": "calm.moving.p99",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "calm: still-camera sigma <= FFX",
+          "signal": "visibility",
+          "metric": "calm.sigmaK.8.sigma",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "detail: FLIP < FFX",
+          "signal": "visibility",
+          "metric": "detail.flip",
+          "op": "<",
+          "vs": "ffx"
+        },
+        {
+          "name": "cost: <= 0.6 ms GPU at 1080p",
+          "signal": "visibility",
+          "metric": "cost.gpuMs",
+          "op": "<=",
+          "vs": 0.6,
+          "cost": "ours-shadows"
+        }
+      ]
+    },
+    {
+      "id": "G2-knot-orbit",
+      "golden": "G2",
+      "status": "provisional (kept capture three-knot-orbit)",
+      "title": "Knot over a floor, moving occluder (camera orbit)",
+      "capture": "three-knot-orbit",
+      "native": "three-knot-orbit",
+      "signals": [
+        "visibility"
+      ],
+      "gates": [
+        {
+          "name": "calm k=8: moving boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.moving.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "calm k=8: smooth boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.static.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "calm tail (k=1): moving p99 <= FFX",
+          "signal": "visibility",
+          "metric": "calm.moving.p99",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "detail: FLIP < FFX",
+          "signal": "visibility",
+          "metric": "detail.flip",
+          "op": "<",
+          "vs": "ffx"
+        }
+      ]
+    },
+    {
+      "id": "G3-sponza-orbit",
+      "golden": "G3",
+      "status": "provisional (kept capture sponza-orbit)",
+      "title": "Sponza orbit: diffuse GI + AO",
+      "capture": "sponza-orbit",
+      "native": null,
+      "signals": [
+        "diffuse",
+        "ao"
+      ],
+      "gates": [
+        {
+          "name": "calm: static boil <= native",
+          "signal": "diffuse",
+          "metric": "calm.legacyBoil",
+          "op": "<=",
+          "vs": "native"
+        },
+        {
+          "name": "lag <= native",
+          "signal": "diffuse",
+          "metric": "lag.0.lag",
+          "op": "<=",
+          "vs": "native"
+        }
+      ]
+    },
+    {
+      "id": "G3-sponza-move",
+      "golden": "G3",
+      "status": "provisional (kept capture sponza-move: moving occluder in the sun shaft)",
+      "title": "Sponza, static camera, moving knot: shadows + diffuse",
+      "capture": "sponza-move",
+      "native": null,
+      "signals": [
+        "visibility",
+        "diffuse"
+      ],
+      "gates": [
+        {
+          "name": "calm k=8: moving boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.moving.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "detail: FLIP < FFX",
+          "signal": "visibility",
+          "metric": "detail.flip",
+          "op": "<",
+          "vs": "ffx"
+        }
+      ]
+    },
+    {
+      "id": "G4-bistro-pan",
+      "golden": "G4",
+      "status": "provisional (kept capture bistro-pan)",
+      "title": "Bistro pan: diffuse + AO, thin geometry",
+      "capture": "bistro-pan",
+      "native": null,
+      "signals": [
+        "diffuse",
+        "ao"
+      ],
+      "gates": [
+        {
+          "name": "calm: static boil <= native",
+          "signal": "diffuse",
+          "metric": "calm.legacyBoil",
+          "op": "<=",
+          "vs": "native"
+        },
+        {
+          "name": "lag <= native",
+          "signal": "diffuse",
+          "metric": "lag.0.lag",
+          "op": "<=",
+          "vs": "native"
+        }
+      ]
+    },
+    {
+      "id": "G4-bistro-move",
+      "golden": "G4",
+      "status": "provisional (kept capture bistro-move: moving lantern; the golden 'light switching on' event is pending T0-scenes)",
+      "title": "Bistro, static camera, moving local light: shadows + diffuse",
+      "capture": "bistro-move",
+      "native": null,
+      "signals": [
+        "visibility",
+        "diffuse"
+      ],
+      "gates": [
+        {
+          "name": "calm k=8: moving boil <= FFX",
+          "signal": "visibility",
+          "metric": "calm.strided.8.moving.boil",
+          "op": "<=",
+          "vs": "ffx"
+        },
+        {
+          "name": "detail: FLIP < FFX",
+          "signal": "visibility",
+          "metric": "detail.flip",
+          "op": "<",
+          "vs": "ffx"
+        }
+      ]
+    },
+    {
+      "id": "G4-bistro-hold",
+      "golden": "G4",
+      "status": "provisional (kept capture bistro-hold: static camera, 128-spp reference; still-camera sigma)",
+      "title": "Bistro, nothing moves: still-camera calm",
+      "capture": "bistro-hold",
+      "native": null,
+      "signals": [
+        "diffuse"
+      ],
+      "gates": []
+    },
+    {
+      "id": "corner-orbit",
+      "golden": null,
+      "status": "kept capture three-orbit (the corner scene); native imported",
+      "title": "Corner scene, slow orbit",
+      "capture": "three-orbit",
+      "native": "three-orbit",
+      "signals": [
+        "diffuse",
+        "specular",
+        "visibility",
+        "ao"
+      ],
+      "gates": []
+    },
+    {
+      "id": "corner-pan",
+      "golden": null,
+      "status": "kept capture three-pan (the corner scene); native imported",
+      "title": "Corner scene, pan",
+      "capture": "three-pan",
+      "native": "three-pan",
+      "signals": [
+        "diffuse",
+        "specular",
+        "visibility",
+        "ao"
+      ],
+      "gates": []
+    }
+  ]
+}

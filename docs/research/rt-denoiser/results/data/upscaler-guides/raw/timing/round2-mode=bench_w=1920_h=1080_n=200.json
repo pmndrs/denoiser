@@ -1,0 +1,47 @@
+{
+ "query": "mode=bench&w=1920&h=1080&n=200",
+ "W": 1920,
+ "H": 1080,
+ "n": 200,
+ "median": 0.158372,
+ "min": 0.141665,
+ "p90": 2.476632,
+ "ours": {
+  "svgf": {
+   "prepass": 0.822778,
+   "gradient_create": 0.276954,
+   "gradient_atrous_0": 0.095624,
+   "gradient_atrous_1": 0.097083,
+   "gradient_atrous_2": 0.094623,
+   "gradient_atrous_3": 0.09679,
+   "gradient_lambda": 0.112082,
+   "temporal": 1.283315,
+   "variance": 2.064469,
+   "atrous_0": 0.583033,
+   "atrous_1": 0.220372,
+   "atrous_2": 0.208039,
+   "atrous_3": 0.205456,
+   "atrous_4": 0.204872,
+   "total": 7.745216999999999
+  },
+  "recurrent": {
+   "prepass": 0.862279,
+   "pre_blur": 1.23594,
+   "temporal": 1.376188,
+   "mips": 0.864903,
+   "history_fix": 1.29723,
+   "blur": 1.074484,
+   "post_blur": 0.225788,
+   "stabilize": 0.212705,
+   "total": 7.7125070000000004
+  },
+  "shadows": {
+   "temporal": 1.459478,
+   "tiles": 0.055499,
+   "spatial0": 0.328162,
+   "spatial1": 0.401786,
+   "stabilize": 0.308412,
+   "total": 2.573087
+  }
+ }
+}

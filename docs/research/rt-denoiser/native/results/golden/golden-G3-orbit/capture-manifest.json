@@ -1,0 +1,144 @@
+{
+  "version": 0,
+  "scene": "golden-G3",
+  "generator": "examples/three-temporal golden.html (capture mode, __golden.capture)",
+  "width": 960,
+  "height": 540,
+  "reversedDepth": false,
+  "static": true,
+  "demodulation": {
+    "diffuse": "albedo",
+    "specular": "none"
+  },
+  "lights": [
+    {
+      "id": "sun",
+      "type": "directional",
+      "direction": [
+        0.45921248275176946,
+        0.8829475928589271,
+        0.09760862640967047
+      ],
+      "angularRadius": 0.02,
+      "color": [
+        1,
+        0.95,
+        0.86
+      ],
+      "intensity": 6,
+      "shadow": true
+    },
+    {
+      "id": "local",
+      "type": "sphere",
+      "position": [
+        -7,
+        2.3,
+        3.6
+      ],
+      "radius": 0.15,
+      "color": [
+        1,
+        0.72,
+        0.45
+      ],
+      "intensity": 5,
+      "shadow": false
+    }
+  ],
+  "buffers": [
+    {
+      "name": "depth",
+      "channels": 1
+    },
+    {
+      "name": "viewz",
+      "channels": 1
+    },
+    {
+      "name": "roughness",
+      "channels": 1
+    },
+    {
+      "name": "motion_z",
+      "channels": 1
+    },
+    {
+      "name": "normal",
+      "channels": 3
+    },
+    {
+      "name": "motion",
+      "channels": 2
+    },
+    {
+      "name": "albedo",
+      "channels": 3
+    },
+    {
+      "name": "f0",
+      "channels": 3
+    },
+    {
+      "name": "diffuse",
+      "channels": 3
+    },
+    {
+      "name": "diffuse_hitt",
+      "channels": 1
+    },
+    {
+      "name": "specular",
+      "channels": 3
+    },
+    {
+      "name": "specular_hitt",
+      "channels": 1
+    },
+    {
+      "name": "visibility",
+      "channels": 1
+    },
+    {
+      "name": "occluder_dist",
+      "channels": 1
+    },
+    {
+      "name": "diffuse_ref",
+      "channels": 3
+    },
+    {
+      "name": "visibility_ref",
+      "channels": 1
+    },
+    {
+      "name": "specular_ref",
+      "channels": 3
+    },
+    {
+      "name": "ao_ref",
+      "channels": 1
+    }
+  ],
+  "referenceSpp": 4096,
+  "golden": {
+    "scene": "G3",
+    "label": "Sponza orbit",
+    "seed": 1,
+    "start": 0,
+    "frames": 64,
+    "events": [],
+    "info": {
+      "scene": "sponza",
+      "attribution": "Sponza (c) 2016 Crytek, improved model by Frank Meinl after Marko Dabrovic's original, glTF by Khronos (glTF-Sample-Assets); Cryengine Limited License Agreement; geometry only, not redistributed",
+      "triangles": 262267
+    },
+    "references": {
+      "diffuse": "4096 white-noise cosine rays/pixel",
+      "visibility": "4096 stratified rays/pixel",
+      "specular": "4096 stochastic SSR frames (SSR's own expectation, env reflections included; not masked)",
+      "ao": "ao_ref: mean per-sample normalized hit distance h/(h + 1 + 0.05 * depth) of the diffuse reference rays, miss = 1"
+    },
+    "signals": "diffuse: 1 cosine ray (blue noise, index = seed offset + path frame); shadow: 1 ray to the shadow light; specular: three SSR (stochastic, env importance sampling), NOT demodulated and NOT masked to screen-space hits"
+  }
+}

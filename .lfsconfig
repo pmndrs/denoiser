@@ -1,0 +1,5 @@
+[lfs]
+	# Research scene models (~210 MB) are not fetched by default; opt in with
+	#   git lfs pull --include "examples/three-temporal/scene-assets/**" --exclude ""
+	# (--exclude "" overrides the fetchexclude below for that one pull)
+	fetchexclude = examples/three-temporal/scene-assets/**

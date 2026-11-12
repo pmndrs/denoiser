@@ -48,6 +48,27 @@ export interface FrameGuides {
   roughness?: GPUTexture;
   /** Surface albedo [0, 1] — lets filters demodulate texture detail. */
   albedo?: GPUTexture;
+  /**
+   * Optional linear view-space z of the primary hit (r32float / r16float), in
+   * three.js view space: in front of the camera is NEGATIVE; sky = -far (or 0).
+   * When given, filters use it instead of linearizing `depth` (exact, and the
+   * only option for depth buffers that aren't the projection's own).
+   */
+  viewZ?: GPUTexture;
+  /**
+   * Optional 2.5D motion: viewZprev - viewZ per pixel in `.r` (r32float /
+   * r16float), so moving objects reproject correctly in depth too. Without it,
+   * the previous depth is derived from the camera transform (exact for static
+   * geometry).
+   */
+  motionZ?: GPUTexture;
+  /**
+   * Optional detail (normal-mapped shading) normal, world space, same encoding as
+   * `normal`. For directional payloads (`payload: 'sh'`): pass the smooth normal as
+   * `normal` (the filter's weights) and the normal the rays were sampled around here;
+   * the payload is resolved at it.
+   */
+  detailNormal?: GPUTexture;
 }
 
 export interface TemporalConfig {
@@ -78,12 +99,52 @@ export interface TemporalDenoiser<Inputs extends object = object> {
 
 // ---- signal inputs ------------------------------------------------------------
 
+/**
+ * The shadow-casting light, same fields as a capture's `lights` entry
+ * (CAPTURE-FORMAT v0). Lets a denoiser size penumbrae from occluder distance.
+ */
+export type ShadowLight =
+  | {
+    type: 'sphere';
+    /** World-space centre. */
+    position: readonly [number, number, number];
+    /** World-space radius (0 = point light: hard shadows). */
+    radius: number;
+  }
+  | {
+    type: 'directional';
+    /** Unit vector from the surface TOWARD the light. */
+    direction: readonly [number, number, number];
+    /** Angular radius in radians (the sun is about 0.0047). */
+    angularRadius: number;
+  };
+
 /** Shadows: 1-sample stochastic visibility toward the light. */
 export interface ShadowInputs {
   /** Visibility per pixel in [0, 1] (1 = lit), r8unorm / r16float — one ray or shadow-map sample. */
   visibility: GPUTexture;
-  /** Distance to the occluder (r16float), for penumbra-aware filter sizes. */
+  /**
+   * Distance to the occluder (r16float / r32float), for penumbra-aware filter sizes. World
+   * units; 0 = unoccluded (or self-shadowed, when visibility is 0).
+   */
   hitDistance?: GPUTexture;
+  /**
+   * The light this visibility was traced toward (optional; may change every frame).
+   * Filters that size penumbrae from `hitDistance` need it; others ignore it.
+   */
+  light?: ShadowLight;
+  /**
+   * Optional RGB transmittance of the translucent layers the shadow ray crossed (rgba16float /
+   * rgba8unorm, rgb in [0, 1]; product of the layers' transmittances, 1 where it crossed none),
+   * for coloured shadows. Ignored where visibility is 0. Only denoisers that support it read it
+   * (e.g. denoiser/realtime's ShadowDenoiser with `translucency: true`).
+   */
+  translucency?: GPUTexture;
+  /**
+   * Optional distance to the nearest translucent layer that attenuated the ray (r16float / r32float,
+   * world units; 0 = none): sizes coloured penumbrae like `hitDistance` sizes opaque ones.
+   */
+  translucencyHitDistance?: GPUTexture;
 }
 
 /** Reflections / specular indirect: 1 sample per pixel. */
@@ -92,6 +153,10 @@ export interface SpecularInputs {
   radiance: GPUTexture;
   /** Ray hit distance (r16float, 0 = miss). Drives reprojection of reflections. */
   hitDistance: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
 }
 
 /** Diffuse indirect (GI) / ambient occlusion: 1 sample per pixel. */
@@ -99,6 +164,19 @@ export interface DiffuseInputs {
   /** Noisy irradiance (linear HDR, rgba16float) or AO in r. */
   radiance: GPUTexture;
   hitDistance?: GPUTexture;
+  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  direction?: GPUTexture;
+  /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
+  sh?: GPUTexture;
+}
+
+/**
+ * Diffuse + specular denoised together (shared guides and prepass), e.g.
+ * `denoiser/realtime`'s `DiffuseSpecularDenoiser`.
+ */
+export interface DiffuseSpecularInputs {
+  diffuse: DiffuseInputs;
+  specular: SpecularInputs;
 }
 
 /** Full beauty frame for neural temporal denoisers (OIDN 3 class). */

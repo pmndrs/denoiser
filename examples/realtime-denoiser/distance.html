@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Distance hold probe</title>
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #111; color: #ddd; }
+    pre { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Long-hold distance probe</h1>
+  <p>Replays a looped hold capture through one denoiser and logs, per frame and per hold period, brightness, regional
+    error, boil, edge sharpness and the denoiser's stored hit-distance quantities against the raw inputs
+    (review target D, <code>docs/research/rt-denoiser/results/DISTANCE-LONG.md</code>). Options: top of
+    <code>src/distance.ts</code>.</p>
+  <pre id="status"></pre>
+  <script type="module" src="/src/distance.ts"></script>
+</body>
+</html>

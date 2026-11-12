@@ -1,0 +1,110 @@
+{
+ "query": "mode=capture&capture=sponza-orbit&frames=48&det=svgf,svgf@normalTest=relative,svgf@normalTest=relative@historyFallback=off,svgf@historyFallback=off,recurrent,recurrent@normalThreshold=0.95@normalTest=relative,recurrent@normalThreshold=0.8@normalTest=relative,recurrent@normalThreshold=0.95",
+ "W": 960,
+ "H": 540,
+ "frames": 48,
+ "channels": {
+  "svgf": {
+   "TP": 27426,
+   "FP": 57867,
+   "FN": 114242,
+   "TN": 24143931,
+   "TPi": 9660,
+   "FPi": 52178,
+   "FNi": 193,
+   "TNi": 23658915,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@normalTest=relative": {
+   "TP": 25927,
+   "FP": 5919,
+   "FN": 115741,
+   "TN": 24195879,
+   "TPi": 9656,
+   "FPi": 4857,
+   "FNi": 197,
+   "TNi": 23706236,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@normalTest=relative@historyFallback=off": {
+   "TP": 52467,
+   "FP": 12277,
+   "FN": 89201,
+   "TN": 24189521,
+   "TPi": 9849,
+   "FPi": 9965,
+   "FNi": 4,
+   "TNi": 23701128,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "svgf@historyFallback=off": {
+   "TP": 54069,
+   "FP": 86511,
+   "FN": 87599,
+   "TN": 24115287,
+   "TPi": 9849,
+   "FPi": 77183,
+   "FNi": 4,
+   "TNi": 23633910,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent": {
+   "TP": 50744,
+   "FP": 9449,
+   "FN": 90924,
+   "TN": 24192349,
+   "TPi": 9848,
+   "FPi": 7668,
+   "FNi": 5,
+   "TNi": 23703425,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.95@normalTest=relative": {
+   "TP": 50940,
+   "FP": 10492,
+   "FN": 90728,
+   "TN": 24191306,
+   "TPi": 9849,
+   "FPi": 8553,
+   "FNi": 4,
+   "TNi": 23702540,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.8@normalTest=relative": {
+   "TP": 50856,
+   "FP": 10218,
+   "FN": 90812,
+   "TN": 24191580,
+   "TPi": 9849,
+   "FPi": 8346,
+   "FNi": 4,
+   "TNi": 23702747,
+   "hard": 0,
+   "FNhard": 0
+  },
+  "recurrent@normalThreshold=0.95": {
+   "TP": 52681,
+   "FP": 83423,
+   "FN": 88987,
+   "TN": 24118375,
+   "TPi": 9849,
+   "FPi": 74470,
+   "FNi": 4,
+   "TNi": 23636623,
+   "hard": 0,
+   "FNhard": 0
+  }
+ },
+ "gtStats": {
+  "selfChecked": 3477665,
+  "selfOccluded": 101,
+  "triangles": 262267,
+  "gtMs": 53454
+ }
+}

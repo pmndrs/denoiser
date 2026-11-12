@@ -1,0 +1,60 @@
+[
+ {
+  "query": "signal=both&mode=bench&filter=recurrent&specularFilter=recurrent&skeleton=1",
+  "ready": true,
+  "results": {
+   "W": 1920,
+   "H": 1080,
+   "frames": 120,
+   "signal": "both",
+   "path": "orbit",
+   "filter": "recurrent",
+   "opts": {
+    "filter": "recurrent",
+    "tune": {},
+    "skeleton": true
+   },
+   "specFilter": "recurrent",
+   "noHistory": false,
+   "adapter": "Apple M5 Pro",
+   "timings": {
+    "prepass": {
+     "min": 0.098,
+     "median": 0.102
+    },
+    "pre_blur": {
+     "min": 0.227,
+     "median": 0.24
+    },
+    "temporal": {
+     "min": 0.153,
+     "median": 0.166
+    },
+    "mips": {
+     "min": 0.086,
+     "median": 0.087
+    },
+    "history_fix": {
+     "min": 0.086,
+     "median": 0.091
+    },
+    "blur": {
+     "min": 0.05,
+     "median": 0.052
+    },
+    "post_blur": {
+     "min": 0.061,
+     "median": 0.064
+    },
+    "stabilize": {
+     "min": 0.086,
+     "median": 0.091
+    },
+    "total": {
+     "min": 0.852,
+     "median": 0.898
+    }
+   }
+  }
+ }
+]

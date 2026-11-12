@@ -1,0 +1,865 @@
+{
+ "native": {
+  "golden-G3-orbit-1080t|nrd-reblur": {
+   "gpu": 7.156734999999999,
+   "gpuRounds": [
+    7.15469,
+    7.156734999999999,
+    7.15878
+   ],
+   "wall": 7.32305,
+   "wallRounds": [
+    7.319,
+    7.32305,
+    7.39115
+   ],
+   "reset": 8.89907,
+   "p10": 6.82701,
+   "p90": 8.52787
+  },
+  "golden-G3-orbit-1080t|nrd-reblur-occlusion": {
+   "gpu": 4.45542,
+   "gpuRounds": [
+    4.4544,
+    4.45542,
+    4.4569600000000005
+   ],
+   "wall": 4.61305,
+   "wallRounds": [
+    4.6061,
+    4.61305,
+    4.6753
+   ],
+   "reset": 5.956095,
+   "p10": 4.19021,
+   "p90": 5.6832
+  },
+  "golden-G3-orbit-1080t|nrd-reblur-tunedD": {
+   "gpu": 7.09171,
+   "gpuRounds": [
+    7.089155,
+    7.09171,
+    7.094275
+   ],
+   "wall": 7.27745,
+   "wallRounds": [
+    7.27745,
+    7.2499,
+    7.3176000000000005
+   ],
+   "reset": 8.84634,
+   "p10": 6.76659,
+   "p90": 8.45107
+  },
+  "golden-G3-orbit-1080t|nrd-relax": {
+   "gpu": 9.02963,
+   "gpuRounds": [
+    9.02963,
+    9.029119999999999,
+    9.029630000000001
+   ],
+   "wall": 9.2048,
+   "wallRounds": [
+    9.2048,
+    9.20065,
+    9.262
+   ],
+   "reset": 9.923585,
+   "p10": 8.88422,
+   "p90": 10.0925
+  },
+  "golden-G4-pan-light-on-1080t|nrd-reblur": {
+   "gpu": 8.10547,
+   "gpuRounds": [
+    8.103935,
+    8.10547,
+    8.10598
+   ],
+   "wall": 8.3367,
+   "wallRounds": [
+    8.539750000000002,
+    8.3073,
+    8.3367
+   ],
+   "reset": 8.848894999999999,
+   "p10": 8.0169,
+   "p90": 8.3927
+  },
+  "golden-G4-pan-light-on-1080t|nrd-reblur-occlusion": {
+   "gpu": 5.372415,
+   "gpuRounds": [
+    5.372415,
+    5.372415,
+    5.37293
+   ],
+   "wall": 5.6770499999999995,
+   "wallRounds": [
+    5.801399999999999,
+    5.5623000000000005,
+    5.6770499999999995
+   ],
+   "reset": 5.94022,
+   "p10": 5.31558,
+   "p90": 5.65555
+  },
+  "golden-G4-pan-light-on-1080t|nrd-reblur-tunedD": {
+   "gpu": 8.043009999999999,
+   "gpuRounds": [
+    8.043009999999999,
+    8.04966,
+    8.043005
+   ],
+   "wall": 8.23715,
+   "wallRounds": [
+    8.215499999999999,
+    8.240400000000001,
+    8.23715
+   ],
+   "reset": 8.806915,
+   "p10": 7.9616,
+   "p90": 8.33946
+  },
+  "golden-G4-pan-light-on-1080t|nrd-relax": {
+   "gpu": 9.66963,
+   "gpuRounds": [
+    9.66963,
+    9.66963,
+    9.67066
+   ],
+   "wall": 9.97225,
+   "wallRounds": [
+    10.0593,
+    9.9576,
+    9.97225
+   ],
+   "reset": 9.89235,
+   "p10": 9.6256,
+   "p90": 9.9287
+  }
+ },
+ "golden": {
+  "G3|raw": {
+   "wall": 124.60000002384186,
+   "wallRounds": [
+    120.7000000178814,
+    138.2999999821186,
+    124.60000002384186
+   ],
+   "total": 0,
+   "groups": {},
+   "overRaw": 0
+  },
+  "G3|ffx": {
+   "wall": 126.5,
+   "wallRounds": [
+    125.5,
+    142.19999998807907,
+    126.5
+   ],
+   "total": 5.866496,
+   "groups": {
+    "specular": 4.657152000000001,
+    "shadow": 1.2134399999999999
+   },
+   "overRaw": 1.899999976158142
+  },
+  "G3|ours": {
+   "wall": 136.09999999403954,
+   "wallRounds": [
+    136.09999999403954,
+    157.5,
+    135.69999998807907
+   ],
+   "total": 14.723072,
+   "groups": {
+    "diffuse+specular": 9.192448,
+    "ao": 4.02944,
+    "shadow": 1.4776319999999998
+   },
+   "overRaw": 11.499999970197678,
+   "passes": {
+    "diffuse+specular.prepass": 0.379904,
+    "diffuse+specular.gradient_create": 0.437248,
+    "diffuse+specular.gradient_atrous_0": 0.115712,
+    "diffuse+specular.gradient_atrous_1": 0.10752,
+    "diffuse+specular.gradient_atrous_2": 0.10752,
+    "diffuse+specular.gradient_atrous_3": 0.139264,
+    "diffuse+specular.gradient_lambda": 0.135168,
+    "diffuse+specular.temporal": 1.152,
+    "diffuse+specular.variance": 0.654336,
+    "diffuse+specular.atrous_0": 1.21856,
+    "diffuse+specular.atrous_1": 1.29536,
+    "diffuse+specular.atrous_2": 1.327104,
+    "diffuse+specular.atrous_3": 1.08032,
+    "diffuse+specular.atrous_4": 1.02912,
+    "diffuse+specular.total": 9.192448,
+    "ao.prepass": 0.362496,
+    "ao.normalize": 0.145408,
+    "ao.gradient_create": 0.268288,
+    "ao.gradient_atrous_0": 0.053248,
+    "ao.gradient_atrous_1": 0.0512,
+    "ao.gradient_atrous_2": 0.0512,
+    "ao.gradient_atrous_3": 0.05632,
+    "ao.gradient_lambda": 0.062464,
+    "ao.temporal": 0.817152,
+    "ao.variance": 0.313344,
+    "ao.atrous_0": 0.56832,
+    "ao.atrous_1": 0.613376,
+    "ao.atrous_2": 0.656384,
+    "ao.total": 4.02944,
+    "shadow.temporal": 1.069056,
+    "shadow.tiles": 0.008192,
+    "shadow.spatial0": 0.166912,
+    "shadow.spatial1": 0.165888,
+    "shadow.stabilize": 0.086016,
+    "shadow.total": 1.4776319999999998
+   }
+  },
+  "G4|raw": {
+   "wall": 373.2000000178814,
+   "wallRounds": [
+    383.19999998807907,
+    373.2000000178814,
+    369.2000000178814
+   ],
+   "total": 0,
+   "groups": {},
+   "overRaw": 0
+  },
+  "G4|ffx": {
+   "wall": 378.90000000596046,
+   "wallRounds": [
+    378.90000000596046,
+    389.5,
+    373.7000000178814
+   ],
+   "total": 6.555648,
+   "groups": {
+    "specular": 4.743167999999999,
+    "shadow": 1.768448
+   },
+   "overRaw": 5.699999988079071
+  },
+  "G4|ours": {
+   "wall": 374.7999999821186,
+   "wallRounds": [
+    369.19999998807907,
+    404.7999999821186,
+    374.7999999821186
+   ],
+   "total": 17.312768,
+   "groups": {
+    "diffuse+specular": 10.290175999999999,
+    "ao": 4.581376000000001,
+    "shadow": 2.3726079999999996
+   },
+   "overRaw": 1.5999999642372131,
+   "passes": {
+    "diffuse+specular.prepass": 0.379904,
+    "diffuse+specular.gradient_create": 0.412672,
+    "diffuse+specular.gradient_atrous_0": 0.116736,
+    "diffuse+specular.gradient_atrous_1": 0.108544,
+    "diffuse+specular.gradient_atrous_2": 0.108544,
+    "diffuse+specular.gradient_atrous_3": 0.140288,
+    "diffuse+specular.gradient_lambda": 0.136192,
+    "diffuse+specular.temporal": 1.235968,
+    "diffuse+specular.variance": 1.676288,
+    "diffuse+specular.atrous_0": 1.221632,
+    "diffuse+specular.atrous_1": 1.298432,
+    "diffuse+specular.atrous_2": 1.330176,
+    "diffuse+specular.atrous_3": 1.081344,
+    "diffuse+specular.atrous_4": 1.02912,
+    "diffuse+specular.total": 10.290175999999999,
+    "ao.prepass": 0.362496,
+    "ao.normalize": 0.146432,
+    "ao.gradient_create": 0.259072,
+    "ao.gradient_atrous_0": 0.054272,
+    "ao.gradient_atrous_1": 0.052224,
+    "ao.gradient_atrous_2": 0.052224,
+    "ao.gradient_atrous_3": 0.058368,
+    "ao.gradient_lambda": 0.063488,
+    "ao.temporal": 0.894976,
+    "ao.variance": 0.795648,
+    "ao.atrous_0": 0.570368,
+    "ao.atrous_1": 0.6144,
+    "ao.atrous_2": 0.658432,
+    "ao.total": 4.581376000000001,
+    "shadow.temporal": 1.327104,
+    "shadow.tiles": 0.009216,
+    "shadow.spatial0": 0.413696,
+    "shadow.spatial1": 0.412672,
+    "shadow.stabilize": 0.18432,
+    "shadow.total": 2.3726079999999996
+   }
+  }
+ },
+ "bench": {
+  "default (timestamps)": {
+   "rounds": 6,
+   "gpu": 6.4911,
+   "wall": 9.05,
+   "wallRounds": [
+    10.1,
+    8.6,
+    9,
+    9,
+    9.1,
+    9.1
+   ],
+   "p90": 10.1,
+   "cpu": 0.4,
+   "temps": [
+    65,
+    63,
+    62,
+    67,
+    66,
+    67
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "default, no timestamps": {
+   "rounds": 6,
+   "gpu": null,
+   "wall": 9,
+   "wallRounds": [
+    9.7,
+    9,
+    8.9,
+    9,
+    9,
+    9
+   ],
+   "p90": 10,
+   "cpu": 0.35,
+   "temps": [
+    66,
+    63,
+    62,
+    66,
+    67,
+    66
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "chroma off": {
+   "rounds": 6,
+   "gpu": 6.35185,
+   "wall": 9,
+   "wallRounds": [
+    9,
+    8.6,
+    9,
+    9,
+    8.8,
+    9
+   ],
+   "p90": 10.05,
+   "cpu": 0.4,
+   "temps": [
+    65,
+    62,
+    64,
+    67,
+    67,
+    67
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "antiLag off (alpha 0.1)": {
+   "rounds": 6,
+   "gpu": 5.8537,
+   "wall": 8.1,
+   "wallRounds": [
+    9.5,
+    8.1,
+    8.2,
+    8.1,
+    8.1,
+    8.1
+   ],
+   "p90": 9.2,
+   "cpu": 0.3,
+   "temps": [
+    67,
+    60,
+    65,
+    67,
+    67,
+    66
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "stabilize (x-auto)": {
+   "rounds": 6,
+   "gpu": 7.3185,
+   "wall": 10,
+   "wallRounds": [
+    10.5,
+    9.7,
+    10.1,
+    10,
+    10,
+    9.9
+   ],
+   "p90": 11.149999999999999,
+   "cpu": null,
+   "temps": [
+    65,
+    62,
+    65,
+    66,
+    66,
+    66
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "x-auto default": {
+   "rounds": 6,
+   "gpu": 6.49165,
+   "wall": 9.1,
+   "wallRounds": [
+    9.1,
+    9,
+    9.4,
+    9.1,
+    9,
+    9.1
+   ],
+   "p90": 10.1,
+   "cpu": null,
+   "temps": [
+    66,
+    61,
+    66,
+    65,
+    67,
+    65
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "empty submit": {
+   "rounds": 6,
+   "gpu": null,
+   "wall": 0.2,
+   "wallRounds": [
+    0.2,
+    0.2,
+    0.3,
+    0.2,
+    0.2,
+    0.2
+   ],
+   "p90": 0.3,
+   "cpu": 0,
+   "temps": [
+    68,
+    61,
+    67,
+    66,
+    67,
+    64
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  },
+  "one tiny dispatch": {
+   "rounds": 6,
+   "gpu": null,
+   "wall": 1.95,
+   "wallRounds": [
+    0.8,
+    0.8,
+    0.9,
+    3,
+    3,
+    3
+   ],
+   "p90": 4,
+   "cpu": 0,
+   "temps": [
+    72,
+    61,
+    66,
+    67,
+    65,
+    64
+   ],
+   "clocks": [
+    "1200/7151"
+   ]
+  }
+ },
+ "replay": {
+  "golden-G3-orbit-1080t|time-ours-auto-w0": {
+   "rounds": 5,
+   "gpu": 7.7742,
+   "gpuRounds": [
+    7.767,
+    29.8025,
+    7.7629,
+    9.1085,
+    7.7742
+   ],
+   "wall": 13.4,
+   "wallRounds": [
+    11.2,
+    35.7,
+    11,
+    13.5,
+    13.4
+   ],
+   "resetWall": 128.7,
+   "passes": {
+    "prepass": 0.2898,
+    "gradient_create": 0.6461,
+    "gradient_atrous_0": 0.0911,
+    "gradient_atrous_1": 0.0891,
+    "gradient_atrous_2": 0.0881,
+    "gradient_atrous_3": 0.1116,
+    "gradient_lambda": 0.1085,
+    "temporal": 0.9359,
+    "variance": 2.2016,
+    "atrous_0": 0.938,
+    "atrous_1": 0.9892,
+    "atrous_2": 1.0127,
+    "atrous_3": 0.8182,
+    "atrous_4": 0.7834
+   }
+  },
+  "golden-G3-orbit-1080t|time-ours-auto-w50": {
+   "rounds": 5,
+   "gpu": 7.7732,
+   "gpuRounds": [
+    13.8762,
+    7.7681,
+    7.765,
+    14.9207,
+    7.7732
+   ],
+   "wall": 11.7,
+   "wallRounds": [
+    20,
+    11.6,
+    10.4,
+    20.2,
+    11.7
+   ],
+   "resetWall": 112.4,
+   "passes": {
+    "prepass": 0.2888,
+    "gradient_create": 0.6461,
+    "gradient_atrous_0": 0.0911,
+    "gradient_atrous_1": 0.0891,
+    "gradient_atrous_2": 0.0881,
+    "gradient_atrous_3": 0.1116,
+    "gradient_lambda": 0.1085,
+    "temporal": 0.937,
+    "variance": 2.2026,
+    "atrous_0": 0.938,
+    "atrous_1": 0.9892,
+    "atrous_2": 1.0138,
+    "atrous_3": 0.8182,
+    "atrous_4": 0.7834
+   }
+  },
+  "golden-G3-orbit-1080t|time-ours-occ-w0": {
+   "rounds": 5,
+   "gpu": 3.2512,
+   "gpuRounds": [
+    3.2573,
+    3.2512,
+    3.2502,
+    3.2512,
+    3.2563
+   ],
+   "wall": 7.1,
+   "wallRounds": [
+    7.1,
+    6.6,
+    7.4,
+    7.3,
+    6.4
+   ],
+   "resetWall": 66.8,
+   "passes": {
+    "prepass": 0.2888,
+    "normalize": 0.1393,
+    "gradient_create": 0.299,
+    "gradient_atrous_0": 0.044,
+    "gradient_atrous_1": 0.043,
+    "gradient_atrous_2": 0.042,
+    "gradient_atrous_3": 0.0461,
+    "gradient_lambda": 0.0492,
+    "temporal": 0.6287,
+    "variance": 0.2806,
+    "atrous_0": 0.4301,
+    "atrous_1": 0.4639,
+    "atrous_2": 0.4946
+   }
+  },
+  "golden-G3-orbit-1080t|time-ours-occ-w50": {
+   "rounds": 5,
+   "gpu": 3.2553,
+   "gpuRounds": [
+    3.2594,
+    3.5881,
+    3.2512,
+    3.2553,
+    3.2553
+   ],
+   "wall": 6.3,
+   "wallRounds": [
+    6.2,
+    6.7,
+    6.1,
+    7.1,
+    6.3
+   ],
+   "resetWall": 71.4,
+   "passes": {
+    "prepass": 0.2877,
+    "normalize": 0.1393,
+    "gradient_create": 0.297,
+    "gradient_atrous_0": 0.044,
+    "gradient_atrous_1": 0.043,
+    "gradient_atrous_2": 0.042,
+    "gradient_atrous_3": 0.0471,
+    "gradient_lambda": 0.0492,
+    "temporal": 0.6298,
+    "variance": 0.2847,
+    "atrous_0": 0.4301,
+    "atrous_1": 0.4639,
+    "atrous_2": 0.4946
+   }
+  },
+  "golden-G4-pan-light-on-1080t|time-ours-auto-w0": {
+   "rounds": 5,
+   "gpu": 9.3338,
+   "gpuRounds": [
+    9.3338,
+    10.0884,
+    9.3297,
+    9.3307,
+    9.5898
+   ],
+   "wall": 13,
+   "wallRounds": [
+    12.6,
+    14.2,
+    14,
+    13,
+    12.5
+   ],
+   "resetWall": 106.1,
+   "passes": {
+    "prepass": 0.2888,
+    "gradient_create": 0.6287,
+    "gradient_atrous_0": 0.0911,
+    "gradient_atrous_1": 0.0881,
+    "gradient_atrous_2": 0.087,
+    "gradient_atrous_3": 0.1116,
+    "gradient_lambda": 0.1085,
+    "temporal": 1.0004,
+    "variance": 2.389,
+    "atrous_0": 0.938,
+    "atrous_1": 0.9882,
+    "atrous_2": 1.0127,
+    "atrous_3": 0.8161,
+    "atrous_4": 0.7813
+   }
+  },
+  "golden-G4-pan-light-on-1080t|time-ours-auto-w50": {
+   "rounds": 5,
+   "gpu": 9.3297,
+   "gpuRounds": [
+    9.3235,
+    9.3338,
+    9.3297,
+    9.3307,
+    9.3286
+   ],
+   "wall": 13.3,
+   "wallRounds": [
+    13.6,
+    12.9,
+    13.7,
+    13.3,
+    13.2
+   ],
+   "resetWall": 108,
+   "passes": {
+    "prepass": 0.2877,
+    "gradient_create": 0.6287,
+    "gradient_atrous_0": 0.0901,
+    "gradient_atrous_1": 0.0881,
+    "gradient_atrous_2": 0.087,
+    "gradient_atrous_3": 0.1106,
+    "gradient_lambda": 0.1085,
+    "temporal": 0.9994,
+    "variance": 2.389,
+    "atrous_0": 0.938,
+    "atrous_1": 0.9882,
+    "atrous_2": 1.0127,
+    "atrous_3": 0.8161,
+    "atrous_4": 0.7813
+   }
+  },
+  "golden-G4-pan-light-on-1080t|time-ours-occ-w0": {
+   "rounds": 5,
+   "gpu": 3.668,
+   "gpuRounds": [
+    3.6772,
+    3.668,
+    3.668,
+    3.669,
+    3.6639
+   ],
+   "wall": 7.3,
+   "wallRounds": [
+    7.1,
+    7.3,
+    9,
+    8.3,
+    6.9
+   ],
+   "resetWall": 65,
+   "passes": {
+    "prepass": 0.2888,
+    "normalize": 0.1393,
+    "gradient_create": 0.2867,
+    "gradient_atrous_0": 0.043,
+    "gradient_atrous_1": 0.043,
+    "gradient_atrous_2": 0.042,
+    "gradient_atrous_3": 0.0461,
+    "gradient_lambda": 0.0492,
+    "temporal": 0.7025,
+    "variance": 0.638,
+    "atrous_0": 0.4291,
+    "atrous_1": 0.4639,
+    "atrous_2": 0.4946
+   }
+  },
+  "golden-G4-pan-light-on-1080t|time-ours-occ-w50": {
+   "rounds": 5,
+   "gpu": 3.6618,
+   "gpuRounds": [
+    3.668,
+    3.6608,
+    3.6618,
+    3.6639,
+    3.6588
+   ],
+   "wall": 6.2,
+   "wallRounds": [
+    6.2,
+    6.7,
+    6.2,
+    7.2,
+    6.2
+   ],
+   "resetWall": 69.9,
+   "passes": {
+    "prepass": 0.2867,
+    "normalize": 0.1393,
+    "gradient_create": 0.2867,
+    "gradient_atrous_0": 0.044,
+    "gradient_atrous_1": 0.043,
+    "gradient_atrous_2": 0.042,
+    "gradient_atrous_3": 0.0461,
+    "gradient_lambda": 0.0492,
+    "temporal": 0.7025,
+    "variance": 0.6328,
+    "atrous_0": 0.4301,
+    "atrous_1": 0.4639,
+    "atrous_2": 0.4946
+   }
+  }
+ },
+ "clocks": {
+  "bench": {
+   "n": 846,
+   "low": 222,
+   "min": 457,
+   "maxT": 89,
+   "thr": {
+    "0x0000000000000001": 623,
+    "0x0000000000000004": 54,
+    "0x0000000000000020": 164,
+    "0x0000000000000024": 5
+   }
+  },
+  "golden `time` G3": {
+   "n": 644,
+   "low": 526,
+   "min": 435,
+   "maxT": 89,
+   "thr": {
+    "0x0000000000000001": 142,
+    "0x0000000000000004": 90,
+    "0x0000000000000020": 412
+   }
+  },
+  "golden `time` G4": {
+   "n": 1980,
+   "low": 1642,
+   "min": 307,
+   "maxT": 90,
+   "thr": {
+    "0x0000000000000004": 105,
+    "0x0000000000000001": 321,
+    "0x0000000000000020": 1554
+   }
+  },
+  "native G3": {
+   "n": 122,
+   "low": 0,
+   "min": 1200,
+   "maxT": 70,
+   "thr": {
+    "0x0000000000000001": 122
+   }
+  },
+  "native G4": {
+   "n": 136,
+   "low": 0,
+   "min": 1200,
+   "maxT": 69,
+   "thr": {
+    "0x0000000000000001": 136
+   }
+  },
+  "replay G3": {
+   "n": 164,
+   "low": 2,
+   "min": 1132,
+   "maxT": 74,
+   "thr": {
+    "0x0000000000000001": 163,
+    "0x00000000000000": 1
+   }
+  },
+  "replay G4": {
+   "n": 83,
+   "low": 0,
+   "min": 1200,
+   "maxT": 75,
+   "thr": {
+    "0x0000000000000001": 83
+   }
+  }
+ }
+}

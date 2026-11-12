@@ -11,6 +11,10 @@
   made `AutoRuntime` the default (ORT moved to `denoiser/ort`).
 - [**three.js & TSL**](site/guides/three-and-tsl.mdx) — the `denoise()`,
   `ffxShadows()` and `ffxReflections()` nodes in `denoiser/three`.
+- [**Real-time denoisers (experimental)**](site/guides/realtime-denoisers.mdx) —
+  `denoiser/realtime`: our per-effect diffuse / specular / shadow / occlusion
+  denoisers, their renderer contract, measured quality and cost, and the
+  `realtime*()` TSL nodes.
 
 The package README ([`packages/denoiser/README.md`](../packages/denoiser/README.md))
 covers install, quick start, the API sketch, and the device-lifetime rules.

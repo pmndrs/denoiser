@@ -1,0 +1,15 @@
+capture C:\dev\nrd-reference\captures\golden-G4-hold-light-on
+  ok   files                  {"frames":32,"buffers":18,"missing":0,"badSize":0}
+  ok   finite                 {"nonFinite":{}}
+  ok   ranges                 {"violations":{}}
+  ok   viewzNegativeInFront   {"scored":16453120,"positive":0,"beyondFar":0}
+  ok   normalsUnit            {"notUnit":0,"skyNonZero":0}
+  ok   normalsFaceCamera      {"backfacing":11392,"tested":4112576}
+  ok   depthMatchesViewz      {"maxRelErr":0.00001456}
+  ok   cameraContinuity       {"mismatches":[]}
+  ok   motionReprojection     {"static":true,"meanPx":0.00004957,"p99Px":0.0002158,"maxPx":0.0004968,"over0_1px":0,"tested":4112576}
+  ok   motionZReprojection    {"static":true,"meanAbs":3.249e-7,"maxAbs":0.000001907,"p99Rel":4.163e-7}
+  ok   historyConsistency     {"consistentFraction":1,"tested":3967845,"usedMotionZ":true}
+  warn unknown buffer "ao_ref" (1 ch): ignored by v0 readers
+  warn unknown specular demodulation "none"
+VALID

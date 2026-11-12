@@ -1,0 +1,7 @@
+[
+ ["base default", 5351, "diffuse", "j-svgf-auto", ""],
+ ["v7 default (tiles 1,2,4 packed + young fix)", 5367, "diffuse", "j-svgf-auto", ""],
+ ["v7 ynp0", 5367, "diffuse", "j-svgf-auto", "youngNormalPower=0"],
+ ["v7 outputAliasing", 5367, "diffuse", "j-svgf-auto", "outputAliasing=1"],
+ ["v7 spatialVarianceRadius=0", 5367, "diffuse", "j-svgf-auto", "spatialVarianceRadius=0"]
+]

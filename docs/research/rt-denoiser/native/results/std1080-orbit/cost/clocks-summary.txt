@@ -1,0 +1,2 @@
+1991 samples: 1200 MHz / 7001 MHz / hw slowdown Not Active / sw slowdown Not Active
+temperature 76–79 C

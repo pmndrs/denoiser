@@ -1,0 +1,6919 @@
+[
+ {
+  "query": "signal=diffuse,specular,shadows&path=light&mode=eval&preset=full&denoiser=recurrent,recurrent@r.normalThreshold=0.95,recurrent@r.normalThreshold=0.8,shadows,shadows@sh.normalThreshold=0.95,shadows@sh.normalThreshold=0.8",
+  "ready": true,
+  "frame": 95,
+  "results": {
+   "mode": "eval",
+   "path": "light",
+   "scene": "standard",
+   "start": 0,
+   "width": 1920,
+   "height": 1080,
+   "frames": 96,
+   "refSpp": 256,
+   "sampling": "blue",
+   "inject": null,
+   "capture": null,
+   "refSalt": 0,
+   "resets": [
+    0
+   ],
+   "ageK": 8,
+   "flipEvery": 12,
+   "flipPpd": 41.38,
+   "query": "?signal=diffuse,specular,shadows&path=light&mode=eval&preset=full&denoiser=recurrent,recurrent@r.normalThreshold=0.95,recurrent@r.normalThreshold=0.8,shadows,shadows@sh.normalThreshold=0.95,shadows@sh.normalThreshold=0.8",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "0x0000",
+    "description": "Apple M5 Pro"
+   },
+   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "demodulation": {
+    "diffuse": "albedo",
+    "specular": "f0 * A + B, (A, B) = Karis 2014 EnvBRDFApprox(perceptual roughness, max(NdotV, 1e-4)); denominator clamped >= 1e-3"
+   },
+   "seconds": 165,
+   "flipSeconds": 119.1,
+   "results": {
+    "diffuse": {
+     "recurrent": {
+      "denoiser": "recurrent",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.0844,
+      "psnrDenSettled": 40.1346,
+      "psnrDenFirstFrame": 38.2848,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.0345,
+      "psnrDenSettledPooled": 40.0879,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.0844,
+      "psnrDenSettledCapped": 40.1346,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.0345,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.0345,
+        "psnrDenMean": 40.0844,
+        "psnrDenCapped": 40.0844
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 41.1591,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.1591,
+        "psnrDenMean": 41.3149,
+        "psnrDenCapped": 41.3149
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 40.492,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 40.492,
+        "psnrDenMean": 40.5399,
+        "psnrDenCapped": 40.5399
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 39.2133,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 39.2133,
+        "psnrDenMean": 39.2365,
+        "psnrDenCapped": 39.2365
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 41.2071,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 41.2071,
+        "psnrDenMean": 41.452,
+        "psnrDenCapped": 41.452
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 27.2673,
+        "biasDen": 0.0394,
+        "psnrDenPooled": 27.2673,
+        "psnrDenMean": 27.821,
+        "psnrDenCapped": 27.821
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.067,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.067,
+        "psnrDenMean": 40.1029,
+        "psnrDenCapped": 40.1029
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 30.3506,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 30.3506,
+        "psnrDenMean": 36.3074,
+        "psnrDenCapped": 36.3074
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.7472,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 56.7472,
+        "psnrDenMean": 60.3758,
+        "psnrDenCapped": 59.001
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 16.6761,
+        "psnrDen": 35.6137,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 35.6137,
+        "psnrDenMean": 35.7081,
+        "psnrDenCapped": 35.7081
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.086,
+        "psnrDen": 51.5301,
+        "biasDen": 0.001,
+        "psnrDenPooled": 51.5301,
+        "psnrDenMean": 55.0973,
+        "psnrDenCapped": 55.0973
+       }
+      },
+      "biasDen": -0.0021,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0096,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0006,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0006,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 56.0178,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0372,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1337,
+       "pre_blur": 0.68,
+       "temporal": 0.8032,
+       "history_fix": 0.7708,
+       "blur": 0.5291,
+       "post_blur": 0.3327,
+       "stabilize": 0.5065,
+       "total": 3.819
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        38.2848,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        38.9607,
+        0.0031,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.2955,
+        0.0019,
+        "NaN"
+       ],
+       [
+        16.4104,
+        39.4905,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.9528,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.0398,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.1085,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.1311,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4406,
+        40.1637,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4345,
+        40.2212,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.393,
+        40.2868,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4028,
+        40.3662,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4179,
+        40.4188,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4196,
+        40.4737,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.5198,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4824,
+        40.5123,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4678,
+        40.4956,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4559,
+        40.4707,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4623,
+        40.4436,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4439,
+        40.4304,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        40.4187,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4167,
+        40.4282,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        40.4284,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4525,
+        40.422,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4767,
+        40.4063,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4436,
+        40.3915,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4253,
+        40.3986,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4107,
+        40.4196,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4471,
+        40.4293,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.402,
+        40.4564,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4493,
+        40.4575,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4405,
+        40.454,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4429,
+        40.4588,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.477,
+        40.4438,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4268,
+        40.4391,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4289,
+        40.4356,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4476,
+        40.4309,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4021,
+        40.4434,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4418,
+        40.4468,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4465,
+        40.4364,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4527,
+        40.4107,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4415,
+        40.3808,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4112,
+        40.366,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.3658,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.3857,
+        40.394,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.4167,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4127,
+        40.445,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4157,
+        40.4728,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2799,
+        36.7925,
+        0.0045,
+        "NaN"
+       ],
+       [
+        16.2542,
+        37.5338,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2741,
+        38.2018,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2645,
+        38.7065,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2224,
+        39.0707,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        39.3471,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        39.5527,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2782,
+        39.6943,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2916,
+        39.7789,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.24,
+        39.8544,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        39.916,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2285,
+        39.9726,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2122,
+        40.0331,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2349,
+        40.0853,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.1274,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2319,
+        40.1695,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2886,
+        40.1873,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2704,
+        40.1991,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2746,
+        40.1946,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2575,
+        40.1939,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2211,
+        40.1999,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2433,
+        40.2023,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2512,
+        40.2055,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.279,
+        40.1994,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2748,
+        40.1918,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2629,
+        40.1831,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.1631,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.258,
+        40.1556,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2381,
+        40.1574,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2478,
+        40.1639,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2034,
+        40.1871,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2801,
+        40.1914,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2626,
+        40.1943,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2479,
+        40.1979,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2739,
+        40.1957,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2447,
+        40.1934,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2437,
+        40.2034,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2219,
+        40.2204,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.2458,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2787,
+        40.2522,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.2473,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2867,
+        40.2163,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2633,
+        40.1946,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2665,
+        40.1791,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2657,
+        40.1707,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2007,
+        40.1937,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2681,
+        40.2022,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2314,
+        40.2221,
+        0.0004,
+        "NaN"
+       ]
+      ]
+     },
+     "recurrent@r.normalThreshold=0.95": {
+      "denoiser": "recurrent@r.normalThreshold=0.95",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.0844,
+      "psnrDenSettled": 40.1345,
+      "psnrDenFirstFrame": 38.2848,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.0345,
+      "psnrDenSettledPooled": 40.0879,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.0844,
+      "psnrDenSettledCapped": 40.1345,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.0345,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.0345,
+        "psnrDenMean": 40.0844,
+        "psnrDenCapped": 40.0844
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 41.1591,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.1591,
+        "psnrDenMean": 41.3149,
+        "psnrDenCapped": 41.3149
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 40.492,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 40.492,
+        "psnrDenMean": 40.5399,
+        "psnrDenCapped": 40.5399
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 39.2133,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 39.2133,
+        "psnrDenMean": 39.2365,
+        "psnrDenCapped": 39.2365
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 41.2067,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 41.2067,
+        "psnrDenMean": 41.4514,
+        "psnrDenCapped": 41.4514
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 27.2673,
+        "biasDen": 0.0394,
+        "psnrDenPooled": 27.2673,
+        "psnrDenMean": 27.821,
+        "psnrDenCapped": 27.821
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.067,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.067,
+        "psnrDenMean": 40.1029,
+        "psnrDenCapped": 40.1029
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 30.3506,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 30.3506,
+        "psnrDenMean": 36.3074,
+        "psnrDenCapped": 36.3074
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.7472,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 56.7472,
+        "psnrDenMean": 60.376,
+        "psnrDenCapped": 59.001
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 16.6761,
+        "psnrDen": 35.6137,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 35.6137,
+        "psnrDenMean": 35.708,
+        "psnrDenCapped": 35.708
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.086,
+        "psnrDen": 51.5305,
+        "biasDen": 0.001,
+        "psnrDenPooled": 51.5305,
+        "psnrDenMean": 55.0982,
+        "psnrDenCapped": 55.0982
+       }
+      },
+      "biasDen": -0.0021,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0096,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0006,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0006,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 56.0179,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0372,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1481,
+       "pre_blur": 0.7123,
+       "temporal": 0.7692,
+       "history_fix": 0.7569,
+       "blur": 0.5269,
+       "post_blur": 0.3307,
+       "stabilize": 0.4841,
+       "total": 3.7372
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        38.2848,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        38.9607,
+        0.0031,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.2955,
+        0.0019,
+        "NaN"
+       ],
+       [
+        16.4104,
+        39.4905,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.9528,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.0398,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.1085,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.1311,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4406,
+        40.1637,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4345,
+        40.2213,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.393,
+        40.2868,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4028,
+        40.3662,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4179,
+        40.4188,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4196,
+        40.4737,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.5199,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4824,
+        40.5124,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4678,
+        40.4957,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4559,
+        40.4708,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4623,
+        40.4436,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4439,
+        40.4305,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        40.4188,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4167,
+        40.4282,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        40.4283,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4525,
+        40.4221,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4767,
+        40.4063,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4436,
+        40.3916,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4253,
+        40.3987,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4107,
+        40.4197,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4471,
+        40.4293,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.402,
+        40.4563,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4493,
+        40.4575,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4405,
+        40.454,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4429,
+        40.4587,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.477,
+        40.4437,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4268,
+        40.439,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4289,
+        40.4355,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4476,
+        40.4308,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4021,
+        40.4433,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4418,
+        40.4466,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4465,
+        40.4362,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4527,
+        40.4106,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4415,
+        40.3808,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4112,
+        40.366,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.3658,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.3857,
+        40.3939,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.4166,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4127,
+        40.4449,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4157,
+        40.4727,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2799,
+        36.7925,
+        0.0045,
+        "NaN"
+       ],
+       [
+        16.2542,
+        37.5338,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2741,
+        38.2018,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2645,
+        38.7065,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2224,
+        39.0707,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        39.3471,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        39.5526,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2782,
+        39.6943,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2916,
+        39.779,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.24,
+        39.8544,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        39.916,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2285,
+        39.9728,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2122,
+        40.0332,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2349,
+        40.0853,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.1275,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2319,
+        40.1696,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2886,
+        40.1873,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2704,
+        40.1991,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2746,
+        40.1946,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2575,
+        40.194,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2211,
+        40.2,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2433,
+        40.2024,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2512,
+        40.2057,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.279,
+        40.1995,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2748,
+        40.1918,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2629,
+        40.1831,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.163,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.258,
+        40.1555,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2381,
+        40.1573,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2478,
+        40.1638,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2034,
+        40.187,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2801,
+        40.1914,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2626,
+        40.1942,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2479,
+        40.1979,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2739,
+        40.1956,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2447,
+        40.1933,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2437,
+        40.2034,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2219,
+        40.2204,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.2456,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2787,
+        40.2521,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.2472,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2867,
+        40.2162,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2633,
+        40.1944,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2665,
+        40.179,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2657,
+        40.1706,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2007,
+        40.1935,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2681,
+        40.2021,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2314,
+        40.2222,
+        0.0004,
+        "NaN"
+       ]
+      ]
+     },
+     "recurrent@r.normalThreshold=0.8": {
+      "denoiser": "recurrent@r.normalThreshold=0.8",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.0844,
+      "psnrDenSettled": 40.1345,
+      "psnrDenFirstFrame": 38.2848,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.0345,
+      "psnrDenSettledPooled": 40.0879,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.0844,
+      "psnrDenSettledCapped": 40.1345,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.0345,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.0345,
+        "psnrDenMean": 40.0844,
+        "psnrDenCapped": 40.0844
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 41.1591,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.1591,
+        "psnrDenMean": 41.3149,
+        "psnrDenCapped": 41.3149
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 40.492,
+        "biasDen": -0.0023,
+        "psnrDenPooled": 40.492,
+        "psnrDenMean": 40.5399,
+        "psnrDenCapped": 40.5399
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 39.2133,
+        "biasDen": -0.0022,
+        "psnrDenPooled": 39.2133,
+        "psnrDenMean": 39.2365,
+        "psnrDenCapped": 39.2365
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 41.2067,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 41.2067,
+        "psnrDenMean": 41.4514,
+        "psnrDenCapped": 41.4514
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 27.2673,
+        "biasDen": 0.0394,
+        "psnrDenPooled": 27.2673,
+        "psnrDenMean": 27.821,
+        "psnrDenCapped": 27.821
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.067,
+        "biasDen": -0.0021,
+        "psnrDenPooled": 40.067,
+        "psnrDenMean": 40.1029,
+        "psnrDenCapped": 40.1029
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 16.227,
+        "psnrDen": 36.8456,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 36.8456,
+        "psnrDenMean": 36.7599,
+        "psnrDenCapped": 36.7599
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 30.3506,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 30.3506,
+        "psnrDenMean": 36.3074,
+        "psnrDenCapped": 36.3074
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.7472,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 56.7472,
+        "psnrDenMean": 60.376,
+        "psnrDenCapped": 59.001
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 16.6761,
+        "psnrDen": 35.6137,
+        "biasDen": 0.0006,
+        "psnrDenPooled": 35.6137,
+        "psnrDenMean": 35.708,
+        "psnrDenCapped": 35.708
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.086,
+        "psnrDen": 51.5305,
+        "biasDen": 0.001,
+        "psnrDenPooled": 51.5305,
+        "psnrDenMean": 55.0982,
+        "psnrDenCapped": 55.0982
+       }
+      },
+      "biasDen": -0.0021,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0096,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0006,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0006,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 56.0179,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0372,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1482,
+       "pre_blur": 0.7166,
+       "temporal": 0.8047,
+       "history_fix": 0.7462,
+       "blur": 0.5263,
+       "post_blur": 0.331,
+       "stabilize": 0.4826,
+       "total": 3.7767
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        38.2848,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        38.9607,
+        0.0031,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.2955,
+        0.0019,
+        "NaN"
+       ],
+       [
+        16.4104,
+        39.4905,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.9528,
+        0.0012,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.0398,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.1085,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.1311,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4406,
+        40.1637,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4345,
+        40.2213,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.393,
+        40.2868,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4028,
+        40.3662,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4179,
+        40.4188,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4196,
+        40.4737,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.5199,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4824,
+        40.5124,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4678,
+        40.4957,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4559,
+        40.4708,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4623,
+        40.4437,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4439,
+        40.4305,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        40.4188,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4167,
+        40.4283,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        40.4283,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4525,
+        40.4221,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4767,
+        40.4064,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4436,
+        40.3917,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4253,
+        40.3987,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4107,
+        40.4197,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4471,
+        40.4293,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.402,
+        40.4563,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4493,
+        40.4575,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4405,
+        40.4539,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4429,
+        40.4587,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.477,
+        40.4436,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4268,
+        40.4389,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4289,
+        40.4353,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4476,
+        40.4306,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4021,
+        40.4432,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4418,
+        40.4465,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4465,
+        40.4362,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4527,
+        40.4106,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4415,
+        40.3808,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4112,
+        40.3659,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.3658,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.3857,
+        40.3939,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.426,
+        40.4167,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.4127,
+        40.4449,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4157,
+        40.4728,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2799,
+        36.7925,
+        0.0045,
+        "NaN"
+       ],
+       [
+        16.2542,
+        37.5338,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2741,
+        38.2018,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2645,
+        38.7065,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.2224,
+        39.0707,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        39.3471,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        39.5526,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2782,
+        39.6943,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2916,
+        39.779,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.24,
+        39.8545,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        39.916,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2285,
+        39.9728,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2122,
+        40.0332,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2349,
+        40.0853,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.1275,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2319,
+        40.1696,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2886,
+        40.1873,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2704,
+        40.1991,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2746,
+        40.1946,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2575,
+        40.194,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2211,
+        40.2,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2433,
+        40.2025,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2512,
+        40.2057,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.279,
+        40.1995,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2748,
+        40.1918,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2629,
+        40.1831,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.163,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.258,
+        40.1556,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2381,
+        40.1574,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2478,
+        40.1638,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2034,
+        40.1871,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2801,
+        40.1914,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2626,
+        40.1942,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2479,
+        40.1978,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2739,
+        40.1955,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2447,
+        40.1932,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2437,
+        40.2033,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2219,
+        40.2203,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2392,
+        40.2456,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2787,
+        40.2521,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2808,
+        40.2472,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2867,
+        40.2161,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2633,
+        40.1944,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2665,
+        40.179,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2657,
+        40.1705,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2007,
+        40.1935,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2681,
+        40.2021,
+        0.0004,
+        "NaN"
+       ],
+       [
+        16.2314,
+        40.2222,
+        0.0004,
+        "NaN"
+       ]
+      ]
+     }
+    },
+    "specular": {
+     "recurrent": {
+      "denoiser": "recurrent",
+      "psnrNoisy": 13.785,
+      "psnrDen": 34.492,
+      "psnrDenSettled": 34.5233,
+      "psnrDenFirstFrame": 32.9784,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 34.4634,
+      "psnrDenSettledPooled": 34.4967,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 34.492,
+      "psnrDenSettledCapped": 34.5233,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 34.4634,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.4634,
+        "psnrDenMean": 34.492,
+        "psnrDenCapped": 34.492
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 12.8722,
+        "psnrDen": 33.1025,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1025,
+        "psnrDenMean": 33.1887,
+        "psnrDenCapped": 33.1887
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 40.8185,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 40.8185,
+        "psnrDenMean": 41.3546,
+        "psnrDenCapped": 41.3546
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 36.5361,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 36.5361,
+        "psnrDenMean": 36.5547,
+        "psnrDenCapped": 36.5547
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 32.4545,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 32.4545,
+        "psnrDenMean": 32.4704,
+        "psnrDenCapped": 32.4704
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.2708,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 31.2708,
+        "psnrDenMean": 31.2989,
+        "psnrDenCapped": 31.2989
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 26.5855,
+        "biasDen": 0.0249,
+        "psnrDenPooled": 26.5855,
+        "psnrDenMean": 26.0376,
+        "psnrDenCapped": 26.0376
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 34.5446,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.5446,
+        "psnrDenMean": 34.5508,
+        "psnrDenCapped": 34.5508
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143422,
+        "psnrNoisy": 12.8609,
+        "psnrDen": 33.1771,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1771,
+        "psnrDenMean": 33.233,
+        "psnrDenCapped": 33.233
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 29.7048,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 29.7048,
+        "psnrDenMean": 43.5035,
+        "psnrDenCapped": 42.5651
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 49.8535,
+        "biasDen": 0.001,
+        "psnrDenPooled": 49.8535,
+        "psnrDenMean": 50.4248,
+        "psnrDenCapped": 50.4248
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 13.4209,
+        "psnrDen": 28.621,
+        "biasDen": 0.0071,
+        "psnrDenPooled": 28.621,
+        "psnrDenMean": 28.6783,
+        "psnrDenCapped": 28.6783
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 11.8921,
+        "psnrDen": 43.2044,
+        "biasDen": 0.0024,
+        "psnrDenPooled": 43.2044,
+        "psnrDenMean": 45.3697,
+        "psnrDenCapped": 45.3697
+       }
+      },
+      "biasDen": -0.0009,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0102,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.001,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.001,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 48.479,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0434,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1479,
+       "pre_blur": 0.499,
+       "temporal": 1.4858,
+       "history_fix": 0.7309,
+       "blur": 0.6141,
+       "post_blur": 0.4,
+       "stabilize": 0.5928,
+       "total": 4.4673
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        32.9784,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        33.728,
+        0.0043,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.0253,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.1922,
+        0.0019,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.478,
+        0.002,
+        "NaN"
+       ],
+       [
+        13.8763,
+        34.5585,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8579,
+        34.6034,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8894,
+        34.6149,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6527,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8856,
+        34.6531,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8644,
+        34.643,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8611,
+        34.6368,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8846,
+        34.6365,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8751,
+        34.6285,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8882,
+        34.6551,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8571,
+        34.6491,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8585,
+        34.6418,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8746,
+        34.6472,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8665,
+        34.6638,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8775,
+        34.6799,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8924,
+        34.6914,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8594,
+        34.6991,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8717,
+        34.7024,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8508,
+        34.6494,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8815,
+        34.6444,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8673,
+        34.6619,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8782,
+        34.6661,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8759,
+        34.6728,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8434,
+        34.693,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8836,
+        34.6873,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8589,
+        34.6847,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8745,
+        34.6717,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8807,
+        34.6668,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.6617,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8765,
+        34.664,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6815,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8827,
+        34.6959,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8811,
+        34.7009,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8682,
+        34.7125,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8693,
+        34.7196,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8499,
+        34.7127,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8606,
+        34.7138,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8679,
+        34.7119,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8854,
+        34.713,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8783,
+        34.7123,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8723,
+        34.6873,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8689,
+        34.6952,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8601,
+        34.6953,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6876,
+        31.4853,
+        0.0068,
+        "NaN"
+       ],
+       [
+        13.7084,
+        32.6663,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.6934,
+        33.2472,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.7153,
+        33.6424,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.6809,
+        33.8935,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.6998,
+        34.0891,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6946,
+        34.2233,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6896,
+        34.3353,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7042,
+        34.4023,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6868,
+        34.4174,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.4723,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6966,
+        34.4958,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6962,
+        34.5126,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7121,
+        34.5292,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7049,
+        34.5392,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7132,
+        34.5554,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6847,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5597,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7081,
+        34.554,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6871,
+        34.5648,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7125,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7088,
+        34.5662,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.698,
+        34.5818,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6894,
+        34.6045,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5584,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7144,
+        34.5601,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6892,
+        34.5765,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7129,
+        34.6073,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.696,
+        34.6038,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6869,
+        34.6188,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.6378,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6886,
+        34.6262,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6919,
+        34.623,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6941,
+        34.6407,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6935,
+        34.6287,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7091,
+        34.6278,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6821,
+        34.6337,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7165,
+        34.633,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7078,
+        34.6274,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6913,
+        34.6463,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6985,
+        34.6311,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6858,
+        34.6364,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.703,
+        34.6277,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7008,
+        34.6375,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7184,
+        34.6445,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7013,
+        34.6432,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6984,
+        34.6432,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7126,
+        34.6342,
+        0.0008,
+        "NaN"
+       ]
+      ]
+     },
+     "recurrent@r.normalThreshold=0.95": {
+      "denoiser": "recurrent@r.normalThreshold=0.95",
+      "psnrNoisy": 13.785,
+      "psnrDen": 34.492,
+      "psnrDenSettled": 34.5234,
+      "psnrDenFirstFrame": 32.9784,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 34.4634,
+      "psnrDenSettledPooled": 34.4967,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 34.492,
+      "psnrDenSettledCapped": 34.5234,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 34.4634,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.4634,
+        "psnrDenMean": 34.492,
+        "psnrDenCapped": 34.492
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 12.8722,
+        "psnrDen": 33.1025,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1025,
+        "psnrDenMean": 33.1885,
+        "psnrDenCapped": 33.1885
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 40.8187,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 40.8187,
+        "psnrDenMean": 41.3548,
+        "psnrDenCapped": 41.3548
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 36.5362,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 36.5362,
+        "psnrDenMean": 36.5547,
+        "psnrDenCapped": 36.5547
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 32.4545,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 32.4545,
+        "psnrDenMean": 32.4704,
+        "psnrDenCapped": 32.4704
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.2708,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 31.2708,
+        "psnrDenMean": 31.2989,
+        "psnrDenCapped": 31.2989
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 26.5855,
+        "biasDen": 0.0249,
+        "psnrDenPooled": 26.5855,
+        "psnrDenMean": 26.0376,
+        "psnrDenCapped": 26.0376
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 34.5447,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.5447,
+        "psnrDenMean": 34.5508,
+        "psnrDenCapped": 34.5508
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143422,
+        "psnrNoisy": 12.8609,
+        "psnrDen": 33.1771,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1771,
+        "psnrDenMean": 33.2328,
+        "psnrDenCapped": 33.2328
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 29.7048,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 29.7048,
+        "psnrDenMean": 43.5035,
+        "psnrDenCapped": 42.5651
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 49.8535,
+        "biasDen": 0.001,
+        "psnrDenPooled": 49.8535,
+        "psnrDenMean": 50.4248,
+        "psnrDenCapped": 50.4248
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 13.4209,
+        "psnrDen": 28.6212,
+        "biasDen": 0.0071,
+        "psnrDenPooled": 28.6212,
+        "psnrDenMean": 28.6785,
+        "psnrDenCapped": 28.6785
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 11.8921,
+        "psnrDen": 43.2044,
+        "biasDen": 0.0024,
+        "psnrDenPooled": 43.2044,
+        "psnrDenMean": 45.3696,
+        "psnrDenCapped": 45.3696
+       }
+      },
+      "biasDen": -0.0009,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0102,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.001,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.001,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 48.479,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0434,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1464,
+       "pre_blur": 0.4701,
+       "temporal": 1.48,
+       "history_fix": 0.7304,
+       "blur": 0.6126,
+       "post_blur": 0.4017,
+       "stabilize": 0.5957,
+       "total": 4.4991
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        32.9784,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        33.728,
+        0.0043,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.0253,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.1922,
+        0.0019,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.4781,
+        0.002,
+        "NaN"
+       ],
+       [
+        13.8763,
+        34.5586,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8579,
+        34.6035,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8894,
+        34.615,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6527,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8856,
+        34.6532,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8644,
+        34.643,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8611,
+        34.6368,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8846,
+        34.6365,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8751,
+        34.6286,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8882,
+        34.6551,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8571,
+        34.6491,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8585,
+        34.6418,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8746,
+        34.6472,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8665,
+        34.6639,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8775,
+        34.68,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8924,
+        34.6914,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8594,
+        34.6992,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8717,
+        34.7024,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8508,
+        34.6494,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8815,
+        34.6444,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8673,
+        34.6619,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8782,
+        34.6661,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8759,
+        34.6729,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8434,
+        34.6931,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8836,
+        34.6874,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8589,
+        34.6848,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8745,
+        34.6717,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8807,
+        34.6668,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.6617,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8765,
+        34.664,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6815,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8827,
+        34.696,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8811,
+        34.7009,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8682,
+        34.7125,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8693,
+        34.7196,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8499,
+        34.7127,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8606,
+        34.7138,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8679,
+        34.7119,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8854,
+        34.713,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8783,
+        34.7124,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8723,
+        34.6875,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8689,
+        34.6953,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8601,
+        34.6954,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6876,
+        31.4852,
+        0.0068,
+        "NaN"
+       ],
+       [
+        13.7084,
+        32.6663,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.6934,
+        33.2472,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.7153,
+        33.6424,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.6809,
+        33.8936,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.6998,
+        34.0893,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6946,
+        34.2234,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6896,
+        34.3354,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7042,
+        34.4023,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6868,
+        34.4174,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.4724,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6966,
+        34.4958,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6962,
+        34.5127,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7121,
+        34.5293,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7049,
+        34.5392,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7132,
+        34.5554,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6847,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5597,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7081,
+        34.554,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6871,
+        34.5647,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7125,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7088,
+        34.5662,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.698,
+        34.5819,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6894,
+        34.6046,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5585,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7144,
+        34.5601,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6892,
+        34.5765,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7129,
+        34.6072,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.696,
+        34.6037,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6869,
+        34.6188,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.6379,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6886,
+        34.6263,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6919,
+        34.623,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6941,
+        34.6406,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6935,
+        34.6287,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7091,
+        34.6278,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6821,
+        34.6337,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7165,
+        34.6329,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7078,
+        34.6273,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6913,
+        34.6462,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6985,
+        34.6311,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6858,
+        34.6364,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.703,
+        34.6276,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7008,
+        34.6375,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7184,
+        34.6445,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7013,
+        34.6432,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6984,
+        34.6433,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7126,
+        34.6343,
+        0.0008,
+        "NaN"
+       ]
+      ]
+     },
+     "recurrent@r.normalThreshold=0.8": {
+      "denoiser": "recurrent@r.normalThreshold=0.8",
+      "psnrNoisy": 13.785,
+      "psnrDen": 34.492,
+      "psnrDenSettled": 34.5234,
+      "psnrDenFirstFrame": 32.9784,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 34.4634,
+      "psnrDenSettledPooled": 34.4967,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 34.492,
+      "psnrDenSettledCapped": 34.5234,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 34.4634,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.4634,
+        "psnrDenMean": 34.492,
+        "psnrDenCapped": 34.492
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 12.8722,
+        "psnrDen": 33.1026,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1026,
+        "psnrDenMean": 33.1889,
+        "psnrDenCapped": 33.1889
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 40.8185,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 40.8185,
+        "psnrDenMean": 41.3546,
+        "psnrDenCapped": 41.3546
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 36.5361,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 36.5361,
+        "psnrDenMean": 36.5547,
+        "psnrDenCapped": 36.5547
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 32.4545,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 32.4545,
+        "psnrDenMean": 32.4704,
+        "psnrDenCapped": 32.4704
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.2708,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 31.2708,
+        "psnrDenMean": 31.2989,
+        "psnrDenCapped": 31.2989
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 26.5855,
+        "biasDen": 0.0249,
+        "psnrDenPooled": 26.5855,
+        "psnrDenMean": 26.0376,
+        "psnrDenCapped": 26.0376
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 34.5446,
+        "biasDen": -0.0009,
+        "psnrDenPooled": 34.5446,
+        "psnrDenMean": 34.5508,
+        "psnrDenCapped": 34.5508
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 143422,
+        "psnrNoisy": 12.8609,
+        "psnrDen": 33.1772,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 33.1772,
+        "psnrDenMean": 33.2331,
+        "psnrDenCapped": 33.2331
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 29.7048,
+        "biasDen": 0.0214,
+        "psnrDenPooled": 29.7048,
+        "psnrDenMean": 43.5035,
+        "psnrDenCapped": 42.5651
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 49.8534,
+        "biasDen": 0.001,
+        "psnrDenPooled": 49.8534,
+        "psnrDenMean": 50.4248,
+        "psnrDenCapped": 50.4248
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 13.4209,
+        "psnrDen": 28.6211,
+        "biasDen": 0.0071,
+        "psnrDenPooled": 28.6211,
+        "psnrDenMean": 28.6784,
+        "psnrDenCapped": 28.6784
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 11.8921,
+        "psnrDen": 43.2044,
+        "biasDen": 0.0024,
+        "psnrDenPooled": 43.2044,
+        "psnrDenMean": 45.3695,
+        "psnrDenCapped": 45.3695
+       }
+      },
+      "biasDen": -0.0009,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0102,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.001,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.001,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 48.4789,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0434,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.146,
+       "pre_blur": 0.4705,
+       "temporal": 1.4611,
+       "history_fix": 0.7362,
+       "blur": 0.6133,
+       "post_blur": 0.4028,
+       "stabilize": 0.5967,
+       "total": 4.464
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        32.9784,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        33.728,
+        0.0043,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.0253,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.1922,
+        0.0019,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.4781,
+        0.002,
+        "NaN"
+       ],
+       [
+        13.8763,
+        34.5586,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8579,
+        34.6035,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8894,
+        34.615,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6527,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8856,
+        34.6531,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8644,
+        34.643,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8611,
+        34.6368,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8846,
+        34.6365,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8751,
+        34.6286,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8882,
+        34.6551,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8571,
+        34.6491,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8585,
+        34.6418,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8746,
+        34.6472,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8665,
+        34.6639,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8775,
+        34.68,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8924,
+        34.6914,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8594,
+        34.6991,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8717,
+        34.7024,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8508,
+        34.6494,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8815,
+        34.6444,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8673,
+        34.6619,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8782,
+        34.6661,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8759,
+        34.6728,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8434,
+        34.693,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8836,
+        34.6873,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8589,
+        34.6848,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8745,
+        34.6717,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8807,
+        34.6668,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8651,
+        34.6617,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8765,
+        34.664,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8552,
+        34.6815,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8827,
+        34.696,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8811,
+        34.7009,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8682,
+        34.7125,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8693,
+        34.7196,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8499,
+        34.7127,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8606,
+        34.7137,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8679,
+        34.7119,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8854,
+        34.713,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8783,
+        34.7124,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8723,
+        34.6874,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8689,
+        34.6952,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8601,
+        34.6953,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6876,
+        31.4852,
+        0.0068,
+        "NaN"
+       ],
+       [
+        13.7084,
+        32.6663,
+        0.0025,
+        "NaN"
+       ],
+       [
+        13.6934,
+        33.2472,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.7153,
+        33.6424,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.6809,
+        33.8936,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.6998,
+        34.0893,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6946,
+        34.2233,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6896,
+        34.3353,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7042,
+        34.4022,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6868,
+        34.4173,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.4723,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6966,
+        34.4957,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6962,
+        34.5125,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7121,
+        34.5292,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7049,
+        34.5393,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7132,
+        34.5555,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6847,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5597,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7081,
+        34.554,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6871,
+        34.5648,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7125,
+        34.5568,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7088,
+        34.5662,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.698,
+        34.5819,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6894,
+        34.6046,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        34.5585,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7144,
+        34.5602,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6892,
+        34.5765,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7129,
+        34.6073,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.696,
+        34.6038,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6869,
+        34.6188,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        34.6379,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6886,
+        34.6263,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6919,
+        34.623,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6941,
+        34.6407,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6935,
+        34.6288,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7091,
+        34.6278,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6821,
+        34.6337,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7165,
+        34.633,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7078,
+        34.6273,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6913,
+        34.6463,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6985,
+        34.6312,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6858,
+        34.6365,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.703,
+        34.6277,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7008,
+        34.6375,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7184,
+        34.6446,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7013,
+        34.6432,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6984,
+        34.6433,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7126,
+        34.6343,
+        0.0008,
+        "NaN"
+       ]
+      ]
+     }
+    },
+    "shadows": {
+     "shadows": {
+      "denoiser": "shadows",
+      "psnrNoisy": 19.3281,
+      "psnrDen": 35.317,
+      "psnrDenSettled": 35.317,
+      "psnrDenFirstFrame": 34.825,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.8377,
+      "psnrDenPooled": 34.6361,
+      "psnrDenSettledPooled": 34.5807,
+      "psnrNoisyCapped": 19.3281,
+      "psnrDenCapped": 35.317,
+      "psnrDenSettledCapped": 35.317,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 18.8377,
+        "psnrDen": 34.6361,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 34.6361,
+        "psnrDenMean": 35.317,
+        "psnrDenCapped": 35.317
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 8.1142,
+        "psnrDen": 24.5213,
+        "biasDen": 0.0254,
+        "psnrDenPooled": 24.5213,
+        "psnrDenMean": 24.883,
+        "psnrDenCapped": 24.883
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 19.1295,
+        "psnrDen": 35.5222,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 35.5222,
+        "psnrDenMean": 37.6541,
+        "psnrDenCapped": 37.6541
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 18.8646,
+        "psnrDen": 35.8431,
+        "biasDen": 0.0019,
+        "psnrDenPooled": 35.8431,
+        "psnrDenMean": 36.6177,
+        "psnrDenCapped": 36.6177
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 18.5936,
+        "psnrDen": 33.6811,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 33.6811,
+        "psnrDenMean": 34.668,
+        "psnrDenCapped": 34.668
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 20.1624,
+        "psnrDen": 33.3063,
+        "biasDen": 0.0052,
+        "psnrDenPooled": 33.3063,
+        "psnrDenMean": 35.3424,
+        "psnrDenCapped": 35.3424
+       },
+       "dynamic": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 9.2741,
+        "psnrDen": 23.4598,
+        "biasDen": 0.0274,
+        "psnrDenPooled": 23.4598,
+        "psnrDenMean": 23.0391,
+        "psnrDenCapped": 23.0391
+       },
+       "static": {
+        "pixelsPerFrame": 1629570,
+        "psnrNoisy": 21.1295,
+        "psnrDen": 38.8082,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 38.8082,
+        "psnrDenMean": 39.5981,
+        "psnrDenCapped": 39.5981
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 85946,
+        "psnrNoisy": 8.3974,
+        "psnrDen": 27.2984,
+        "biasDen": 0.0161,
+        "psnrDenPooled": 27.2984,
+        "psnrDenMean": 26.8923,
+        "psnrDenCapped": 26.8923
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 4.881,
+        "psnrDen": 28.7876,
+        "biasDen": 0.0211,
+        "psnrDenPooled": 28.7876,
+        "psnrDenMean": 31.1142,
+        "psnrDenCapped": 31.1142
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1611730,
+        "psnrNoisy": 16.8772,
+        "psnrDen": 48.6401,
+        "biasDen": 0.0005,
+        "psnrDenPooled": 48.6401,
+        "psnrDenMean": 50.2791,
+        "psnrDenCapped": 50.2791
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 18.6355,
+        "psnrDen": 29.1804,
+        "biasDen": 0.0018,
+        "psnrDenPooled": 29.1804,
+        "psnrDenMean": 30.4231,
+        "psnrDenCapped": 30.4231
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.2052,
+        "psnrDen": 37.5667,
+        "biasDen": 0.0028,
+        "psnrDenPooled": 37.5667,
+        "psnrDenMean": 40.6563,
+        "psnrDenCapped": 40.6563
+       }
+      },
+      "biasDen": 0.0021,
+      "biasNoisy": 0,
+      "energyDen": 0.0026,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0364,
+      "flickerDen": 0.0015,
+      "flickerMcNoisy": 0.0364,
+      "flickerMcDen": 0.0015,
+      "tpsnrNoisy": 14.5039,
+      "tpsnrDen": 41.0899,
+      "flipNoisy": 0.0294,
+      "flipDen": 0.0165,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "temporal": 0.7465,
+       "tiles": 0.0087,
+       "spatial0": 0.1722,
+       "spatial1": 0.1816,
+       "stabilize": 0.0811,
+       "total": 1.2143
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        18.2478,
+        34.825,
+        "NaN",
+        "NaN"
+       ],
+       [
+        18.1359,
+        35.3032,
+        0.0041,
+        "NaN"
+       ],
+       [
+        18.0409,
+        35.2974,
+        0.0025,
+        "NaN"
+       ],
+       [
+        17.9566,
+        35.8708,
+        0.0023,
+        "NaN"
+       ],
+       [
+        17.9227,
+        35.8996,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.8291,
+        35.496,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7911,
+        35.2042,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.7365,
+        34.6386,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6978,
+        34.1047,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6863,
+        33.4185,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6849,
+        32.9238,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.6818,
+        32.2299,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7132,
+        32.0828,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.749,
+        31.8308,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.8286,
+        32.1914,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.8951,
+        32.4384,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.9696,
+        32.8749,
+        0.0021,
+        "NaN"
+       ],
+       [
+        18.0552,
+        33.0717,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.1727,
+        33.2876,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.3063,
+        33.4046,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.4552,
+        33.4674,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.6021,
+        33.4853,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.7534,
+        33.4562,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.8941,
+        33.5032,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.0342,
+        33.5963,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.1651,
+        33.6984,
+        0.0017,
+        "NaN"
+       ],
+       [
+        19.2537,
+        33.6891,
+        0.0016,
+        "NaN"
+       ],
+       [
+        19.2658,
+        33.6108,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2564,
+        33.6493,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2364,
+        33.6975,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2225,
+        33.7361,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2181,
+        33.6332,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1823,
+        33.6451,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1983,
+        33.5677,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.1354,
+        33.6051,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1141,
+        33.632,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1016,
+        33.7288,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.0852,
+        33.6858,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0268,
+        33.6948,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0218,
+        33.6595,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9809,
+        33.6369,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.9683,
+        33.563,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9317,
+        33.5919,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8835,
+        33.5702,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8304,
+        33.5612,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.7682,
+        33.4853,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.723,
+        33.3084,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.6584,
+        33.0918,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2014,
+        27.544,
+        0.019,
+        "NaN"
+       ],
+       [
+        17.2158,
+        31.9895,
+        0.0074,
+        "NaN"
+       ],
+       [
+        17.1756,
+        33.3955,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.1885,
+        34.3428,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2054,
+        35.0958,
+        0.0014,
+        "NaN"
+       ],
+       [
+        17.1952,
+        35.56,
+        0.001,
+        "NaN"
+       ],
+       [
+        17.2009,
+        36.0293,
+        0.0009,
+        "NaN"
+       ],
+       [
+        17.1879,
+        36.3233,
+        0.0008,
+        "NaN"
+       ],
+       [
+        17.1683,
+        36.672,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.1847,
+        36.99,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.2044,
+        37.3152,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.2036,
+        37.5853,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1963,
+        37.9481,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1878,
+        38.2082,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1906,
+        38.4584,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1907,
+        38.6768,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2018,
+        38.8618,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2038,
+        39.0107,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1892,
+        39.1813,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1863,
+        39.3583,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1914,
+        39.4434,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1973,
+        39.585,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2096,
+        39.6316,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2079,
+        39.7514,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        31.1758,
+        0.0075,
+        "NaN"
+       ],
+       [
+        23.0197,
+        33.1092,
+        0.0016,
+        "NaN"
+       ],
+       [
+        23.0368,
+        34.2772,
+        0.001,
+        "NaN"
+       ],
+       [
+        23.0201,
+        35.0364,
+        0.0007,
+        "NaN"
+       ],
+       [
+        23.0297,
+        35.5837,
+        0.0006,
+        "NaN"
+       ],
+       [
+        23.0268,
+        36.0367,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0374,
+        36.3346,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0363,
+        36.6661,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0054,
+        36.8718,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0336,
+        37.1693,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        37.3644,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.034,
+        37.5834,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0412,
+        37.7549,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0314,
+        37.9131,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0247,
+        38.0919,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0388,
+        38.1868,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.022,
+        38.2681,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0236,
+        38.3128,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0118,
+        38.4101,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0275,
+        38.4231,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0527,
+        38.5206,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0372,
+        38.5488,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0576,
+        38.6012,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0331,
+        38.5857,
+        0.0003,
+        "NaN"
+       ]
+      ]
+     },
+     "shadows@sh.normalThreshold=0.95": {
+      "denoiser": "shadows@sh.normalThreshold=0.95",
+      "psnrNoisy": 19.3281,
+      "psnrDen": 35.3169,
+      "psnrDenSettled": 35.3169,
+      "psnrDenFirstFrame": 34.825,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.8377,
+      "psnrDenPooled": 34.6361,
+      "psnrDenSettledPooled": 34.5807,
+      "psnrNoisyCapped": 19.3281,
+      "psnrDenCapped": 35.3169,
+      "psnrDenSettledCapped": 35.3169,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 18.8377,
+        "psnrDen": 34.6361,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 34.6361,
+        "psnrDenMean": 35.3169,
+        "psnrDenCapped": 35.3169
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 8.1142,
+        "psnrDen": 24.5214,
+        "biasDen": 0.0254,
+        "psnrDenPooled": 24.5214,
+        "psnrDenMean": 24.883,
+        "psnrDenCapped": 24.883
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 19.1295,
+        "psnrDen": 35.5222,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 35.5222,
+        "psnrDenMean": 37.6541,
+        "psnrDenCapped": 37.6541
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 18.8646,
+        "psnrDen": 35.8431,
+        "biasDen": 0.0019,
+        "psnrDenPooled": 35.8431,
+        "psnrDenMean": 36.6176,
+        "psnrDenCapped": 36.6176
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 18.5936,
+        "psnrDen": 33.6811,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 33.6811,
+        "psnrDenMean": 34.668,
+        "psnrDenCapped": 34.668
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 20.1624,
+        "psnrDen": 33.3064,
+        "biasDen": 0.0052,
+        "psnrDenPooled": 33.3064,
+        "psnrDenMean": 35.3425,
+        "psnrDenCapped": 35.3425
+       },
+       "dynamic": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 9.2741,
+        "psnrDen": 23.4598,
+        "biasDen": 0.0274,
+        "psnrDenPooled": 23.4598,
+        "psnrDenMean": 23.0391,
+        "psnrDenCapped": 23.0391
+       },
+       "static": {
+        "pixelsPerFrame": 1629570,
+        "psnrNoisy": 21.1295,
+        "psnrDen": 38.8081,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 38.8081,
+        "psnrDenMean": 39.598,
+        "psnrDenCapped": 39.598
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 85946,
+        "psnrNoisy": 8.3974,
+        "psnrDen": 27.2984,
+        "biasDen": 0.0161,
+        "psnrDenPooled": 27.2984,
+        "psnrDenMean": 26.8923,
+        "psnrDenCapped": 26.8923
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 4.881,
+        "psnrDen": 28.7878,
+        "biasDen": 0.0211,
+        "psnrDenPooled": 28.7878,
+        "psnrDenMean": 31.1143,
+        "psnrDenCapped": 31.1143
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1611730,
+        "psnrNoisy": 16.8772,
+        "psnrDen": 48.6401,
+        "biasDen": 0.0005,
+        "psnrDenPooled": 48.6401,
+        "psnrDenMean": 50.2792,
+        "psnrDenCapped": 50.2792
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 18.6355,
+        "psnrDen": 29.1801,
+        "biasDen": 0.0018,
+        "psnrDenPooled": 29.1801,
+        "psnrDenMean": 30.4231,
+        "psnrDenCapped": 30.4231
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.2052,
+        "psnrDen": 37.567,
+        "biasDen": 0.0028,
+        "psnrDenPooled": 37.567,
+        "psnrDenMean": 40.6569,
+        "psnrDenCapped": 40.6569
+       }
+      },
+      "biasDen": 0.0021,
+      "biasNoisy": 0,
+      "energyDen": 0.0026,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0364,
+      "flickerDen": 0.0015,
+      "flickerMcNoisy": 0.0364,
+      "flickerMcDen": 0.0015,
+      "tpsnrNoisy": 14.5039,
+      "tpsnrDen": 41.0901,
+      "flipNoisy": 0.0294,
+      "flipDen": 0.0165,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "temporal": 0.7569,
+       "tiles": 0.0088,
+       "spatial0": 0.1745,
+       "spatial1": 0.1686,
+       "stabilize": 0.0819,
+       "total": 1.2311
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        18.2478,
+        34.825,
+        "NaN",
+        "NaN"
+       ],
+       [
+        18.1359,
+        35.3034,
+        0.0041,
+        "NaN"
+       ],
+       [
+        18.0409,
+        35.2975,
+        0.0025,
+        "NaN"
+       ],
+       [
+        17.9566,
+        35.8708,
+        0.0023,
+        "NaN"
+       ],
+       [
+        17.9227,
+        35.8993,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.8291,
+        35.4959,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7911,
+        35.2042,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.7365,
+        34.6381,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6978,
+        34.1047,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6863,
+        33.4185,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6849,
+        32.9238,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.6818,
+        32.2298,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7132,
+        32.0828,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.749,
+        31.831,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.8286,
+        32.1915,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.8951,
+        32.438,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.9696,
+        32.8749,
+        0.0021,
+        "NaN"
+       ],
+       [
+        18.0552,
+        33.0717,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.1727,
+        33.2876,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.3063,
+        33.404,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.4552,
+        33.467,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.6021,
+        33.4853,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.7534,
+        33.4562,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.8941,
+        33.5026,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.0342,
+        33.5962,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.1651,
+        33.6982,
+        0.0017,
+        "NaN"
+       ],
+       [
+        19.2537,
+        33.6888,
+        0.0016,
+        "NaN"
+       ],
+       [
+        19.2658,
+        33.6109,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2564,
+        33.6489,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2364,
+        33.6976,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2225,
+        33.736,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2181,
+        33.6332,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1823,
+        33.6449,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1983,
+        33.5677,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.1354,
+        33.6046,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1141,
+        33.6316,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1016,
+        33.7286,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.0852,
+        33.6858,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0268,
+        33.6947,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0218,
+        33.6592,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9809,
+        33.6368,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.9683,
+        33.5629,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9317,
+        33.5916,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8835,
+        33.5701,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8304,
+        33.5612,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.7682,
+        33.4854,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.723,
+        33.3082,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.6584,
+        33.0918,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2014,
+        27.5444,
+        0.019,
+        "NaN"
+       ],
+       [
+        17.2158,
+        31.99,
+        0.0074,
+        "NaN"
+       ],
+       [
+        17.1756,
+        33.3962,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.1885,
+        34.3429,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2054,
+        35.096,
+        0.0014,
+        "NaN"
+       ],
+       [
+        17.1952,
+        35.5603,
+        0.001,
+        "NaN"
+       ],
+       [
+        17.2009,
+        36.0297,
+        0.0009,
+        "NaN"
+       ],
+       [
+        17.1879,
+        36.3234,
+        0.0008,
+        "NaN"
+       ],
+       [
+        17.1683,
+        36.672,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.1847,
+        36.9899,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.2044,
+        37.3151,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.2036,
+        37.585,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1963,
+        37.9475,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1878,
+        38.2083,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1906,
+        38.4579,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1907,
+        38.6754,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2018,
+        38.8632,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2038,
+        39.0105,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1892,
+        39.1809,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1863,
+        39.3581,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1914,
+        39.4434,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1973,
+        39.585,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2096,
+        39.6321,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2079,
+        39.7515,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        31.1758,
+        0.0075,
+        "NaN"
+       ],
+       [
+        23.0197,
+        33.1092,
+        0.0016,
+        "NaN"
+       ],
+       [
+        23.0368,
+        34.2772,
+        0.001,
+        "NaN"
+       ],
+       [
+        23.0201,
+        35.0364,
+        0.0007,
+        "NaN"
+       ],
+       [
+        23.0297,
+        35.5837,
+        0.0006,
+        "NaN"
+       ],
+       [
+        23.0268,
+        36.0368,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0374,
+        36.3347,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0363,
+        36.6662,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0054,
+        36.8719,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0336,
+        37.1694,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        37.3643,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.034,
+        37.5835,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0412,
+        37.755,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0314,
+        37.9132,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0247,
+        38.092,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0388,
+        38.1868,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.022,
+        38.2682,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0236,
+        38.3129,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0118,
+        38.4102,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0275,
+        38.4231,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0527,
+        38.5206,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0372,
+        38.5489,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0576,
+        38.6013,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0331,
+        38.5857,
+        0.0003,
+        "NaN"
+       ]
+      ]
+     },
+     "shadows@sh.normalThreshold=0.8": {
+      "denoiser": "shadows@sh.normalThreshold=0.8",
+      "psnrNoisy": 19.3281,
+      "psnrDen": 35.3169,
+      "psnrDenSettled": 35.3169,
+      "psnrDenFirstFrame": 34.825,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 18.8377,
+      "psnrDenPooled": 34.636,
+      "psnrDenSettledPooled": 34.5807,
+      "psnrNoisyCapped": 19.3281,
+      "psnrDenCapped": 35.3169,
+      "psnrDenSettledCapped": 35.3169,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 18.8377,
+        "psnrDen": 34.636,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 34.636,
+        "psnrDenMean": 35.3169,
+        "psnrDenCapped": 35.3169
+       },
+       "penumbra": {
+        "pixelsPerFrame": 143950,
+        "psnrNoisy": 8.1142,
+        "psnrDen": 24.5213,
+        "biasDen": 0.0254,
+        "psnrDenPooled": 24.5213,
+        "psnrDenMean": 24.883,
+        "psnrDenCapped": 24.883
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 19.1295,
+        "psnrDen": 35.5222,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 35.5222,
+        "psnrDenMean": 37.6541,
+        "psnrDenCapped": 37.6541
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 18.8646,
+        "psnrDen": 35.8431,
+        "biasDen": 0.0019,
+        "psnrDenPooled": 35.8431,
+        "psnrDenMean": 36.6176,
+        "psnrDenCapped": 36.6176
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 18.5936,
+        "psnrDen": 33.681,
+        "biasDen": 0.0021,
+        "psnrDenPooled": 33.681,
+        "psnrDenMean": 34.6679,
+        "psnrDenCapped": 34.6679
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 20.1624,
+        "psnrDen": 33.3064,
+        "biasDen": 0.0052,
+        "psnrDenPooled": 33.3064,
+        "psnrDenMean": 35.3425,
+        "psnrDenCapped": 35.3425
+       },
+       "dynamic": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 9.2741,
+        "psnrDen": 23.4598,
+        "biasDen": 0.0274,
+        "psnrDenPooled": 23.4598,
+        "psnrDenMean": 23.0391,
+        "psnrDenCapped": 23.0391
+       },
+       "static": {
+        "pixelsPerFrame": 1629570,
+        "psnrNoisy": 21.1295,
+        "psnrDen": 38.8081,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 38.8081,
+        "psnrDenMean": 39.598,
+        "psnrDenCapped": 39.598
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 85946,
+        "psnrNoisy": 8.3974,
+        "psnrDen": 27.2984,
+        "biasDen": 0.0161,
+        "psnrDenPooled": 27.2984,
+        "psnrDenMean": 26.8924,
+        "psnrDenCapped": 26.8924
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 83070,
+        "psnrNoisy": 4.881,
+        "psnrDen": 28.7877,
+        "biasDen": 0.0211,
+        "psnrDenPooled": 28.7877,
+        "psnrDenMean": 31.1143,
+        "psnrDenCapped": 31.1143
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1611730,
+        "psnrNoisy": 16.8772,
+        "psnrDen": 48.6402,
+        "biasDen": 0.0005,
+        "psnrDenPooled": 48.6402,
+        "psnrDenMean": 50.2793,
+        "psnrDenCapped": 50.2793
+       },
+       "boundary": {
+        "pixelsPerFrame": 91203,
+        "psnrNoisy": 18.6355,
+        "psnrDen": 29.18,
+        "biasDen": 0.0018,
+        "psnrDenPooled": 29.18,
+        "psnrDenMean": 30.4229,
+        "psnrDenCapped": 30.4229
+       },
+       "boundary-young": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "boundary-temporal": {
+        "pixelsPerFrame": 90253,
+        "psnrNoisy": 14.2052,
+        "psnrDen": 37.5672,
+        "biasDen": 0.0028,
+        "psnrDenPooled": 37.5672,
+        "psnrDenMean": 40.6572,
+        "psnrDenCapped": 40.6572
+       }
+      },
+      "biasDen": 0.0021,
+      "biasNoisy": 0,
+      "energyDen": 0.0026,
+      "energyNoisy": 0,
+      "flickerNoisy": 0.0364,
+      "flickerDen": 0.0015,
+      "flickerMcNoisy": 0.0364,
+      "flickerMcDen": 0.0015,
+      "tpsnrNoisy": 14.5039,
+      "tpsnrDen": 41.09,
+      "flipNoisy": 0.0294,
+      "flipDen": 0.0165,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "temporal": 0.7859,
+       "tiles": 0.0091,
+       "spatial0": 0.1692,
+       "spatial1": 0.1748,
+       "stabilize": 0.0823,
+       "total": 1.2313
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        18.2478,
+        34.825,
+        "NaN",
+        "NaN"
+       ],
+       [
+        18.1359,
+        35.3034,
+        0.0041,
+        "NaN"
+       ],
+       [
+        18.0409,
+        35.2975,
+        0.0025,
+        "NaN"
+       ],
+       [
+        17.9566,
+        35.8708,
+        0.0023,
+        "NaN"
+       ],
+       [
+        17.9227,
+        35.8993,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.8291,
+        35.4959,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7911,
+        35.2042,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.7365,
+        34.6381,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6978,
+        34.1047,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6863,
+        33.4185,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.6849,
+        32.9238,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.6818,
+        32.2298,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.7132,
+        32.0828,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.749,
+        31.831,
+        0.0019,
+        "NaN"
+       ],
+       [
+        17.8286,
+        32.1915,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.8951,
+        32.438,
+        0.002,
+        "NaN"
+       ],
+       [
+        17.9696,
+        32.8749,
+        0.0021,
+        "NaN"
+       ],
+       [
+        18.0552,
+        33.0717,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.1727,
+        33.2876,
+        0.002,
+        "NaN"
+       ],
+       [
+        18.3063,
+        33.404,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.4552,
+        33.467,
+        0.0019,
+        "NaN"
+       ],
+       [
+        18.6021,
+        33.4853,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.7534,
+        33.4562,
+        0.0018,
+        "NaN"
+       ],
+       [
+        18.8941,
+        33.5026,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.0342,
+        33.5962,
+        0.0018,
+        "NaN"
+       ],
+       [
+        19.1651,
+        33.6982,
+        0.0017,
+        "NaN"
+       ],
+       [
+        19.2537,
+        33.6888,
+        0.0016,
+        "NaN"
+       ],
+       [
+        19.2658,
+        33.6109,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2564,
+        33.6489,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2364,
+        33.6976,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2225,
+        33.736,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.2181,
+        33.6332,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1823,
+        33.6449,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1983,
+        33.5677,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.1354,
+        33.6046,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1141,
+        33.6316,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.1016,
+        33.7286,
+        0.0015,
+        "NaN"
+       ],
+       [
+        19.0852,
+        33.6858,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0268,
+        33.6947,
+        0.0014,
+        "NaN"
+       ],
+       [
+        19.0218,
+        33.6592,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9809,
+        33.6368,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.9683,
+        33.5629,
+        0.0014,
+        "NaN"
+       ],
+       [
+        18.9317,
+        33.5916,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8835,
+        33.5702,
+        0.0015,
+        "NaN"
+       ],
+       [
+        18.8304,
+        33.5612,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.7682,
+        33.4854,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.723,
+        33.3082,
+        0.0016,
+        "NaN"
+       ],
+       [
+        18.6584,
+        33.0918,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2014,
+        27.5441,
+        0.019,
+        "NaN"
+       ],
+       [
+        17.2158,
+        31.9895,
+        0.0074,
+        "NaN"
+       ],
+       [
+        17.1756,
+        33.3955,
+        0.0022,
+        "NaN"
+       ],
+       [
+        17.1885,
+        34.3429,
+        0.0016,
+        "NaN"
+       ],
+       [
+        17.2054,
+        35.0959,
+        0.0014,
+        "NaN"
+       ],
+       [
+        17.1952,
+        35.56,
+        0.001,
+        "NaN"
+       ],
+       [
+        17.2009,
+        36.0293,
+        0.0009,
+        "NaN"
+       ],
+       [
+        17.1879,
+        36.3232,
+        0.0008,
+        "NaN"
+       ],
+       [
+        17.1683,
+        36.672,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.1847,
+        36.9899,
+        0.0007,
+        "NaN"
+       ],
+       [
+        17.2044,
+        37.3152,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.2036,
+        37.5853,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1963,
+        37.9479,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1878,
+        38.2082,
+        0.0006,
+        "NaN"
+       ],
+       [
+        17.1906,
+        38.4583,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1907,
+        38.6767,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2018,
+        38.8619,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.2038,
+        39.0107,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1892,
+        39.1812,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1863,
+        39.3581,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1914,
+        39.4434,
+        0.0005,
+        "NaN"
+       ],
+       [
+        17.1973,
+        39.5851,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2096,
+        39.6316,
+        0.0004,
+        "NaN"
+       ],
+       [
+        17.2079,
+        39.7514,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        31.1758,
+        0.0075,
+        "NaN"
+       ],
+       [
+        23.0197,
+        33.1092,
+        0.0016,
+        "NaN"
+       ],
+       [
+        23.0368,
+        34.2772,
+        0.001,
+        "NaN"
+       ],
+       [
+        23.0201,
+        35.0364,
+        0.0007,
+        "NaN"
+       ],
+       [
+        23.0297,
+        35.5837,
+        0.0006,
+        "NaN"
+       ],
+       [
+        23.0268,
+        36.0368,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0374,
+        36.3347,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0363,
+        36.6662,
+        0.0005,
+        "NaN"
+       ],
+       [
+        23.0054,
+        36.8719,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0336,
+        37.1694,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0332,
+        37.3643,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.034,
+        37.5835,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0412,
+        37.755,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0314,
+        37.9131,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0247,
+        38.092,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0388,
+        38.1868,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.022,
+        38.2682,
+        0.0004,
+        "NaN"
+       ],
+       [
+        23.0236,
+        38.3129,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0118,
+        38.4102,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0275,
+        38.4231,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0527,
+        38.5206,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0372,
+        38.5489,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0576,
+        38.6012,
+        0.0003,
+        "NaN"
+       ],
+       [
+        23.0331,
+        38.5857,
+        0.0003,
+        "NaN"
+       ]
+      ]
+     }
+    }
+   }
+  }
+ }
+]

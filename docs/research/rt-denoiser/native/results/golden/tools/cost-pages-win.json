@@ -1,0 +1,10 @@
+[
+ ["default (timestamps)", "diffuse", "c-v0", ""],
+ ["default, no timestamps", "diffuse", "c-v0", "timestamps=0"],
+ ["chroma off", "diffuse", "c-v0", "antiLagChroma=0"],
+ ["antiLag off (alpha 0.1)", "diffuse", "c-v0", "antiLag=off&temporalAlpha=0.1"],
+ ["stabilize (x-auto)", "diffuse", "x-auto", "stabilize=1"],
+ ["x-auto default", "diffuse", "x-auto", ""],
+ ["empty submit", "diffuse", "c-empty", ""],
+ ["one tiny dispatch", "diffuse", "c-tiny", ""]
+]

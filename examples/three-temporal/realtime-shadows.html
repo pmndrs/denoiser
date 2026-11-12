@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - realtime shadows: ours vs FidelityFX</title>
+    <style>
+      .dn-page { max-width: 1020px; }
+      h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+      code { background: #0006; padding: 0 .3em; border-radius: 4px; }
+      canvas { width: 100%; max-width: 960px; aspect-ratio: 16 / 9; background: #000; border: 1px solid var(--dn-border); border-radius: 8px 8px 0 0; display: block; touch-action: none; }
+      .caption { max-width: 960px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; padding: .35rem .7rem; background: var(--dn-panel); border: 1px solid var(--dn-border); border-top: 0; border-radius: 0 0 8px 8px; font-size: .85rem; margin-bottom: 1rem; }
+      .caption span { color: var(--dn-accent); }
+      .dn-panel { max-width: 960px; }
+      .hint { color: var(--dn-muted); font-size: .85rem; }
+      .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .9rem 1rem; font-size: .92rem; max-width: 960px; margin-top: 1rem; box-sizing: border-box; }
+      .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+      pre.code { background: #0008; border: 1px solid var(--dn-border); border-radius: 8px; padding: .7rem .9rem; font-size: .8rem; overflow-x: auto; max-width: 960px; box-sizing: border-box; }
+      .tag { display: inline-block; font-size: .75rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--dn-accent); color: var(--dn-accent); vertical-align: middle; }
+    </style>
+  </head>
+  <body>
+    <div class="dn-page">
+      <header class="dn-head">
+      <h1>Realtime shadows: ours vs FidelityFX <span class="tag">experimental</span></h1>
+      <p class="dn-lede">
+        The scene of the <a href="shadows.html">ray-traced shadows page</a>: one big soft area light, its shadow traced at
+        <b>one ray per pixel</b> against the real scene meshes. Left of the divider: <code>ffxShadows()</code> (AMD FidelityFX).
+        Right: <code>realtimeShadows()</code> from <code>denoiser/three</code>, the penumbra-aware <code>ShadowDenoiser</code> of
+        <code>denoiser/realtime</code>, which also gets the occluder distance and the light size. Drag on the image to move the divider.
+      </p>
+      </header>
+
+      <canvas id="view" width="960" height="540"></canvas>
+      <div class="caption"><span id="cap-view">...</span><span id="cap-cost"></span></div>
+
+      <section class="dn-panel" aria-label="controls">
+        <div class="dn-group">
+          <span class="dn-label">View</span>
+          <div class="dn-seg" id="seg-view">
+            <button data-v="split" aria-pressed="true">split</button><button data-v="ffx" aria-pressed="false">FFX</button><button data-v="ours" aria-pressed="false">ours</button><button data-v="noisy" aria-pressed="false">1 ray, raw</button><button data-v="ref" aria-pressed="false">reference</button>
+          </div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Show</span>
+          <div class="dn-seg" id="seg-show"><button data-v="lit" aria-pressed="true">lit scene</button><button data-v="mask" aria-pressed="false">visibility only</button></div>
+        </div>
+        <div class="dn-group"><label class="dn-label" for="split">Divider</label><input id="split" type="range" min="0" max="1" step="0.01" value="0.5" /></div>
+        <div class="dn-group">
+          <span class="dn-label">Light size</span>
+          <div class="dn-row"><input id="light-size" type="range" min="0.03" max="1.0" step="0.01" value="0.3" /><output class="dn-value" id="light-size-v"></output>
+          <span class="hint">Contact shadows under the table and chair legs harden; the lamp's shadow widens with distance.</span></div>
+        </div>
+        <div class="dn-group">
+          <span class="dn-label">Camera</span>
+          <div class="dn-row">
+            <div class="dn-seg" id="seg-motion"><button data-v="on" aria-pressed="true">slow orbit</button><button data-v="off" aria-pressed="false">paused</button></div>
+            <button class="dn-btn" id="cut">camera cut (resetHistory)</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="box">
+        <h2>What is different</h2>
+        <ul>
+          <li>FFX's shadow denoiser treats each ray as lit or shadowed and filters a fixed footprint.</li>
+          <li><code>ShadowDenoiser</code> keeps fractional visibility, accumulates raw visibility only, and sizes its spatial kernel per pixel
+            from the penumbra width (occluder distance and light size) blended with a noise estimate.</li>
+          <li>Light samples are spatiotemporal blue noise here, as its renderer contract asks (<code>?sampler=white</code> gives both denoisers the white noise of the shadows page).</li>
+          <li><code>denoiser/realtime</code> is experimental: defaults and API may change. Numbers for this scene: <code>docs/research/rt-denoiser/results/M6-real-scene.md</code>.</li>
+        </ul>
+      </div>
+
+      <pre class="code">import { ffxShadows, realtimeShadows } from 'denoiser/three';
+
+const guides = { camera, depth, velocity, normal, normalSpace: 'view', normalEncoding: 'packed' };
+const ffx = ffxShadows(visibility, guides);
+const ours = realtimeShadows(visibility, {
+  ...guides,
+  hitDistance: occluderDistance,                       // world units, 0 = unoccluded
+  light: () => ({ type: 'sphere', position: [x, y, z], radius }),
+});
+const lit = sceneColor.add(albedo.mul(irradiance).mul(ours.r));</pre>
+
+      <pre id="status" class="dn-status">starting...</pre>
+    </div>
+    <script type="module" src="./src/realtime-shadows.ts"></script>
+  </body>
+</html>

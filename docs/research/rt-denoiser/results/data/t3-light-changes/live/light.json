@@ -1,0 +1,4511 @@
+[
+ {
+  "query": "signal=diffuse,specular&mode=eval&preset=full&path=light&flipEvery=12&denoiser=svgf-auto,svgf-auto@antiLagChroma=1,svgf-auto@antiLagGain=2",
+  "ready": true,
+  "frame": 95,
+  "results": {
+   "mode": "eval",
+   "path": "light",
+   "scene": "standard",
+   "start": 0,
+   "width": 1920,
+   "height": 1080,
+   "frames": 96,
+   "refSpp": 256,
+   "sampling": "blue",
+   "inject": null,
+   "capture": null,
+   "refSalt": 0,
+   "resets": [
+    0
+   ],
+   "ageK": 8,
+   "flipEvery": 12,
+   "flipPpd": 41.38,
+   "query": "?signal=diffuse,specular&mode=eval&preset=full&path=light&flipEvery=12&denoiser=svgf-auto,svgf-auto@antiLagChroma=1,svgf-auto@antiLagGain=2",
+   "adapter": {
+    "vendor": "apple",
+    "architecture": "metal-3",
+    "device": "0x0000",
+    "description": "Apple M5 Pro"
+   },
+   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+   "demodulation": {
+    "diffuse": "albedo",
+    "specular": "f0 * A + B, (A, B) = Karis 2014 EnvBRDFApprox(perceptual roughness, max(NdotV, 1e-4)); denominator clamped >= 1e-3"
+   },
+   "seconds": 69.2,
+   "flipSeconds": 48.7,
+   "results": {
+    "diffuse": {
+     "svgf-auto": {
+      "denoiser": "svgf-auto",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.9827,
+      "psnrDenSettled": 41.1028,
+      "psnrDenFirstFrame": 39.0614,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.9321,
+      "psnrDenSettledPooled": 41.079,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.9827,
+      "psnrDenSettledCapped": 41.1028,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.9321,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.9321,
+        "psnrDenMean": 40.9827,
+        "psnrDenCapped": 40.9827
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 42.3694,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 42.3694,
+        "psnrDenMean": 42.4917,
+        "psnrDenCapped": 42.4917
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 41.2467,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.2467,
+        "psnrDenMean": 41.3014,
+        "psnrDenCapped": 41.3014
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 40.0312,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.0312,
+        "psnrDenMean": 40.063,
+        "psnrDenCapped": 40.063
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 43.6334,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 43.6334,
+        "psnrDenMean": 43.8402,
+        "psnrDenCapped": 43.8402
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 30.6309,
+        "biasDen": 0.0257,
+        "psnrDenPooled": 30.6309,
+        "psnrDenMean": 32.216,
+        "psnrDenCapped": 32.216
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.9497,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.9497,
+        "psnrDenMean": 40.9934,
+        "psnrDenCapped": 40.9934
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 32.3702,
+        "biasDen": 0.0183,
+        "psnrDenPooled": 32.3702,
+        "psnrDenMean": 36.8153,
+        "psnrDenCapped": 36.8153
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.2127,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 56.2127,
+        "psnrDenMean": 59.3934,
+        "psnrDenCapped": 58.8199
+       }
+      },
+      "biasDen": -0.0014,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0071,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0008,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0008,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 55.7934,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0279,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1568,
+       "gradient_create": 0.2583,
+       "gradient_atrous_0": 0.0209,
+       "gradient_atrous_1": 0.0197,
+       "gradient_atrous_2": 0.0191,
+       "gradient_atrous_3": 0.0212,
+       "gradient_lambda": 0.0383,
+       "temporal": 0.3682,
+       "variance": 0.1564,
+       "atrous_0": 0.2917,
+       "atrous_1": 0.2855,
+       "atrous_2": 0.275,
+       "atrous_3": 0.2737,
+       "atrous_4": 0.2721,
+       "total": 2.4795
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        39.0614,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        39.8352,
+        0.004,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.0522,
+        0.0033,
+        "NaN"
+       ],
+       [
+        16.4104,
+        38.1708,
+        0.0026,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.4692,
+        0.0026,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.1747,
+        0.0017,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.686,
+        0.0014,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.84,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.4406,
+        41.0173,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4345,
+        41.145,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.393,
+        41.202,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4028,
+        41.2637,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4179,
+        41.2847,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4196,
+        41.3287,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.3413,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4824,
+        41.2991,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4678,
+        41.2736,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4559,
+        41.2432,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4623,
+        41.2185,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4439,
+        41.2222,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        41.2211,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4167,
+        41.2637,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        41.2527,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4525,
+        41.2366,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4767,
+        41.2057,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4436,
+        41.2104,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4253,
+        41.2473,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4107,
+        41.2724,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4471,
+        41.2682,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.402,
+        41.3068,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4493,
+        41.2799,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4405,
+        41.2686,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4429,
+        41.2759,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.477,
+        41.228,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4268,
+        41.2503,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4289,
+        41.2644,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4476,
+        41.251,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4021,
+        41.2929,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4418,
+        41.2723,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4465,
+        41.2358,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4527,
+        41.1941,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4415,
+        41.1885,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4112,
+        41.2224,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        41.2507,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.3857,
+        41.3166,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.323,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4127,
+        41.3338,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4157,
+        41.3418,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2799,
+        38.1582,
+        0.0038,
+        "NaN"
+       ],
+       [
+        16.2542,
+        39.2739,
+        0.0013,
+        "NaN"
+       ],
+       [
+        16.2741,
+        39.9944,
+        0.0011,
+        "NaN"
+       ],
+       [
+        16.2645,
+        40.3989,
+        0.001,
+        "NaN"
+       ],
+       [
+        16.2224,
+        40.6983,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        40.8658,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        40.9289,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2782,
+        40.9752,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2916,
+        40.9734,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.24,
+        41.0306,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        41.0617,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2285,
+        41.1057,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2122,
+        41.1652,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2349,
+        41.1807,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.2083,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2319,
+        41.2267,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2886,
+        41.1969,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2704,
+        41.1974,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2746,
+        41.1464,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2575,
+        41.1634,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2211,
+        41.19,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2433,
+        41.193,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2512,
+        41.2061,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.279,
+        41.1687,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2748,
+        41.1465,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2629,
+        41.1287,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.0841,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.258,
+        41.1167,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2381,
+        41.129,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2478,
+        41.1431,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2034,
+        41.1887,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2801,
+        41.1535,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2626,
+        41.1569,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2479,
+        41.1464,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2739,
+        41.1276,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2447,
+        41.1345,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2437,
+        41.1596,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2219,
+        41.191,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.2164,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2787,
+        41.1699,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.1336,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2867,
+        41.0479,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2633,
+        41.0616,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2665,
+        41.0636,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2657,
+        41.0638,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2007,
+        41.1532,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2681,
+        41.1414,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2314,
+        41.1671,
+        0.0006,
+        "NaN"
+       ]
+      ]
+     },
+     "svgf-auto@antiLagChroma=1": {
+      "denoiser": "svgf-auto@antiLagChroma=1",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.9815,
+      "psnrDenSettled": 41.1015,
+      "psnrDenFirstFrame": 39.0614,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.931,
+      "psnrDenSettledPooled": 41.0777,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.9815,
+      "psnrDenSettledCapped": 41.1015,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.931,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.931,
+        "psnrDenMean": 40.9815,
+        "psnrDenCapped": 40.9815
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 42.368,
+        "biasDen": -0.0011,
+        "psnrDenPooled": 42.368,
+        "psnrDenMean": 42.4901,
+        "psnrDenCapped": 42.4901
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 41.2453,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 41.2453,
+        "psnrDenMean": 41.3,
+        "psnrDenCapped": 41.3
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 40.0304,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.0304,
+        "psnrDenMean": 40.062,
+        "psnrDenCapped": 40.062
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 43.633,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 43.633,
+        "psnrDenMean": 43.8394,
+        "psnrDenCapped": 43.8394
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 30.6304,
+        "biasDen": 0.0257,
+        "psnrDenPooled": 30.6304,
+        "psnrDenMean": 32.2197,
+        "psnrDenCapped": 32.2197
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.9486,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 40.9486,
+        "psnrDenMean": 40.9922,
+        "psnrDenCapped": 40.9922
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 32.3642,
+        "biasDen": 0.0183,
+        "psnrDenPooled": 32.3642,
+        "psnrDenMean": 36.8104,
+        "psnrDenCapped": 36.8104
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.2076,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 56.2076,
+        "psnrDenMean": 59.3807,
+        "psnrDenCapped": 58.8171
+       }
+      },
+      "biasDen": -0.0014,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0071,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0008,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0008,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 55.7882,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0279,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1676,
+       "gradient_create": 0.2586,
+       "gradient_atrous_0": 0.0327,
+       "gradient_atrous_1": 0.031,
+       "gradient_atrous_2": 0.0291,
+       "gradient_atrous_3": 0.0327,
+       "gradient_lambda": 0.0639,
+       "temporal": 0.3785,
+       "variance": 0.1582,
+       "atrous_0": 0.2915,
+       "atrous_1": 0.286,
+       "atrous_2": 0.276,
+       "atrous_3": 0.2744,
+       "atrous_4": 0.2725,
+       "total": 2.5691
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        39.0614,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        39.8404,
+        0.004,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.0529,
+        0.0033,
+        "NaN"
+       ],
+       [
+        16.4104,
+        38.17,
+        0.0026,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.4689,
+        0.0026,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.1743,
+        0.0017,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.6857,
+        0.0014,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.8396,
+        0.0009,
+        "NaN"
+       ],
+       [
+        16.4406,
+        41.017,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4345,
+        41.1449,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.393,
+        41.202,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4028,
+        41.2635,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4179,
+        41.2845,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4196,
+        41.3287,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.3412,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4824,
+        41.2989,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4678,
+        41.2732,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4559,
+        41.2427,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4623,
+        41.2178,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4439,
+        41.2213,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        41.2202,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4167,
+        41.2627,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        41.2517,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4525,
+        41.2353,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4767,
+        41.2042,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4436,
+        41.209,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4253,
+        41.2458,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4107,
+        41.2711,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4471,
+        41.2668,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.402,
+        41.3057,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4493,
+        41.2786,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4405,
+        41.2671,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4429,
+        41.2744,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.477,
+        41.2262,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4268,
+        41.2485,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4289,
+        41.2627,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4476,
+        41.2492,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4021,
+        41.2914,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4418,
+        41.2706,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4465,
+        41.234,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4527,
+        41.1921,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4415,
+        41.1865,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4112,
+        41.2207,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        41.2492,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.3857,
+        41.3154,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.3217,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4127,
+        41.3326,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4157,
+        41.3406,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2799,
+        38.1567,
+        0.0038,
+        "NaN"
+       ],
+       [
+        16.2542,
+        39.2751,
+        0.0013,
+        "NaN"
+       ],
+       [
+        16.2741,
+        39.9954,
+        0.0011,
+        "NaN"
+       ],
+       [
+        16.2645,
+        40.3991,
+        0.001,
+        "NaN"
+       ],
+       [
+        16.2224,
+        40.6983,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        40.8657,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        40.9284,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2782,
+        40.9741,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2916,
+        40.972,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.24,
+        41.0293,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        41.0603,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2285,
+        41.1045,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2122,
+        41.1641,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2349,
+        41.1797,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.2072,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2319,
+        41.2257,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2886,
+        41.1955,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2704,
+        41.1958,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2746,
+        41.1447,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2575,
+        41.1616,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2211,
+        41.1884,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2433,
+        41.1915,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2512,
+        41.2046,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.279,
+        41.1669,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2748,
+        41.1445,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2629,
+        41.1266,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.0818,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.258,
+        41.1145,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2381,
+        41.1269,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2478,
+        41.1409,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2034,
+        41.187,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2801,
+        41.1516,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2626,
+        41.1548,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2479,
+        41.1444,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2739,
+        41.1253,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2447,
+        41.1324,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2437,
+        41.1577,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2219,
+        41.1893,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.2148,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2787,
+        41.1681,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.1315,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2867,
+        41.0456,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2633,
+        41.0594,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2665,
+        41.0615,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2657,
+        41.0616,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2007,
+        41.1515,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2681,
+        41.1397,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2314,
+        41.1654,
+        0.0006,
+        "NaN"
+       ]
+      ]
+     },
+     "svgf-auto@antiLagGain=2": {
+      "denoiser": "svgf-auto@antiLagGain=2",
+      "psnrNoisy": 16.3446,
+      "psnrDen": 40.9965,
+      "psnrDenSettled": 41.1175,
+      "psnrDenFirstFrame": 39.0614,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 16.3436,
+      "psnrDenPooled": 40.9584,
+      "psnrDenSettledPooled": 41.1074,
+      "psnrNoisyCapped": 16.3446,
+      "psnrDenCapped": 40.9965,
+      "psnrDenSettledCapped": 41.1175,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 16.3436,
+        "psnrDen": 40.9584,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 40.9584,
+        "psnrDenMean": 40.9965,
+        "psnrDenCapped": 40.9965
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 16.4581,
+        "psnrDen": 42.4813,
+        "biasDen": -0.0012,
+        "psnrDenPooled": 42.4813,
+        "psnrDenMean": 42.5599,
+        "psnrDenCapped": 42.5599
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 16.3037,
+        "psnrDen": 41.2755,
+        "biasDen": -0.0017,
+        "psnrDenPooled": 41.2755,
+        "psnrDenMean": 41.3172,
+        "psnrDenCapped": 41.3172
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 16.2423,
+        "psnrDen": 40.0316,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 40.0316,
+        "psnrDenMean": 40.0586,
+        "psnrDenCapped": 40.0586
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 17.4467,
+        "psnrDen": 43.6422,
+        "biasDen": -0.0014,
+        "psnrDenPooled": 43.6422,
+        "psnrDenMean": 43.7706,
+        "psnrDenCapped": 43.7706
+       },
+       "dynamic": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 18.3721,
+        "psnrDen": 34.7059,
+        "biasDen": 0.0149,
+        "psnrDenPooled": 34.7059,
+        "psnrDenMean": 36.5573,
+        "psnrDenCapped": 36.5573
+       },
+       "static": {
+        "pixelsPerFrame": 1711928,
+        "psnrNoisy": 16.343,
+        "psnrDen": 40.9642,
+        "biasDen": -0.0015,
+        "psnrDenPooled": 40.9642,
+        "psnrDenMean": 41.0003,
+        "psnrDenCapped": 41.0003
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 712,
+        "psnrNoisy": 15.3998,
+        "psnrDen": 36.0435,
+        "biasDen": 0.012,
+        "psnrDenPooled": 36.0435,
+        "psnrDenMean": 40.2564,
+        "psnrDenCapped": 40.2564
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1694088,
+        "psnrNoisy": 14.0139,
+        "psnrDen": 56.0522,
+        "biasDen": 0.0008,
+        "psnrDenPooled": 56.0522,
+        "psnrDenMean": 58.4922,
+        "psnrDenCapped": 58.4272
+       }
+      },
+      "biasDen": -0.0015,
+      "biasNoisy": -0.0637,
+      "energyDen": -0.0074,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1055,
+      "flickerDen": 0.0008,
+      "flickerMcNoisy": 0.1083,
+      "flickerMcDen": 0.0008,
+      "tpsnrNoisy": 14.0144,
+      "tpsnrDen": 55.8748,
+      "flipNoisy": 0.3041,
+      "flipDen": 0.0279,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1676,
+       "gradient_create": 0.2552,
+       "gradient_atrous_0": 0.021,
+       "gradient_atrous_1": 0.0196,
+       "gradient_atrous_2": 0.0191,
+       "gradient_atrous_3": 0.0213,
+       "gradient_lambda": 0.0387,
+       "temporal": 0.3688,
+       "variance": 0.1605,
+       "atrous_0": 0.2913,
+       "atrous_1": 0.2858,
+       "atrous_2": 0.2756,
+       "atrous_3": 0.2731,
+       "atrous_4": 0.2717,
+       "total": 2.4898
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        16.4358,
+        39.0614,
+        "NaN",
+        "NaN"
+       ],
+       [
+        16.4651,
+        39.8299,
+        0.004,
+        "NaN"
+       ],
+       [
+        16.4646,
+        39.081,
+        0.0033,
+        "NaN"
+       ],
+       [
+        16.4104,
+        38.2524,
+        0.0025,
+        "NaN"
+       ],
+       [
+        16.4225,
+        39.4634,
+        0.0025,
+        "NaN"
+       ],
+       [
+        16.438,
+        40.1613,
+        0.0017,
+        "NaN"
+       ],
+       [
+        16.4206,
+        40.6693,
+        0.0014,
+        "NaN"
+       ],
+       [
+        16.4679,
+        40.8038,
+        0.001,
+        "NaN"
+       ],
+       [
+        16.4406,
+        40.9882,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4345,
+        41.1214,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.393,
+        41.1823,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4028,
+        41.2477,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4179,
+        41.2673,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4196,
+        41.3128,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.3241,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4824,
+        41.278,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.4678,
+        41.2508,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4559,
+        41.2147,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4623,
+        41.1922,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4439,
+        41.1985,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4321,
+        41.2003,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4167,
+        41.2456,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4387,
+        41.2268,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4525,
+        41.2135,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4767,
+        41.1728,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4436,
+        41.1751,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4253,
+        41.2193,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4107,
+        41.247,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4471,
+        41.2473,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.402,
+        41.2928,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4493,
+        41.2617,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4405,
+        41.2492,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4429,
+        41.2572,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.477,
+        41.2014,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.4268,
+        41.2272,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4289,
+        41.2427,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4476,
+        41.2263,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4021,
+        41.2696,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4418,
+        41.2458,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4465,
+        41.208,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4527,
+        41.1662,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4415,
+        41.162,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4112,
+        41.1993,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.4206,
+        41.2282,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.3857,
+        41.2962,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.426,
+        41.3037,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4127,
+        41.3166,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.4157,
+        41.3246,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2799,
+        39.0016,
+        0.0033,
+        "NaN"
+       ],
+       [
+        16.2542,
+        40.089,
+        0.0015,
+        "NaN"
+       ],
+       [
+        16.2741,
+        40.5655,
+        0.0011,
+        "NaN"
+       ],
+       [
+        16.2645,
+        40.7598,
+        0.001,
+        "NaN"
+       ],
+       [
+        16.2224,
+        40.9389,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2231,
+        41.0204,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2669,
+        41.019,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2782,
+        41.0303,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2916,
+        40.9998,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.24,
+        41.0467,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2513,
+        41.0699,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2285,
+        41.11,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2122,
+        41.1729,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2349,
+        41.1849,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.2083,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2319,
+        41.2238,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2886,
+        41.1872,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2704,
+        41.1837,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2746,
+        41.1194,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2575,
+        41.1434,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2211,
+        41.1688,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2433,
+        41.1693,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2512,
+        41.1796,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.279,
+        41.1267,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2748,
+        41.1081,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2629,
+        41.0864,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.0355,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.258,
+        41.0789,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2381,
+        41.0899,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2478,
+        41.1122,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2034,
+        41.1625,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2801,
+        41.125,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2626,
+        41.13,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2479,
+        41.117,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2739,
+        41.0986,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2447,
+        41.1069,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2437,
+        41.135,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2219,
+        41.1691,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2392,
+        41.1922,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2787,
+        41.1408,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2808,
+        41.0954,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2867,
+        40.9959,
+        0.0007,
+        "NaN"
+       ],
+       [
+        16.2633,
+        41.0152,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2665,
+        41.0203,
+        0.0005,
+        "NaN"
+       ],
+       [
+        16.2657,
+        41.0245,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2007,
+        41.1242,
+        0.0008,
+        "NaN"
+       ],
+       [
+        16.2681,
+        41.1119,
+        0.0006,
+        "NaN"
+       ],
+       [
+        16.2314,
+        41.141,
+        0.0006,
+        "NaN"
+       ]
+      ]
+     }
+    },
+    "specular": {
+     "svgf-auto": {
+      "denoiser": "svgf-auto",
+      "psnrNoisy": 13.785,
+      "psnrDen": 35.2853,
+      "psnrDenSettled": 35.3268,
+      "psnrDenFirstFrame": 33.7218,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 35.2691,
+      "psnrDenSettledPooled": 35.3147,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 35.2853,
+      "psnrDenSettledCapped": 35.3268,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 35.2691,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 35.2691,
+        "psnrDenMean": 35.2853,
+        "psnrDenCapped": 35.2853
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 42.6351,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 42.6351,
+        "psnrDenMean": 43.0916,
+        "psnrDenCapped": 43.0916
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 37.5223,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 37.5223,
+        "psnrDenMean": 37.5466,
+        "psnrDenCapped": 37.5466
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 33.1716,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 33.1716,
+        "psnrDenMean": 33.1777,
+        "psnrDenCapped": 33.1777
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.8032,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 31.8032,
+        "psnrDenMean": 31.8233,
+        "psnrDenCapped": 31.8233
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 29.6303,
+        "biasDen": 0.0146,
+        "psnrDenPooled": 29.6303,
+        "psnrDenMean": 28.7341,
+        "psnrDenCapped": 28.7341
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 35.311,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 35.311,
+        "psnrDenMean": 35.3165,
+        "psnrDenCapped": 35.3165
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 31.7269,
+        "biasDen": 0.019,
+        "psnrDenPooled": 31.7269,
+        "psnrDenMean": 38.9742,
+        "psnrDenCapped": 38.9742
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 52.7792,
+        "biasDen": 0.0009,
+        "psnrDenPooled": 52.7792,
+        "psnrDenMean": 53.6685,
+        "psnrDenCapped": 53.6685
+       }
+      },
+      "biasDen": -0.0004,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0075,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.001,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.001,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 51.1379,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0356,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1674,
+       "gradient_create": 0.2515,
+       "gradient_atrous_0": 0.0211,
+       "gradient_atrous_1": 0.0198,
+       "gradient_atrous_2": 0.0194,
+       "gradient_atrous_3": 0.0216,
+       "gradient_lambda": 0.0385,
+       "temporal": 0.3846,
+       "variance": 0.1536,
+       "atrous_0": 0.3256,
+       "atrous_1": 0.3244,
+       "atrous_2": 0.3146,
+       "atrous_3": 0.3144,
+       "atrous_4": 0.2989,
+       "total": 2.6743
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        33.7218,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        34.3164,
+        0.0041,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.704,
+        0.0026,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.9899,
+        0.0022,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.1443,
+        0.0016,
+        "NaN"
+       ],
+       [
+        13.8763,
+        35.1941,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8579,
+        35.2535,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8894,
+        35.3068,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.334,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8856,
+        35.3462,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8644,
+        35.3462,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8611,
+        35.3469,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8846,
+        35.3552,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8751,
+        35.3569,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8882,
+        35.3507,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8571,
+        35.36,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8585,
+        35.3688,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8746,
+        35.3952,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8665,
+        35.4165,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8775,
+        35.4227,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8924,
+        35.404,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8594,
+        35.389,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8717,
+        35.4116,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8508,
+        35.3851,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8815,
+        35.3982,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8673,
+        35.3919,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8782,
+        35.3943,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8759,
+        35.404,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8434,
+        35.3985,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8836,
+        35.3819,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8589,
+        35.3868,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8745,
+        35.3825,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8807,
+        35.4046,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.4148,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8765,
+        35.4204,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.3974,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8827,
+        35.3873,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8811,
+        35.3863,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8682,
+        35.3998,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8693,
+        35.4058,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8499,
+        35.4279,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8606,
+        35.4233,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8679,
+        35.4205,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8854,
+        35.433,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8783,
+        35.4267,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8723,
+        35.3879,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8689,
+        35.3995,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8601,
+        35.4002,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6876,
+        32.9057,
+        0.0057,
+        "NaN"
+       ],
+       [
+        13.7084,
+        34.2361,
+        0.003,
+        "NaN"
+       ],
+       [
+        13.6934,
+        34.7513,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.7153,
+        35.0394,
+        0.0013,
+        "NaN"
+       ],
+       [
+        13.6809,
+        35.1532,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6998,
+        35.2306,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6946,
+        35.2566,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6896,
+        35.3037,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7042,
+        35.3495,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6868,
+        35.3569,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.3722,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6966,
+        35.3755,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6962,
+        35.3588,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7121,
+        35.3641,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7049,
+        35.3747,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7132,
+        35.3703,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6847,
+        35.3662,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.3995,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7081,
+        35.4106,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6871,
+        35.4202,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7125,
+        35.4098,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7088,
+        35.391,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.698,
+        35.3962,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6894,
+        35.3894,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.351,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7144,
+        35.3652,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6892,
+        35.3687,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7129,
+        35.3605,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.696,
+        35.3532,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6869,
+        35.3499,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.3557,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6886,
+        35.3595,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6919,
+        35.388,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6941,
+        35.419,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6935,
+        35.4001,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7091,
+        35.3945,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6821,
+        35.3979,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7165,
+        35.3727,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7078,
+        35.3694,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6913,
+        35.3848,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6985,
+        35.3809,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6858,
+        35.3931,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.703,
+        35.3952,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7008,
+        35.4127,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7184,
+        35.3979,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7013,
+        35.3868,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6984,
+        35.3743,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7126,
+        35.3823,
+        0.0008,
+        "NaN"
+       ]
+      ]
+     },
+     "svgf-auto@antiLagChroma=1": {
+      "denoiser": "svgf-auto@antiLagChroma=1",
+      "psnrNoisy": 13.785,
+      "psnrDen": 35.2854,
+      "psnrDenSettled": 35.3269,
+      "psnrDenFirstFrame": 33.7218,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 35.2692,
+      "psnrDenSettledPooled": 35.3149,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 35.2854,
+      "psnrDenSettledCapped": 35.3269,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 35.2692,
+        "biasDen": -0.0004,
+        "psnrDenPooled": 35.2692,
+        "psnrDenMean": 35.2854,
+        "psnrDenCapped": 35.2854
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 42.6395,
+        "biasDen": -0.0001,
+        "psnrDenPooled": 42.6395,
+        "psnrDenMean": 43.0967,
+        "psnrDenCapped": 43.0967
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 37.5217,
+        "biasDen": -0.0007,
+        "psnrDenPooled": 37.5217,
+        "psnrDenMean": 37.546,
+        "psnrDenCapped": 37.546
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 33.1716,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 33.1716,
+        "psnrDenMean": 33.1777,
+        "psnrDenCapped": 33.1777
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.8039,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 31.8039,
+        "psnrDenMean": 31.8239,
+        "psnrDenCapped": 31.8239
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 29.6413,
+        "biasDen": 0.0146,
+        "psnrDenPooled": 29.6413,
+        "psnrDenMean": 28.7299,
+        "psnrDenCapped": 28.7299
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 35.311,
+        "biasDen": -0.0005,
+        "psnrDenPooled": 35.311,
+        "psnrDenMean": 35.3164,
+        "psnrDenCapped": 35.3164
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 31.7308,
+        "biasDen": 0.019,
+        "psnrDenPooled": 31.7308,
+        "psnrDenMean": 38.9681,
+        "psnrDenCapped": 38.9681
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 52.7598,
+        "biasDen": 0.0009,
+        "psnrDenPooled": 52.7598,
+        "psnrDenMean": 53.642,
+        "psnrDenCapped": 53.642
+       }
+      },
+      "biasDen": -0.0004,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0075,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.001,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.001,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 51.1258,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0356,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1673,
+       "gradient_create": 0.2537,
+       "gradient_atrous_0": 0.0331,
+       "gradient_atrous_1": 0.0308,
+       "gradient_atrous_2": 0.0294,
+       "gradient_atrous_3": 0.0332,
+       "gradient_lambda": 0.0662,
+       "temporal": 0.3883,
+       "variance": 0.1537,
+       "atrous_0": 0.3256,
+       "atrous_1": 0.3251,
+       "atrous_2": 0.3152,
+       "atrous_3": 0.3141,
+       "atrous_4": 0.2993,
+       "total": 2.7464
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        33.7218,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        34.3163,
+        0.0041,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.7036,
+        0.0026,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.9892,
+        0.0022,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.1443,
+        0.0016,
+        "NaN"
+       ],
+       [
+        13.8763,
+        35.194,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8579,
+        35.2533,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8894,
+        35.3066,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.3339,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8856,
+        35.3461,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8644,
+        35.3462,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8611,
+        35.347,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8846,
+        35.3553,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8751,
+        35.357,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8882,
+        35.3508,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8571,
+        35.36,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8585,
+        35.3688,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8746,
+        35.3952,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8665,
+        35.4168,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8775,
+        35.4229,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8924,
+        35.4042,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8594,
+        35.389,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8717,
+        35.4117,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8508,
+        35.3851,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8815,
+        35.3983,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8673,
+        35.392,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8782,
+        35.3944,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8759,
+        35.4041,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8434,
+        35.3986,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8836,
+        35.382,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8589,
+        35.387,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8745,
+        35.3825,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8807,
+        35.4047,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.4148,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8765,
+        35.4205,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.3974,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8827,
+        35.3871,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8811,
+        35.3861,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8682,
+        35.3996,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8693,
+        35.4056,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8499,
+        35.4278,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8606,
+        35.4232,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8679,
+        35.4203,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8854,
+        35.4328,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8783,
+        35.4266,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8723,
+        35.3875,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8689,
+        35.3992,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.8601,
+        35.3999,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6876,
+        32.906,
+        0.0057,
+        "NaN"
+       ],
+       [
+        13.7084,
+        34.2392,
+        0.003,
+        "NaN"
+       ],
+       [
+        13.6934,
+        34.755,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.7153,
+        35.0429,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.6809,
+        35.1563,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6998,
+        35.2334,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6946,
+        35.2589,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6896,
+        35.3056,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7042,
+        35.3511,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6868,
+        35.3581,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.3732,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6966,
+        35.3763,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6962,
+        35.3593,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7121,
+        35.3644,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7049,
+        35.3748,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7132,
+        35.3702,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6847,
+        35.366,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.3994,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7081,
+        35.4104,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6871,
+        35.4199,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7125,
+        35.4095,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7088,
+        35.3905,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.698,
+        35.3958,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6894,
+        35.3888,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.3506,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7144,
+        35.3649,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6892,
+        35.3684,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7129,
+        35.36,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.696,
+        35.3528,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6869,
+        35.3494,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.3551,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6886,
+        35.3589,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6919,
+        35.3875,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6941,
+        35.4185,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6935,
+        35.3997,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7091,
+        35.394,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6821,
+        35.3975,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7165,
+        35.3723,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7078,
+        35.3689,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6913,
+        35.3844,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6985,
+        35.3805,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6858,
+        35.3927,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.703,
+        35.3949,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7008,
+        35.4124,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7184,
+        35.3976,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7013,
+        35.3865,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.6984,
+        35.3739,
+        0.0008,
+        "NaN"
+       ],
+       [
+        13.7126,
+        35.3821,
+        0.0008,
+        "NaN"
+       ]
+      ]
+     },
+     "svgf-auto@antiLagGain=2": {
+      "denoiser": "svgf-auto@antiLagGain=2",
+      "psnrNoisy": 13.785,
+      "psnrDen": 35.268,
+      "psnrDenSettled": 35.3112,
+      "psnrDenFirstFrame": 33.7218,
+      "psnrDenAfterCut": null,
+      "psnrNoisyPooled": 13.7842,
+      "psnrDenPooled": 35.2603,
+      "psnrDenSettledPooled": 35.3086,
+      "psnrNoisyCapped": 13.785,
+      "psnrDenCapped": 35.268,
+      "psnrDenSettledCapped": 35.3112,
+      "psnrCapDb": 60,
+      "regions": {
+       "all": {
+        "pixelsPerFrame": 1712640,
+        "psnrNoisy": 13.7842,
+        "psnrDen": 35.2603,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 35.2603,
+        "psnrDenMean": 35.268,
+        "psnrDenCapped": 35.268
+       },
+       "penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "disoccluded": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "rough<0.15": {
+        "pixelsPerFrame": 374271,
+        "psnrNoisy": 29,
+        "psnrDen": 42.6754,
+        "biasDen": -0.0003,
+        "psnrDenPooled": 42.6754,
+        "psnrDenMean": 42.9652,
+        "psnrDenCapped": 42.9652
+       },
+       "rough<0.35": {
+        "pixelsPerFrame": 545322,
+        "psnrNoisy": 15.4499,
+        "psnrDen": 37.4848,
+        "biasDen": -0.0008,
+        "psnrDenPooled": 37.4848,
+        "psnrDenMean": 37.4983,
+        "psnrDenCapped": 37.4983
+       },
+       "rough<0.6": {
+        "pixelsPerFrame": 736443,
+        "psnrNoisy": 11.4262,
+        "psnrDen": 33.1654,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 33.1654,
+        "psnrDenMean": 33.1684,
+        "psnrDenCapped": 33.1684
+       },
+       "rough>=0.6": {
+        "pixelsPerFrame": 56604,
+        "psnrNoisy": 13.3667,
+        "psnrDen": 31.8172,
+        "biasDen": -0.0016,
+        "psnrDenPooled": 31.8172,
+        "psnrDenMean": 31.8278,
+        "psnrDenCapped": 31.8278
+       },
+       "dynamic": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 22.675,
+        "psnrDen": 32.8935,
+        "biasDen": 0.0025,
+        "psnrDenPooled": 32.8935,
+        "psnrDenMean": 30.0445,
+        "psnrDenCapped": 30.0445
+       },
+       "static": {
+        "pixelsPerFrame": 1706483,
+        "psnrNoisy": 13.7705,
+        "psnrDen": 35.2717,
+        "biasDen": -0.0006,
+        "psnrDenPooled": 35.2717,
+        "psnrDenMean": 35.2769,
+        "psnrDenCapped": 35.2769
+       },
+       "static-penumbra": {
+        "pixelsPerFrame": 0,
+        "psnrNoisy": "NaN",
+        "psnrDen": "NaN",
+        "biasDen": "NaN",
+        "psnrDenPooled": "NaN",
+        "psnrDenMean": "NaN",
+        "psnrDenCapped": "NaN"
+       },
+       "dynamic-temporal": {
+        "pixelsPerFrame": 6157,
+        "psnrNoisy": 19.8961,
+        "psnrDen": 37.2712,
+        "biasDen": 0.0064,
+        "psnrDenPooled": 37.2712,
+        "psnrDenMean": 41.017,
+        "psnrDenCapped": 41.017
+       },
+       "static-temporal": {
+        "pixelsPerFrame": 1688643,
+        "psnrNoisy": 11.87,
+        "psnrDen": 50.6599,
+        "biasDen": 0.0011,
+        "psnrDenPooled": 50.6599,
+        "psnrDenMean": 51.0645,
+        "psnrDenCapped": 51.0645
+       }
+      },
+      "biasDen": -0.0006,
+      "biasNoisy": -0.0742,
+      "energyDen": -0.0077,
+      "energyNoisy": -0.0003,
+      "flickerNoisy": 0.1538,
+      "flickerDen": 0.0011,
+      "flickerMcNoisy": 0.1544,
+      "flickerMcDen": 0.0011,
+      "tpsnrNoisy": 11.8833,
+      "tpsnrDen": 50.3432,
+      "flipNoisy": 0.2418,
+      "flipDen": 0.0356,
+      "flipFrames": [
+       11,
+       23,
+       35,
+       47,
+       59,
+       71,
+       83,
+       95
+      ],
+      "gpuMs": {
+       "prepass": 0.1672,
+       "gradient_create": 0.2485,
+       "gradient_atrous_0": 0.0209,
+       "gradient_atrous_1": 0.0197,
+       "gradient_atrous_2": 0.0193,
+       "gradient_atrous_3": 0.0217,
+       "gradient_lambda": 0.0387,
+       "temporal": 0.3833,
+       "variance": 0.1711,
+       "atrous_0": 0.3247,
+       "atrous_1": 0.3245,
+       "atrous_2": 0.3147,
+       "atrous_3": 0.3138,
+       "atrous_4": 0.2988,
+       "total": 2.6782
+      },
+      "nonFiniteInputs": 0,
+      "nonFiniteDenoised": 0,
+      "perFrame": [
+       [
+        13.9038,
+        33.7218,
+        "NaN",
+        "NaN"
+       ],
+       [
+        13.8683,
+        34.2932,
+        0.0042,
+        "NaN"
+       ],
+       [
+        13.892,
+        34.6489,
+        0.0026,
+        "NaN"
+       ],
+       [
+        13.8462,
+        34.9392,
+        0.0022,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.107,
+        0.0017,
+        "NaN"
+       ],
+       [
+        13.8763,
+        35.142,
+        0.0016,
+        "NaN"
+       ],
+       [
+        13.8579,
+        35.2114,
+        0.0014,
+        "NaN"
+       ],
+       [
+        13.8894,
+        35.2761,
+        0.0013,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.2975,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.8856,
+        35.3108,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8644,
+        35.307,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8611,
+        35.3077,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8846,
+        35.314,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8751,
+        35.3129,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.8882,
+        35.3193,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8571,
+        35.2973,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8585,
+        35.3183,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8746,
+        35.3656,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8665,
+        35.3961,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8775,
+        35.3999,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8924,
+        35.3609,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8594,
+        35.338,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8717,
+        35.3653,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8508,
+        35.331,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8815,
+        35.3652,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8673,
+        35.3499,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8782,
+        35.3582,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8759,
+        35.3735,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8434,
+        35.3509,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8836,
+        35.3304,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8589,
+        35.3457,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8745,
+        35.3347,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8807,
+        35.3655,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8651,
+        35.3782,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8765,
+        35.3876,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8552,
+        35.356,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8827,
+        35.3445,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8811,
+        35.3414,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8682,
+        35.3669,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8693,
+        35.3626,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.8499,
+        35.3967,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8606,
+        35.3963,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8679,
+        35.3927,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8854,
+        35.4136,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8783,
+        35.39,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8723,
+        35.3329,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8689,
+        35.3561,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.8601,
+        35.3583,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6876,
+        34.2408,
+        0.0032,
+        "NaN"
+       ],
+       [
+        13.7084,
+        34.6885,
+        0.0018,
+        "NaN"
+       ],
+       [
+        13.6934,
+        34.9449,
+        0.0015,
+        "NaN"
+       ],
+       [
+        13.7153,
+        35.157,
+        0.0013,
+        "NaN"
+       ],
+       [
+        13.6809,
+        35.1811,
+        0.0012,
+        "NaN"
+       ],
+       [
+        13.6998,
+        35.2361,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6946,
+        35.2522,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6896,
+        35.2968,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7042,
+        35.3256,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.6868,
+        35.311,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.342,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6966,
+        35.3355,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6962,
+        35.2943,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7121,
+        35.3245,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7049,
+        35.3395,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7132,
+        35.3008,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6847,
+        35.3086,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.3689,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7081,
+        35.3744,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6871,
+        35.3961,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7125,
+        35.3818,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7088,
+        35.3289,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.698,
+        35.3335,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6894,
+        35.3333,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6903,
+        35.2973,
+        0.0011,
+        "NaN"
+       ],
+       [
+        13.7144,
+        35.3088,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6892,
+        35.3003,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.7129,
+        35.2924,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.696,
+        35.2778,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6869,
+        35.2949,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7047,
+        35.311,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6886,
+        35.319,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6919,
+        35.3449,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6941,
+        35.39,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6935,
+        35.3562,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7091,
+        35.3392,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6821,
+        35.3545,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7165,
+        35.3147,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7078,
+        35.3169,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6913,
+        35.3318,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6985,
+        35.3363,
+        0.0009,
+        "NaN"
+       ],
+       [
+        13.6858,
+        35.3518,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.703,
+        35.3395,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7008,
+        35.372,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7184,
+        35.3564,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7013,
+        35.336,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.6984,
+        35.3315,
+        0.001,
+        "NaN"
+       ],
+       [
+        13.7126,
+        35.3297,
+        0.001,
+        "NaN"
+       ]
+      ]
+     }
+    }
+   }
+  }
+ }
+]

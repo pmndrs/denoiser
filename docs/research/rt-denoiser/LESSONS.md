@@ -1,0 +1,1206 @@
+# Lessons: things not to rediscover
+
+_Append-only log shared by every agent on this project. Before you start, read it. Before
+you finish, add what cost you time: a gotcha, a wrong assumption, a command that works.
+One bullet each, newest at the bottom of its section, with your agent name and date.
+Append with a small Edit or `cat >> LESSONS.md`; don't rewrite others' entries._
+
+## Environment and tooling
+
+- `yarn install` at the worktree root is needed once per fresh worktree (no `node_modules`
+  in a new worktree). Takes seconds. — orchestrator, 2026-10-24
+- There is no `timeout` command on macOS; use a tool timeout or a Node-side deadline
+  instead. — orchestrator, 2026-10-24
+- Headless Chrome WebGPU works: `examples/ffx-denoiser/run-headless.mjs` launches Chrome
+  with `--headless=new --use-angle=metal --enable-unsafe-webgpu
+  --enable-webgpu-developer-features`, polls `window.__ffx` over CDP until `ready`. A
+  1080p 120-frame shadow eval takes about a minute. — orchestrator, 2026-10-24
+- Start a dev server in the background (`yarn workspace <name> dev > log 2>&1 &`), give
+  it ~4 s, and kill it by port when done. — orchestrator, 2026-10-24
+- The root `.gitignore` ignores `*.js` (and `*.d.ts`): scripts outside `examples/*/src/vendor`
+  must be `.mjs` / `.ts` or they silently never get committed. — capture-io, 2026-10-25
+- `tools/*` is not a yarn workspace. Run Vite there with
+  `node node_modules/vite/bin/vite.js tools/rt-capture --port 5230 ...` (it picks up
+  `tools/rt-capture/vite.config.ts`) and import packages by relative path to their `src/`
+  (no dist needed; type-only `@pmndrs/denoiser-core` imports are erased). — capture-io, 2026-10-25
+- zsh doesn't word-split `$VAR`: `P="a b"; git add $P` adds one path named "a b". Use an
+  array, `P=(a b); git add $P`. — capture-io, 2026-10-25
+- TASKS.md is one file in a shared worktree: another agent's `git commit -- TASKS.md`
+  sweeps your uncommitted edits into their commit. Harmless, but check with
+  `git show HEAD:docs/research/rt-denoiser/TASKS.md` instead of assuming yours is pending.
+  — spec-author, 2026-10-25
+- WebFetch of unrealengine.com blog posts returns 403. — spec-author, 2026-10-25
+- `examples/realtime-denoiser` evaluates several (signal, denoiser) pairs in ONE page
+  (`signal=all&denoiser=a,b`): the expensive references are rendered once per frame and
+  shared. A 1080p 96-frame path with all three signals and 256-spp references takes
+  ~80 s, ~60 s of it CPU FLIP; the 960x540 default preset ~25 s. `flip=0` for speed.
+  — testbed, 2026-10-25
+- Bench one denoiser per page load: in a page that benches several denoisers in a row,
+  FFX shadows read 1.2 ms instead of 0.51 ms (alone). Eval-mode `gpuMs` (GPU kept busy
+  by the references) agree with the solo bench. — testbed, 2026-10-25
+- Vite serves `src/` live: every headless run of a batch loads the current files, so
+  don't edit shaders while a `run-headless.mjs` batch is running (later runs would test
+  the edit). Use `--json=out.json` and summarize afterwards. — svgf, 2026-10-25
+- `URLSearchParams.get` returns the FIRST occurrence: appending `&path=pan` to a query
+  that already has `path=orbit` silently keeps `orbit`. — svgf, 2026-10-25
+- `run-headless.mjs` occasionally returns without results on one run of a batch (page
+  not attached yet); a rerun of that query works. Check the result count. — svgf, 2026-10-25
+- Other projects on this Mac run Vite servers too (e.g. `Denoiser-oidn-compare` holds
+  `[::1]:5240`). Bind and browse `127.0.0.1` explicitly (`--host 127.0.0.1 --strictPort`), and
+  check `lsof -nP -iTCP -sTCP:LISTEN | grep 52` before blaming your code for a stale page.
+  — orchestrator, 2026-10-25
+- Replay timings need a warm GPU: the replay idles the GPU between frames (fetch, upload,
+  readback) and Apple's GPU clocks down, so timestamps read 4–9× the live test bed's
+  (svgf-diffuse 2.11 vs 0.49 ms at 960×540). `replay()` now runs 50 ms of throwaway compute
+  before each timed dispatch (`&warm=`); 20 ms was enough at 960×540 but not at 1080p.
+  The live eval's timings are kept busy by reference rendering but read high at 1080p;
+  use the solo bench or a warmed replay for costs. — wiring, 2026-10-25
+- Headless Chrome without a fixed port: `--remote-debugging-port=0` and read the port from
+  `<user-data-dir>/DevToolsActivePort` (no random-port collisions between parallel runs).
+  `tools/rt-capture/lib/headless.mjs` does it, plus Chrome discovery per platform and
+  `--serve` (starts Vite as `node <vite>/bin/vite.js <root>`, no shell). — wiring, 2026-10-25
+- The test bed now writes and replays captures itself: `run-headless.mjs --serve --set=standard`
+  (10.6 GB in ~45 s on the M5 Pro, validated) and `--set=<set> --replay=<ids>` (replays +
+  compare.mjs). Live and replay give the same PSNR to 0.001 dB, so a capture can stand in
+  for the live test bed in any comparison. — wiring, 2026-10-25
+- To run a registry entry in the test bed before it is registered (without editing
+  `tools/rt-capture` or `examples/realtime-denoiser`): a scratch `registry-wrap.ts` that
+  `export *`s the registry by absolute path and calls `registerDenoiser()` for the new ids,
+  plus a scratch Vite config that `mergeConfig`s the test bed's config with `root` set and
+  an alias `/^(\.\.\/)+tools\/rt-capture\/src\/denoisers$/` → the wrapper. A config file
+  outside the repo can't resolve the bare `vite` import; import
+  `<repo>/node_modules/vite/dist/node/index.js` by absolute path. — recurrent, 2026-10-25
+- Results runs while another agent edits `packages/denoiser-realtime`: Vite serves its
+  `src/` live, so pin it: `git archive HEAD packages/denoiser-realtime/src packages/denoiser-core/src | tar -x -C <dir>`
+  and start the test bed with `RT_REALTIME_SRC=<dir>/packages/denoiser-realtime/src`
+  (alias in its vite.config.ts). Check with `curl .../@fs/<repo>/tools/rt-capture/src/denoisers.ts | grep realtime`.
+  — results, 2026-10-25
+- Several of your own 1080p evals can run in parallel for *quality* numbers (CPU FLIP is
+  most of the time; results are deterministic), ~2–5 min per path with 3 jobs; never for
+  timings. A bench loop that waits on `pgrep -f dev/run-headless` before each page gives
+  quiet timings while other agents work. — results, 2026-10-25
+
+- zsh: `paths=(${@:-a b c})` is ONE element "a b c" (and an unknown `path=` silently falls
+  back to `orbit` in the test bed, so a sweep "over 3 paths" measured orbit three times).
+  Use `if (( $# )); then paths=($@); else paths=(a b c); fi`. — shadows, 2026-10-25
+- The M5 Pro runs solo benches in two GPU clock states (every pass ×1.3–1.8 in the slow one,
+  FFX too, run to run): a tiny fixed-cost pass is a clock indicator (shadows `tiles` reads
+  0.005 ms fast, 0.007–0.009 slow). Alternate denoisers over several runs and report the
+  fastest run plus the median. — shadows, 2026-10-25
+- The scratchpad folder can be shared with other sessions' files; work in your own subfolder.
+  — shadows, 2026-10-25
+
+- A full-resolution look at a test-bed frame: the view-mode panels are ≤ 640 px canvases.
+  Replay a standard capture with `mode=replay&capture=std540-orbit&denoiser=<id>&output=<name>&<settings>`
+  (seconds) and crop with `crops.mjs crop ... --cols <name>,svgf-auto,ref --err 6`; `compare.mjs`
+  on the same outputs gives numbers. `output=` keeps several configs of one id apart. — recurrent-spec, 2026-10-25
+- WGSL compile errors of generated passes: `device.createShaderModule(...).getCompilationInfo()`
+  in a headless page on the test-bed origin, importing the pass generators by `/@fs/<abs path>`
+  (a 30-line script; much faster than reading "Invalid ShaderModule" from a run). — recurrent-spec, 2026-10-25
+
+- Port 5300 (the M5 brief's) is held by an unrelated project's Vite server (`upscaler`, since
+  Oct 19); the occlusion runs used 5310 (pinned) / 5311 (live). `lsof -nP -iTCP -sTCP:LISTEN` first. — occlusion, 2026-10-25
+- "Bit-identical" for a shader-generator change can be checked without a GPU: bundle the
+  generator with rolldown (`node_modules/rolldown`, `rolldown({ input, platform: 'node' })`),
+  dump every pass's WGSL for the old and new code over the configurations, and `diff`; then one
+  short eval on two `git archive` snapshots comparing `perFrame` arrays. — occlusion, 2026-10-25
+
+- A comment containing backticks inside a WGSL template literal (`` /* wgsl */ `...` ``) ends the
+  template: the TS module fails to transform, Vite logs a PARSE_ERROR, and every headless page
+  just hangs until its timeout. After editing a shader generator, `curl` the served module or
+  run `tsc --noEmit` before starting a batch. — shadows, 2026-10-25
+- Idle orphaned headless Chromes (0 % CPU) and hung `run-headless` pages of other agents look
+  "busy" to a `pgrep`-based quiet-GPU wait, which then never starts. Count a job as busy only if
+  its process tree uses CPU (`ps -o pid=,ppid=,pcpu=` and sum the subtree). In a bench round,
+  the first page tends to land in the slow clock state (shadows `tiles` 0.007 instead of
+  0.005 ms): lead every round with a throwaway warm-up page. — shadows, 2026-10-25
+- Killed headless runs leave orphaned Chromes (parent pid 1, idle). They stall quiet-GPU checks
+  and eat memory. Sweep only orphans with our temp profiles: `ps -axo pid,ppid,command | awk '$2==1
+  && /Google Chrome/ && /--headless/ && /user-data-dir=.*rt-headless/ && !/Helper/ {print $1}' | xargs kill`.
+  Never kill a Chrome whose parent is alive (another agent's run) or Dennis's own Chrome.
+  — orchestrator, 2026-10-25
+
+- The test bed builds one registry instance per (signal, id) with `signals: [that signal]`, so `mode=bench`
+  times a joint entry (`svgf`, `recurrent`, `occlusion-*`) as ONE signal's per-signal instance. To time
+  `dispatchBoth`, a scratch wrapper registers `j-<id>` = the entry's `create` called with
+  `signals: ['diffuse', 'specular']` (or `['ao', 'so']`), registered for one signal; the same trick
+  (`settings` overridden in `create`) puts option variants of one id, e.g. `sh.uniformSnap`, in one page
+  so they share references. — remeasure, 2026-10-25
+- Short bench pages are clock-state lotteries: single-signal occlusion pages (1.2–2 ms) spread ±20 % in
+  their run medians over 9 alternating rounds, and 600-frame pages landed in the slow state *more* often
+  than 200-frame ones. The 4–5 ms joint pages were stable (5 of 9 runs within 0.03 ms). Report the
+  fastest frame for short passes, or time them inside a longer joint dispatch. — remeasure, 2026-10-25
+
+- three.js pages + `denoiser/three` from source: `examples/three-temporal` imports `denoiser/three` from
+  `packages/denoiser/dist` (needs `yarn build:lib` per change). For iteration, a scratch Vite config that
+  `mergeConfig`s `examples/three-temporal/vite.config.ts` and aliases `denoiser/three` →
+  `packages/denoiser/src/three.ts` plus every `@pmndrs/denoiser-*` → its `src/index.ts` serves everything
+  live (`server.hmr: false`); `RT_REALTIME_SRC` pinning works the same way. — m6, 2026-10-25
+- A three.js node that isn't reachable from `pipeline.outputNode` doesn't run (its `updateBefore` never
+  fires): a page that switches views must keep every denoiser it measures in the graph during metrics
+  (`col.add(x.r.mul(0))` is enough), or readbacks silently return a stale frame (AO "converged" at frame 1
+  in realtime-gi before that fix). — m6, 2026-10-25
+- Headless pages that read several full-res RGBA float32 buffers back and run CPU FLIP on them at 1080p can
+  run the tab out of memory; the CDP call then never returns (no error, idle Chrome). Keep single-channel
+  copies, and give every CDP step its own deadline that does not itself wait on the page
+  (`run-realtime.mjs` `--stepTimeout`). — m6, 2026-10-25
+- wgslTagFn (three-mesh-bvh) defines ONE function per tag; helpers go in their own `wgslTagFn` and are
+  interpolated by reference (`${helper}(args)` emits the name and includes the code). Pasting a WGSL string
+  with several `fn`s inside another function body nests them (invalid WGSL). — m6, 2026-10-25
+- Real-scene captures from a three.js page: freeze the pose, render the 1-ray signals once, then accumulate
+  the references while holding it (`realtime-gi.html?path=orbit&ref=1`, `__t.capturePath`). Compute `motion` /
+  `motion_z` in TSL from depth and the previous *path* pose's matrices (uniforms), not with three's `velocity`:
+  the reference frames in between would make it 0. Read signals from float32 RTTs
+  (`convertToTexture(node, null, null, { type: FloatType })`), and give every reference its own seed uniform
+  (frame counter): the blue-noise index stays at the path frame during the hold, so reusing it repeats one
+  sample. validate.mjs then passes first try (motion < 0.001 px). — real-scene-motion, 2026-10-25
+- Node 22.22 imports `.ts` files directly (type stripping, an ExperimentalWarning): Node scripts can reuse the
+  test bed's `src/flip.ts` without a build (`examples/three-temporal/score-captures.mjs`). — real-scene-motion, 2026-10-25
+
+- The three-temporal realtime pages' `__t.metrics({ frames, checkpoints: [1, 2, …] })` gives per-frame curves after a
+  reset without editing the page; its `errImages` (signed error ×4, 8-bit, plus the reference) can be decoded back in the
+  page (Image → canvas → getImageData) to split the error by reference class. Two `three-temporal` dev servers with
+  different `RT_REALTIME_SRC` snapshots (scratch config, `hmr: false`) give before/after on the same page; files in a
+  snapshot outside the Vite root are still served fresh after an edit (no restart). — shadows-reset, 2026-10-25
+
+- Claude Code's safety check refuses some zsh expansions in a long command (`${(s:,:)V}` inside a pipeline
+  was flagged as "can't be checked for rm"); pass comma lists to scripts as one argument and split them
+  in the script instead. Probe pages that switch the realtime-shadows view to `ours`/`ffx` mid-session
+  hung once; the split view (`view: 'split'`) captures both sides in one page. — moving-shadows, 2026-10-25
+
+- User-facing docs are the MDX pages in `docs/site/` (frontmatter `title` / `description` / `nav`; the sidebar sorts
+  by `nav` numerically, so 27.5 slots a page between 27 and 28 without renumbering). They are built only in CI by the
+  pmndrs docs Docker image (`.github/workflows/pages.yml`); `tools/build-site.mjs` builds the demo site, not the docs.
+  Without Docker, compile-check a page with `@mdx-js/mdx` 3 + `remark-gfm` + `remark-frontmatter` installed in the
+  scratchpad. A bare `{` or `<` in prose breaks MDX: keep them in code spans. Snippets: a scratch `.ts` in
+  `examples/three-temporal/src/` plus a tsconfig extending that example's (`include` the scratch file) type-checks
+  against `denoiser/realtime` and `denoiser/three` through the built dist, so check that dist is newer than the last
+  src commit first. — m6-docs, 2026-10-25
+- "Output unchanged" checks while other agents edit the package: copy `packages/denoiser-realtime/src` to the
+  scratchpad (A), copy A again with only your edited file swapped in (B), serve the replay page with
+  `RT_REALTIME_SRC=<A or B> RT_NO_HMR=1` on a spare port (`BASE=http://127.0.0.1:<port>/` for `run-headless.mjs`),
+  run the same query with `&output=<name>` on each and `diff -rq -x run.json -x timings.csv`. Their WIP is in both
+  snapshots, so only your change can differ. Small GPU checks need no page: put a `.ts` module in the snapshot dir
+  (Vite's `fs.allow` includes it) and `cdp.evalJs("import('/@fs<dir>/check.ts').then(m => m.check())", true)` from
+  `lib/headless.mjs`'s `openPage`. Snippet type checks also work from the scratchpad: symlink the repo's
+  `node_modules` next to the scratch `.ts` (tsconfig `paths` does not apply package `exports` subpaths like
+  `denoiser/three`). — api-fixes, 2026-10-25
+- TS overloads keyed on an option literal (`realtimeOcclusion`'s `denoiser.signal`): add a last overload with the
+  plain option type and a union return, or a caller holding a non-literal `signal` stops compiling. — api-fixes, 2026-10-25
+
+- Another agent's Vite server may serve the test bed's `src/` from the worktree (E-1 did, with only the registry
+  pinned): editing scene / main / metrics there changes their next page load, and a half-done multi-file edit
+  hangs it. Develop in a scratch mirror instead: `git archive HEAD examples/realtime-denoiser examples/_shared
+  tools/rt-capture packages/denoiser-{core,ffx,realtime} package.json | tar -x -C <mirror>`, symlink the repo's
+  `node_modules` into it, serve it on your own port with `RT_CAPTURE_DIR=<repo>/tools/rt-capture` (captures land in
+  the shared place), and copy the finished files back to commit. Mirror captures record generator commit `?`
+  (no git there): write the captures you keep from a worktree server. — testbed-v1, 2026-10-25
+- Python `str.replace` scripts that insert TS: a `'\n'` inside a non-raw Python string becomes a real newline,
+  so `${B ? '  ng: vec3f,\n' : ''}` turns into an unterminated TS string (tsc: "Unterminated string literal").
+  Use backtick templates for multi-line inserts, and run `tsc -p examples/realtime-denoiser` before any page.
+  — testbed-v1, 2026-10-25
+- Node 22 imports `.ts` directly, but not extensionless relative imports: to dump a module's generated WGSL,
+  copy it to scratch with `from './x'` rewritten to `from './x.ts'` and `import()` both old and new versions
+  (diff of the standard build vs the original module = the bit-identity proof before any GPU run).
+  — testbed-v1, 2026-10-25
+
+- Test-bed floor-only pages (`&ref2spp=…`, E-1) need `&denoiser=` (empty): without it every registered denoiser
+  runs on every signal; at 1080p with five signals the tab ran out of memory, Chrome's page died and the runner
+  hung (or Node exited with "unsettled top-level await" when the websocket closed). Same symptom when a Chrome is
+  killed externally. A page that is `ready` while its runner still waits can be read directly over CDP
+  (`Runtime.evaluate JSON.stringify(window.__rt)` on the page's DevTools port). — e1, 2026-10-25
+- Pinning only `packages/` + `tools/rt-capture/src` is not enough for a long batch: other agents commit to the test
+  bed itself, and the worktree's new test bed imported a registry export the pinned snapshot lacked
+  (`does not provide an export named 'V1_BUFFERS'`, pages hang at frame 0, only the Vite log says why). Snapshot
+  `examples/realtime-denoiser` + `examples/_shared` too, symlink `node_modules` into the snapshot root, and point the
+  scratch Vite config's `root` there. — e1, 2026-10-25
+- A zsh waiter `while pgrep -f "<pattern>"` matches its own `zsh -c` command line when the pattern is in it, and never
+  ends. Wait on a log line count or a PID instead. — e1, 2026-10-25
+- One test-bed page failed once on frame 0 with "Binding size (32) … smaller than the minimum binding size (48)" on the
+  score bind group (no code change; the same query passed on rerun). Rerun before debugging. — e1, 2026-10-25
+
+- **The Mac sleeps overnight, and long headless jobs freeze with it.** With nobody at the machine it sits in sleep
+  with ~1-minute dark wakes every ~17 min (`pmset -g log`: "Entering Sleep state due to 'Dark Wake Thermal
+  Emergency'"), so a batch runs at ~6 % speed and looks hung: frames 15+ min apart while the page's own
+  `performance.now()` per frame reads 50 s (it doesn't count sleep), CDP calls and even `node` one-liners stall for
+  minutes, and after a wake Chrome may have reloaded the page (`performance.getEntriesByType('navigation')[0].type ===
+  'reload'`) or lost the WebGPU device, leaving the runner waiting forever. `caffeinate -i` alone did not stop it;
+  `caffeinate -s -i -m -w <batch pid>` (system sleep on AC) did. Check `pmset -g log | awk '$4=="Sleep"' | tail`
+  before blaming GPU contention. — bistro-sponza, 2026-10-26
+- Vite with `server.hmr: false` still connects its client (`[vite] connected.` in the page console); editing a non-module
+  file under the root (`.md`, a Node script) did not reload pages in a test, so HMR-off is still the right setting.
+  — bistro-sponza, 2026-10-26
+- Third-party scenes in the BVH: `BVHComputeData` builds CENTER-split, 10-triangle-leaf BVHs by default; prebuilding
+  `geometry.boundsTree = new MeshBVH(geometry, { strategy: SAH, targetLeafSize: 4 })` made rays 2.8× faster on Sponza
+  (Bistro's 2.8 M triangles: 0.7 → 8 s build). Merge all static meshes into ONE geometry for the BVH (material groups
+  overlap in space; a TLAS over them visits many BLASes per ray) and keep per-material meshes for raster only.
+  — bistro-sponza, 2026-10-26
+
+- `run-headless.mjs --json` writes pretty JSON (`"ready": true`, with a space): a `grep '"ready":true'` success check
+  fails on every page and a retry loop runs each 1080p page twice. Replays sometimes write all outputs and `run.json`
+  but the runner never returns (idle Chrome): a watchdog that waits for `outputs/<capture>/<name>/run.json` and then kills
+  the runner and its Chrome (`pkill -P <node pid>`) keeps a batch moving. `xargs -I{}` with a long replacement string
+  fails with "command line cannot be assembled": wrap the job in a script and pass short arguments. — t1, 2026-10-26
+
+- compare.mjs's shadow "dynamic region" on moving-camera captures of static scenes is mostly resampling at hard edges
+  (5–17 k px/frame, the reference's own boil there 0.07–0.27, above every output's): read dynamic PSNR / boil only on
+  captures where an occluder or the light moves (`*-move`, `three-knot-*`, test bed `light` / `object`). `score-captures.mjs`
+  boil is counted only where the reference's own second difference is < 0.02 for that reason. — bistro-sponza, 2026-10-26
+- Comparing scenes at one commit: replay the old captures on the same pinned snapshot with
+  `replay-captures.mjs --prefix=<p>` (outputs/<capture>/<p><id>, other runs' folders untouched) and point compare.mjs at a
+  scratch root of symlinks (`--outputs`) so it doesn't overwrite the shared outputs/<capture>/compare.json.
+  — bistro-sponza, 2026-10-26
+
+- zsh doesn't word-split in `set -- $r` either (a loop over "name rect" strings passed one argument and crops.mjs died
+  with a NaN size); write a small function with explicit arguments instead. A waiter that greps a batch log for its
+  "last batch" line must compute that number from the job count (12 queries per page batch: 98 jobs end at batch 8,
+  not 9). — shadows, 2026-10-26
+
+- `git pull --rebase` in this shared worktree autostashes every other agent's uncommitted edits and re-applies them
+  ("Created autostash … Applied autostash"). It worked, but a conflict would leave their work in the shared stash
+  stack. `git fetch` first and rebase only when `git log HEAD..@{u}` is non-empty. To commit a file that another agent
+  is also editing, apply only your hunks to the index (`git apply --cached my.patch`, patch made against `HEAD`) and to
+  the working tree, then `git commit` without a pathspec. — reflection-motion, 2026-10-26
+- Lock races: a GPU-lock waiter that sleeps 30 s between `mkdir` tries loses to every faster poller for an hour on a
+  busy afternoon; 2 s is fine (one `mkdir` per try). — reflection-motion, 2026-10-26
+
+- **Replay outputs fill the disk fast**: a 1080p replay writes ~70 MB per frame and arm (diffuse + specular f32), a
+  24-frame capture × 30 arms is ~50 GB. At 100 % disk the Vite servers died silently (curl 000) and a capture page hung
+  at frame 0 with an idle Chrome. Score right after replaying and delete the outputs (a per-capture `score && rm`
+  script in the background), and check `df` in long batches. In zsh, `rm -rf a/* b/x*` with one unmatched glob
+  aborts the whole command ("no matches found") and deletes nothing: use `find … -name … -exec rm -rf {} +`.
+  — t1b, 2026-10-26
+- `git pull --rebase` in this shared worktree autostashes everyone's uncommitted work (`rebase.autoStash`), which
+  touches the shared stash stack. After `git fetch`, check `git status -sb`; when not behind, just push. Stage only
+  your hunks without touching other agents' WIP in the same file: `git update-index --cacheinfo 100644,$(git
+  hash-object -w <HEAD version + your patch>),<path>` and commit the index. — t1b, 2026-10-26
+- A GPU-lock waiter polling every 30 s lost the lock to faster pollers for 40+ minutes several times; 5 s polling of a
+  `mkdir` is harmless. — t1b, 2026-10-26
+
+- macOS `xargs -I{}` refuses commands longer than 255 bytes after substitution ("command line cannot be assembled,
+  too long") and the whole batch silently does nothing: long test-bed queries need `xargs -n 1 <runner script>` (query
+  as `$1`) or a plain loop. Also, replay/eval settings take the LAST occurrence of a key (unlike `URLSearchParams.get`
+  for the test bed's own keys): a wrapper that appends `&sh.light=directional` overrides a variant's `sh.light=sphere`.
+  — shadows, 2026-10-26
+- A replay batch that dies mid-way leaves output folders with a few frames; count frames per output folder before
+  scoring (`ls <dir> | grep -c frame`), the scorers happily read what's there. — shadows, 2026-10-26
+
+## WebGPU / WGSL
+
+- Core WebGPU allows `read_write` storage textures only on r32 formats; histories are
+  ping-pong textures (read via `texture_2d`, write via write-only storage). Default limit
+  is 4 storage textures per stage. (PLAN §4.6) — orchestrator, 2026-10-24
+- SVGF moments need `rg32float`; luminance² overflows fp16 on HDR input. — orchestrator,
+  2026-10-24
+- To fit 4 storage textures and the memory budget, SPEC §10.1 rotates 4 rgba16float
+  buffers per signal through the recurrent passes (history, stabilization history and
+  transients share them) and packs A_d/A_s/m into one `r32uint` that history fix updates
+  in place (core allows read_write on r32uint). Mip levels go into an atlas inside a free
+  rotation buffer. — spec-author, 2026-10-25
+- One WGSL module with many entry points + `layout: 'auto'` binds only what each entry
+  statically uses, so the test bed keeps every CAPTURE-FORMAT buffer in one module and
+  splits writers per entry (`guides` 6, `material` 2, `signals` 6 storage textures) under
+  the 8 storage textures it requests. Long reference dispatches are chunked (32 spp per
+  submit, sums in a storage buffer) so no single command buffer runs for seconds.
+  — testbed, 2026-10-25
+- The default limit of 4 storage textures per stage bites test scenes too: a G-buffer +
+  signals + refs pass (10 outputs) has to be split. The dev page generates the same WGSL
+  3× with per-part `textureStore` stubs (`packages/denoiser-realtime/dev/scene.ts`). — svgf, 2026-10-25
+- À-trous at 3×3 taps is ALU-bound as much as bandwidth-bound on the M5 Pro: a per-tap
+  `acos`/`atan` (lobe-angle normal weight) cost +35 % per iteration. Compute per-center
+  constants once and compare in cosine space (sqrt((1−cos)/(1−cos θ0)) ≈ θ/θ0). — svgf, 2026-10-25
+- One thread per 3×3 stratum doing 9 reprojections is 2.5× slower than one thread per
+  pixel in a 9×9 workgroup with a shared-memory reduction (1.05 → 0.43 ms at 1080p). — svgf, 2026-10-25
+- Packing geometry for taps: an rg32uint (f32 depth + 12/12-bit oct normal + 8-bit
+  roughness) plus a separate r32uint depth slope read only at the center beat one
+  rgba32uint per tap (−25 % à-trous time). SPEC C-5 chose the same tap layout. — svgf, 2026-10-25
+- Store the standard deviation, not the variance, in an rgba16float alpha (SPEC S-2a);
+  when converting, every `var` use must become `σ*σ` — a missed one in the inner-tap loop
+  cost 1.2 dB and looked like a depth-weight regression. — svgf, 2026-10-25
+- Unroll small tap loops at codegen time instead of `var taps: array<vec4f, 9>` indexed
+  by a loop variable: on the M5 Pro (Tint → Metal) the array version was ~35 % slower
+  per à-trous iteration (0.38 → 0.28 ms at 1080p, same output). TS template strings make
+  full unrolling trivial. — svgf, 2026-10-25
+- Generate WGSL binding declarations and the bind-group-layout entries from one list
+  (`packages/denoiser-realtime/src/shaders/bindings.ts`) and bind by name: with 1- or
+  2-signal variants of every pass, hand-numbered bindings drift immediately. — svgf, 2026-10-25
+- Recurrent skeleton (7 passes + prepass, trivial kernels with the real bindings and
+  SPEC §10.1 formats/rotation) at 1080p on the M5 Pro: **1.03 ms** diffuse + specular,
+  0.87 ms diffuse only (prepass 0.18 of it). Dispatch + centre I/O is a quarter of the
+  4 ms budget, so the 8-dispatch structure stands. `shaders/recurrent.ts` `trivialPass`
+  regenerates it from any pass's binding list (`skeleton: true`). — recurrent, 2026-10-25
+- A screen-offset clamp tied to one radius parameter silently disables another pass:
+  the recurrent kernel clamps tap offsets to 2·R_max, so a sweep with `blurRadius≈0`
+  also collapsed the pre-blur onto the centre pixel (identical numbers with and without
+  pre-blur). Clamp to 2·max(R_max, R_pre). — recurrent, 2026-10-25
+- Neighbourhood / tap loads behind `if (geometry ok) { load value }` serialize two loads
+  per tap (latency-bound on the M5 Pro). Clamp the coordinate, load both unconditionally,
+  and zero the weight with `select`: same output, recurrent temporal 0.74 → 0.56 ms and
+  blur 0.50 → 0.34 ms at 1080p. — recurrent, 2026-10-25
+- Rarely executed code still costs: the recurrent history fix's mip-repair loop runs only
+  where A < 3, yet compiling it in costs 0.24 ms of the pass's 0.51 ms (register pressure /
+  occupancy); unrolling it branchless did not help. Measure by stubbing the call out. — recurrent, 2026-10-25
+- Per-tap ALU of the recurrent kernels: plane distance from the centre's plane is linear in
+  the tap pixel for a fixed tap depth (perspective dot(n, X_q) = z·(a0 + ax·qx + ay·qy)), and
+  the kernel axes projected once give an affine screen Jacobian: same PSNR, ~0.1 ms per
+  kernel pass less than full per-tap unproject / projection. — recurrent, 2026-10-25
+
+- `active` is a reserved word in WGSL (Tint: "'active' is a reserved keyword"). — shadows, 2026-10-25
+- r16float is not a core storage-texture format (needs a tier feature); scalar outputs that a
+  later pass writes as storage go to r32float (or rgba16float). — shadows, 2026-10-25
+- Workgroup tile stats for free: when the temporal pass's 8×8 workgroup is exactly a tile,
+  `atomicMin` on the f32 bits of a non-negative value (bit order = value order) and
+  `atomicOr` of flags in workgroup memory, written once by thread 0, replace a separate
+  tile-classification pass; the indirect list then needs only a tiny per-tile pass
+  (`enc.clearBuffer(args, 0, 4)` resets the count, y = z = 1 written once at configure). — shadows, 2026-10-25
+
+- Workgroup-shared 10×10 tiles for 3×3 neighbourhoods (each texel loaded and decoded once
+  per 8×8 workgroup, `loadTile()` before any early return) cut the recurrent history fix
+  0.82 → 0.47 ms and temporal −0.2 ms for both signals at 1080p, with identical output. After
+  that the "rarely executed" mip-repair code cost nothing any more (the earlier 0.24 ms was
+  register pressure from the 8 decoded neighbours). — recurrent-spec, 2026-10-25
+- A `for k in 0..4 { if (w <= 0) { continue; } load }` 2×2 history fetch is a branch per tap:
+  unrolled with clamped coordinates and `select`-ed min/max it made stabilization 0.78 → 0.56 ms. — recurrent-spec, 2026-10-25
+- Disabled-by-uniform code still costs: an optional luminance weight (k = 0 → weight 1) and an
+  unused virtual stabilization candidate added +0.1 ms to each of blur / post-blur /
+  stabilize. Remove dead ends instead of leaving them behind a flag. — recurrent-spec, 2026-10-25
+- `shader-f16` kernel taps on the M5 Pro: f16 sums + weights −0.07 ms per 8-tap pass but
+  −0.2 dB on HDR (direct-light) input; f16 weights with f32 sums were *slower* (conversions).
+  Not worth it here. — recurrent-spec, 2026-10-25
+- Kernel passes are tap-ALU bound: a 4-tap post-blur halved it (0.87 → 0.46 ms joint), the
+  per-pixel kernel setup is minor. — recurrent-spec, 2026-10-25
+
+- r32float is not filterable in core WebGPU: a scalar history in r32float (half the bytes of
+  rgba16float) needs Catmull-Rom from 16 `textureLoad`s and a `'f'` (unfilterable) binding. The
+  storage-format choice for one scalar is r32float (r16float / rg16float are not core storage
+  formats). — occlusion, 2026-10-25
+
+- WGSL workgroup variables are zero-initialized, so a tile max (or 1 − min) of non-negative floats can go straight into
+  `atomicMax(&wg, bitcast<u32>(v))` with no init barrier. To skip work for a whole workgroup on a computed condition:
+  thread 0 writes a plain `var<workgroup> u32` after a barrier, then `let c = workgroupUniformLoad(&flag) != 0u;` is
+  uniform, so `if (c) { … } workgroupBarrier();` is legal. `dot4I8Packed` (`packed_4x8_integer_dot_product`, available
+  in Chrome) was not faster than `dot(unpack4x8snorm(a), unpack4x8snorm(b))` on the M5 Pro. — shadows-reset, 2026-10-25
+
+- **rgba16float storage writes truncate on this GPU** (Chrome → Metal, M5 Pro): `textureStore` of 1 + 0.9 ulp
+  stores 1.0, while `pack2x16float` rounds to nearest (measured with a 64-texel probe). Every f16 storage
+  write loses ~½ ulp on average, an EMA history compounds it (~1/α writes), and plain SVGF comes out
+  ~0.1–0.16 dB darker/worse than the same filter packing f16 by hand. Compare filters at equal rounding (the
+  SH regression needed a truncating pack to match plain within 0.02 dB). — m7-sh, 2026-10-25
+- Quick WebGPU probes don't need a server: a one-file `index.html` under the scratchpad and
+  `BASE=file://<path>/index.html node packages/denoiser-realtime/dev/run-headless.mjs x=1` (the page sets
+  `window.__rt`). Size readback buffers for `bytesPerRow` × rows, or `mapAsync` hangs the run silently.
+  — m7-sh, 2026-10-25
+
+- Scene variants without touching the original paths: generate the tracer WGSL from a TS template per build
+  (`sceneWgsl('standard' | 'bumpy' | 'glass')`) and insert the new code with ``${B ? `...` : ''}``, so the standard
+  build's existing entries are textually the original code and new entry points / bindings are only appended
+  (unused bindings don't enter `layout: 'auto'`). Result: the 7 old paths' captures were byte-identical. Runtime
+  `if (u.scene == …)` branches would have risked codegen (contraction) changes. Per-invocation state a shared
+  helper needs (the geometric normal for the below-surface test) goes in a `var<private>` set by `primary()`.
+  — testbed-v1, 2026-10-25
+- A per-pixel 6-float payload doesn't fit one texture or `readTextures` (1–4 channels): keep two rgba32float halves
+  on the GPU, read both and interleave on the CPU (`CaptureWriter` `{ parts: [...] }`), and upload as two textures
+  in replay (`name`, `name#4`). The refs' second half needs its own accumulation buffer (`acc2`). — testbed-v1, 2026-10-25
+
+- A CPU-based "is the GPU quiet?" check misses GPU-bound pages (high-spp reference renders burn GPU at ~0 % CPU):
+  a bench that waited on Chrome CPU still read 25 ms medians. Wait on the *processes* instead (no other agent's
+  `node … run-headless` / `run-realtime` for 15 s), and drop any round whose medians jump. — m7-sh, 2026-10-25
+- Test-bed URL keys are first-occurrence wins and `bumpy.sh`-style wrappers that prepend `preset=full&` silently
+  override a later `preset=fast` (LESSONS on `URLSearchParams.get`): put per-job overrides first. — m7-sh, 2026-10-25
+
+## Conventions
+
+- Motion is an NDC delta, current − previous, +y up (three's `velocity`); row 0 of capture
+  buffers is the image top. Mind the y flip when converting NDC ↔ texel. — orchestrator,
+  2026-10-24
+- viewZ is three.js view space: in front of the camera is **negative**. — orchestrator,
+  2026-10-24
+- Roughness in our captures/API is perceptual r; GGX α = r². — orchestrator, 2026-10-24
+- Jitter (CAPTURE-FORMAT): pixel (px,py)'s ray goes through `(px+0.5+jx, py+0.5+jy)`,
+  pixels x right / y down. History texel k holds the sample at `k+0.5+prevJitter`;
+  `FrameCamera` has no previous jitter, so a denoiser that cares must remember it.
+  — capture-io, 2026-10-25
+- `tools/rt-capture/validate.mjs` catches convention slips both ways: a y-flipped or
+  sign-flipped motion gives ~10–40 px reprojection error and ~6 % history consistency;
+  positive viewz fails outright; stale `prevView` passes the motion check (motion was
+  computed from the same stale matrix) but fails camera continuity and history
+  consistency. Run it on every new capture. — capture-io, 2026-10-25
+- Capture `motion` includes the current jitter (`ndc_sample − ndc_prev`), so
+  `uv_prev = (p + 0.5 + jitter)/size + (−0.5·m.x, +0.5·m.y)`, and positions are rebuilt from
+  the jittered sample NDC with the unjittered matrices (SPEC C-1, C-6). — spec-author, 2026-10-25
+  **Correction (SPEC v0.7, T8):** that is the capture format's geometry, not what our filters do. Every filter
+  reconstructs and reprojects at the pixel centre `(p + 0.5)/size` and never reads `FrameCamera.jitter`; the history
+  accumulates across jitter phases like a TAA resolve, and T8 measured that as correct (no artefact with jitter-free
+  motion). Motion must be jitter-free: `ndc_sample` and `ndc_prev` both through the unjittered projection, no jitter
+  delta. — spec-author, 2026-10-26
+- An infinite ground plane hits beyond the far plane near the horizon: the test bed wrote
+  depth > 1 with normals there (validate.mjs: depth range warnings, "sky" normals non-zero).
+  The guides now mark such pixels as sky (depth 1, viewz −far, normal 0). — wiring, 2026-10-25
+- The denoiser registry is `tools/rt-capture/src/denoisers.ts` only; the test bed maps its
+  signal names (`visibility` ↔ `shadows`) and filters its own URL keys before passing the
+  rest as `settings`. The test bed's old `accumulate` is now `accumulate-32`; `accumulate`
+  is the replay's unbounded reference mean. — wiring, 2026-10-25
+- **Rank on pooled PSNR** (`psnrDenPooled` / compare.mjs `psnrPooled`: PSNR of the mean MSE
+  over frames and pixels), not the old `psnrDen` (mean of per-frame dB). A frame with no error
+  scores 120 dB (MSE floor 1e-12): on `pan` the last 17 frames show no shadow, so noisy input
+  "scores" 36.0 dB mean vs 17.9 pooled, and shadows' uniform snap looked like +10 dB. Pooled is
+  dominated by the worst frames instead (resets: accumulate-32 loses 2–3 dB). The live test
+  bed's `regions.*.psnrDen` (incl. penumbra) were always pooled; compare.mjs's `psnrPenumbra`
+  is a per-frame mean. Old JSON can be re-pooled approximately from `perFrame`
+  (10·log10(1/mean 10^(−dB/10)), equal frame weights). — metrics, 2026-10-25
+- `run-headless.mjs` is deterministic in quality: two runs of the same query on a frozen
+  package give identical PSNR to 4 decimals, so a FLIP run can be compared cell by cell with
+  a `flip=0` run, and parallel runs don't disturb quality numbers. — metrics, 2026-10-25
+
+- An encoded reference made from the SAME samples as the plain one is a free correctness test: the test bed's
+  `*_sh_ref` averages the M7-2 payloads of `*_ref`'s samples, so `a + b·n_s` must equal YCoCg-Y of `*_ref`
+  (validate.mjs `*ExactAtSamplingNormal`). It agrees to ~0.3 %, the precision of the rgba16float `normal` it is
+  evaluated with. Consequence for M7-13: resolving `diffuse_sh_ref` at the detail normal (reference (1)) gives
+  almost exactly `diffuse_ref` (reference (2)); they differ only by the guard, the chroma ratio and sharpening.
+  — testbed-v1, 2026-10-25
+- RGB region metrics: square the per-channel error, not the channel-mean signed error. compare.mjs's dynamic /
+  static split (written for scalar visibility) reused `s = mean_c e` for shadow-rgb and scored a grey output
+  against a coloured reference 8 dB too high (opposite-sign channel errors cancel); per channel it matches the
+  live test bed within 0.03 dB (the rest is the two history-validity tests' masks). — testbed-v1, 2026-10-25
+- v1 capture sizes at 960×540 (f32, 256-spp refs): sh-diffuse + sh-specular 50 floats/px = 103.7 MB/frame,
+  sh-diffuse alone 34 = 70.5 MB, shadow-rgb 28 = 58.1 MB; capture only the v1 signals a capture is for
+  (`signal=sh-diffuse,sh-specular`), not `all,v1` (60 floats, 124 MB). — testbed-v1, 2026-10-25
+
+## Denoiser design
+
+- History validity: a per-tap *relative view-z* test (|z_tap − z_expected| < 1 %) rejects
+  valid history at grazing angles, where z changes by > 1 % per pixel; it cost the
+  reference accumulator ~5 dB at 8 frames on a ground plane. The plane-distance test
+  `|n · (P_tap − P)| < 1 % · |viewZ|` (RTG II ch. 49 §49.6) keeps it. — capture-io, 2026-10-25
+- Bilinear reprojection low-passes noise: a reprojected running mean on a moving camera
+  scores *above* the static-camera value (synthetic plane, 8 frames, diffuse: 31.7 vs
+  26.5 dB). Not a bug; the static-camera capture is the one that must match σ²/n theory
+  (it does: 32.70 dB measured vs 32.76 predicted at 32 frames). — capture-io, 2026-10-25
+- Take recurrent-pipeline formulas from SPEC.md, not from `sources/reblur.md` §4.2: that
+  note transcribes RTG II ch. 49 listing formulas (A_spec, virtual confidence, kernel skew),
+  which SPEC deliberately replaces with its own designs (listing policy, SPEC header).
+  — spec-author, 2026-10-25
+- A pre-blur's spatial bias is permanent in a recurrent filter (the converged output is
+  the mean of pre-blurred frames), so SPEC clamps the pre-blur radius by last frame's
+  denoised hit distance. Watch contact GI/reflections when tuning D1. — spec-author, 2026-10-25
+- Test-bed numbers to keep in mind: the noisy input's *tonemapped* bias is negative
+  (−0.06 diffuse, −0.07 specular) only because x/(1+x) is concave; use the linear
+  `energy` ratio for energy loss. FFX reflections on our demodulated specular loses ~28 %
+  energy (its luminance-weighted firefly suppression), far more than the −0.04 tonemapped
+  bias seen in `examples/ffx-denoiser`. FFX shadows writes 0 on sky pixels (not scored).
+  — testbed, 2026-10-25
+- FLIP's viewing condition decides what "noise" is: at FLIP's standard 67 ppd a 960x540
+  frame is ~14° wide and 1-px binary shadow dither scores *better* than FFX's smooth
+  result. The test bed scales ppd with resolution (image spans 46.4°, ~41 ppd at 1080p;
+  `&ppd=67` restores the standard). — testbed, 2026-10-25
+- Test-bed ground-truth disocclusion (history age) uses a slope-aware depth test:
+  1 % |z| + 2 × the robust one-sided z slope per pixel (`metrics.ts` `depthTol`); a
+  best-of-4-taps 2 % relative test gave the same counts on our scene, so best-of-4 also
+  avoids most grazing-angle false rejections. In the slow orbit ~8 % of receivers have
+  < 8 frames of valid history, real ones: behind the fence slats and at the screen edge
+  (see `mode=eval&show=age`). — testbed, 2026-10-25
+- SVGF's feedback (à-trous iteration 0 as color history) compounds spatial blur over
+  frames: with a static camera PSNR *falls* over time, more so with lower α (α = 0.05:
+  39.6 → 34.6 dB in 30 frames). At 1080p on the dev scene `feedback: false` is +1.1 dB
+  with ~4 % more flicker. Defaults keep the paper's `true` (brief); see Questions for
+  Dennis. — svgf, 2026-10-25
+- SVGF luminance weight with the paper's per-sample variance is right for PSNR at 1 spp:
+  using the variance of the accumulated mean (sharper edges) left more noise and lost
+  0.7–2 dB. At relative noise σ ≈ 1 SVGF visibly softens hard shadow edges; that's the
+  method, not a bug. — svgf, 2026-10-25
+- A-SVGF with renderer gradients only fires on the frame where shading changes; an
+  "auto" gradient against the reprojected accumulated history keeps firing until history
+  catches up and recovered ~2× faster after a light switch on the dev scene. — svgf, 2026-10-25
+- Synthetic scenes: geometry beyond the far plane is "sky" to the denoiser; mark it sky
+  in the ground truth too, or the metric scores unfiltered pixels. — svgf, 2026-10-25
+
+- Shadows (1-spp binary visibility): SPEC's 1σ neighbourhood clamp never fires inside a
+  penumbra (5×5 σ ≈ 0.5), so moving shadows lag through it; a window of ~2 standard errors
+  of the 25-sample mean (0.4σ + 0.05) plus "restart at A = 0 when the clamp moved the
+  history" was +2.5 dB overall and +1.7 dB penumbra. Restarting at A = 1 instead left a
+  visible 1/n residue after a light flip (−0.9 dB). Blue-noise samples make the 5×5 mean
+  accurate enough for this. — shadows, 2026-10-25
+- Longer temporal history made shadows *worse* on every moving path, for `accumulate-32` vs
+  `-8` too (orbit 25.8 vs 28.0 dB): repeated bilinear resampling blurs sharp shadows by
+  ~√A px, and moving shadows lag. Catmull-Rom (+0.65 dB) and a per-pixel cap ~W_px² help;
+  the tight clamp matters most. — shadows, 2026-10-25
+- Penumbra-sized spatial kernels: radius ≈ 0.75 × the half-width W = R·h/(D−h), not more —
+  the true profile is S-shaped and a disk as wide as the penumbra rounds its ends (radius
+  1.5·W −0.4 dB, 3·W −1.7 dB on orbit). The noise-driven fallback (H18 total variation, no
+  hit distance) gets within 0.4 dB of the hit-distance sizing on the test bed. — shadows, 2026-10-25
+- Shadow anisotropy (stretch along the projected light by 1/(n·l)) only lost (−0.3 to
+  −2.7 dB): the extra length is extra blur on these scenes. — shadows, 2026-10-25
+- Mean-of-per-frame-dB metrics reward exactness in empty frames: `pan`'s last 17 frames have
+  no shadow (passthrough = 120 dB), so a 1e-3 residue there cost ours 10 dB of the path mean
+  until uniform 5×5 windows snapped the history to the exact value. — shadows, 2026-10-25
+
+- A comparison table goes stale when a baseline's default changes after it was measured: the
+  recurrent README table ("beats A-SVGF on 6/7") was taken minutes before SVGF's `feedback`
+  default flipped to false, and against the new default SVGF wins 6/7. Before quoting "X beats
+  Y", check which options Y ran with (here the SVGF column matched M1's feedback-on numbers
+  exactly) and rerun Y in the same page. — spec-author, 2026-10-25
+- Some measured numbers live only in commit messages (e.g. 25c80aa: joint recurrent 5.41 ms,
+  prepass 0.10 ms without the depth slope; a787b20: specular per-path dB). `git log
+  --format=%B -- packages/denoiser-realtime` is part of the reading list when updating SPEC or a
+  resource table. — spec-author, 2026-10-25
+- Results written the same night can use different versions of a baseline: M5's A-SVGF rows ran
+  anti-lag v1 while M1 §12 (hours later) made v2 the default, and M2-M3's 5.55 ms A-SVGF joint is v1
+  too. When quoting a number in SPEC or a README, write the version / commit next to it (each
+  results doc's Setup table names the frozen commit) and add a TASKS re-measure item instead of
+  mixing versions in one comparison. — spec-author, 2026-10-25
+- Three GPU-time statistics are in use and are not interchangeable: dev-page min of 400 frames
+  (M2-M3), test-bed solo bench median of 100 frames (M1 §12), fastest of several runs to dodge the
+  M5 Pro's slow clock state (M4, M5). Uncontended they agree within a few % (SVGF joint 3.99 vs
+  4.02 ms); the 8-frame `std1080-orbit` replay does not (every pixel young: 6.31 vs 5.61 ms for the
+  same v1 config). Label the statistic with every ms. — spec-author, 2026-10-25
+
+- Clean (mirror-like) specular breaks neighbourhood-statistics tricks tuned on noisy
+  diffuse: clamping the slow value to the 3×3 *mean* ± a standard-error window blurs every
+  reflected edge (mirror bin 34.8 vs 40.7 dB on a static camera). Centre such windows on the
+  pixel's own value as roughness → 0. — recurrent-spec, 2026-10-25
+- Virtual-motion reprojection: on a flat glossy floor it is the big win (+2.7 dB, r < 0.35:
+  +5 dB); on curved mirrors the flat-reflector distance smears; the mirror equation with
+  curvature from neighbouring normals fixes most of it (+1 dB). A virtual candidate without
+  a validity test in the stabilization pass cost 0.4–1.5 dB: keep virtual fetches where a
+  plane test and a confidence exist. — recurrent-spec, 2026-10-25
+- Recurrent specular vs A-SVGF 'auto': at mid/high roughness with a static camera A-SVGF's
+  short history + 5-level variance-guided à-trous beats the recurrent blur by 1–2 dB; no
+  radius / tap / anti-lag / firefly / luminance-weight knob moved it more than ±0.2 dB
+  (results/M2-M3.md). It is structural, not a tuning gap. — recurrent-spec, 2026-10-25
+
+- A clamp toward a fast history must use the same reprojection as the value it clamps: the
+  recurrent specular filter fetches the slow value with virtual motion but keeps the fast ĥ
+  surface-reprojected (fine for radiance, where only luminance is clamped). Clamping SO (ĥ as
+  the signal) to that surface-reprojected fast ĥ cost 2.5 dB on `pan`; blending the fast ĥ with
+  the virtual fetch by m·confidence fixed it (+0.9 dB SO mean). — occlusion, 2026-10-25
+- SVGF defaults tuned for radiance over-blur a [0, 1] occlusion signal: on ĥ, σ_l = 1.5 and 3
+  à-trous iterations beat σ_l = 4 / 5 iterations by ~1.8 dB AO and ~1.5 dB SO (fast test bed),
+  and are cheaper. Re-tune the value weight when a filter changes signal. — occlusion, 2026-10-25
+- "AO for free from the radiance filter's alpha" is free in cost, not in quality: the radiance
+  pipeline's ĥ inherits radiance-tuned radii, a history shortened by luminance anti-lag, and no
+  ĥ clamp; a dedicated occlusion pass on the same rays is clearly better (results/M5.md). — occlusion, 2026-10-25
+
+- Shadows on 1-spp blue noise: the error right after a reset was mostly **pixel-scale noise** in
+  the outer half of penumbrae (box-filter the signed error: 3×3-filtered 37 dB vs 33 dB full),
+  where lit samples carry no occluder distance and a tile minimum sets the radius. Wider kernels
+  or more taps didn't help. Sizing by Heitz 2018's noise estimate E did, and **the mean of the
+  occluder-sized and the E-sized radius beat either alone** everywhere (+0.56 dB pooled at
+  1080p, +1.1 dB on a reset window). Look at where the error lives (by reference band, by spatial
+  frequency) before tuning radii. — shadows, 2026-10-25
+- Reset-window replays (16 frames from a reset) and 96-frame live paths disagree on
+  young-history tricks: anything keyed on "short history" wins on the replays and loses live,
+  because history caps (W_px²) and anti-lag restarts keep many penumbra pixels short-lived
+  forever. Key fresh-pixel treatments on A = 0 (truly new), and screen on both. — shadows, 2026-10-25
+- A per-pixel scalar the spatial pass needs can ride in a spare byte of the packed geometry
+  texture (shadows: the 8-bit roughness slot carries the noise estimate E). Its previous-frame
+  value comes for free with the reprojection taps, which already load that texture. — shadows, 2026-10-25
+
+- "Frame 2 worse than frame 1" after a reset (shadows) had two causes, both invisible on frame 1: a fresh-pixel trick
+  keyed on A = 0 that switches off abruptly on the second frame, and the neighbourhood clamp, which has nothing to act
+  on until there is a history. Find them by splitting the error by reference class (umbra / penumbra / lit) and by
+  neighbourhood (umbra px within 3 px of a lit px held 96–99 % of the umbra error, biased +0.05 → +0.075), and by
+  switching the clamp off on a static view. — shadows-reset, 2026-10-25
+- A 5×5 clamp window that ignores geometry pulls thin occluders and creases toward the surface next to them, and
+  hard-edge pixels toward their 5×5 mean (~0.15 off). Counting only taps with a similar normal (binary 30° test, window
+  × √(25/n)) was +1.0 dB pooled / −29 % FLIP at 1080p on the test bed. A plane-distance test (2 % of view distance, the
+  spatial passes' test) does NOT do it: at a slat's silhouette the side face's plane passes within 2 % of the front-face
+  pixels next to it (−2.4 dB on `thin`); on the test bed the normal test alone matched plane + normal. — shadows-reset, 2026-10-25
+
+- Filter costs depend on the bench scene, and not equally: the recurrent pair reads 4.44 ms on the
+  package dev page but 3.99 ms on the test-bed solo bench (`orbit`; every pass 7–18 % lower), while SVGF
+  reads 4.02 vs 4.00. "Recurrent is slower than SVGF" was a cross-bench comparison; on one bench they cost
+  the same. Rank costs from one bench only. — remeasure, 2026-10-25
+
+- One analytic test bed vs a real scene: shadows, diffuse and AO rankings carried over to the three.js corner on a
+  moving camera (results/M6-real-scene.md), but recurrent specular's lead over plain SVGF did not (SVGF +1.3 / +1.8 dB
+  on SSR input). A specular ranking from one signal type (traced, demodulated, true hit distance) doesn't transfer to
+  SSR input; say which specular signal a ranking was measured on. — real-scene-motion, 2026-10-25
+
+- Public evidence on recurrent vs variance-guided (sources/nrd-public-2022-2026.md): Epic's MegaLights (2025) runs its
+  spatial pass after accumulation with no feedback "to make the output sharper and quickly converge … after
+  disocclusion"; Ubisoft ships a recurrent blur as the cheap option and ranks it blurrier than ReBLUR/ReLAX. Same
+  pattern as our test bed. Shipped anti-lags shorten the frame cap in proportion to how far the history sits outside
+  the clamp box and never drop it to 0; our shadows' restart-to-0 is the outlier and the likely moving-shadow boiling
+  cause. — public research 2022–2026, 2026-10-25
+
+- **Flicker and temporal PSNR on the error can't see boiling in soft shadows.** e_t − e_t−1 includes the
+  reference's own frame-to-frame noise (2048-ray references: ~0.004 per frame in a wide penumbra), as
+  large as a good output's change, so v2.1's 4.7× FFX output noise on the knot's shadow scored *better*
+  flicker than FFX in the dynamic region. Look at the output's own temporal change (compare.mjs `boil`:
+  RMS second temporal difference / √6, with the reference's boil as the floor) and at frame-difference
+  strips. — moving-shadows, 2026-10-25
+- **Run a frozen control before blaming motion.** The "moving shadow boils" report turned out to be wide,
+  soft penumbrae boiling whether the knot moved or not (rect boil 0.0069 frozen vs 0.0062 rotating); the
+  knot's shadow is just the widest. A dynamic region defined by reference change (0.05 over 4 frames)
+  flagged 761 px/frame of a 40k px shadow. — moving-shadows, 2026-10-25
+- An output stabilization history (box-clamped to the 3×3 range of the current output) is TAA, and blurs
+  hard edges the same way: the box spans the step and holds nothing back (−5.5 dB on the test bed).
+  Gate it to narrow ranges, and scale that threshold with resolution (a penumbra's per-pixel slope
+  halves at 2× resolution: the 540p threshold cost 0.45 dB on `light` at 1080p). — moving-shadows, 2026-10-25
+- **Coloured shadows split exactly: E[v·T] = E[v]·E[T | v = 1].** Denoise opaque visibility as before and
+  accumulate the transmittance only over samples that reached the light (like g over occluded samples), then
+  multiply. The product of two plain spatial means is biased wherever opaque and translucent blockers overlap, and
+  this split keeps every tuned scalar rule on v (opaque output bit-identical when T ≡ 1). Multiplying layer
+  transmittances is as order-independent as Tomb Raider's "subtract 1/3 per layer" (both commute) and exact for
+  any colours. — spec-author (SPEC v0.3 §7.10), 2026-10-25
+- **A directional payload should be exact at the filter's normal.** Encoding each diffuse sample as the L1 band
+  of its clamped-cosine lobe, rescaled so it evaluates to L at the normal the ray was sampled around
+  (`a = L/(1+2c)`, `b = 2Lω/(1+2c)`), keeps weights bounded (the textbook cosine-sampled projection has a 1/c weight
+  with infinite variance) and makes SH mode regress against the plain filter: resolved at the guide normal it must
+  match within noise. Reuse the plain luminance (payload evaluated at the guide normal) for every weight so the
+  tuned constants carry over. — spec-author (SPEC v0.3 §8.5), 2026-10-25
+
+- **Bit-identical after adding code to a shader: watch fused multiply-adds.** Adding a τ sum `tsum += (w * v) * τ` next to
+  v's `sum += w * v` made ~0.7 % of v's pixels differ by up to 24 ULP: the shared product `w * v` is computed once (CSE),
+  so v's sum no longer compiles to an fma. Writing the new sums with explicit `fma(w, v, ...)` (no standalone `w * v`)
+  restored byte identity on every capture. Check with a replay byte compare (outputs `*.f32`), not only per-frame PSNR
+  (which agreed to 0.0001 dB on all but one frame). — m8-translucency, 2026-10-25
+- **rgba16float storage writes truncate (round toward zero) on the M5 Pro / Metal.** A history near 1 that is
+  re-stored every frame drifts down by ~1 f16 ulp per store (τ fell to 1 − 2⁻¹¹ where nothing was in the way, and the
+  approximate division `(n·x + x)/(n + 1)` doesn't return x exactly either). Use update forms that are exact when
+  inputs agree (`h0 + Σ w (h_k − h0) / Σ w`, `x + a·(y − x)`), or snap uniform neighbourhoods. The same truncation
+  applies to the opaque shadow history (TASKS). — m8-translucency, 2026-10-25
+- Parameter sweeps on captures through compare.mjs take minutes per capture × variant under load; the live test bed
+  scores many variants of one id in one page (`denoiser=id,id@sh.x=1,id@sh.x=2`) sharing references in ~20 s per
+  path. Sweep live, then confirm the picks (and boil) on replays. — m8-translucency, 2026-10-25
+
+- Reference noise is an additive term, and it is not small (E-1, results/E1-high-reference.md): against 256-spp
+  references MSE = true MSE + σ²_256 held to ±5 % for every arm, so rankings are safe, but gaps shrink 2.5–3.6× on
+  diffuse and AO (recurrent vs A-SVGF diffuse −0.75 → −2.12 dB at 4096 spp), 1.6–2× on specular, ~1.1× on shadows and
+  SO. The 256-spp ceilings are diffuse 41.7, specular 36.9, AO 42.2, SO / shadows 49 dB. Quote decision gaps from
+  high-spp references, or subtract σ²_256 (from two independent references) in MSE. — e1, 2026-10-25
+- Two references of the same estimator at different spp but the same seed salt are correlated (shared per-pixel
+  Cranley-Patterson rotation and secondary random stream): their mutual PSNR overstates the floor. Use `&refsalt` /
+  `&ref2salt` for independent sets. Specular reference variance fell only ×9 from 256 to 4096 spp (heavy-tailed GGX
+  samples), diffuse and shadows ×31–33 (stratification). — e1, 2026-10-25
+
+- **Recovery is two questions, score both:** per pixel age (frames of valid history, the test bed's ground-truth
+  definition; buckets 0..16 and settled) for reveals, and per frame after a reset for cuts. Age buckets on a pan are
+  different screen regions, so a gap to "settled" is part content, not all recovery; on the real scene young pixels
+  even score above settled ones. — t1, 2026-10-26
+- **SVGF's post-reset blotches come from the normal weight, not the luminance weight.** σ_n = 128 stops a young pixel's
+  à-trous footprint within a few pixels on any curved surface, and the 1-spp noise left after the 7×7 pre-filter
+  survives as blotches for ~5 frames. Dropping the luminance weight for young pixels changed nothing visible; a normal
+  exponent ramped from 8–16 to 128 over the variance ramp removed most of them. PSNR, FLIP and a 9×9 low-pass error
+  barely see blotches (the low-pass even penalizes the fix, which loses a little contact darkening); a mid-band error
+  (9×9 minus 33×33 box) sees a little; strips see them. — t1, 2026-10-26
+- **Boil rewards stillness:** a candidate that moves an unusually still baseline toward the reference raises boil
+  (recurrent's mip-fill young pixels boiled at a third of the reference's own boil; the spatial history fix +4…+70 %,
+  still under SVGF). Read boil next to the reference's boil and the default filter's, and say so when rule 9's boil
+  clause is what fails. — t1, 2026-10-26
+- On the real scene A-SVGF's anti-lag pulls n under 4 on many old pixels, so any "young history" option also acts after
+  anti-lag events there (`youngNormalPower` gained +0.2–0.3 dB on settled pixels of `three-*`, nothing on the test bed).
+  — t1, 2026-10-26
+- A results doc's formula line is a summary, not the code: shadows' radius was written `½·0.75·W·shrink + ½·32 px·E`
+  in M4 §10 and copied into SPEC v0.2, while the shader scales the whole blend by 0.75 × shrink (and the fallback too).
+  When folding results into SPEC, read the option defaults (`resolve*Options`) and the shader expression, not only
+  the results text. Same for "which defaults did this table run with": every v2.2 shadows number predates the
+  `uniformSnap: 'change'` default. — spec-author (SPEC v0.5), 2026-10-26
+
+- **A "look" complaint can come from a default that flipped at the same time.** Dennis's "v2.2 looks less good" was
+  `uniformSnap: 'change'` (255a06a, the same evening), not the v2.2 pass: every v2.2 number had run `uniformSnap: true`.
+  List the default changes between the build that was measured and the build that was looked at, and ablate those too.
+  — shadows, 2026-10-26
+- **Still-camera captures can't show resampling softness.** `'change'` and v2.1 / v2.2 were identical on knot-still;
+  the grey veil only appears on moving cameras (a kept fractional history is resampled every frame). Neither PSNR
+  (−0.1 dB on average) nor boil (it *drops* when edges blur) shows it clearly, but an edge-sharpness ratio does: mean
+  |∇out| / |∇ref| where |∇ref| > 0.1, 0.680 → 0.595 on Bistro. — shadows, 2026-10-26
+- **H18's noise estimate E is large at every clean hard step, not just in noise.** A radius sized from E (the shadows'
+  `noiseBlend`) puts a several-pixel kernel on near-hard shadows, and on `bistro-move` it lost to the raw 1-ray input.
+  The 1-px `minRadius` floor blurs sub-pixel penumbrae the same way. Both are fine on the test bed's big soft light,
+  which is why its tuning never saw this. Cap E by what the occluder says (`noiseCap`), but only on settled pixels: on
+  fresh ones the occluder estimate is one sample plus a tile minimum, and capping there cost 1.5–4.8 dB at frame 0.
+  — shadows, 2026-10-26
+- Hard-edge options split the 16-frame std540 replays and the 96-frame 1080p live paths again (see the young-history
+  lesson): `minRadius: 0.5` + `mergeMin: false` scored level on std540 and +2.3 dB on `bistro-move`, but −0.16 dB at
+  1080p live (`thin` −0.57). The pixel footprint halves at 1080p, so a px-based floor means something else there.
+  Screen hard-edge changes at 1080p too. — shadows, 2026-10-26
+
+- **"Uses no hit distance" is not "drags".** SVGF specular reprojects reflections with surface motion yet tracks a
+  mirror under camera motion: the R-8 cap gives r ≈ 0 about one frame of history whenever there is parallax. It fails
+  only where parallax is 0 (a moving reflected object, a turning mirror: 3–6 px trails with A-SVGF, 25–28 px without)
+  and on glossy r 0.1–0.2, where the cap admits many frames. Read the code path per configuration before assuming a
+  missing input shows up as an artefact (results/REFLECTION-MOTION.md). — reflection-motion, 2026-10-26
+- **Virtual-motion reprojection has its own disocclusion: the reflected world's.** Background pixels next to a
+  reflected object reproject, correctly by their own far hit distance, to where the object's image *was*; the history
+  there is the object. A confidence that only shortens that history (our recurrent filter: to 3 frames) shows a
+  *leading* ghost and duplicate images on clean mirrors. A per-tap test of the stored hit distance against this
+  frame's catches it, but its tolerance needs the local spread of hit distances: without it held mirrors lost
+  2.5–3.4 dB (per-frame 3×3 means jitter at reflected edges and over grazing floors); with only this frame's spread
+  static glossy pixels whose 9 samples cluster got rejected (−0.5…−0.7 dB); with the full stored spread the old edge
+  of a moving object kept its history. Half the stored spread kept both. — reflection-motion, 2026-10-26
+- Isolated reflection tests need: marker images far apart on screen (a window holding two markers' images gave
+  centroid "errors" of 10–25 px that were pure mixing), reflector-only pixels (a marker seen directly sits next to its
+  own image), a per-path window size (a mirror ball's images are a few px across), and the renderer validated against
+  the oracle first (the reference centroid should land within a fraction of a pixel; ours: 0.02–0.3 px).
+  — reflection-motion, 2026-10-26
+- Brightness-weighted dual-source blending (surface + virtual history, Eto et al. 2023) helps glossy mirrors (r 0.1:
+  drag gone, +2.6 dB on the reflector) and hurts everything rough (r ≥ 0.2 up to −8 dB, the r 0.9 floor −0.8 dB pooled,
+  FLIP +5…+50 %): a noisy 3×3 mean cannot pick a candidate and a blend of two histories is a blur. Gate it by
+  roughness. — reflection-motion, 2026-10-26
+- A history-rejection option can be level on the test bed and still fail rule 9 on the real scene: the reflection hit
+  test was ±0.01 dB on the 7 paths but +16 % boil on the two SSR captures with a moving object, where the rejected
+  history had been hiding SSR noise. Run the `*-move` captures before calling a rejection test free. — reflection-motion, 2026-10-26
+
+- **The spatial history repair's cut-frame loss was sample count, not footprint and not ĥ** (results/T1b-spatial-repair.md):
+  on a full reset every tap is A = 0 too, so 16 taps average 17 values of one frame, while the level-3 mips average
+  hundreds. Wider rings help little; more estimates close to the pixel help most (64 / 128 taps within 8 px: −0.45 /
+  −0.04 dB vs the mips). Scattered taps are expensive on a reset frame (128 taps: 11.9 ms at 1080p); a workgroup-shared
+  dense tile gives every pixel within 4 px for 2.4 ms and beats the mips (+0.44 dB). Falling back to the mips fixes the
+  frame itself but the blocky fill becomes the next frames' history (−0.5 … −1 dB on frames 1–3) and loses −4 dB on a
+  wide reveal: judge a reset fix on the frames after it too. A dense window must keep the roughness-scaled radius for
+  specular (glossy pixels: −1.3 dB without the cap). — t1b, 2026-10-26
+- **The mips win or lose a reset by content**: flat, smooth surfaces (floor, box faces after the `cut` path's cut) want
+  the widest average; detailed views (the orbit side: fence slats, contacts) and wide reveals want full resolution. One
+  cut frame is not "the" reset; measure at least two different views. The 960×540 cut showed almost no loss (−0.13
+  dB) because pixel radii cover 4× the scene there. — t1b, 2026-10-26
+- **Static-camera references have zero boil** (fixed per-pixel seeds), so on static-camera windows (reveal holds) the
+  q20 (a) boil clause reduces to "not above the default's boil". Moving-camera windows need the 4096-spp reference's own
+  boil as the floor. — t1b, 2026-10-26
+
+- **Separate the motions before blaming one.** On identical scenes with one mover each (camera / light / occluder) and
+  a frozen control of the same view (results/SHADOWS-MOTION.md), boil was the same frozen and moving (so not a motion
+  bug), trailing appeared only with light / occluder motion under hard light, and blur was present in the no-history
+  control (spatial). A frozen control that shares the last frames' pose and samples also shows how long a history
+  takes to recover after motion stops. — shadows, 2026-10-26
+- **Test-bed references are frozen per pose**: on static pixels the 256-spp reference is identical from frame to frame,
+  so its boil is 0 there and any output change is boil; reference-noise controls need two reference sets (E-1).
+  — shadows, 2026-10-26
+- **A no-history control (history reset every frame) is cheap and telling**: under a hard light moving ~1 px/frame the
+  spatial filter alone beat the full shadow denoiser (29.2 vs 27.7 dB); and temporal accumulation alone beat it by
+  4 dB on a frozen hard-light view. Run both before tuning either half. — shadows, 2026-10-26
+- An analytic term in a denoiser needs the renderer's exact geometry: `terminatorAnalytic` gained +1 dB on sun
+  captures with the sphere light's per-pixel direction and lost 0.7 dB with the registry's directional stand-in
+  (direction from the world origin, 0.4 θ off). Filtering never noticed the stand-in's error. — shadows, 2026-10-26
+- Gating a cap by the quantity it caps against does nothing when that quantity is the wrong one: `noiseCap`'s boil came
+  from pixels whose occluder radius is underestimated (3×3-tile minimum next to contacts), so gating it to "narrow
+  occluder radius" changed no pixel that mattered. — shadows, 2026-10-26
+- Per-pixel neighbourhood loops in the temporal pass are expensive on the M5 Pro: a 25 × 4 float isolation test cost
+  +0.07…0.15 ms at 1080p (+10…20 %). Binary 1-ray windows fit in 25 bits; the same test with shifts and masks, run
+  only where E > 0, cost +0.01…0.03 ms with byte-identical outputs. — shadows, 2026-10-26
+- **Before working an open item, re-measure it on today's defaults.** Two of five shadow follow-ups had moved: the
+  no-history control on the moving hard light was 29.23 dB on the pre-q21 defaults and 30.63 on the shipped ones, and
+  DISTANCE-LONG's +0.27 dB "slow g learning" gap was +0.05 dB once replayed on the q21 defaults (its probe predated them).
+  Check which commit's defaults a number came from (results docs say so) before building for it. — shadows, 2026-10-27
+- **Split a boil increase by whether the truth changes there before calling it a regression.** compare.mjs's dynamic boil is
+  not motion-compensated on a static camera with a moving light, so it counts legitimate change; q24's +8 % on `bistro-move`
+  was 105 % in pixels whose reference second difference was ≥ 0.02 (where the reference is steady q24 *lowered* boil), and
+  the error boil √mean((b_out − b_ref)²)/√6 went down. Then look at the time series of the pixels that carry it: here one
+  real artefact (a jump) hid in the legitimate part (`data/shadows-followups-diag-boil.mjs`). — shadows, 2026-10-27
+- **"Pass the input through" in a spatial pass passes the temporal history, not the raw sample.** `backfacePass` trusts that a
+  back face's visibility is exactly 0, but its input is the accumulated history: a surface turning away from a moving light
+  kept its lit history for ~15 frames (no own g → full cap, non-uniform window → no clamp or snap). Make the exactness true
+  where it is known (snap the history: `horizonSnap`), not only where it is consumed. — shadows, 2026-10-27
+- **A per-pixel decision taken from one frame's 1-ray samples flickers, and so does anything it switches.** A radius floor
+  keyed on this frame's clean-step test boiled more than no test at all (edge boil 0.0261 vs 0.0215); the same floor scaled
+  by the accumulated noise estimate kept 95 % of the gain at shipped-level boil. Drive switches from accumulated quantities.
+  — shadows, 2026-10-27
+- **A moving light moves every penumbra by ρ = (light displacement / light size) penumbra widths per frame**, whatever the
+  penumbra's size (shadow displacement = g × ΔL, width = g × light size). Motion vectors don't know it; the light input does.
+  At ρ ≥ 1 a history keyed to surface motion is stale at every edge, which is why the spatial filter alone beat the full
+  denoiser on the moving hard light (ρ = 1.5). — shadows, 2026-10-27
+- In a chained shell command, a stray `cat > file` without a heredoc waits on stdin and hangs the whole call until the tool
+  timeout. — shadows, 2026-10-27
+
+- **Long holds from short captures: loop a static window.** `tools/rt-capture/loop-capture.mjs` repeats a still
+  capture's frames (symlinks, the window's mean reference) after an optional head; with identical inputs every period,
+  any change between settled, period-aligned windows is the filter's own state, so drift separates from sampling noise
+  exactly, and "arrive" vs "hold" runs share their hold inputs bit for bit (same view, two histories). 384 frames of a
+  960×540 signal replay in ~25 s. — distance-long, 2026-10-26
+- **Metal's truncating f16 stores are a bias, not noise, and a bias can hide another.** Every rgba16float history sits
+  0.2–0.7 % dark (more stores per frame or a smaller α = more); a value re-stored without new samples ratchets down
+  until the arithmetic maps it to itself (shadow g −5 %, lit histories stuck at 1 − ulp, so the same view can settle
+  differently after different histories). Removing it is +0.1 … +0.7 dB on SVGF / AO but −0.05 … −0.16 dB on shadows,
+  whose penumbrae are biased bright: compare a rounding fix per filter, not "precision can only help". `pack2x16float`
+  → `unpack2x16float` before the store is an exact round-to-nearest. — distance-long, 2026-10-26
+- **A recurrent filter's history is its filtered output, so anything stored with the signal is re-filtered every
+  frame.** The recurrent ĥ (.a) settles at a fixed point of "blend 1/32 raw, then blur": +12 … +34 % above the raw mean
+  in contacts, within ~150 frames, then flat. Not drift, not f16 — read a "distance degrades with history" report as
+  "which quantities ride the feedback loop". — distance-long, 2026-10-26
+- **Check the port and the server before trusting a replay.** Twice another agent's Vite held "my" port (5481, 5482):
+  a capture page loaded their test bed and spun orphaned for 2 h, and a byte-identity check compared against their
+  build (every file "differed"). Start servers with `--strictPort`, check the log says `ready`, `lsof` the port's
+  owner, and when you kill a runner kill its headless Chrome too (`ps -o ppid` = 1 afterwards means orphaned).
+  — distance-long, 2026-10-26
+- **The GPU lock is contended; split long work into lock-sized groups.** With 4–6 agents queued, a 30 s poll lost the
+  lock for over an hour. One capture group or one page per hold (≤ 15 min), 3 s polling, release between groups,
+  and code / doc writing while waiting. — distance-long, 2026-10-26
+
+## Native harness (from `native/SETUP.md`, Windows harness builder, 2026-10-25)
+
+_Facts about driving native NRD as a black box: interface and build behavior only._
+
+- Native `REFERENCE` doesn't reproject. On a moving camera it returns the noisy frame unchanged;
+  with prev matrices := current it is a plain per-pixel screen-space mean. Use it as a sanity
+  check on static-camera captures only (`synthetic-static`: 26.53 / 21.51 / 23.63 dB, matches
+  ours). Our `accumulate-static` differs from that mean only where a pixel was sky last frame
+  (ours restarts history there). — orchestrator, 2026-10-25
+- `NRD_NORMAL_ENCODING=4` (RGBA16_SNORM) doesn't build at `e06852b`; encoding 2 with
+  `NRD_ROUGHNESS_ENCODING=1` (linear) does, and is what the harness uses. — harness builder
+- One `Denoise` call per `nrd::Integration` per frame. Several calls on one instance overran its
+  per-frame descriptor pool: a crash with REFERENCE alone, and silent corruption of ~7 % of pixels
+  with all denoisers, which looked like a weighting bug. — harness builder
+- The first-frame format check reads the normal/roughness guide even for `REFERENCE`; always
+  bind the guides. — harness builder
+- Hit distance 0 means "lobe not sampled" to NRD, so the harness maps our 0 (miss) to 65504.
+  Our own 0 still means both miss and not-sampled (TASKS item). — harness builder
+- Shadows: the native shadow denoiser takes distance to occluder, not visibility. The harness maps
+  visibility ≥ 0.5 → miss (65504), 0 with `occluder_dist` > 0 → that distance, 0 with
+  `occluder_dist` 0 (self-shadowed) → 0. Fractional input visibility is lost on that side.
+  — harness builder
+- Jitter is passed in pixels; units are only provisionally confirmed (a smooth plane can't tell).
+  Re-check on a test-bed capture with edges. — harness builder
+- Native timings on the RTX 3060 Laptop drift with clocks (wide p90) because the harness idles
+  between frames while loading the next one, the same effect our replay fixes with a 50 ms GPU
+  warm-up. Compare medians from the same machine only. — orchestrator, 2026-10-25
+- The test bed's scene uniform has no spare slot where it looks like one: `u[86]` is
+  `seedOffset`, the old `_pad0` is `u[87]`. Writing the sampler flag into `u[86]` silently
+  changed the white-noise seed instead (two "different" samplers gave identical stats).
+  When a new mode changes nothing, check the uniform offsets first. — results, 2026-10-25
+- Spatiotemporal blue noise for 2-D (or n-D) samples: animate with the R_n sequence
+  (Roberts 2018), not the golden ratio on every dimension; equal per-dimension steps put a
+  pixel's samples over time on a line. Blue noise lifts temporal accumulation (+1.35 dB
+  diffuse mean, +4.5 dB on a static camera) but leaves SVGF's PSNR unchanged (−12 %
+  flicker): wide à-trous footprints average past the mask's correlation length.
+  — results, 2026-10-25
+- SVGF on the test bed (M1.md §4): `feedback: false` is +0.6…+2.6 dB diffuse with no
+  flicker cost; under `antiLag: 'auto'` α_min ≤ 0.1 is inert (λ keeps 1/n ≥ ~0.1), so
+  sweep α only with anti-lag off; plain SVGF with low α_min ghosts specular (orbit
+  −2.8 dB at 0.1). — results, 2026-10-25
+- A "fast history" anti-lag (clamp the slow value to the fast EMA's μ ± γσ) can only move
+  the slow value as fast as the fast EMA, minus a γσ offset: on the dev page a light switch
+  recovered to 26 dB after 12 frames (SVGF 37). Using the standard error of the 3×3 mean
+  (σ/√N) as the window, plus a current-frame detector (3×3 mean of this frame's pre-blurred
+  signal vs the reprojected history, in standard errors) gets 34 dB; when such a detector
+  fires, shorten A to A_fast, not 0 (0 cost 1.4–1.8 dB on static content: blur bleeding
+  at A = 0). — recurrent, 2026-10-25
+- The dev page (direct point lights, hard shadows, exact truth) ranks the recurrent blur
+  ~2 dB below SVGF; the test bed's path-traced GI ranks it 0.5–1 dB above A-SVGF. Without a
+  luminance weight the recurrent blur smears hard direct-light edges; tune it on the test
+  bed / captures. — recurrent, 2026-10-25
+
+## Clean room
+
+- Using native NRD as a black box (feed our captures, compare outputs) is allowed; reading
+  its code or README prose is not. NRD's interface facts (e.g. 2.5D motion,
+  z = viewZprev − viewZ, is its recommended mode) are in `sources/nrd-provenance.md` §3
+  and are fine to use. — orchestrator, 2026-10-24
+- Second reviews: check equations against the PDF page image, not the text extraction.
+  Two-column `pdftotext` scrambles stacked fractions (M12 Eq. 13 reads as "1 1 / k µ" and was
+  transcribed with µ in the wrong place in a source note). `Read` on the PDF with `pages: "4"`
+  renders the page; `pdftotext -f N -l N` finds which page a section is on. Slide decks: the
+  `tr/p-0NN.png` images show whether a slide has text or only a picture (TR19's "overlapping
+  penumbra" slides are pictures only, so no fix can have come from them). — shadows provenance reviewer, 2026-10-25
+
+- Scratch-registry test beds: Vite's HMR **reloads running headless pages** when any served
+  file changes (the wrapper, a synced package copy), so a batch silently restarts or hangs
+  mid-run (a missing import → stuck until the 45-min timeout). Put `server: { hmr: false }`
+  in the scratch Vite config and still don't touch served files during a batch. Also keep the
+  `RT_REALTIME_SRC` snapshot at the registry's commit: the registry imports new package
+  exports (e.g. `HitDistanceNormalizer`) and an older snapshot breaks every page
+  ("does not provide an export named …" only in the Vite log). — svgf-antilag, 2026-10-25
+- `batch` loops in a zsh script: `jobs -r` is empty in a non-interactive script, so a
+  "max 4 jobs" throttle built on it starts everything at once (7 × 1080p pages + other
+  agents' jobs: 40+ min instead of 5). Use `printf '%s\n' $paths | xargs -P 4 …`. — svgf-antilag, 2026-10-25
+
+- A Vite middleware that calls `next()` for a missing file under its own prefix gets Vite's SPA fallback: `index.html`
+  with **200**. A `fetch(HEAD)` "does this weight file exist?" probe then says yes and the loader dies on "Invalid or
+  corrupted weights blob". Answer 404 yourself. — e2, 2026-10-25
+- OIDN 2 on our 1-spp signals (E2-oidn-baseline): demodulated diffuse / specular want **albedo = 1 + normal** (clean-aux
+  `*_calb_cnrm` weights; OIDN takes a normal only with an albedo). Color only is −1.4…−1.8 dB, and the real albedo −2.7 dB
+  diffuse (it describes texture edges the demodulated signal doesn't have). Scalars (visibility, ĥ) go through the
+  **HDR** weights as grey color. The LDR weights brightened dark regions (shadows 19 vs 30 dB). — e2, 2026-10-25
+- Async / offline denoisers in the replay: implement `ReplayDenoiser.dispatchAsync` and register them from
+  `tools/rt-capture/src/main.ts` (the replay page), not `denoisers.ts`. Then the test bed, which imports the registry
+  and runs it synchronously, never loads them. — e2, 2026-10-25
+- `pkill -f <waiter script>` also kills the copy of that waiter a running batch script is blocked on. The batch then runs
+  its next page at once, unquieted. Kill your own extra instance by PID. — e2, 2026-10-25
+- Reading a proprietary project's release notes cleanly (RULES 3b): fetch with `gh api`, strip fenced code blocks
+  with a script *before* the text reaches you, and read the stripped copy only. NRD's release bodies and `UPDATE.md`
+  had no fences, but `UPDATE.md` still carries inline usage snippets and default values in prose ("old value X matches
+  new Y"), so the fence strip is not enough: skip inline expressions and numbers by eye. Most lines in NRD's notes
+  are "how" (weights, tests, pass moves, tap counts: ~417 dropped vs ~200 kept), so keep a per-release tally in a
+  scratch file as you go rather than counting at the end. — release auditor, 2026-10-25
+- Change audits from `git diff --numstat` (rule 3c): always add `-w`. NRD converted line endings in several
+  releases, so raw counts show whole files "rewritten" (`NRDDescs.h` at v2.5.0: 331 of 335 lines raw, 0 with `-w`;
+  SH host files at v4.15.0: 30 % raw vs 5 %). Don't trust a direct diff across years either: git loses renames across
+  directory reshuffles and counts every old file as deleted. Chain consecutive-release diffs instead, and split removed
+  lines into edited vs deleted files (`--name-status` status per path) so file merges (packaging) don't read as
+  rewrites. — change auditor, 2026-10-25
+
+- Search-engine summaries can quote NRD's README even when you never open it (a query about RTXDI gradients and
+  denoiser confidence did). Keep queries about anti-lag / history confidence on papers and talks (A-SVGF, studio
+  talks), block github.com and deepwiki.com, and if a summary quotes NRD text, say so and use none of it.
+  — public research 2022–2026, 2026-10-25
+- Byte-checking a default flip without fighting other agents' edits: `git archive HEAD packages/denoiser-realtime/src`
+  twice into scratch (before / after), copy only your changed files into "after", serve each with `RT_REALTIME_SRC` on
+  its own port, and replay one capture through both (std540-orbit, 16 frames, `warm=0`: ~2 min per side), then `cmp`
+  the `.f32` files. To add default-path entries without touching the registry, wrap it with a Vite `resolveId` plugin
+  that redirects `./denoisers` **only for `src/main.ts` / `src/run.ts`**: a plain `resolve.alias` regex on
+  `./denoisers` also catches the package's own `index.ts` re-export and the page dies with a missing-export error (the
+  headless runner then hangs until its timeout). Count `console.warn` around a constructor inside the wrapper and throw
+  on a mismatch to test "warns once" in the same run. — apply-decisions, 2026-10-25
+- Defaults compose: `OcclusionDenoiser`'s SVGF inherits SVGF's `antiLag` default, so two separate decisions (occlusion
+  → 'svgf', SVGF → 'auto') made the occlusion default A-SVGF. Registry ids whose names imply a config (`occlusion-svgf`,
+  `svgf-sh`) should pin it explicitly, or they silently turn into their `-auto` sibling. — apply-decisions, 2026-10-25
+- The quarantined external review lives in `rt-denoiser-sources/quarantine/`, inside the same tree as the allowed
+  papers, so a clean agent that lists that tree to find SVGF or Dammertz sees its file names. List the subfolder you
+  need (`svgf/`, `reblur/`, `shadows-specular/`, `public-2022-2026/`) instead of the root, and never open
+  `quarantine/`. (Done 2026-10-26: the orchestrator moved it to a folder outside `rt-denoiser-sources/`;
+  `rt-denoiser-sources/` now holds only allowed material.) When a clean review finds nothing to
+  redact, still update the reviewed file's status line, so readers don't keep treating it as "pending".
+  — clean reviewer (nrd-review-targets), 2026-10-25
+- A default flip whose byte check proves "new default = registry id X, old default = registry id Y" turns the A/B into one
+  eval page with `denoiser=X,Y` (no snapshots needed), and earlier runs of X / Y are still valid evidence (the
+  occlusion A/B reproduced REMEASURE §3 to the last digit). Before calling a mean gap "level", read the per-path and
+  per-region rows: occlusion AO `'off'` vs `'auto'` was −0.10 dB mean but −0.6 dB in contact, almost all of it on
+  `object`. — occlusion-antilag-off, 2026-10-26
+- Judge a default flip region by region (contact, dynamic, flicker), not by the pooled mean: the occlusion `'off'` flip
+  looked "level" at −0.10 dB pooled but lost 0.6 dB in contact, added 15 % AO flicker, and was reverted under rule 9.
+  — occlusion-antilag-off, 2026-10-26
+
+- **A 256-spp reference's "own boil" is mostly its noise.** Young diffuse reference boil was 0.0076–0.0111 at 256 spp and
+  0.0014–0.0048 at 4096 on the same frames; against 4096, young pixels of every filter boil *above* the reference
+  (A-SVGF 1.1–3.5×), so "below the reference's own boil" (T1) was an artifact. Judge boil floors with a high-spp
+  reference. With a static camera the reference is the same estimate every frame (fixed per-pixel seeds): its boil is 0
+  except where the scene changes, so it is no noise floor there. — e1b, 2026-10-26
+- Capturing one test-bed window twice with different `refspp` gives byte-identical noisy inputs and guides (only `*_ref`
+  differ): replay once, symlink `outputs/<cap256>/<name>` → `outputs/<cap4k>/<name>`, and score both with t1-score.mjs.
+  Test-bed capture manifests are `capture.json` (not `manifest.json`); a success check on the wrong name made every
+  capture run twice. — e1b, 2026-10-26
+- `thin`'s diffuse reference is the noisiest of the 7 paths: 256-spp ceiling 34.8 dB (filters scored 34.2–34.5, pinned
+  to it), 4096-spp ceiling 44.4 (A-SVGF 41.9 measured vs 45.6 "true"); its variance falls only ×9 per ×16 spp. Read
+  `thin` diffuse with the "true" column. The test bed's JSON rounds metrics to 4 decimals, so flicker deltas under ~3 %
+  (values 0.0013–0.0045 at 1080p) are invisible. — e1b, 2026-10-26
+
+## Upscaler guides evaluation (2026-10-26)
+
+- A page that builds the test bed's `SceneSignals` outside `main.ts` needs the test bed's device limit,
+  `requiredLimits: { maxStorageTexturesPerShaderStage: 8 }`; without it every scene pipeline is silently invalid
+  ("Invalid ComputePipeline rt guides"). — upscaler-guides, 2026-10-26
+- Scoring a disocclusion detector against point-visibility ground truth: most "misses" sit in the 1–2 px silhouette
+  band, where a neighbour texel on the same surface was visible, so keeping its history is not ghosting. Split the
+  score into interior (3×3 GT uniform) and band, and count a wrong-surface class (no same-object texel in the 3×3
+  around the true reprojection) for the misses that really ghost. Raw recall alone ranked SVGF worst while it ghosts
+  least. — upscaler-guides, 2026-10-26
+- BVH ground truth for the three-temporal scenes: ray-cast single-sided materials with `FrontSide` (the raster draws
+  them FrontSide; `asset.meshes[i].material.side`), else 1.35 % of Bistro pixels come out "occluded" by back faces.
+  A cheap self-check catches it: cast from the CURRENT eye to each pixel's own unprojected `viewz` point; nothing may
+  be hit in front of it (fixed: ≤ 0.005 %). — upscaler-guides, 2026-10-26
+- GPU timestamps on Apple: a timestamped pass recorded right behind heavy passes in the SAME command buffer reads their
+  tail (the upscaler's reconstruct: 1.3 ms median, 0.17 ms min). Submit the warm-up separately and await
+  `onSubmittedWorkDone()` before the timed submit (then 0.158 ms median, stable over 3 rounds). — upscaler-guides,
+  2026-10-26
+- `@pmndrs/upscaler` without a three.js renderer: alias `@fsr3/*` → `/Users/dex/Developer/fsr3/src/*` in Vite and
+  import `shaders/reconstruct`, `internal/ConstantsBuffer`, `internal/ComputePass` (pure WebGPU, no three import). Its
+  'auto' layouts accept r32float / rg32float through `textureLoad`. Depth must be a `depth32float` texture: copy
+  r32float device depth with a full-screen pass that writes `@builtin(frag_depth)`. It has no `motion_z`, and its
+  reconstruct ignores FLAG_RESET. — upscaler-guides, 2026-10-26
+
+## Light changes (review target 3, 2026-10-26)
+
+- **Never `cp` a mirror copy over a worktree file.** I copied my scratch-mirror `main.ts` (HEAD + one import line) over
+  the worktree's, which held another agent's uncommitted edits; a `for f in …; do git diff --quiet HEAD -- $f && echo
+  clean; done && cp …` chain does not stop on a dirty file (the loop's status is the last `echo`'s). Restored from that
+  agent's own mirror (same mtime as its other copied file). Insert your hunk into the current worktree file instead
+  (a Python `replace` with an assert, or `patch -F3` from a diff against the base commit), and look at `git status`
+  first. — t3, 2026-10-26
+- **A luminance-only anti-lag can be slower than none.** A-SVGF's gradient is luminance only (S2 §3.1), and with anti-lag
+  on, SVGF runs α_min 0.1 instead of 0.2, so a light that changes colour at constant luminance left its old tint 21 frames
+  with `'auto'` vs 10 with `'off'`. Test colour separately from brightness on every temporal filter. — t3, 2026-10-26
+- **Lag without noise on a fixed camera: the old-appearance fraction.** r_t = Σ(o − n)(b − n)/Σ(b − n)² over the pixels
+  that change (b / n = the reference before / after) averages the noise away, counts colour, and gives "frames to < 10 %
+  old" directly; a filter's own bias shows as r ≠ 0 before the event. The test bed's references use fixed per-pixel seeds,
+  so pixels whose light doesn't change have bit-identical references: a strict static mask (`change == 0`) separates
+  leaked λ from legitimately changing dim pixels. — t3, 2026-10-26
+- **A-SVGF's λ is a relative change**, so a light that changes a pixel's indirect light by 20 % drops only ~30 % of the
+  history per frame (8 frames to settle on diffuse). Scaling λ speeds every reaction and pays on still views (boil +17…49 %);
+  the gain is all specular under camera motion (+0.4 dB), so judge such knobs on moving *and* still captures. — t3, 2026-10-26
+- **A detector downstream of the denoiser can't see what the denoiser hides.** The upscaler's `shadingChange` compares
+  frame-to-frame changes of the image it gets; behind a temporal denoiser that image moves a few % per frame, under its
+  floors, so it fired once on a light step (a frame late) and never on the return. Measure a guide on the image it will
+  really get, not on the reference. — t3, 2026-10-26
+- GPU lock with a busy neighbour: another agent re-took the lock page after page for ~35 min; queue the whole batch in one
+  background script that takes the lock per group (`until mkdir …; sleep 3`), write docs meanwhile, and keep scoring
+  (CPU) outside the lock. Replays of 96 frames at 960×540 take ~7 s each, so a 5-capture × 4-arm group holds the lock
+  ~2.5 min. — t3, 2026-10-26
+
+## Boundaries (T6, 2026-10-26)
+
+- **"Needless" resets against point-visibility ground truth are not needless for normal-dependent signals.** SVGF's
+  cos 0.95 normal test has 39.7 % precision on Bistro / Sponza (13 % of adjacent same-surface texel pairs differ by
+  > 18° there: dense tessellation, normal-mapped `normalView`). A test relaxed to the pixel's own normal spread raised
+  precision to 86.5 % and cut Bistro boil 30–38 %, but lost AO 1.6 dB and specular 1.1 dB (FLIP +12…+21 %): the
+  rejected history was shaded at another normal. Score a history-validity change downstream on the real normal-mapped
+  scenes before calling resets wasted (results/T6-boundaries.md §5). — t6, 2026-10-26
+- **History tests interact; a test-bed win can flip on real geometry.** SVGF without its 3×3 fallback won every
+  test-bed path (AO disoccluded +1.7 dB at 4096 spp) and lost on Bistro / Sponza (AO boil +6…+9 % above both floors):
+  there the fallback rescues the pixels whose 2×2 taps failed the normal test, with same-normal texels. Run the
+  Bistro / Sponza captures before proposing any disocclusion change. — t6, 2026-10-26
+- An expensive relaxed test can run only where the strict one failed, byte-identically, when the relaxed criterion
+  only ever accepts more (a tap that passed the strict threshold passes the relaxed one). Prove it with a replay byte
+  compare of the two forms (320 files, 0 differ), then time the lazy one. — t6, 2026-10-26
+- A per-tap hit-distance test on the recurrent virtual footprint removes reflected-world disocclusions (duplicate
+  images 36 → 0 / 40) but not a leading image whose footprint is self-consistent: that offset is an error in the
+  virtual distance (blended marker / background ĥ at the image edge), which no consistency test can see.
+  — t6, 2026-10-26
+- The upscaler-guides `run.mjs` names output files after the whole query: a long `det=` list hits ENAMETOOLONG. The
+  T6 copy (`results/data/t6-boundaries/run.mjs`) drops the `det=` part from the file name. Capture scoring with the
+  boundary region takes ~5 min of CPU per Bistro capture; keep it outside the GPU lock. — t6, 2026-10-26
+- **A desktop video call ruins bench medians, and the headless-only quiet check can't see it.** A Slack call with the camera
+  on (Dennis at the Mac) put every 1080p bench page into a slow state for its 50 minutes: joint diffuse + specular medians
+  +5 … +100 %, single runs up to 2.9×, shadows +5 % with outliers. The fastest frames moved ≤ 0.15 ms. Before and between
+  rounds check `pmset -g assertions | grep "Video Wake Lock"` and the camera service (`UVCAssistant` CPU > 3 %). Stamp every
+  page with its time so a contaminated window can be cut afterwards. `results/data/remeasure-2026-10-26/bench.mjs` waits on
+  both. Without such load, 9 clean rounds had no slow-clock-state run at all (run medians within 3 % for every
+  configuration). So some earlier "slow clock state" runs may have been desktop load: record it. — timing evaluator, 2026-10-26
+- The full REMEASURE timing protocol is cheap now: a 1080p bench page (n = 200) takes ~3 s, so a 17-configuration round is
+  ~1 min and 9 rounds ~15 min. Re-time rather than quote projections. Starting Vite with a scratch config
+  outside the repo prints `UNRESOLVED_IMPORT 'esbuild'` warnings; they are harmless (the server is `ready`).
+  — timing evaluator, 2026-10-26
+
+## Camera jitter (review target 8, 2026-10-26)
+
+- **Jitter in the test bed needs no shader change**: jitter only the ray generation's inverse view-projection (`signals.ts`,
+  `&jitter=halton8`). Depth, motion and every reference keep the unjittered matrices, so motion stays `ndc_sample −
+  ndc_prev` and each reference sees the frame's own sample positions. `validate.mjs` already handles jitter (motion
+  reprojection 1e-5 px on the jittered captures). — t8, 2026-10-26
+- **A jittered point-sampled reference is far from its own average at edges**: the per-frame reference vs its 16-frame mean
+  at a still pose scores 16–30 dB at boundaries (thin shadows 16.5 dB). A temporal filter's output lands between the two,
+  so its "error vs the per-frame reference" rises 0–4 dB at boundaries with no artefact at all. Score a jittered
+  sequence against both (per-frame R1, window-mean R2), and check temporal fluctuation against the reference's own.
+  — t8, 2026-10-26
+- **Per-pixel temporal std over a window must skip frames where the pixel was sky**: under jitter, silhouette pixels flip
+  to sky, where AO/SO outputs are 0 and `ao_ref` is 1, so occlusion showed "2.2× the reference's fluctuation" that was
+  only the sky value. Count a pixel only if it is a receiver in every frame of the window. — t8, 2026-10-26
+- A batch that scores and then deletes the replay outputs means a scorer bug costs a full re-replay. When the disk allows
+  (a 96-frame 960×540 capture × 4 denoisers is ~4 GB), keep the outputs until the tables have been read. — t8, 2026-10-26
+- Loosening the history tests (`planeDistance=1`, `normalThreshold=0`) moved the jittered still-view outputs by ≤ 0.3 dB at
+  boundaries (shadows: identical), so the fsr3 "resets at jittered edges" mechanism (GUIDES-HANDOFF-RESPONSE report 3,
+  hint 2) is not what limits our filters there. — t8, 2026-10-26
+
+## Normal-mapped detail (T5, 2026-10-26)
+
+- **Detail-band energy mixes contrast and noise; regress instead.** Σ band_out² / Σ band_ref² rises with noise and falls
+  with blur, and a noisy reference inflates its denominator (M7's "SH keeps 25–50 %" against 256 spp reads 0.66–0.70
+  against 4096). The regression gain k = Σ b_o b_r / Σ b_r² is blind to noise (uncorrelated with b_r) and the residual
+  Σ(b_o − k b_r)² / Σ b_r² is the noise: report both (results/data/t5-normal-detail/score.mjs). — t5, 2026-10-26
+- **Tune on one normal map, test on another.** M7's SH settings won on the domes they were tuned on and lost 1.4–3.6 dB to
+  the plain filter on held-out grooves; a second pattern (and a still view, where the plain filter's long history keeps
+  88 % of the contrast) changed the ranking. Add held-out patterns as scene variants behind a build flag so the tuned
+  build stays byte-identical. — t5, 2026-10-26
+- **Contrast and still-view shimmer trade one for one in a spatial filter.** Every way to keep more bump contrast in the SH
+  filter (detail-normal weight, its stride-gated form) raised the still-view boil about in proportion; against a still
+  reference (boil ≈ 0) rule 9's clause fails for any rise. Sharpening the resolve was the only free contrast (+0.06–0.08,
+  boil within the reference's): it reshapes the payload instead of averaging fewer samples. — t5, 2026-10-26
+- **An extra guide read per à-trous tap costs ~20 % on the M5 Pro** (SH à-trous is load-bound: +0.75 ms at 1080p for one
+  rgba16float normal per tap). Spare bits in what the taps already load are free: an 8:8 octahedral normal in the unused
+  upper half of the f16 ping-pong's last word, written once by the variance pass, cut it to +9 % with outputs within
+  0.005 dB. Look for padding in the texel before adding a binding. — t5, 2026-10-26
+- `xargs`-free batch hygiene: a zsh `${(s/:/)spec}` split of "capture:mask:a:1-2,b:3-4" also splits the window list at
+  its colons; pass windows as a named preset (`--windows light`) or use a delimiter that the value can't contain.
+  A throttle on `pgrep -f score.mjs` also counted another agent's `score.mjs`: match your own path. — t5, 2026-10-26
+- A Chrome tab holding "Video Wake Lock" (a call or video on Dennis's desktop) ran through a whole bench window; with the
+  quiet-GPU check honouring it the bench just waits (holding the GPU lock). Either release the lock while waiting or bench
+  through it with `IGNORE_VIDEO=1` and quote fastest frames (medians moved ≤ 3 % here). — t5, 2026-10-26
+
+## Spec fold-ins (SPEC v0.7, 2026-10-26)
+
+- **A spec formula whose input no code reads can stay wrong for weeks.** C-1 / C-6 reconstructed at the jittered
+  sample position from v0 to v0.6; no filter ever read `FrameCamera.jitter`, and only T8's end-to-end measurement
+  caught it. When folding results, grep the code for every input a SPEC formula consumes (`git grep -i jitter
+  packages/denoiser-realtime/src`), not only for the option names that changed. — spec-author, 2026-10-26
+- Results docs quote resource sizes in their own words; check them against the allocation. T3 wrote "+4 B/px per signal
+  at 1/9 resolution" for `antiLagChroma`, while `src/svgf.ts` allocates two rg32uint per signal at ⌈W/3⌉ × ⌈H/3⌉
+  (≈ 1.8 B/px). The SPEC quotes the allocation and the mismatch goes to TASKS. — spec-author, 2026-10-26
+
+## SVGF cost (2026-10-27)
+
+- **Workgroup-shared tiles for strided à-trous taps: contiguous, not interleaved.** Mapping a workgroup to an 8×8 grid of
+  pixels `stride` apart (so all 3×3 taps fall on one 10×10 grid) is 1.8–3× *slower* than the plain pass at stride ≥ 4 on
+  the M5 Pro: every tile texel is its own cache line. A contiguous (8 + 2·stride)² tile per 8×8 workgroup wins up to
+  stride 4 (2.25 / 4 loads per pixel instead of 9 at stride 2 / 4); at 8 it loads as many texels as the taps. And store
+  the rgba16float colours packed (2 × `pack2x16float`, exact) in workgroup memory: half the bytes measured faster than
+  vec4f (occupancy). — svgf-cost, 2026-10-27
+- **Byte-identity trap when moving a decode into a tile:** with the roughness decoded once into workgroup memory
+  (`f32(byte) / 255`), 30–60 specular values per frame moved by one f16 ulp; decoded inline at each tap, fast math is
+  free to fold `a/255 − b/255` in the roughness weight. Store the raw byte and decode at use, exactly as the untiled code
+  does: then every capture compared byte for byte. Check a tiling change on the specular signal, not only diffuse. —
+  svgf-cost, 2026-10-27
+- **A young-pixel option compiled where it can't act still costs:** `youngNormalPower` built its variant for the specular
+  signal too (whose lobe cutoff never reads the exponent), plus a per-tap `* 1.0` luminance factor: 0.2 of its 0.28 ms.
+  Gate an option's code on whether the signal's path can use it, then byte-check. — svgf-cost, 2026-10-27
+- **The variance pass's young-history loop is ALU-bound:** a 14×14 shared tile (loaded only by workgroups with a young
+  pixel) cut its loads ~10× but saved only 0.04 of the loop's 0.25 ms. Measure a pass's loop by forcing it off
+  (`spatialVarianceRadius=0`, timing only) before tiling it. — svgf-cost, 2026-10-27
+- **Right after a desktop video call ends, the M5 Pro stays slow for ~5 minutes** (every configuration +5 … +40 %, run medians up
+  to 2× apart) with no `Video Wake Lock` or camera activity left for the quiet check to see. Start a clean set with a few
+  throwaway rounds, or cut the first ~5 minutes after the call by timestamp, and look at the per-round table before
+  summarizing: the clean rounds afterwards agreed within 1.5 %. — svgf-cost, 2026-10-27
+
+## SVGF follow-ups (2026-10-27)
+
+- **Split a "leak" by the pixel's own state before blaming a neighbour.** The constant-light boil next to a light change
+  looked like λ spreading (T3) and then like the à-trous blending in reset neighbours; four spatial-channel variants
+  (history-ratio tap weights, a variance-prefilter cap, a λ edge-stop, a stronger luminance stop) moved nothing. Splitting
+  the band by the pixel's *own* λ settled it in one run: pixels whose λ stayed 0 had no excess, the rest carried all of it
+  (two thirds of them share their 3×3 stratum with a changing pixel). A scratch registry entry that writes n / λ / the
+  unfiltered accumulation as the "output" (results/data/svgf-followups/tools/registry-wrap-dbg.ts) is a cheap way to get
+  per-pixel internals out of a replay. — svgf-followups
+- **A boil rise can hide in quadrature.** The static pixels' *unfiltered* accumulation boil rose 0.2 % (214 → 214.4 ×10⁻⁴),
+  which reads as "nothing", but in quadrature that is an added ~15 ×10⁻⁴ component, as large as the filtered output's whole
+  excess. Per-stratum boosts are spatially correlated, so the spatial filter does not remove them. Compare RMS figures as
+  √(b₁² − b₀²), not as ratios, when the baseline is noise-dominated. — svgf-followups
+- **Check what a capture's normal really is before reasoning about normal maps.** T6 attributed Bistro's normal-test
+  resets to normal-mapped `normalView`; the three-temporal scenes load geometry only (no textures, no normal maps), and a
+  `normal_geom` capture matched `normal` to cos > 0.9999 everywhere. The resets are geometric (dense tessellation). — svgf-followups
+- **The test bed creates one registry instance per signal**, so a joint-only settings path (the `d.` / `s.` per-signal SVGF
+  keys) silently fell back to the shared options in live pages and the first live A/B ran the wrong arm (specular got the
+  diffuse setting). Replays create the joint instance. Check a per-signal setting in both runners (here: the specular
+  output must stay byte-identical when its setting is the identity). — svgf-followups
+- **A graded history length can win where a relaxed accept test loses.** Keeping full history at another normal (T6
+  `'relative'`) smeared Bistro AO by 1.6 dB; keeping 2–4 frames of it where the strict test resets removes the restart noise
+  (+0.2 dB, boil −11 %) and smears nothing for long. For reflections even 2 frames lose, so make the cap per signal. — svgf-followups
+
+## Review bench (2026-10-27)
+
+- **The three.js example pages run `packages/denoiser/dist`, which goes stale.** On 2026-10-27 the dist built at 01:31 lacked every later
+  package commit (outputAliasing by default, normalTest 'soft') until the apply-decisions agent rebuilt it at 12:50. The review bench is served by `vite.review.config.ts` (source aliases, `yarn workspace three-temporal
+  review`) and compares the registry's defaults with what each denoiser resolved; for other pages check the dist's mtime
+  against `git log -1 -- packages/denoiser-realtime/src` before trusting a "default" seen on screen. — review-bench
+- **TSL: a `Fn` call used in several `select()` branches can be emitted only in the first branch's scope.** The bench's
+  split view (`select(left, aces(a), aces(b))`, with the same nodes also in the A / B selects) came out black while the A view
+  was fine. `.toVar()` on the tone-mapped values evaluates them once up front. — review-bench
+- **Read a WebGPU canvas back inside the frame callback that drew it.** `drawImage(canvas)` after
+  `await device.queue.onSubmittedWorkDone()` returned an all-zero image (the frame was already presented); drawing right
+  when the render loop resolves the frame promise (as the pages' `capture()` does) works. — review-bench
+- **Pure refactors of a page: byte-compare its manual-stepped screenshots.** `run-realtime.mjs gi` (corner and Sponza)
+  writes byte-identical PNGs run to run on this Mac, so moving the ray WGSL into `src/realtime/rays.ts` was verified by
+  `cmp` over all 28 screenshots before / after. — review-bench
+
+## Dropout guard (2026-10-28)
+
+- **A spatial hit-distance spread is not a dropout detector.** It fires on clean mirrors wherever the reflected geometry
+  varies in depth (bumps, curved reflectors, silhouettes), and treating those as rough cost up to −8.4 dB on the `rm-*`
+  paths. Run the 12 reflection paths first for any low-roughness change: ~10 min, and they caught this before the
+  rule-9 set. Workbench stills of one SSR scene can't show it.
+- **Detect dropout from time, not space.** A per-pixel EMA of hit/miss flips, gated by a 3×3 that holds both hits
+  and misses, left every rm-* marker 1 exactly as it was (v1's spatial spread cost up to 8.4 dB). It needs an
+  unambiguous miss: hit distance 0, never a "far" 100. Spare per-pixel state already existed: data's m bits were
+  written but read by no pass.
+- **On a perfect mirror the recurrent filter's only history is virtual.** The surface cap is 0 at lobe half-angle 0, so
+  whatever drops the virtual footprint (the T6 hit test) drops all history.
+
+## Applying decisions (2026-10-27)
+
+- **An option with prerequisites can't become a plain default.** `antiLagChroma` throws unless `antiLag` is `'auto'` v2 on
+  the radiance payload, and `normalTest` other than `'center'` throws on payload `'sh'`: a bare `?? true` / `?? 'soft'` would
+  have broken every `antiLag: 'off'` / `'gradient'` / SH user. Make the default conditional on what it needs (as
+  `outputAliasing` already was) and smoke-test the combinations (antiLag off / v1, SH, reflection variants,
+  historyFallback / historyNormal) before the byte checks. — apply-decisions
+- **Decision letters differ between the decisions page and SPEC §12.** "q28 (b)" on the page meant "no default change",
+  while SPEC item 22's (b) is "cos 0.8 'center'". Write the meaning, not just the letter, when recording a decision.
+  — apply-decisions
+- **The test bed can't byte-check `normalTest: 'soft'`**: its smooth geometry never trips the hard normal test, so the
+  soft branch never runs there. Include a dense real capture (bistro-orbit) in any byte check of history-test defaults.
+  — apply-decisions

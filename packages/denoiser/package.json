@@ -70,6 +70,11 @@
             "import": "./dist/ffx.mjs",
             "require": "./dist/ffx.cjs"
         },
+        "./realtime": {
+            "types": "./dist/realtime.d.ts",
+            "import": "./dist/realtime.mjs",
+            "require": "./dist/realtime.cjs"
+        },
         "./webnn": {
             "types": "./dist/webnn.d.ts",
             "import": "./dist/webnn.mjs",
@@ -102,6 +107,9 @@
             ],
             "ffx": [
                 "./dist/ffx.d.ts"
+            ],
+            "realtime": [
+                "./dist/realtime.d.ts"
             ],
             "webnn": [
                 "./dist/webnn.d.ts"
@@ -146,6 +154,7 @@
         "@pmndrs/denoiser-ffx": "workspace:*",
         "@pmndrs/denoiser-kernels": "workspace:*",
         "@pmndrs/denoiser-ort": "workspace:*",
+        "@pmndrs/denoiser-realtime": "workspace:*",
         "@pmndrs/denoiser-three": "workspace:*",
         "@pmndrs/denoiser-webnn": "workspace:*",
         "@pmndrs/denoiser-wgsl": "workspace:*",

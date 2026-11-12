@@ -1,0 +1,15 @@
+capture C:\dev\nrd-reference\captures\golden-G2-occluder
+  ok   files                  {"frames":64,"buffers":18,"missing":0,"badSize":0}
+  ok   finite                 {"nonFinite":{}}
+  ok   ranges                 {"violations":{}}
+  ok   viewzNegativeInFront   {"scored":33177600,"positive":0,"beyondFar":0}
+  ok   normalsUnit            {"notUnit":0,"skyNonZero":0}
+  ok   normalsFaceCamera      {"backfacing":1079,"tested":8294400}
+  ok   depthMatchesViewz      {"maxRelErr":0.000005891}
+  ok   cameraContinuity       {"mismatches":[]}
+  ok   motionReprojection     {"static":false,"meanPx":0.003146,"p99Px":0.1369,"maxPx":0.3841,"over0_1px":110119,"tested":8294400}
+  ok   motionZReprojection    {"static":false,"meanAbs":0.000008149,"maxAbs":0.001071,"p99Rel":0.0001725}
+  ok   historyConsistency     {"consistentFraction":0.9993,"tested":8149239,"usedMotionZ":true}
+  warn unknown buffer "ao_ref" (1 ch): ignored by v0 readers
+  warn unknown specular demodulation "none"
+VALID

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>denoiser - golden scenes (headless contract, see GOLDEN.md)</title>
+    <style>
+      body { margin: 0; background: #111; color: #ccc; font: 13px/1.4 ui-monospace, monospace; }
+      canvas { display: block; max-width: 100%; background: #000; }
+      pre { margin: .5rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view" width="960" height="540"></canvas>
+    <pre id="status">starting...</pre>
+    <script type="module" src="./src/golden/main.ts"></script>
+  </body>
+</html>

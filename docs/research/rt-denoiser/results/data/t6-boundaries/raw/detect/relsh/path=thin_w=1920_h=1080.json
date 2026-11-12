@@ -1,0 +1,44 @@
+{
+ "query": "path=thin&w=1920&h=1080&det=shadows,shadows@normalThreshold=0.95@normalTest=relative,shadows@normalThreshold=0.8@normalTest=relative",
+ "W": 1920,
+ "H": 1080,
+ "frames": 96,
+ "channels": {
+  "shadows": {
+   "TP": 1039231,
+   "FP": 2696,
+   "FN": 284625,
+   "TN": 149864362,
+   "TPi": 463770,
+   "FPi": 1331,
+   "FNi": 135,
+   "TNi": 147974199,
+   "hard": 804387,
+   "FNhard": 352
+  },
+  "shadows@normalThreshold=0.95@normalTest=relative": {
+   "TP": 1039556,
+   "FP": 2698,
+   "FN": 284300,
+   "TN": 149864360,
+   "TPi": 463798,
+   "FPi": 1331,
+   "FNi": 107,
+   "TNi": 147974199,
+   "hard": 804387,
+   "FNhard": 51
+  },
+  "shadows@normalThreshold=0.8@normalTest=relative": {
+   "TP": 1039537,
+   "FP": 2697,
+   "FN": 284319,
+   "TN": 149864361,
+   "TPi": 463784,
+   "FPi": 1331,
+   "FNi": 121,
+   "TNi": 147974199,
+   "hard": 804387,
+   "FNhard": 70
+  }
+ }
+}

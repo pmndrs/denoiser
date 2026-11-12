@@ -18,6 +18,11 @@ WGSL and exposed as `denoiser/ffx`.
 > source-agnostic, so a neural temporal model (OIDN 3, once upstream ships it)
 > can implement it later.
 
+> [!TIP]
+> For our own per-signal denoisers (diffuse, specular, shadows, occlusion), written for
+> this API and exported as `denoiser/realtime`, see
+> [Real-time denoisers (experimental)](./realtime-denoisers).
+
 ## Which denoiser do I need?
 
 This package has two kinds of denoiser. They solve different problems, so the

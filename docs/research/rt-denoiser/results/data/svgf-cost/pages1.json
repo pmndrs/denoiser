@@ -1,0 +1,10 @@
+[
+ ["base default", 5351, "diffuse", "j-svgf-auto", ""],
+ ["base ynp0", 5351, "diffuse", "j-svgf-auto", "youngNormalPower=0"],
+ ["v1 young-only (no tiles)", 5361, "diffuse", "j-svgf-auto", ""],
+ ["v2 tiles 1,2 decoded", 5362, "diffuse", "j-svgf-auto", ""],
+ ["v3 tiles 1,2,4 decoded", 5363, "diffuse", "j-svgf-auto", ""],
+ ["v4 tiles 1,2,4 packed", 5364, "diffuse", "j-svgf-auto", ""],
+ ["v5 tiles 1,2,4 packed + 8 raw", 5365, "diffuse", "j-svgf-auto", ""],
+ ["v6 tiles 1-8 raw", 5366, "diffuse", "j-svgf-auto", ""]
+]

@@ -1,0 +1,115 @@
+[
+ {
+  "query": "signal=both&mode=bench&filter=recurrent",
+  "ready": true,
+  "results": {
+   "W": 1920,
+   "H": 1080,
+   "frames": 120,
+   "signal": "both",
+   "path": "orbit",
+   "filter": "recurrent",
+   "opts": {
+    "filter": "recurrent",
+    "tune": {}
+   },
+   "specFilter": null,
+   "noHistory": false,
+   "adapter": "Apple M5 Pro",
+   "timings": {
+    "prepass": {
+     "min": 0.183,
+     "median": 0.187
+    },
+    "diffuse/pre_blur": {
+     "min": 0.503,
+     "median": 0.52
+    },
+    "diffuse/temporal": {
+     "min": 0.501,
+     "median": 0.507
+    },
+    "diffuse/mips": {
+     "min": 0.078,
+     "median": 0.079
+    },
+    "diffuse/history_fix": {
+     "min": 0.308,
+     "median": 0.314
+    },
+    "diffuse/blur": {
+     "min": 0.352,
+     "median": 0.36
+    },
+    "diffuse/post_blur": {
+     "min": 0.216,
+     "median": 0.218
+    },
+    "diffuse/stabilize": {
+     "min": 0.306,
+     "median": 0.313
+    },
+    "specular/gradient_create": {
+     "min": 0.465,
+     "median": 0.473
+    },
+    "specular/gradient_atrous_0": {
+     "min": 0.099,
+     "median": 0.1
+    },
+    "specular/gradient_atrous_1": {
+     "min": 0.09,
+     "median": 0.091
+    },
+    "specular/gradient_atrous_2": {
+     "min": 0.074,
+     "median": 0.075
+    },
+    "specular/gradient_atrous_3": {
+     "min": 0.059,
+     "median": 0.06
+    },
+    "specular/gradient_atrous_4": {
+     "min": 0.058,
+     "median": 0.059
+    },
+    "specular/gradient_lambda": {
+     "min": 0.038,
+     "median": 0.038
+    },
+    "specular/temporal": {
+     "min": 0.439,
+     "median": 0.45
+    },
+    "specular/variance": {
+     "min": 0.376,
+     "median": 0.397
+    },
+    "specular/atrous_0": {
+     "min": 0.359,
+     "median": 0.363
+    },
+    "specular/atrous_1": {
+     "min": 0.359,
+     "median": 0.362
+    },
+    "specular/atrous_2": {
+     "min": 0.356,
+     "median": 0.359
+    },
+    "specular/atrous_3": {
+     "min": 0.352,
+     "median": 0.356
+    },
+    "specular/atrous_4": {
+     "min": 0.334,
+     "median": 0.337
+    },
+    "total": {
+     "min": 5.974,
+     "median": 6.194
+    }
+   }
+  }
+ }
+]

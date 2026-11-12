@@ -1,0 +1,47 @@
+diff --git a/examples/three-temporal/src/realtime/path.ts b/examples/three-temporal/src/realtime/path.ts
+index 4a17ae3..916e686 100644
+--- a/examples/three-temporal/src/realtime/path.ts
++++ b/examples/three-temporal/src/realtime/path.ts
+@@ -18,11 +18,11 @@
+ //   knot-orbit    the orbit's camera (frames 0..39 slow orbit, then the pan) with the knot rotating
+ //   knot-still    control: knot-static's camera with the knot frozen (static wide penumbrae only)
+ import * as THREE from 'three/webgpu';
+-import { SHOTS } from './scene';
++import { SHOTS, pose } from './scene';
+ 
+ export const PATH_FRAMES = 64;
+ export const PAN_START = 40;
+-export const PATH_NAMES = ['orbit', 'knot-static', 'knot-orbit', 'knot-still'] as const;
++export const PATH_NAMES = ['orbit', 'knot-static', 'knot-orbit', 'knot-still', 'knot-drift', 'knot-drift-close', 'knot-drift-frozen', 'knot-wide'] as const;
+ export type PathName = (typeof PATH_NAMES)[number];
+ /** `?path=` value -> path name (undefined = free-running page). */
+ export const pathName = (v: string | null): PathName | undefined => PATH_NAMES.find((n) => n === v);
+@@ -71,7 +71,7 @@ export function pathPose(camera: THREE.PerspectiveCamera, f: number) {
+ 
+ /** Knot yaw (rad) at path frame `f` of path `name` (0 = frozen). */
+ export function knotAngle(name: PathName, f: number): number {
+-  return name === 'orbit' || name === 'knot-still' ? 0 : KNOT_RATE * Math.max(0, Math.min(PATH_FRAMES - 1, f));
++  return name === 'orbit' || name === 'knot-still' || name === 'knot-drift-frozen' ? 0 : KNOT_RATE * Math.max(0, Math.min(PATH_FRAMES - 1, f));
+ }
+ 
+ /** Puts `camera` and the knot at path frame `f` of path `name` (updates their matrices). */
+@@ -80,6 +80,8 @@ export function scenePose(name: PathName, camera: THREE.PerspectiveCamera, knot:
+     camera.position.copy(KNOT_VIEW.position);
+     camera.lookAt(KNOT_VIEW.target);
+     camera.updateMatrixWorld();
++  } else if (name === 'knot-drift' || name === 'knot-drift-close' || name === 'knot-drift-frozen' || name === 'knot-wide') {
++    pose(camera, name === 'knot-drift-close' ? 1 : 0, name === 'knot-wide' ? 0 : f / 60);   // TRACK-S LOCAL PATCH: the free-running page's own camera drift
+   } else pathPose(camera, f);
+   knot.rotation.set(KNOT_TILT, knotAngle(name, f), 0);
+   knot.updateMatrixWorld();
+@@ -91,6 +93,10 @@ export const PATH_DESCRIPTIONS: Record<PathName, string> = {
+   orbit: PATH_DESCRIPTION,
+   'knot-static': 'knot-static: static close-up camera on the torus knot, its pedestal and its shadow on the back wall / floor; the knot rotates 0.35/60 rad per frame about its tilted axis (the free-running pages\' rate)',
+   'knot-still': 'knot-still: control for knot-static: the same static camera, torus knot frozen',
++  'knot-drift': 'knot-drift (TRACK-S LOCAL PATCH): the free-running realtime-shadows page, wide shot: pose(camera, 0, f / 60) drift + knot rotating',
++  'knot-drift-close': 'knot-drift-close (TRACK-S LOCAL PATCH): free-running page, shot 1 (cut): pose(camera, 1, f / 60) drift + knot rotating',
++  'knot-drift-frozen': 'knot-drift-frozen (TRACK-S LOCAL PATCH): knot-drift with the knot frozen (control)',
++  'knot-wide': 'knot-wide (TRACK-S LOCAL PATCH): knot-drift with the camera held at its frame-0 pose (control)',
+   'knot-orbit': 'knot-orbit: the orbit path\'s camera (frames 0-39 slow orbit, 40-63 fast pan) with the torus knot rotating 0.35/60 rad per frame',
+ };
+ 

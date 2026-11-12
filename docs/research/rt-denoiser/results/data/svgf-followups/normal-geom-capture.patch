@@ -1,0 +1,65 @@
+diff --git a/examples/three-temporal/src/realtime-scenes.ts b/examples/three-temporal/src/realtime-scenes.ts
+index 86431be..5b51c34 100644
+--- a/examples/three-temporal/src/realtime-scenes.ts
++++ b/examples/three-temporal/src/realtime-scenes.ts
+@@ -20,11 +20,13 @@
+ //                                   writes CAPTURE-FORMAT v0 captures with per-pose converged references
+ //                                   (`node run-realtime.mjs capture --set=sponza-orbit`, CAPTURES.md "Bistro and Sponza")
+ //   &cull=x0,y0,z0,x1,y1,z1          keep only triangles whose centroid is in that box (a documented subset)
++//   &normalGeom=1 (capture mode)     also write normal_geom (the interpolated vertex normal without the normal map,
++//                                   CAPTURE-FORMAT v1); results/SVGF-FOLLOWUPS.md
+ import * as THREE from 'three/webgpu';
+ import {
+   float, vec2, vec3, vec4, uniform, uint, screenCoordinate, pass, mrt, diffuseColor, normalView,
+   materialMetalness, materialRoughness, packNormalToRGB, unpackRGBToNormal, velocity, getViewPosition,
+-  convertToTexture, renderOutput, uv, select, sample, texture, output, mix,
++  convertToTexture, renderOutput, uv, select, sample, texture, output, mix, normalViewGeometry, faceDirection,
+ } from 'three/tsl';
+ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+ import { MeshBVH, SAH } from 'three-mesh-bvh';
+@@ -67,6 +69,7 @@ export async function main(log: (m: string) => void) {
+   const pathDef = pathOf(cfg, q.get('path'));
+   if (q.get('path') && !pathDef) throw new Error(`unknown ?path=${q.get('path')} for ${sceneId} (${cfg.paths.map((p) => p.name).join(', ')})`);
+   const capMode = !!pathDef && q.get('ref') === '1';
++  const capNormalGeom = capMode && q.get('normalGeom') === '1';
+   // reference rays per pixel per rendered frame. Kept small (4 diffuse, 2x2 visibility) so one frame's GPU work stays
+   // short: 16 + 4x4 per frame (the corner's) made ~0.5 s frames here, and under GPU contention the capture page lost
+   // its device or was reloaded every few poses
+@@ -291,8 +294,10 @@ export async function main(log: (m: string) => void) {
+ 
+   // ---- graph ------------------------------------------------------------------------
+   const scenePass = pass(scene, camera);
++  // &normalGeom=1: the scene's own lit colour (`output`, read by nothing here) carries the geometric normal instead (a
++  // fifth rgba16float target would exceed the 32-byte colour-attachment limit)
+   scenePass.setMRT(mrt({
+-    output,
++    output: capNormalGeom ? vec4(packNormalToRGB(normalViewGeometry.mul(faceDirection)), 0) : output,
+     diffuseColor: vec4(diffuseColor.rgb, materialMetalness),
+     normal: vec4(packNormalToRGB(normalView), materialRoughness),
+     velocity: vec4(velocity as N, 0, 1),
+@@ -402,6 +407,8 @@ export async function main(log: (m: string) => void) {
+       motion: convertToTexture(vec4(motion, 0, 0), null, null, f32),
+       albedo: convertToTexture(vec4(a.rgb.mul(float(1).sub(a.a)), 0), null, null, f32),
+       f0: convertToTexture(vec4(mix(vec3(0.04), a.rgb, a.a), 0), null, null, f32),
++      ...(capNormalGeom ? { normalGeom: convertToTexture(vec4(select(sky, vec3(0),
++        camWorld.mul(vec4(unpackRGBToNormal(scenePass.getTextureNode('output').sample(uv()).rgb), 0)).xyz.normalize()), 0), null, null, f32) } : {}),
+     };
+   })() : null;
+ 
+@@ -433,7 +440,7 @@ export async function main(log: (m: string) => void) {
+       col = select(edge, vec3(1, 1, 1), select(left, colorOf(sig, otherSide), colorOf(sig, 'ours')));
+     } else col = colorOf(sig, view === 'other' ? otherSide : view);
+     if (capGuides) {
+-      const keep = [capGuides.g1, capGuides.normal, capGuides.motion, capGuides.albedo, capGuides.f0, difRTT, shRTT]
++      const keep = [capGuides.g1, capGuides.normal, capGuides.motion, capGuides.albedo, capGuides.f0, difRTT, shRTT, ...(capGuides.normalGeom ? [capGuides.normalGeom] : [])]
+         .reduce((acc: N, t: N) => acc.add(t.sample(uv()).x), float(0) as N)
+         .add((visRef as N).r).add((difRef as N).r).add((specRef as N).r).add(ssrNode.a);
+       col = (difRef as N).rgb.add(vec3(keep.mul(0)));
+@@ -647,6 +654,7 @@ export async function main(log: (m: string) => void) {
+         motion: chan(await rd(rt(capGuides.motion)), [0, 1]),
+         albedo: chan(await rd(rt(capGuides.albedo)), [0, 1, 2]),
+         f0: chan(await rd(rt(capGuides.f0)), [0, 1, 2]),
++        ...(capGuides.normalGeom ? { normal_geom: chan(await rd(rt(capGuides.normalGeom)), [0, 1, 2]) } : {}),
+       };
+       const dif = await rd(rt(difRTT));
+       bufs.diffuse = chan(dif, [0, 1, 2]); bufs.diffuse_hitt = chan(dif, [3]);
