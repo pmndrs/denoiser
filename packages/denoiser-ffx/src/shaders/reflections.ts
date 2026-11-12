@@ -108,6 +108,14 @@ fn sampleAffinity(pt: f32, ps: f32, qt: f32, qs: f32) -> f32 {
   return w;
 }
 fn rayLengthOrMiss(t: f32) -> f32 { return select(t, P.missDistance, t <= 0.0); }
+// Which hit sources a workgroup's 16x16 neighbourhood holds (one bit per code): where it holds one
+// (or, with bit 3, one hit source plus misses) and no hit-distance weight is on, every affinity is
+// 1 and the shaders take FFX's own path.
+fn sourceBit(code: f32) -> u32 { return 1u << min(u32(code), 31u); }
+fn groupNeedsAffinity(mask: u32) -> bool {
+  if ((P.sampleFlags & 2u) != 0u) { return true; }
+  return countOneBits(select(mask, mask & 6u, (P.sampleFlags & 8u) != 0u)) > 1u;
+}
 
 fn isGlossyReflection(roughness: f32) -> bool { return roughness < P.roughnessThreshold; }
 fn isMirrorReflection(roughness: f32) -> bool { return roughness < 0.0001; }
@@ -530,6 +538,7 @@ struct NS { radiance: vec3f, variance: f32, normal: vec3f, depth: f32 };
 var<workgroup> wg_rv: array<array<vec4f, 16>, 16>;  // radiance, variance
 var<workgroup> wg_nd: array<array<vec4f, 16>, 16>;  // normal, linear depth
 var<workgroup> wg_ts: array<array<vec2f, 16>, 16>;  // ray length, hit source (port addition)
+var<workgroup> wg_source_mask: atomic<u32>;          // port addition (sourceBit)
 
 fn loadNS(idx: vec2i) -> NS {
   let a = wg_rv[idx.y][idx.x];
@@ -551,7 +560,11 @@ fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
     wg_rv[q.y][q.x] = vec4f(radiance, variance);
     wg_nd[q.y][q.x] = vec4f(normal, depth);
     if (P.sampleFlags != 0u) {
-      wg_ts[q.y][q.x] = vec2f(rayLengthOrMiss(textureLoad(t_raylength, p, 0).r), floor(textureLoad(t_hit_source, p, 0).r + 0.5));
+      let code = floor(textureLoad(t_hit_source, p, 0).r + 0.5);
+      var t = 0.0;
+      if ((P.sampleFlags & 2u) != 0u) { t = rayLengthOrMiss(textureLoad(t_raylength, p, 0).r); }
+      wg_ts[q.y][q.x] = vec2f(t, code);
+      atomicOr(&wg_source_mask, sourceBit(code));
     }
   }
 }
@@ -573,8 +586,13 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
   let inb = all(gdid.xy < P.renderSize);
   let pd = clampPx(did);
   let center_roughness = toLinearRoughness(textureLoad(t_normrough, pd, 0).w);
+  if (P.sampleFlags != 0u) {
+    if (all(lid.xy == vec2u(0u))) { atomicStore(&wg_source_mask, 0u); }
+    workgroupBarrier();
+  }
   initializeGroupSharedMemory(did, gtid);
   workgroupBarrier();
+  let affine = P.sampleFlags != 0u && groupNeedsAffinity(atomicLoad(&wg_source_mask));
   gtid += 4;
   let center = loadNS(gtid);
   var resolved_radiance = center.radiance;
@@ -595,7 +613,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
       w *= edgeStoppingDepthWeight(center.depth, nb.depth);
       w *= radianceWeight(avg_radiance, nb.radiance, center.variance);
       w *= variance_weight;
-      if (P.sampleFlags != 0u) {
+      if (affine) {
         let ct = wg_ts[gtid.y][gtid.x];
         let nq = gtid + SAMPLE_OFFSETS[i];
         let nt = wg_ts[nq.y][nq.x];
@@ -632,6 +650,7 @@ ${REFLECTION_PARAMS_WGSL}
 const RADIANCE_THRESHOLD: f32 = 0.0001;
 var<workgroup> wg_radiance: array<array<vec3f, 16>, 16>;
 var<workgroup> wg_ts: array<array<vec2f, 16>, 16>;  // ray length, hit source (port addition)
+var<workgroup> wg_source_mask: atomic<u32>;          // port addition (sourceBit)
 
 fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
   let did = did_in - 4;
@@ -641,7 +660,11 @@ fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
     wg_radiance[q.y][q.x] = textureLoad(t_radiance, clampPx(did + offs[i]), 0).xyz;
     if ((P.sampleFlags & 4u) != 0u) {
       let p = clampPx(did + offs[i]);
-      wg_ts[q.y][q.x] = vec2f(rayLengthOrMiss(textureLoad(t_raylength, p, 0).r), floor(textureLoad(t_hit_source, p, 0).r + 0.5));
+      let code = floor(textureLoad(t_hit_source, p, 0).r + 0.5);
+      var t = 0.0;
+      if ((P.sampleFlags & 2u) != 0u) { t = rayLengthOrMiss(textureLoad(t_raylength, p, 0).r); }
+      wg_ts[q.y][q.x] = vec2f(t, code);
+      atomicOr(&wg_source_mask, sourceBit(code));
     }
   }
 }
@@ -707,8 +730,13 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
   let inb = all(gdid.xy < P.renderSize);
   let pd = clampPx(did);
   let history_clip_weight = P.temporalStabilityFactor;
+  if ((P.sampleFlags & 4u) != 0u) {
+    if (all(lid.xy == vec2u(0u))) { atomicStore(&wg_source_mask, 0u); }
+    workgroupBarrier();
+  }
   initializeGroupSharedMemory(did, gtid);
   workgroupBarrier();
+  let affine = (P.sampleFlags & 4u) != 0u && groupNeedsAffinity(atomicLoad(&wg_source_mask));
   gtid += 4;
   let radiance = wg_radiance[gtid.y][gtid.x];
   if (radiance.x + radiance.y + radiance.z < RADIANCE_THRESHOLD) {
@@ -727,7 +755,7 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
     var avg_radiance = textureSampleLevel(t_avg_radiance, s_linear, uv8, 0.0).xyz;
     let old_signal = textureLoad(t_reprojected, pd, 0).xyz;
     var ln: Moments;
-    if ((P.sampleFlags & 4u) == 0u) {
+    if (!affine) {
       ln = estimateLocalNeighborhoodInGroup(gtid);
     } else {
       // port addition: statistics of the centre's own samples; where the 8x8 average mixes in
