@@ -79,6 +79,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   private normRough: GPUTexture[] = [];
   private result: GPUTexture[] = [];        // rgba16float: temporal result = output + radiance history
   private finalVariance: GPUTexture[] = []; // r32float
+  private lastVariance?: GPUTexture;        // finalVariance[cur] of the last dispatch
   private sampleCount: GPUTexture[] = [];   // r32float
   private avgRadiance: GPUTexture[] = [];   // rgba16float, ceil(W/8) x ceil(H/8)
   private reprojected?: GPUTexture;
@@ -105,6 +106,19 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
+
+  /**
+   * The temporal variance written by the last dispatch() (r32float, configured size;
+   * FFX's `variance` output of resolve_temporal), or undefined before the first
+   * dispatch. This is what FFX SSSR's classifier reads as its variance history to
+   * trace extra rays where the denoiser is unsure (variance-guided tracing): read it
+   * after this frame's dispatch() and before the next one, e.g. in next frame's tracer.
+   * The texture alternates between two allocations frame to frame and is replaced on
+   * configure(), so fetch it every frame. Read-only: bind it for sampling only.
+   * Meaningful only where roughness < roughnessThreshold; it is 0 where the radiance
+   * is black, and rougher pixels carry whatever passed through the earlier passes.
+   */
+  get variance(): GPUTexture | undefined { return this.lastVariance; }
 
   private createPipelines() {
     const d = this.device;
@@ -254,6 +268,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
 
     this.needsReset = false;
     this.frame++;
+    this.lastVariance = this.finalVariance[cur];
     return this.result[cur];
   }
 
@@ -261,6 +276,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<SpecularInputs> {
     for (const t of [...this.depth, ...this.normRough, ...this.result, ...this.finalVariance, ...this.sampleCount, ...this.avgRadiance]) t.destroy();
     for (const t of [this.reprojected, this.reprojVariance, this.prefiltered, this.prefilterVariance]) t?.destroy();
     this.depth = []; this.normRough = []; this.result = []; this.finalVariance = []; this.sampleCount = []; this.avgRadiance = [];
+    this.lastVariance = undefined;
     this.reprojected = this.reprojVariance = this.prefiltered = this.prefilterVariance = undefined;
   }
 
