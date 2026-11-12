@@ -52,6 +52,14 @@
 // - OOB texel fetches at the screen border are clamped (FFX relies on robust
 //   buffer access returning 0).
 // - isnan/isinf are bit tests (WGSL lets compilers assume finite math).
+// - Port addition, off by default (P.sampleFlags = 0 runs the source's math unchanged): sample
+//   affinity in the prefilter's neighbour weights and the temporal resolve's local statistics.
+//   FFX filters one radiance signal with normal / depth / roughness weights only, so a dark
+//   ray-traced hit next to a bright screen-space hit on the same surface blends with it.
+//   Bits: 1 keeps samples of different hit sources apart (SpecularInputs.hitSource: miss / screen /
+//   traced); 2 weights by relative hit distance, exp(-k |t_p - t_q| / (t_p + t_q)); 4 applies them
+//   to the resolve's statistics too (else the prefilter only); 8 lets a miss match any source;
+//   16 keeps FFX's clip box width in the resolve, centred on the centre's own samples.
 
 export const REFLECTION_PARAMS_WGSL = /* wgsl */ `
 struct Params {
@@ -69,6 +77,8 @@ struct Params {
   missDistance: f32,
   tileCountIndex: u32,  // tiled passes: u32 index of the tile count in tile_count
   tileListBase: u32,    // tiled passes: u32 index of the first tile in tile_list
+  sampleFlags: u32,    // port addition: sample affinity bits (0 = FFX as is)
+  hitDistanceWeight: f32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -87,6 +97,17 @@ const DISOCCLUSION_THRESHOLD: f32 = 0.9;
 const REPROJECTION_NORMAL_SIMILARITY_THRESHOLD: f32 = 0.9999;
 const LOCAL_NEIGHBORHOOD_RADIUS: i32 = 4;
 fn samplesForRoughness(r: f32) -> f32 { return 1.0 - exp(-r * 100.0); }
+
+// Port addition (off when P.sampleFlags == 0): how much sample q may stand in for p, from each
+// one's ray length (misses at P.missDistance) and hit source code.
+fn sampleAffinity(pt: f32, ps: f32, qt: f32, qs: f32) -> f32 {
+  var w = 1.0;
+  // bit 3: a miss (code 0) has affinity with any source; only two different hit sources are kept apart
+  if ((P.sampleFlags & 1u) != 0u && abs(ps - qs) > 0.5 && ((P.sampleFlags & 8u) == 0u || (ps > 0.5 && qs > 0.5))) { w = 0.0; }
+  if ((P.sampleFlags & 2u) != 0u) { w *= exp(-P.hitDistanceWeight * abs(pt - qt) / max(pt + qt, 1.0e-6)); }
+  return w;
+}
+fn rayLengthOrMiss(t: f32) -> f32 { return select(t, P.missDistance, t <= 0.0); }
 
 fn isGlossyReflection(roughness: f32) -> bool { return roughness < P.roughnessThreshold; }
 fn isMirrorReflection(roughness: f32) -> bool { return roughness < 0.0001; }
@@ -502,10 +523,13 @@ ${REFLECTION_PARAMS_WGSL}
 @group(0) @binding(6) var s_linear: sampler;
 @group(0) @binding(7) var o_radiance: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(8) var o_variance: texture_storage_2d<r32float, write>;
+@group(0) @binding(9) var t_raylength: texture_2d<f32>;
+@group(0) @binding(10) var t_hit_source: texture_2d<f32>;
 
 struct NS { radiance: vec3f, variance: f32, normal: vec3f, depth: f32 };
 var<workgroup> wg_rv: array<array<vec4f, 16>, 16>;  // radiance, variance
 var<workgroup> wg_nd: array<array<vec4f, 16>, 16>;  // normal, linear depth
+var<workgroup> wg_ts: array<array<vec2f, 16>, 16>;  // ray length, hit source (port addition)
 
 fn loadNS(idx: vec2i) -> NS {
   let a = wg_rv[idx.y][idx.x];
@@ -526,6 +550,9 @@ fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
     let depth = getLinearDepth(uv, textureLoad(t_depth, p, 0).x);
     wg_rv[q.y][q.x] = vec4f(radiance, variance);
     wg_nd[q.y][q.x] = vec4f(normal, depth);
+    if (P.sampleFlags != 0u) {
+      wg_ts[q.y][q.x] = vec2f(rayLengthOrMiss(textureLoad(t_raylength, p, 0).r), floor(textureLoad(t_hit_source, p, 0).r + 0.5));
+    }
   }
 }
 
@@ -568,6 +595,12 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
       w *= edgeStoppingDepthWeight(center.depth, nb.depth);
       w *= radianceWeight(avg_radiance, nb.radiance, center.variance);
       w *= variance_weight;
+      if (P.sampleFlags != 0u) {
+        let ct = wg_ts[gtid.y][gtid.x];
+        let nq = gtid + SAMPLE_OFFSETS[i];
+        let nt = wg_ts[nq.y][nq.x];
+        w *= sampleAffinity(ct.x, ct.y, nt.x, nt.y);
+      }
       accumulated_weight += w;
       accumulated_radiance += w * nb.radiance;
       accumulated_variance += w * w * nb.variance;
@@ -593,9 +626,12 @@ ${REFLECTION_PARAMS_WGSL}
 @group(0) @binding(7) var s_linear: sampler;
 @group(0) @binding(8) var o_radiance: texture_storage_2d<rgba16float, write>;
 @group(0) @binding(9) var o_variance: texture_storage_2d<r32float, write>;
+@group(0) @binding(10) var t_raylength: texture_2d<f32>;
+@group(0) @binding(11) var t_hit_source: texture_2d<f32>;
 
 const RADIANCE_THRESHOLD: f32 = 0.0001;
 var<workgroup> wg_radiance: array<array<vec3f, 16>, 16>;
+var<workgroup> wg_ts: array<array<vec2f, 16>, 16>;  // ray length, hit source (port addition)
 
 fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
   let did = did_in - 4;
@@ -603,6 +639,10 @@ fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
   for (var i = 0; i < 4; i++) {
     let q = gtid + offs[i];
     wg_radiance[q.y][q.x] = textureLoad(t_radiance, clampPx(did + offs[i]), 0).xyz;
+    if ((P.sampleFlags & 4u) != 0u) {
+      let p = clampPx(did + offs[i]);
+      wg_ts[q.y][q.x] = vec2f(rayLengthOrMiss(textureLoad(t_raylength, p, 0).r), floor(textureLoad(t_hit_source, p, 0).r + 0.5));
+    }
   }
 }
 
@@ -624,6 +664,40 @@ fn estimateLocalNeighborhoodInGroup(gtid: vec2i) -> Moments {
   m.variance /= acc;
   m.variance = abs(m.variance - m.mean * m.mean);
   return m;
+}
+
+// Port addition: the same moments over the neighbours whose samples have affinity with the centre
+// (sampleAffinity), and over all of them (FFX's) in the same loop. mixed = some neighbour was
+// weighted down (the 8x8 average then mixes sources).
+struct AffineMoments { m: Moments, full: Moments, mixed: bool };
+fn estimateAffineNeighborhoodInGroup(gtid: vec2i) -> AffineMoments {
+  var m = Moments(vec3f(0.0), vec3f(0.0));
+  var f = Moments(vec3f(0.0), vec3f(0.0));
+  var acc = 0.0;
+  var full = 0.0;
+  let c = wg_ts[gtid.y][gtid.x];
+  for (var j = -LOCAL_NEIGHBORHOOD_RADIUS; j <= LOCAL_NEIGHBORHOOD_RADIUS; j++) {
+    for (var i = -LOCAL_NEIGHBORHOOD_RADIUS; i <= LOCAL_NEIGHBORHOOD_RADIUS; i++) {
+      let q = gtid + vec2i(i, j);
+      let radiance = wg_radiance[q.y][q.x];
+      let t = wg_ts[q.y][q.x];
+      let k = localNeighborhoodKernelWeight(f32(i)) * localNeighborhoodKernelWeight(f32(j));
+      let w = k * sampleAffinity(c.x, c.y, t.x, t.y);
+      full += k;
+      f.mean += radiance * k;
+      f.variance += radiance * radiance * k;
+      acc += w;
+      m.mean += radiance * w;
+      m.variance += radiance * radiance * w;
+    }
+  }
+  m.mean /= acc; // the centre has affinity 1 with itself, so acc > 0
+  m.variance /= acc;
+  m.variance = abs(m.variance - m.mean * m.mean);
+  f.mean /= full;
+  f.variance /= full;
+  f.variance = abs(f.variance - f.mean * f.mean);
+  return AffineMoments(m, f, acc < 0.999 * full);
 }
 
 @compute @workgroup_size(8, 8)
@@ -650,9 +724,25 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
   if (isGlossyReflection(roughness)) {
     let num_samples = textureLoad(t_sample_count, pd, 0).x;
     let uv8 = (vec2f(did) + 0.5) / vec2f(roundUp8(P.renderSize));
-    let avg_radiance = textureSampleLevel(t_avg_radiance, s_linear, uv8, 0.0).xyz;
+    var avg_radiance = textureSampleLevel(t_avg_radiance, s_linear, uv8, 0.0).xyz;
     let old_signal = textureLoad(t_reprojected, pd, 0).xyz;
-    var ln = estimateLocalNeighborhoodInGroup(gtid);
+    var ln: Moments;
+    if ((P.sampleFlags & 4u) == 0u) {
+      ln = estimateLocalNeighborhoodInGroup(gtid);
+    } else {
+      // port addition: statistics of the centre's own samples; where the 8x8 average mixes in
+      // other ones, their local mean stands in for it
+      let a = estimateAffineNeighborhoodInGroup(gtid);
+      ln = a.m;
+      if (a.mixed) {
+        if ((P.sampleFlags & 16u) != 0u) {
+          // bit 4: centre the boxes on the centre's own samples, but keep FFX's box width
+          let w = sqrt(a.full.variance) + length(a.full.mean - avg_radiance);
+          ln = Moments(a.m.mean, w * w);
+        }
+        avg_radiance = a.m.mean;
+      }
+    }
     // Clip history based on the current local statistics
     let color_std = (sqrt(ln.variance) + length(ln.mean - avg_radiance)) * history_clip_weight * 1.4;
     ln.mean = mix(ln.mean, avg_radiance, vec3f(0.2));

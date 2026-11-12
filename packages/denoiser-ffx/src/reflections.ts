@@ -93,7 +93,36 @@ export interface FfxReflectionDenoiserOptions {
   currentFrameStatistics?: boolean;
   /** Per-pass GPU timestamps into `gpuTimings` when the device supports them. Default true. */
   timestamps?: boolean;
+  /**
+   * Port addition (default false: FFX as is). Keep samples from different hit sources apart, for
+   * hybrid reflections where a dark ray-traced hit sits next to a bright screen-space hit on the
+   * same surface (FFX's weights are normal / depth / roughness only, so it blends them). Needs
+   * `inputs.hitSource` (`HIT_SOURCE` codes: miss / screen / traced); without it, nothing changes.
+   * - prefilter: a neighbour of another source gets weight 0;
+   * - temporal resolve: where the 9x9 neighbourhood mixes sources, the history clip box and the
+   *   8x8-average stand-in are centred on the mean of the centre's own source. The box keeps FFX's
+   *   width (from the whole neighbourhood): a box from one source's spread alone keeps much less
+   *   history and boiled several times more in testing.
+   */
+  separateHitSources?: boolean;
+  /**
+   * With `separateHitSources`: a miss (the probe / environment fallback) blends with either hit
+   * source, so only screen-space and traced hits are kept apart. Steadier where rays flip between
+   * hit and miss from frame to frame; keeps less of the separation where misses are bright.
+   * Default false.
+   */
+  missesMatchAnySource?: boolean;
+  /**
+   * Port addition (default 0: off). Weight neighbours by relative hit distance,
+   * exp(-k |t_p - t_q| / (t_p + t_q)) (misses at `missDistance`), in the same places as
+   * `separateHitSources`. Needs no extra input. 8 puts a neighbour twice as far at ~0.07.
+   */
+  hitDistanceWeight?: number;
 }
+
+/** The options `setOptions` can change between frames. */
+export type FfxReflectionDenoiserRuntimeOptions = Pick<FfxReflectionDenoiserOptions,
+  'temporalStabilityFactor' | 'separateHitSources' | 'missesMatchAnySource' | 'hitDistanceWeight'>;
 
 const PARAMS_SIZE = 256;
 // Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
@@ -116,6 +145,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
 
   private params: GPUBuffer;
   private sampler: GPUSampler;
+  private noHitSource: GPUTexture;
   private layouts: Record<string, GPUBindGroupLayout> = {};
   private pipes: Record<string, GPUComputePipeline> = {};
   private tiledPipes?: Record<string, GPUComputePipeline>; // created on the first tiled dispatch
@@ -142,14 +172,27 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       missDistance: options.missDistance,
       currentFrameStatistics: options.currentFrameStatistics ?? true,
       timestamps: options.timestamps ?? true,
+      separateHitSources: options.separateHitSources ?? false,
+      hitDistanceWeight: options.hitDistanceWeight ?? 0,
+      missesMatchAnySource: options.missesMatchAnySource ?? false,
     };
     const mvs = options.motionVectorScale ?? [-0.5, 0.5];
     this.motionVectorScale = [mvs[0], mvs[1]];
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+    // bound in place of a missing hitSource (never read: the shaders test the flags first)
+    this.noHitSource = device.createTexture({ label: 'ffx-reflections no hit source', size: [1, 1], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING });
     this.createPipelines();
   }
+
+  /** Change the options that need no new resources (the next dispatch uses them). */
+  setOptions(options: FfxReflectionDenoiserRuntimeOptions): void {
+    for (const [k, v] of Object.entries(options)) if (v !== undefined) (this.opts as Record<string, unknown>)[k] = v;
+  }
+
+  /** The current options. */
+  get options(): Readonly<FfxReflectionDenoiserOptions> { return { ...this.opts }; }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
 
@@ -189,11 +232,11 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     });
     this.layouts.prefilter = d.createBindGroupLayout({
       label: 'ffx-reflections prefilter',
-      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), smp(6), sto(7, 'rgba16float'), sto(8, 'r32float')],
+      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), smp(6), sto(7, 'rgba16float'), sto(8, 'r32float'), tex(9), tex(10)],
     });
     this.layouts.resolve = d.createBindGroupLayout({
       label: 'ffx-reflections resolve_temporal',
-      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), tex(6), smp(7), sto(8, 'rgba16float'), sto(9, 'r32float')],
+      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), tex(6), smp(7), sto(8, 'rgba16float'), sto(9, 'r32float'), tex(10), tex(11)],
     });
     this.layouts.tiles = d.createBindGroupLayout({
       label: 'ffx-reflections tiles',
@@ -260,7 +303,8 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     if (!guides.roughness) throw new Error('FfxReflectionDenoiser: guides.roughness is required');
     const { width: W, height: H } = this;
     for (const [k, t] of [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance], ['depth', guides.depth],
-      ['normal', guides.normal], ['motion', guides.motion], ['roughness', guides.roughness]] as const) {
+      ['normal', guides.normal], ['motion', guides.motion], ['roughness', guides.roughness],
+      ...(inputs.hitSource ? [['hitSource', inputs.hitSource] as const] : [])] as const) {
       if (t.width !== W || t.height !== H) throw new Error(`FfxReflectionDenoiser: ${k} is ${t.width}x${t.height}, configured ${W}x${H}`);
     }
     const d = this.device;
@@ -287,6 +331,15 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     f[59] = this.opts.missDistance ?? camera.far;
     u32[60] = tiles?.count ? (tiles.countOffset ?? 0) / 4 : 0;
     u32[61] = (tiles?.listOffset ?? 0) / 4;
+    // port addition: sample affinity (0 = FFX as is), after the tile fields; f[63] is the last
+    // word of PARAMS_SIZE (256 B = 64 words)
+    const sourceOn = this.opts.separateHitSources && !!inputs.hitSource;
+    const distanceOn = this.opts.hitDistanceWeight > 0;
+    // bits (shaders/reflections.ts): 1 source, 2 distance, 4 resolve, 8 misses match any, 16 FFX box width
+    u32[62] = sourceOn || distanceOn
+      ? (sourceOn ? 1 : 0) | (distanceOn ? 2 : 0) | 4 | 16 | (sourceOn && this.opts.missesMatchAnySource ? 8 : 0)
+      : 0;
+    f[63] = this.opts.hitDistanceWeight;
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-reflections' });
@@ -346,11 +399,12 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     ]), true);
     run('prefilter', 'prefilter', bg('prefilter', [
       v(this.depth[cur]), v(this.normRough[cur]), v(inputs.radiance), v(this.reprojVariance!), v(this.avgRadiance[statIdx]),
-      this.sampler, v(this.prefiltered!), v(this.prefilterVariance!),
+      this.sampler, v(this.prefiltered!), v(this.prefilterVariance!), v(inputs.hitDistance), v(inputs.hitSource ?? this.noHitSource),
     ]), true);
     run('resolve_temporal', 'resolve', bg('resolve', [
       v(this.normRough[cur]), v(this.prefiltered!), v(this.prefilterVariance!), v(this.sampleCount[statIdx]),
       v(this.avgRadiance[statIdx]), v(this.reprojected), this.sampler, v(this.result[cur]), v(this.finalVariance[cur]),
+      v(inputs.hitDistance), v(inputs.hitSource ?? this.noHitSource),
     ]), true);
     const after = this.timer?.end(enc);
     d.queue.submit([enc.finish()]);
@@ -374,6 +428,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     this.destroyTargets();
     this.params.destroy();
     this.noCount?.destroy();
+    this.noHitSource.destroy();
     this.timer?.destroy();
   }
 }

@@ -157,7 +157,24 @@ export interface SpecularInputs {
   direction?: GPUTexture;
   /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
   sh?: GPUTexture;
+  /**
+   * Optional: which pass produced each pixel's sample, as a `HIT_SOURCE` code in .r of a float
+   * texture (r32float / r16float, read with textureLoad). Denoisers that support it can keep
+   * samples from different sources apart (e.g. a screen-space hit next to a ray-traced one).
+   * Denoisers that don't, ignore it.
+   */
+  hitSource?: GPUTexture;
 }
+
+/** Codes of `SpecularInputs.hitSource`. */
+export const HIT_SOURCE = {
+  /** No hit: the fallback (probe / environment), or nothing traced. */
+  miss: 0,
+  /** A screen-space hit (the depth buffer). */
+  screen: 1,
+  /** A ray-traced hit (geometry, e.g. a BVH). */
+  traced: 2,
+} as const;
 
 /** Diffuse indirect (GI) / ambient occlusion: 1 sample per pixel. */
 export interface DiffuseInputs {
