@@ -546,6 +546,7 @@ const BRDF_PREFILTER_DECL_WGSL = /* wgsl */ `
 // or 0 where the pixel has no sample (direction.w <= 0)
 var<workgroup> wg_hp: array<array<vec4f, 16>, 16>;
 const BRDF_PI: f32 = 3.14159265358979;
+const BRDF_MAX_WEIGHT: f32 = 1.0e8;
 
 fn worldPositionAt(uv: vec2f, z: f32) -> vec3f { return viewSpaceToWorldSpace(vec4f(screenSpaceToViewSpace(vec3f(uv, z)), 1.0)); }
 fn loadBrdfSample(p: vec2i, uv: vec2f) -> vec4f {
@@ -583,8 +584,10 @@ fn brdfRatio(c: BrdfCentre, e: vec4f) -> f32 {
   if (NdotL <= 0.0) { return 0.0; }
   let h = safeNormalize(c.V + L);
   let f = brdfGgxD(c.a2, max(dot(c.N, h), 0.0)) * c.G1V * brdfSmithG1(c.a2, NdotL) / (4.0 * c.NdotV);
+  // capped at 1e8: the prefilter squares the weights for the variance (w^2 at 1e30 overflows f32 to Inf, then
+  // NaN, a black pixel and a dropped history); non-finite / non-positive weights skip the sample
   let w = f / abs(e.w);
-  return select(0.0, w, w > 0.0 && w < 1.0e30);
+  return select(0.0, min(w, BRDF_MAX_WEIGHT), w > 0.0 && !notFinite(w));
 }
 `;
 
