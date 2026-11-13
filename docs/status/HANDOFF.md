@@ -23,6 +23,26 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 - **Still open:** #27 (reflection pages on `@pmndrs/reflections`; do not merge until that package is released). #15 (jitter study) was closed. The denoiser → upscaler chain is tracked in #30,
   and the branch `exp/jitter-study` is kept.
 
+## 2026-11-13: branch `w78-brdf-prefilter` (not pushed, no PR; @pmndrs/reflections W78)
+
+Off by default, all in `setOptions`; `PARAMS_SIZE` 256 -> 272 (word 64 resolve flags, 65-67 BRDF). With them off the
+output equals main (@pmndrs/reflections' hashes on 6 captures; the test bed eval 23.4556 dB / flicker 0.00803).
+
+- **`keepHistoryOnBlack`** (`ba5e88d`, test bed `&keepBlack=1` `a9f5769`): the first two commits, on main as is, so
+  they can become a standalone PR. FFX's resolve writes 0 to the output and the history wherever a frame's prefiltered
+  radiance is black, so a sparse glossy reflection over a dark environment never builds up (@pmndrs/reflections'
+  line-spread gate, r 0.15: lost -> x0.95-1.06 of the path tracer's width with this alone). No input needed;
+  flicker-neutral there (orbit / rest drift within 1 % on five scenes); the test bed reads the same both ways.
+  @pmndrs/reflections turns it on by default when the denoiser has it.
+- **`brdfWeights: 'replace' | 'combine'` + `brdfAlphaScale` + `brdfMinAlpha`** (`bc0912b`, review fixes `cf7755b`
+  weight cap 1e8, `81bbb09` gate default 0.01): BRDF / pdf weights in the prefilter (SSSR 2015's ratio estimator),
+  a second pipeline built on first use; needs `SpecularInputs.direction` with the pdf in .a (denoiser-core doc).
+  Experimental: 'replace' + keepHistoryOnBlack brings r 0.3 back and cuts the energy lost on car paint 9 -> 2 %, but is
+  noisier than FFX's luminance weight; 'combine' is quiet but adds little; the prefilter costs ~+0.8 ms at 1080p.
+
+The pre-split history is kept as branch `w78-brdf-prefilter-v1`. Full write-up: @pmndrs/reflections
+`docs/research/w78/README.md`. The lead asks the maintainer before any push or PR.
+
 ## Where the repo lives
 
 - **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`.
