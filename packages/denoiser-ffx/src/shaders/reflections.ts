@@ -60,6 +60,8 @@
 //   traced); 2 weights by relative hit distance, exp(-k |t_p - t_q| / (t_p + t_q)); 4 applies them
 //   to the resolve's statistics too (else the prefilter only); 8 lets a miss match any source;
 //   16 keeps FFX's clip box width in the resolve, centred on the centre's own samples.
+// - Port addition, off by default (P.resolveFlags = 0): the temporal resolve's early-out for black
+//   radiance (output 0, history dropped) skipped, so a black sample accumulates like any other.
 
 export const REFLECTION_PARAMS_WGSL = /* wgsl */ `
 struct Params {
@@ -79,6 +81,10 @@ struct Params {
   tileListBase: u32,    // tiled passes: u32 index of the first tile in tile_list
   sampleFlags: u32,    // port addition: sample affinity bits (0 = FFX as is)
   hitDistanceWeight: f32,
+  resolveFlags: u32,   // port addition: 1 = black samples keep the history (keepHistoryOnBlack)
+  paramsPad0: u32,
+  paramsPad1: u32,
+  paramsPad2: u32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -739,7 +745,10 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
   let affine = (P.sampleFlags & 4u) != 0u && groupNeedsAffinity(atomicLoad(&wg_source_mask));
   gtid += 4;
   let radiance = wg_radiance[gtid.y][gtid.x];
-  if (radiance.x + radiance.y + radiance.z < RADIANCE_THRESHOLD) {
+  // Port addition (P.resolveFlags bit 1, off by default): FFX writes 0 (output and next frame's history)
+  // wherever this frame's prefiltered radiance is black. Where black is a sample (a dark environment, a
+  // sparse glossy reflection whose rays all missed this frame), that erases the history: keep going instead.
+  if (radiance.x + radiance.y + radiance.z < RADIANCE_THRESHOLD && (P.resolveFlags & 1u) == 0u) {
     if (inb) {
       textureStore(o_radiance, did, vec4f(0.0));
       textureStore(o_variance, did, vec4f(0.0));
