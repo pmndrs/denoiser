@@ -118,13 +118,22 @@ export interface FfxReflectionDenoiserOptions {
    * `separateHitSources`. Needs no extra input. 8 puts a neighbour twice as far at ~0.07.
    */
   hitDistanceWeight?: number;
+  /**
+   * Port addition (default false: FFX as is). FFX's temporal resolve writes 0, to the output and to next
+   * frame's history, wherever this frame's prefiltered radiance is black (< 1e-4), as if the pixel had no
+   * reflection. Where black is a real sample (a dark environment, a sparse glossy reflection whose rays
+   * all missed this frame), that drops the history every such frame and the reflection never builds up.
+   * true lets black samples accumulate like any other.
+   */
+  keepHistoryOnBlack?: boolean;
 }
 
 /** The options `setOptions` can change between frames. */
 export type FfxReflectionDenoiserRuntimeOptions = Pick<FfxReflectionDenoiserOptions,
-  'temporalStabilityFactor' | 'separateHitSources' | 'missesMatchAnySource' | 'hitDistanceWeight'>;
+  'temporalStabilityFactor' | 'separateHitSources' | 'missesMatchAnySource' | 'hitDistanceWeight' | 'keepHistoryOnBlack'>;
 
-const PARAMS_SIZE = 256;
+// 68 words: FFX's constants, the tile fields, the sample affinity (62-63), resolve flags (64), padding
+const PARAMS_SIZE = 272;
 // Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
 const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
 
@@ -175,6 +184,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       separateHitSources: options.separateHitSources ?? false,
       hitDistanceWeight: options.hitDistanceWeight ?? 0,
       missesMatchAnySource: options.missesMatchAnySource ?? false,
+      keepHistoryOnBlack: options.keepHistoryOnBlack ?? false,
     };
     const mvs = options.motionVectorScale ?? [-0.5, 0.5];
     this.motionVectorScale = [mvs[0], mvs[1]];
@@ -340,6 +350,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       ? (sourceOn ? 1 : 0) | (distanceOn ? 2 : 0) | 4 | 16 | (sourceOn && this.opts.missesMatchAnySource ? 8 : 0)
       : 0;
     f[63] = this.opts.hitDistanceWeight;
+    u32[64] = this.opts.keepHistoryOnBlack ? 1 : 0; // port addition: resolve flags
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-reflections' });
