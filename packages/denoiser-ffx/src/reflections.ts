@@ -140,8 +140,10 @@ export interface FfxReflectionDenoiserOptions {
   brdfAlphaScale?: number;
   /**
    * With `brdfWeights`: only centres whose linear roughness (alpha, as `roughnessThreshold`) is at least
-   * this take the BRDF weights; smoother ones keep FFX's. Default 0 (every glossy pixel). On near-mirrors
-   * the BRDF ratio is so peaked that the 15 taps barely average, which shows as flicker in motion.
+   * this take the BRDF weights; smoother ones keep FFX's. Default 0.01 (perceptual roughness 0.1). On
+   * near-mirrors the BRDF ratio is so peaked that the 15 taps barely average, which shows as flicker in
+   * motion (+40-70 % orbit flicker at alpha ~1e-3 in @pmndrs/reflections' measurements); 0 applies the
+   * weights to every glossy pixel (sharper near-mirror reflections, more flicker).
    */
   brdfMinAlpha?: number;
   /**
@@ -213,7 +215,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       missesMatchAnySource: options.missesMatchAnySource ?? false,
       brdfWeights: options.brdfWeights ?? 'off',
       brdfAlphaScale: options.brdfAlphaScale ?? 1,
-      brdfMinAlpha: options.brdfMinAlpha ?? 0,
+      brdfMinAlpha: options.brdfMinAlpha ?? 0.01,
       keepHistoryOnBlack: options.keepHistoryOnBlack ?? false,
     };
     const mvs = options.motionVectorScale ?? [-0.5, 0.5];
