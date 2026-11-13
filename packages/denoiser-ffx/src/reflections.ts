@@ -18,7 +18,7 @@ import type {
 } from '@pmndrs/denoiser-core';
 import { invert, isDepthFormat, mat4, mul, PassTimer } from './common';
 import {
-  PREFILTER_WGSL, reflectionPrepareWgsl, REPROJECT_WGSL, RESOLVE_TEMPORAL_WGSL, tiledWgsl,
+  PREFILTER_WGSL, prefilterWgsl, reflectionPrepareWgsl, REPROJECT_WGSL, RESOLVE_TEMPORAL_WGSL, tiledWgsl,
 } from './shaders/reflections';
 
 /**
@@ -119,6 +119,32 @@ export interface FfxReflectionDenoiserOptions {
    */
   hitDistanceWeight?: number;
   /**
+   * Port addition (default 'off': FFX as is). BRDF / pdf weights in the prefilter: the ratio
+   * estimator of Stachowiak & Uludag's "Stochastic Screen-Space Reflections" (SIGGRAPH 2015). Each
+   * neighbour's sample is weighted by the centre pixel's GGX BRDF x cos along the direction from the
+   * centre to that sample's hit point (its ray direction for a miss), over the pdf the sample was
+   * drawn with, on top of FFX's normal and depth weights. One ray then stands for the lobe of every
+   * pixel it lands in, so a sparse glossy reflection keeps its energy instead of being averaged away.
+   * Needs `inputs.direction` with the pdf in .a (pixels with .a <= 0 have no sample: a centre without
+   * one takes FFX's weights, a neighbour without one is skipped); without it nothing changes.
+   * - 'replace': the BRDF / pdf weight replaces FFX's luminance weight (radianceWeight);
+   * - 'combine': both multiply.
+   */
+  brdfWeights?: 'off' | 'replace' | 'combine';
+  /**
+   * With `brdfWeights`: the target lobe's alpha is the centre's (linear) roughness times this.
+   * Default 1. A tracer that samples a narrowed lobe and filters the rest (e.g. a mirror bias
+   * compensated by a pre-filtered hit colour) passes its sample's scale, so the weights don't
+   * widen the reflection a second time.
+   */
+  brdfAlphaScale?: number;
+  /**
+   * With `brdfWeights`: only centres whose linear roughness (alpha, as `roughnessThreshold`) is at least
+   * this take the BRDF weights; smoother ones keep FFX's. Default 0 (every glossy pixel). On near-mirrors
+   * the BRDF ratio is so peaked that the 15 taps barely average, which shows as flicker in motion.
+   */
+  brdfMinAlpha?: number;
+  /**
    * Port addition (default false: FFX as is). FFX's temporal resolve writes 0, to the output and to next
    * frame's history, wherever this frame's prefiltered radiance is black (< 1e-4), as if the pixel had no
    * reflection. Where black is a real sample (a dark environment, a sparse glossy reflection whose rays
@@ -130,9 +156,9 @@ export interface FfxReflectionDenoiserOptions {
 
 /** The options `setOptions` can change between frames. */
 export type FfxReflectionDenoiserRuntimeOptions = Pick<FfxReflectionDenoiserOptions,
-  'temporalStabilityFactor' | 'separateHitSources' | 'missesMatchAnySource' | 'hitDistanceWeight' | 'keepHistoryOnBlack'>;
+  'temporalStabilityFactor' | 'separateHitSources' | 'missesMatchAnySource' | 'hitDistanceWeight' | 'brdfWeights' | 'brdfAlphaScale' | 'brdfMinAlpha' | 'keepHistoryOnBlack'>;
 
-// 68 words: FFX's constants, the tile fields, the sample affinity (62-63), resolve flags (64), padding
+// 68 words: FFX's constants, the tile fields, the sample affinity (62-63), resolve flags (64), the BRDF weights (65-67)
 const PARAMS_SIZE = 272;
 // Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
 const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
@@ -155,6 +181,7 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
   private params: GPUBuffer;
   private sampler: GPUSampler;
   private noHitSource: GPUTexture;
+  private brdfPipes?: { full: GPUComputePipeline; tiled?: GPUComputePipeline }; // created on the first BRDF dispatch
   private layouts: Record<string, GPUBindGroupLayout> = {};
   private pipes: Record<string, GPUComputePipeline> = {};
   private tiledPipes?: Record<string, GPUComputePipeline>; // created on the first tiled dispatch
@@ -184,6 +211,9 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       separateHitSources: options.separateHitSources ?? false,
       hitDistanceWeight: options.hitDistanceWeight ?? 0,
       missesMatchAnySource: options.missesMatchAnySource ?? false,
+      brdfWeights: options.brdfWeights ?? 'off',
+      brdfAlphaScale: options.brdfAlphaScale ?? 1,
+      brdfMinAlpha: options.brdfMinAlpha ?? 0,
       keepHistoryOnBlack: options.keepHistoryOnBlack ?? false,
     };
     const mvs = options.motionVectorScale ?? [-0.5, 0.5];
@@ -244,6 +274,11 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       label: 'ffx-reflections prefilter',
       entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), smp(6), sto(7, 'rgba16float'), sto(8, 'r32float'), tex(9), tex(10)],
     });
+    // port addition: the BRDF / pdf variant binds SpecularInputs.direction at 11
+    this.layouts.prefilter_brdf = d.createBindGroupLayout({
+      label: 'ffx-reflections prefilter (brdf)',
+      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), smp(6), sto(7, 'rgba16float'), sto(8, 'r32float'), tex(9), tex(10), tex(11)],
+    });
     this.layouts.resolve = d.createBindGroupLayout({
       label: 'ffx-reflections resolve_temporal',
       entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5, 'float'), tex(6), smp(7), sto(8, 'rgba16float'), sto(9, 'r32float'), tex(10), tex(11)],
@@ -282,6 +317,19 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     return (this.tiledPipes = pipes);
   }
 
+  /** The BRDF prefilter variant (port addition), built on first use. */
+  private brdfPipe(tiled: boolean): GPUComputePipeline {
+    const d = this.device;
+    const code = prefilterWgsl(true);
+    const make = (layouts: GPUBindGroupLayout[], wgsl: string, label: string) => d.createComputePipeline({
+      label, layout: d.createPipelineLayout({ bindGroupLayouts: layouts }),
+      compute: { module: d.createShaderModule({ label, code: wgsl }), entryPoint: 'main' },
+    });
+    this.brdfPipes ??= { full: make([this.layouts.prefilter_brdf], code, 'ffx-reflections prefilter (brdf)') };
+    if (!tiled) return this.brdfPipes.full;
+    return (this.brdfPipes.tiled ??= make([this.layouts.prefilter_brdf, this.layouts.tiles], tiledWgsl(code), 'ffx-reflections prefilter (brdf, tiles)'));
+  }
+
   configure({ width, height }: TemporalConfig): void {
     this.destroyTargets();
     this.width = width;
@@ -314,7 +362,8 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
     const { width: W, height: H } = this;
     for (const [k, t] of [['radiance', inputs.radiance], ['hitDistance', inputs.hitDistance], ['depth', guides.depth],
       ['normal', guides.normal], ['motion', guides.motion], ['roughness', guides.roughness],
-      ...(inputs.hitSource ? [['hitSource', inputs.hitSource] as const] : [])] as const) {
+      ...(inputs.hitSource ? [['hitSource', inputs.hitSource] as const] : []),
+      ...(inputs.direction ? [['direction', inputs.direction] as const] : [])] as const) {
       if (t.width !== W || t.height !== H) throw new Error(`FfxReflectionDenoiser: ${k} is ${t.width}x${t.height}, configured ${W}x${H}`);
     }
     const d = this.device;
@@ -350,7 +399,12 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       ? (sourceOn ? 1 : 0) | (distanceOn ? 2 : 0) | 4 | 16 | (sourceOn && this.opts.missesMatchAnySource ? 8 : 0)
       : 0;
     f[63] = this.opts.hitDistanceWeight;
+    // port addition: BRDF / pdf prefilter weights (0 = FFX as is): 1 on, 2 keep FFX's luminance weight
+    const brdfOn = this.opts.brdfWeights !== 'off' && !!inputs.direction;
     u32[64] = this.opts.keepHistoryOnBlack ? 1 : 0; // port addition: resolve flags
+    u32[65] = brdfOn ? 1 | (this.opts.brdfWeights === 'combine' ? 2 : 0) : 0;
+    f[66] = this.opts.brdfAlphaScale;
+    f[67] = this.opts.brdfMinAlpha;
     d.queue.writeBuffer(this.params, 0, buf);
 
     const enc = d.createCommandEncoder({ label: 'ffx-reflections' });
@@ -382,15 +436,15 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       ],
     });
     // `tiled`: reproject / prefilter / resolve take the tile list when one is given
-    const run = (name: string, pipe: string, group: GPUBindGroup, tiled = false) => {
+    const run = (name: string, pipe: string, group: GPUBindGroup, tiled = false, own?: GPUComputePipeline) => {
       const pass = enc.beginComputePass({ label: `ffx-reflections ${name}`, timestampWrites: this.timer?.pass(name) });
       if (tiled && tiles && tiledPipes) {
-        pass.setPipeline(tiledPipes[pipe]);
+        pass.setPipeline(own ?? tiledPipes[pipe]);
         pass.setBindGroup(0, group);
         pass.setBindGroup(1, tilesGroup!);
         pass.dispatchWorkgroupsIndirect(tiles.indirect, tiles.indirectOffset ?? 0);
       } else {
-        pass.setPipeline(this.pipes[pipe]);
+        pass.setPipeline(own ?? this.pipes[pipe]);
         pass.setBindGroup(0, group);
         pass.dispatchWorkgroups(groups[0], groups[1]);
       }
@@ -408,10 +462,12 @@ export class FfxReflectionDenoiser implements TemporalDenoiser<FfxReflectionInpu
       v(this.result[prev]), v(this.depth[prev]), v(this.normRough[prev]), v(this.finalVariance[prev]), v(this.sampleCount[prev]),
       this.sampler, v(this.reprojected), v(this.reprojVariance!), v(this.sampleCount[cur]), v(this.avgRadiance[cur]),
     ]), true);
-    run('prefilter', 'prefilter', bg('prefilter', [
+    const prefilterEntries = [
       v(this.depth[cur]), v(this.normRough[cur]), v(inputs.radiance), v(this.reprojVariance!), v(this.avgRadiance[statIdx]),
       this.sampler, v(this.prefiltered!), v(this.prefilterVariance!), v(inputs.hitDistance), v(inputs.hitSource ?? this.noHitSource),
-    ]), true);
+    ];
+    if (brdfOn) run('prefilter', 'prefilter', bg('prefilter_brdf', [...prefilterEntries, v(inputs.direction!)]), true, this.brdfPipe(!!tiles));
+    else run('prefilter', 'prefilter', bg('prefilter', prefilterEntries), true);
     run('resolve_temporal', 'resolve', bg('resolve', [
       v(this.normRough[cur]), v(this.prefiltered!), v(this.prefilterVariance!), v(this.sampleCount[statIdx]),
       v(this.avgRadiance[statIdx]), v(this.reprojected), this.sampler, v(this.result[cur]), v(this.finalVariance[cur]),

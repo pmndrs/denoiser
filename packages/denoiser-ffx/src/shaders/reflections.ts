@@ -60,6 +60,13 @@
 //   traced); 2 weights by relative hit distance, exp(-k |t_p - t_q| / (t_p + t_q)); 4 applies them
 //   to the resolve's statistics too (else the prefilter only); 8 lets a miss match any source;
 //   16 keeps FFX's clip box width in the resolve, centred on the centre's own samples.
+// - Port addition, off by default (P.brdfFlags = 0, and the default prefilter pipeline is built
+//   without it): BRDF / pdf weights in the prefilter (prefilterWgsl(true)), the ratio estimator of
+//   Stachowiak & Uludag's "Stochastic Screen-Space Reflections" (SIGGRAPH 2015). Needs
+//   SpecularInputs.direction with each sample's pdf in .a. Each neighbour's sample is weighted by the
+//   centre's GGX BRDF x cos along the direction from the centre to the neighbour's hit point (the
+//   neighbour's ray direction for a miss), over the pdf the neighbour sampled it with, on top of
+//   FFX's normal / depth weights; bit 2 also keeps FFX's luminance weight (radianceWeight).
 // - Port addition, off by default (P.resolveFlags = 0): the temporal resolve's early-out for black
 //   radiance (output 0, history dropped) skipped, so a black sample accumulates like any other.
 
@@ -82,9 +89,9 @@ struct Params {
   sampleFlags: u32,    // port addition: sample affinity bits (0 = FFX as is)
   hitDistanceWeight: f32,
   resolveFlags: u32,   // port addition: 1 = black samples keep the history (keepHistoryOnBlack)
-  paramsPad0: u32,
-  paramsPad1: u32,
-  paramsPad2: u32,
+  brdfFlags: u32,      // port addition: BRDF / pdf prefilter weights (0 = FFX as is): 1 on, 2 keep radianceWeight
+  brdfAlphaScale: f32, // port addition: the target lobe's alpha = the centre's alpha x this
+  brdfMinAlpha: f32,   // port addition: BRDF weights only where the centre's linear roughness >= this
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -527,7 +534,68 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
 }
 `;
 
-export const PREFILTER_WGSL = /* wgsl */ `
+// Port addition: the prefilter's BRDF / pdf weights (prefilterWgsl(true)); the ratio estimator of
+// Stachowiak & Uludag, "Stochastic Screen-Space Reflections" (SIGGRAPH 2015): a neighbour's sample
+// stands for the centre's integral with weight f_centre(L) cos / pdf_neighbour(L_neighbour), L
+// re-derived from the centre to the neighbour's hit point. The weights are normalised by their sum
+// (the prefilter already divides by it). GGX with alpha = linear roughness, separable Smith, no
+// Fresnel (applied after the denoiser by the split sum's DFG).
+const BRDF_PREFILTER_DECL_WGSL = /* wgsl */ `
+@group(0) @binding(11) var t_direction: texture_2d<f32>;
+// per LDS texel: the sample's world hit point (.w = +pdf), or its direction for a miss (.w = -pdf),
+// or 0 where the pixel has no sample (direction.w <= 0)
+var<workgroup> wg_hp: array<array<vec4f, 16>, 16>;
+const BRDF_PI: f32 = 3.14159265358979;
+
+fn worldPositionAt(uv: vec2f, z: f32) -> vec3f { return viewSpaceToWorldSpace(vec4f(screenSpaceToViewSpace(vec3f(uv, z)), 1.0)); }
+fn loadBrdfSample(p: vec2i, uv: vec2f) -> vec4f {
+  let s = textureLoad(t_direction, p, 0);
+  let l2 = dot(s.xyz, s.xyz);
+  if (!(s.w > 0.0) || notFinite(s.w) || !(l2 > 1.0e-8)) { return vec4f(0.0); }
+  let dir = s.xyz * inverseSqrt(l2);
+  let t = textureLoad(t_raylength, p, 0).r;
+  if (t > 0.0) { return vec4f(worldPositionAt(uv, textureLoad(t_depth, p, 0).x) + dir * t, s.w); }
+  return vec4f(dir, -s.w);
+}
+fn brdfGgxD(a2: f32, NdotH: f32) -> f32 { let d = NdotH * NdotH * (a2 - 1.0) + 1.0; return a2 / (BRDF_PI * d * d); }
+fn brdfSmithG1(a2: f32, NdotX: f32) -> f32 { return 2.0 * NdotX / (NdotX + sqrt(a2 + (1.0 - a2) * NdotX * NdotX)); }
+
+struct BrdfCentre { X: vec3f, N: vec3f, V: vec3f, NdotV: f32, a2: f32, G1V: f32 };
+fn brdfCentre(did: vec2i, N: vec3f, alpha: f32) -> BrdfCentre {
+  let p = clampPx(did);
+  let uv = (vec2f(p) + 0.5) / vec2f(P.renderSize);
+  var c: BrdfCentre;
+  c.X = worldPositionAt(uv, textureLoad(t_depth, p, 0).x);
+  c.N = N;
+  c.V = safeNormalize(P.invView[3].xyz - c.X);
+  c.NdotV = max(dot(N, c.V), 1.0e-4);
+  let a = alpha * P.brdfAlphaScale;
+  c.a2 = a * a;
+  c.G1V = brdfSmithG1(c.a2, c.NdotV);
+  return c;
+}
+// The centre's D G2 / (4 N.V) along L (BRDF x cos) over the sample's pdf; 0 for no sample or L below the surface.
+fn brdfRatio(c: BrdfCentre, e: vec4f) -> f32 {
+  if (e.w == 0.0) { return 0.0; }
+  var L = e.xyz;
+  if (e.w > 0.0) { L = safeNormalize(e.xyz - c.X); }
+  let NdotL = dot(c.N, L);
+  if (NdotL <= 0.0) { return 0.0; }
+  let h = safeNormalize(c.V + L);
+  let f = brdfGgxD(c.a2, max(dot(c.N, h), 0.0)) * c.G1V * brdfSmithG1(c.a2, NdotL) / (4.0 * c.NdotV);
+  let w = f / abs(e.w);
+  return select(0.0, w, w > 0.0 && w < 1.0e30);
+}
+`;
+
+/**
+ * The prefilter. `brdf` (port addition) builds the variant with BRDF / pdf weights: it binds
+ * SpecularInputs.direction at 11 (world direction in .xyz, the sample's pdf in .w; pdf <= 0 marks
+ * a pixel with no sample this frame) and runs FFX's weights wherever P.brdfFlags is 0 or the
+ * centre has no sample. Without it the shader is FFX's (with the hit-source affinity).
+ */
+export function prefilterWgsl(brdf: boolean): string {
+  return /* wgsl */ `
 ${REFLECTION_PARAMS_WGSL}
 @group(0) @binding(1) var t_depth: texture_2d<f32>;
 @group(0) @binding(2) var t_normrough: texture_2d<f32>;
@@ -545,7 +613,7 @@ var<workgroup> wg_rv: array<array<vec4f, 16>, 16>;  // radiance, variance
 var<workgroup> wg_nd: array<array<vec4f, 16>, 16>;  // normal, linear depth
 var<workgroup> wg_ts: array<array<vec2f, 16>, 16>;  // ray length, hit source (port addition)
 var<workgroup> wg_source_mask: atomic<u32>;          // port addition (sourceBit)
-
+${brdf ? BRDF_PREFILTER_DECL_WGSL : ''}
 fn loadNS(idx: vec2i) -> NS {
   let a = wg_rv[idx.y][idx.x];
   let b = wg_nd[idx.y][idx.x];
@@ -564,7 +632,8 @@ fn initializeGroupSharedMemory(did_in: vec2i, gtid: vec2i) {
     let uv = (vec2f(p) + 0.5) / vec2f(P.renderSize);
     let depth = getLinearDepth(uv, textureLoad(t_depth, p, 0).x);
     wg_rv[q.y][q.x] = vec4f(radiance, variance);
-    wg_nd[q.y][q.x] = vec4f(normal, depth);
+    wg_nd[q.y][q.x] = vec4f(normal, depth);${brdf ? `
+    if (P.brdfFlags != 0u) { wg_hp[q.y][q.x] = loadBrdfSample(p, uv); }` : ''}
     if (P.sampleFlags != 0u) {
       let code = floor(textureLoad(t_hit_source, p, 0).r + 0.5);
       var t = 0.0;
@@ -608,7 +677,15 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
     let uv8 = (vec2f(did) + 0.5) / vec2f(roundUp8(P.renderSize));
     let avg_radiance = textureSampleLevel(t_avg_radiance, s_linear, uv8, 0.0).xyz;
     // FFX_DNSR_Reflections_Resolve
-    var accumulated_weight = radianceWeight(avg_radiance, center.radiance, center.variance);
+    var accumulated_weight = radianceWeight(avg_radiance, center.radiance, center.variance);${brdf ? `
+    // port addition: BRDF / pdf weights where the centre has a sample (else FFX's weights)
+    let brdf_on = P.brdfFlags != 0u && wg_hp[gtid.y][gtid.x].w != 0.0 && center_roughness >= P.brdfMinAlpha;
+    var bc: BrdfCentre;
+    if (brdf_on) {
+      bc = brdfCentre(did, center.normal, center_roughness);
+      let keep = select(1.0, accumulated_weight, (P.brdfFlags & 2u) != 0u);
+      accumulated_weight = keep * brdfRatio(bc, wg_hp[gtid.y][gtid.x]);
+    }` : ''}
     var accumulated_radiance = center.radiance * accumulated_weight;
     var accumulated_variance = center.variance * accumulated_weight * accumulated_weight;
     let variance_weight = max(PREFILTER_VARIANCE_BIAS, 1.0 - exp(-(center.variance * PREFILTER_VARIANCE_WEIGHT)));
@@ -617,7 +694,13 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
       var w = 1.0;
       w *= edgeStoppingNormalWeight(center.normal, nb.normal);
       w *= edgeStoppingDepthWeight(center.depth, nb.depth);
-      w *= radianceWeight(avg_radiance, nb.radiance, center.variance);
+      ${brdf ? `if (brdf_on) {
+        let nq = gtid + SAMPLE_OFFSETS[i];
+        if ((P.brdfFlags & 2u) != 0u) { w *= radianceWeight(avg_radiance, nb.radiance, center.variance); }
+        w *= brdfRatio(bc, wg_hp[nq.y][nq.x]);
+      } else {
+        w *= radianceWeight(avg_radiance, nb.radiance, center.variance);
+      }` : 'w *= radianceWeight(avg_radiance, nb.radiance, center.variance);'}
       w *= variance_weight;
       if (affine) {
         let ct = wg_ts[gtid.y][gtid.x];
@@ -629,8 +712,11 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
       accumulated_radiance += w * nb.radiance;
       accumulated_variance += w * w * nb.variance;
     }
-    resolved_radiance = accumulated_radiance / accumulated_weight;
-    resolved_variance = accumulated_variance / (accumulated_weight * accumulated_weight);
+    ${brdf ? `if (accumulated_weight > 0.0) {
+      resolved_radiance = accumulated_radiance / accumulated_weight;
+      resolved_variance = accumulated_variance / (accumulated_weight * accumulated_weight);
+    }` : `resolved_radiance = accumulated_radiance / accumulated_weight;
+    resolved_variance = accumulated_variance / (accumulated_weight * accumulated_weight);`}
   }
   if (inb) {
     textureStore(o_radiance, did, vec4f(resolved_radiance, resolved_radiance.z));
@@ -638,6 +724,10 @@ fn main(@builtin(local_invocation_id) lid: vec3u, @builtin(global_invocation_id)
   }
 }
 `;
+}
+
+/** FFX's prefilter (with the port's hit-source affinity; no BRDF weights). */
+export const PREFILTER_WGSL = prefilterWgsl(false);
 
 export const RESOLVE_TEMPORAL_WGSL = /* wgsl */ `
 ${REFLECTION_PARAMS_WGSL}

@@ -153,7 +153,12 @@ export interface SpecularInputs {
   radiance: GPUTexture;
   /** Ray hit distance (r16float, 0 = miss). Drives reprojection of reflections. */
   hitDistance: GPUTexture;
-  /** Directional payloads: world-space direction of each sample's ray (rgb), used with `radiance`. */
+  /**
+   * World-space direction of each sample's ray (rgb). Directional payloads use it with `radiance`.
+   * Optionally .a holds the pdf the direction was sampled with (per steradian, at the pixel that
+   * traced it), for denoisers that weight samples by BRDF / pdf (FFX `brdfWeights`); .a <= 0 means
+   * no sample there this frame (or no pdf). Read with textureLoad (rgba16float / rgba32float).
+   */
   direction?: GPUTexture;
   /** Directional payloads: an already encoded payload instead of `radiance` + `direction` (filter-specific format). */
   sh?: GPUTexture;
