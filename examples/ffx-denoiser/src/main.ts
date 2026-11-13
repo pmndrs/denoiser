@@ -127,13 +127,15 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     // &stats=current|ffx (see FfxReflectionDenoiserOptions.currentFrameStatistics), &tsf=0.7
     const stats = q.get('stats');
     // &hitDistW=<k> (hitDistanceWeight), &hitSource=split (separateHitSources with a synthetic
-    // source: screen-space hits on the left half, ray-traced on the right; the seam must stay sharp)
+    // source: screen-space hits on the left half, ray-traced on the right; the seam must stay sharp),
     denoiser = new FFX.FfxReflectionDenoiser(device, {
       ...(stats ? { currentFrameStatistics: stats === 'current' } : {}),
       ...(MOTION_UV ? { motionVectorScale: [-1, -1] as const } : {}),
       ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
       ...(q.has('hitDistW') ? { hitDistanceWeight: Number(q.get('hitDistW')) } : {}),
       ...(q.get('hitSource') === 'split' ? { separateHitSources: true } : {}),
+      // &keepBlack=1 (keepHistoryOnBlack, W78): black samples keep the resolve's history
+      ...(q.get('keepBlack') === '1' ? { keepHistoryOnBlack: true } : {}),
     });
   }
   denoiser.configure({ width: W, height: H });
