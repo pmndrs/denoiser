@@ -16,8 +16,11 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
   about 200 options still to prune, and visually behind FFX on the reflection bench. Phase-2 work branches from main now.
 - **Retired (superseded, kept on origin as a record):** `feat/interior-lab`, `feat/shadow-bench`, `track/t0-scenes`,
   `track/t0-scorecard`, the track branches above.
-- **Still open:** #29 (hit-source affinity, draft), #27 (reflection pages on `@pmndrs/reflections`; do not merge
-  until that package is released). #15 (jitter study) was closed. The denoiser → upscaler chain is tracked in #30,
+- **#29 merged 2026-11-13** (hit-source / hit-distance affinity: `separateHitSources`, `missesMatchAnySource`,
+  `hitDistanceWeight`, all off by default). Defaults match the old baseline on every path; the look with them on
+  is not judged on the bench yet. It uses the last `Params` slot (`f[63]`), so the next reflections option has to
+  grow `PARAMS_SIZE`.
+- **Still open:** #27 (reflection pages on `@pmndrs/reflections`; do not merge until that package is released). #15 (jitter study) was closed. The denoiser → upscaler chain is tracked in #30,
   and the branch `exp/jitter-study` is kept.
 
 ## Where the repo lives
