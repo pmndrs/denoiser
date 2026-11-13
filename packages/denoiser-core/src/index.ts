@@ -10,6 +10,7 @@ export type {
   TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, Mat4,
   ShadowInputs, ShadowLight, SpecularInputs, DiffuseInputs, DiffuseSpecularInputs, BeautyInputs,
 } from './temporal';
+export { HIT_SOURCE } from './temporal';
 export { determineModel } from './modelName';
 export { parseTZA, halfToFloat, DEFAULT_TZA_URL } from './tza';
 export type { TensorMap, WeightTensor } from './tza';

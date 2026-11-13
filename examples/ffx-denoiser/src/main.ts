@@ -126,14 +126,26 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   } else {
     // &stats=current|ffx (see FfxReflectionDenoiserOptions.currentFrameStatistics), &tsf=0.7
     const stats = q.get('stats');
+    // &hitDistW=<k> (hitDistanceWeight), &hitSource=split (separateHitSources with a synthetic
+    // source: screen-space hits on the left half, ray-traced on the right; the seam must stay sharp)
     denoiser = new FFX.FfxReflectionDenoiser(device, {
       ...(stats ? { currentFrameStatistics: stats === 'current' } : {}),
       ...(MOTION_UV ? { motionVectorScale: [-1, -1] as const } : {}),
       ...(q.has('tsf') ? { temporalStabilityFactor: Number(q.get('tsf')) } : {}),
+      ...(q.has('hitDistW') ? { hitDistanceWeight: Number(q.get('hitDistW')) } : {}),
+      ...(q.get('hitSource') === 'split' ? { separateHitSources: true } : {}),
     });
   }
   denoiser.configure({ width: W, height: H });
-  const inputs = signal === 'shadows' ? { visibility: noisy, hitDistance: hitDist } : { radiance: noisy, hitDistance: hitDist };
+  let hitSource: GPUTexture | undefined;
+  if (signal === 'reflections' && q.get('hitSource') === 'split') {
+    hitSource = device.createTexture({ size: [W, H], format: 'r32float', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    const row = new Float32Array(W).map((_, x) => (x < W / 2 ? 1 : 2));
+    const all = new Float32Array(W * H);
+    for (let y = 0; y < H; y++) all.set(row, y * W);
+    device.queue.writeTexture({ texture: hitSource }, all, { bytesPerRow: W * 4 }, [W, H]);
+  }
+  const inputs = signal === 'shadows' ? { visibility: noisy, hitDistance: hitDist } : { radiance: noisy, hitDistance: hitDist, ...(hitSource ? { hitSource } : {}) };
   const guides = { depth, normal, motion: motionUv ?? motion, roughness: rough };
 
   const aspect = W / H;
