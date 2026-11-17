@@ -7,8 +7,8 @@
 //
 //   probe   a reflection probe: the room captured once into a cubemap, prefiltered per roughness,
 //           looked up box-projected at the pixel's roughness (split-sum). No rays, no noise, no
-//           denoiser - the raster default in engines. The probe code is ./probes, our r186 stand-in
-//           for three.js PR #35046's ReflectionProbes (see reflection-probes.html).
+//           denoiser - the raster default in engines. The probes are @pmndrs/reflections', API-compatible
+//           with three.js PR #35046's ReflectionProbes (see reflection-probes.html).
 //   ssr     three's stochastic SSR; where the screen-space ray misses, the probe in the sampled
 //           direction --> ffxReflections()
 //   hybrid  roughness above a cutoff: the prefiltered probe (no rays). Below it: SSR first, then
@@ -38,9 +38,9 @@ import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } fro
 import { ffxReflections, ffxShadows, getGPUTexture } from 'denoiser/three';
 import type { TemporalDenoiseNode } from 'denoiser/three';
 import { mountShell } from '../../_shared/shell';
-import { ReflectionProbe, ReflectionProbes } from './probes/ReflectionProbes';
-import { sampleReflectionProbes } from './probes/ReflectionProbesNode';
-import { AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from './reflections/common';
+import {
+  ReflectionProbe, ReflectionProbes, sampleReflectionProbes, AccumulateNode, clampSample, ggxLobeSample, pixelSeed,
+} from '@pmndrs/reflections/three';
 
 mountShell({ id: 'three-temporal-reflections' });
 
@@ -530,7 +530,7 @@ async function main() {
   setLightSize(lightHalf);
 
   // ---- the reflection probe ---------------------------------------------------------
-  // One probe for the room, from ./probes (our r186 stand-in for three.js #35046's ReflectionProbes,
+  // One probe for the room, from @pmndrs/reflections (API-compatible with three.js #35046's ReflectionProbes,
   // shared with reflection-probes.html and reflections-rooms.html): six faces captured at PROBE_POS,
   // prefiltered into roughness mips, looked up box-projected onto the room's box by
   // sampleReflectionProbes(). A snapshot: the turning sculpture is frozen at the pose it had when
@@ -709,7 +709,7 @@ async function main() {
 
     // SSR marks a miss with alpha = ENV_RAY_LENGTH (1e4), even without an env map
     const ssrHit = () => ssrNode.a.greaterThan(0).and(ssrNode.a.lessThan(1e3));
-    // Every 1-sample estimate goes through clampSample (./reflections/common): a firefly clamp on
+    // Every 1-sample estimate goes through clampSample (@pmndrs/reflections): a firefly clamp on
     // luminance, tightened on rough surfaces (a fully rough rug that once in a while samples the
     // bright panel otherwise leaves speckles the denoiser can't average away).
 

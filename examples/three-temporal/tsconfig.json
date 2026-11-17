@@ -9,7 +9,13 @@
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    // @pmndrs/reflections is unpublished: resolved from a sibling checkout (see vite.config.ts). Temporary.
+    "paths": {
+      "@pmndrs/reflections/three": ["../../../reflections/src/three.ts"],
+      "@pmndrs/reflections/core": ["../../../reflections/src/core.ts"],
+      "@pmndrs/reflections": ["../../../reflections/src/index.ts"]
+    }
   },
   "include": ["src"]
 }
