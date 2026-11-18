@@ -14,7 +14,7 @@ import { Denoiser, type NetworkRuntime, type NetworkSession } from 'denoiser';
 import { OrtRuntime } from 'denoiser/ort';
 import * as ort from 'onnxruntime-web/webgpu';
 import { KernelsRuntime } from '@pmndrs/denoiser-kernels';
-import { WgslRuntime, type ConvTiling, type TilingOverride } from '@pmndrs/denoiser-wgsl';
+import { WgslRuntime, type ConvTiling, type TilingOverride, type WgslRuntimeOptions } from '@pmndrs/denoiser-wgsl';
 import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import albedoUrl from '../../gallery/public/scenes/spheres/albedo.png?url';
@@ -57,15 +57,42 @@ function smParam(v: string | null | undefined): boolean | 'auto' | string[] {
   return v.split(/[+ ]/); // '+' arrives as ' ' in a query string
 }
 
-function makeRuntime(name: string, profile = false): NetworkRuntime {
+/**
+ * A runtime name may carry per-runtime overrides after '~' (net mode compares variants):
+ * `wgsl~sm=1~mt=16.4.2.4.1~smt=f16~emu=1` — sm (layers), mt=tw.th.ns.ob[.nso] (matrix tiling),
+ * smt=f32|f16|f16-f32 (matrix operand/result type), shape=MxNxK, emu=1 (emulated matrices).
+ */
+function makeRuntime(spec: string, profile = false): NetworkRuntime {
+  const [name, ...kv] = spec.split('~');
+  const o = new Map(kv.map((x) => x.split('=') as [string, string]));
+  const get = (k: string) => (o.has(k) ? o.get(k)! : params.get(k));
   if (name === 'ort') return new OrtRuntime({ weightsUrl: '/models' });
   if (name === 'kernels') return new KernelsRuntime({ tzaUrl: '/tzas' });
   if (name === 'wgsl') {
     return new WgslRuntime({
-      tzaUrl: '/tzas', tiling, profile, subgroupMatrix: smParam(params.get('sm')),
+      tzaUrl: '/tzas', tiling, profile, subgroupMatrix: smParam(get('sm')),
+      mmaTiling: mtParam(get('mt')),
+      subgroupMatrixType: (get('smt') ?? undefined) as WgslRuntimeOptions['subgroupMatrixType'],
+      subgroupMatrixShape: get('shape')?.split(/[,.x]/).map(Number) as [number, number, number] | undefined,
+      subgroupMatrixEmulate: get('emu') === '1',
     });
   }
   throw new Error(`unknown runtime ${name}`);
+}
+
+/** mt=tw,th,ns,ob[,nso] — subgroup-matrix tiling for every layer. */
+function mtParam(v: string | null | undefined): WgslRuntimeOptions['mmaTiling'] {
+  if (!v) return undefined;
+  const [tw, th, ns, ob, nso] = v.split(/[,.]/).map(Number);
+  return { tw, th, ns, ob, ...(nso ? { nso } : {}) };
+}
+
+/** FNV-1a over the raw output bytes: bit-identity checks across builds. */
+function fnv(a: Float32Array): string {
+  const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < u.length; i++) { h ^= u[i]; h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
 }
 
 // ---- helpers ----------------------------------------------------------------
@@ -364,7 +391,6 @@ async function netMode() {
   const batch = Number(params.get('batch') ?? 1);
   const sizes = (params.get('sizes') ?? '512x512,1920x1088').split(',').map((s) => s.split('x').map(Number));
   const profile = params.get('profile') === '1';
-  const f16 = precision === 'fp16';
   log(`net · ${model} (${ch}ch) · ${precision} · batch ${batch} · warm = median of ${WARM}`);
   const outputs: Record<string, Float32Array[]> = {};
   const net: Record<string, unknown> = {};
@@ -374,7 +400,8 @@ async function netMode() {
     const host = new Float32Array(n);
     let s = 1234567;
     for (let i = 0; i < n; i++) { s = (s * 1103515245 + 12345) >>> 0; host[i] = (s >>> 8) / 16777216; }
-    return host;
+    // fp16 runs: every runtime (incl. an fp32 oracle) sees the same f16-rounded input
+    return precision === 'fp16' ? Float32Array.from(new F16(host)) : host;
   };
   for (const name of runtimes) {
     if (name === 'cpu') {
@@ -390,11 +417,20 @@ async function netMode() {
       continue;
     }
     const rt = makeRuntime(name, profile);
+    // per-runtime precision override (`wgsl~prec=fp32` as the fp32 oracle of an fp16 run)
+    const prec = (/~prec=(fp16|fp32)/.exec(name)?.[1] ?? precision) as 'fp16' | 'fp32';
+    const f16 = prec === 'fp16';
     let session: NetworkSession;
     const t0 = performance.now();
-    session = await rt.load({ name: model, channels: ch, precision });
+    session = await rt.load({ name: model, channels: ch, precision: prec });
     const loadMs = performance.now() - t0;
     const d = session.device;
+    if (rt instanceof WgslRuntime && rt.layerKernels) {
+      const k = rt.layerKernels;
+      const counts = new Map<string, string[]>();
+      for (const [layer, kern] of Object.entries(k)) counts.set(kern, [...(counts.get(kern) ?? []), layer]);
+      log(`${name}: ${[...counts].map(([kern, ls]) => `${kern} ×${ls.length}${ls.length < 4 ? ` (${ls.join(' ')})` : ''}`).join(' · ')}`);
+    }
     outputs[name] = [];
     const row: Record<string, unknown> = { loadMs };
     for (const [w, h] of sizes) {
@@ -405,32 +441,42 @@ async function netMode() {
       await b.run();
       await d.queue.onSubmittedWorkDone();
       const firstMs = performance.now() - t1;
-      outputs[name].push(await readBuffer(d, b.output, f16));
+      const out = await readBuffer(d, b.output, f16);
+      outputs[name].push(out);
       const ms = await timed(WARM, async () => { await b.run(); await d.queue.onSubmittedWorkDone(); });
       const key = `${w}x${h}`;
       row[key] = ms;
-      log(`${name.padEnd(8)} ${key.padEnd(10)} warm ${ms.toFixed(2)} ms (first bind+run ${firstMs.toFixed(0)} ms)`);
+      row[`${key}.hash`] = fnv(out);
+      log(`${name.padEnd(8)} ${key.padEnd(10)} warm ${ms.toFixed(2)} ms (first bind+run ${firstMs.toFixed(0)} ms) · hash ${fnv(out)}`);
       if (profile && rt instanceof WgslRuntime && rt.lastProfile) {
+        // per-layer median of 7 profiled runs (one run is a noisy sample on a shared GPU)
+        const runs: typeof rt.lastProfile[] = [];
+        for (let i = 0; i < 7; i++) { await b.run(); runs.push(rt.lastProfile!); }
+        rt.lastProfile = runs[0].map((l, i) => ({ ...l, ms: median(runs.map((r) => r[i].ms)) }));
         const total = rt.lastProfile.reduce((a, l) => a + l.ms, 0);
-        log(`  per-layer GPU (sum ${total.toFixed(2)} ms): ${rt.lastProfile.map((l) => `${l.name} ${l.ms.toFixed(2)}`).join(' · ')}`);
+        const macs = rt.lastProfile.reduce((a, l) => a + (l.macs ?? 0), 0);
+        log(`  per-layer GPU (sum ${total.toFixed(2)} ms, ${(macs / total / 1e9).toFixed(2)} TMAC/s): ${rt.lastProfile.map((l) => `${l.name} ${l.ms.toFixed(2)}${l.kernel === 'portable' ? '*' : ''} (${((l.macs ?? 0) / l.ms / 1e9).toFixed(1)})`).join(' · ')}  (* portable; (TMAC/s))`);
         row[`${key}.profile`] = rt.lastProfile;
       }
       b.release();
     }
     net[name] = row;
     session.release();
-    if (name === 'wgsl') await (rt as WgslRuntime).destroy();
+    if (rt instanceof WgslRuntime) await rt.destroy();
   }
   const base = runtimes[0];
   const diffs: Record<string, number[]> = {};
   for (const name of runtimes.slice(1)) {
+    const means: number[] = [];
     diffs[name] = outputs[name].map((o, i) => {
       const r = outputs[base][i];
       let m = 0;
-      for (let j = 0; j < o.length; j++) m = Math.max(m, Math.abs(o[j] - r[j]));
+      let sum = 0;
+      for (let j = 0; j < o.length; j++) { const e = Math.abs(o[j] - r[j]); m = Math.max(m, e); sum += e; }
+      means.push(sum / o.length);
       return m;
     });
-    log(`${name} vs ${base}: max |Δ| ${diffs[name].map((x) => x.toExponential(2)).join(' / ')}`);
+    log(`${name} vs ${base}: max |Δ| ${diffs[name].map((x) => x.toExponential(2)).join(' / ')} · mean |Δ| ${means.map((x) => x.toExponential(2)).join(' / ')}`);
   }
   results.net = net;
   results.maxAbsDiff = diffs;
@@ -440,12 +486,12 @@ async function netMode() {
 // ---- tune mode ----------------------------------------------------------------
 // Several WGSL configs on ONE device, timed round-robin so background GPU load
 // hits them alike: &cfg=<pw,ph,oc4,wgx,wgy | ->[@exp+exp][;layer=pw,ph,oc4,wgx,wgy]...
-// (repeat cfg); append !sm=0|1|layer+layer to pick the subgroup-matrix path and
-// !mt=tw,th,ns,ob for its tiling.
+// (repeat cfg); append !sm=0|1|layer+layer to pick the subgroup-matrix path,
+// !mt=tw,th,ns,ob[,nso] for its tiling and !smt=f32|f16|f16-f32 for its type.
 // Reports min / median per config and max |Δ| vs the first.
 
 function parseCfg(c: string): TilingOverride {
-  const [head, ...layerParts] = c.replace(/!(sm|mt)=[^@;!]*/g, '').split(';');
+  const [head, ...layerParts] = c.replace(/!(sm|mt|smt)=[^@;!]*/g, '').split(';');
   const [t, e] = head.split('@');
   const one = (x: string): Partial<ConvTiling> => {
     const [pw, ph, oc4, wgx, wgy] = x.split(',').map(Number);
@@ -478,9 +524,11 @@ async function tuneMode() {
     const t = parseCfg(c);
     const smm = /!sm=([^@;!]*)/.exec(c)?.[1];
     const mt = /!mt=([^@;!]*)/.exec(c)?.[1]?.split(',').map(Number);
+    const smt = /!smt=([^@;!]*)/.exec(c)?.[1] as WgslRuntimeOptions['subgroupMatrixType'];
     const rt = new WgslRuntime({
       tzaUrl: '/tzas', device, tiling: t, subgroupMatrix: smParam(smm ?? params.get('sm')),
-      mmaTiling: mt ? { tw: mt[0], th: mt[1], ns: mt[2], ob: mt[3] } : undefined,
+      mmaTiling: mt ? { tw: mt[0], th: mt[1], ns: mt[2], ob: mt[3], ...(mt[4] ? { nso: mt[4] } : {}) } : undefined,
+      subgroupMatrixType: smt,
     });
     const sess = await rt.load({ name: model, channels: ch, precision });
     const b = await sess.bind({ batch: 1, tileW: w, tileH: h });
