@@ -168,7 +168,10 @@ weights remain single-frame; a neural temporal mode waits for OIDN 3.x.
 - **Validate on non-Apple GPUs (open decision, blocking the default question).**
   NVIDIA, AMD, Intel, Qualcomm, mobile. WGSL tuning (tiling, f16 sums, subgroup
   size 32), the subgroup-matrix kernel and the WebNN backends on other platforms are
-  all untested. Expect re-tuning, or per-vendor tiling presets.
+  all untested. Expect re-tuning, or per-vendor tiling presets. The subgroup-matrix
+  kernel is config-generic since 2026-11-18 (NVIDIA's f16 -> f32 16x16x16 checked by
+  emulation); its RTX 3060 run through dawn.node / Vulkan is the next step
+  (`examples/wgsl-bench/dawn-net.mjs`; Chrome on Windows has no subgroup matrices).
 - **Fix ORT's `*_alb` / `*_alb_nrm` models via split artifacts (open decision).**
   `splitAux` covers only clean-aux models. Options: extend the split (enc_conv0 in
   WGSL, tail graph on ORT) to the 6-channel and dirty-aux models, which means new

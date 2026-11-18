@@ -14,7 +14,7 @@ import { Denoiser, type NetworkRuntime, type NetworkSession } from 'denoiser';
 import { OrtRuntime } from 'denoiser/ort';
 import * as ort from 'onnxruntime-web/webgpu';
 import { KernelsRuntime } from '@pmndrs/denoiser-kernels';
-import { WgslRuntime, type ConvTiling, type TilingOverride, type WgslRuntimeOptions } from '@pmndrs/denoiser-wgsl';
+import { WgslRuntime, type ConvTiling, type LayerTiming, type TilingOverride, type WgslRuntimeOptions } from '@pmndrs/denoiser-wgsl';
 import noisyUrl from '../../gallery/public/scenes/spheres/spp4.png?url';
 import referenceUrl from '../../gallery/public/scenes/spheres/reference.png?url';
 import albedoUrl from '../../gallery/public/scenes/spheres/albedo.png?url';
@@ -502,6 +502,8 @@ function parseCfg(c: string): TilingOverride {
   return out;
 }
 
+const tuneProfile = params.get('profile') === '1';
+
 async function tuneMode() {
   const model = params.get('model') ?? 'rt_ldr_small';
   const ch = Number(params.get('ch') ?? 3);
@@ -526,7 +528,7 @@ async function tuneMode() {
     const mt = /!mt=([^@;!]*)/.exec(c)?.[1]?.split(',').map(Number);
     const smt = /!smt=([^@;!]*)/.exec(c)?.[1] as WgslRuntimeOptions['subgroupMatrixType'];
     const rt = new WgslRuntime({
-      tzaUrl: '/tzas', device, tiling: t, subgroupMatrix: smParam(smm ?? params.get('sm')),
+      tzaUrl: '/tzas', device, tiling: t, subgroupMatrix: smParam(smm ?? params.get('sm')), profile: tuneProfile,
       mmaTiling: mt ? { tw: mt[0], th: mt[1], ns: mt[2], ob: mt[3], ...(mt[4] ? { nso: mt[4] } : {}) } : undefined,
       subgroupMatrixType: smt,
     });
@@ -535,7 +537,7 @@ async function tuneMode() {
     device.queue.writeBuffer(b.input, 0, (f16 ? new F16(host) : host) as unknown as BufferSource);
     await b.run();
     const out = await readBuffer(device, b.output, f16);
-    entries.push({ c, b, out, times: [] as number[] });
+    entries.push({ c, b, rt, out, times: [] as number[], profiles: [] as LayerTiming[][] });
   }
   for (let r = 0; r < rounds; r++) {
     for (const e of entries) {
@@ -544,6 +546,7 @@ async function tuneMode() {
       await e.b.run();
       await device.queue.onSubmittedWorkDone();
       e.times.push(performance.now() - t);
+      if (tuneProfile && e.rt.lastProfile) e.profiles.push(e.rt.lastProfile);
     }
   }
   const rows: Record<string, unknown> = {};
@@ -554,6 +557,14 @@ async function tuneMode() {
     const med = median(e.times);
     rows[e.c] = { min, median: med, maxAbsDiff: m };
     log(`cfg ${e.c.padEnd(40)} min ${min.toFixed(2)} · median ${med.toFixed(2)} ms · max |Δ| ${m.toExponential(1)}`);
+    if (e.profiles.length) {
+      // per-layer median over the interleaved rounds
+      const layers = e.profiles[0].map((l, i) => ({ ...l, ms: median(e.profiles.map((p) => p[i].ms)) }));
+      const total = layers.reduce((a, l) => a + l.ms, 0);
+      const macs = layers.reduce((a, l) => a + (l.macs ?? 0), 0);
+      (rows[e.c] as Record<string, unknown>).layers = layers;
+      log(`  layers (sum ${total.toFixed(2)} ms, ${(macs / total / 1e9).toFixed(2)} TMAC/s): ${layers.map((l) => `${l.name} ${l.ms.toFixed(2)}${l.kernel === 'portable' ? '*' : ''}`).join(' · ')}`);
+    }
   }
   results.tune = rows;
 }

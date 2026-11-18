@@ -160,7 +160,8 @@ ran). Every op is a fused conv (`graph.ts`):
   chunk — f16 FMA runs at 2x the f32 rate on this GPU.
 - *Subgroup matrix* (`mma.ts`), when the device has
   `chromium-experimental-subgroup-matrix` (f32 8x8x8, 32-wide subgroups): the conv
-  as an implicit GEMM on 8x8 matrices, one subgroup per workgroup (8x4 px x 32 oc),
+  as an implicit GEMM on 8x8 matrices (8x4 px x 32 oc per workgroup, two subgroups
+  of 16 oc since 2026-11-18; any config and tiling, see "Subgroup matrices v2"),
   the 8-channel input patch staged as `[row][col][8]` so each (segment, tap)
   operand is one contiguous load; f32 accumulation. Used by default for fp32 only
   (for fp16 the portable kernel's f16 sums are faster). **Experimental Chrome
@@ -248,14 +249,150 @@ Where the time goes now: the big layers run at ~2.5 (portable f32) / ~2.7–3.4
 ~3.8 (MMA) / ~6.6 (f16 FMA), i.e. it's compute-bound; the rest is
 enc_conv0/dec_conv0 (channel padding) and low-res layers with few workgroups.
 
+### Subgroup matrices v2 (2026-11-18, branch `feat/wgsl-sgm-v2`)
+
+The matrix kernel (`mma.ts`) is now generic over the config and the workgroup shape:
+
+- **Any M x N x K config, any operand / accumulator type** the device lists:
+  f32 -> f32 8x8x8 and f16 -> f16 8x8x8 on Apple, f16 -> f32 16x16x16 / 16x8x16 /
+  16x8x8 on NVIDIA through Vulkan. `subgroupMatrixType: 'auto' | 'f32' | 'f16-f32' |
+  'f16'` picks it (`subgroupMatrixShape` pins M, N, K). 'auto' never rounds an fp32
+  model to f16: fp32 models take f32 -> f32 only; fp16 models take f16 -> f32 when
+  offered, else f32. Whether the matrix path runs at all is still `subgroupMatrix`
+  (default 'auto' = fp32 models only), so **defaults are unchanged** and the default
+  path was bit-identical to before (output hashes checked, fp32 and fp16, 256² and 720p)
+  until the measured fp32 'auto' tweaks below (2 subgroups over the output channels:
+  bit-identical; enc_conv0 / dec_conv0 back on the portable kernel: ≤ 1.3e-6, the
+  portable-vs-matrix difference). fp16 and every non-Apple device: unchanged.
+- **Several subgroups per workgroup.** `@builtin(subgroup_id)` offsets (`enable
+  subgroups;`) pass the matrix uniformity rule on Chrome 157 / Metal and in dawn.node;
+  `local_invocation_index / 32` still fails. `mmaTiling: { tw, th, ns, ob, nso }`: `ns`
+  subgroups split the tile's pixel segments, `nso` split the output channels; all of
+  them share one staged input patch. Every tiling gives bit-identical output (each
+  output's sum order is fixed: input block, tap, then K inside the matrix op).
+- **Clean fallback per layer:** a matrix pipeline that fails to compile, or needs more
+  workgroup memory than the device has, runs the portable kernel instead (with a
+  console warning). `WgslRuntime.layerKernels` says which kernel each layer got;
+  profiled runs carry `kernel` and `macs` per layer.
+- **Emulated twin** (`subgroupMatrixEmulate: true`): the matrix built-ins as plain
+  WGSL (lazy left/right views, 32 lanes sharing each result tile, f32 sums). It runs
+  any config on any device, so NVIDIA's 16-wide tilings were checked here. Emulated f32
+  8x8x8 reproduces the hardware path bit for bit (same hash), so it is a faithful oracle
+  for the sum order.
+
+**Agreement** (network output, `rt_ldr_small`, pseudo-random input in [0, 1); fp16
+runs read the same f16-rounded input; reference = the portable kernel in fp32;
+1280x720 unless noted):
+
+| kernel | max \|Δ\| | mean \|Δ\| |
+|---|---|---|
+| fp32: matrix f32 -> f32, any tiling (1-4 subgroups) | 1.3e-6 | 2.0e-7 |
+| fp16 portable (f16 sums per 4-channel chunk) | 3.5e-3 | 5.5e-4 |
+| fp16 matrix f32 -> f32 (f16 storage) | 7.7e-4 | 1.5e-4 |
+| fp16 matrix f16 -> f32, emulated 16x16x16 / 16x8x16 / 16x8x8 (640x368) | 7.1e-4 | 1.5e-4 |
+| fp16 matrix **f16 -> f16** (Apple, f16 sums over the whole K) | 1.1e-2 | 1.8e-3 |
+
+Tolerances for fp16 (output in [0, 1]): f16 -> f32 matrices must stay within 1e-3 of
+fp32 (the same as f32 matrices with f16 storage: the products of f16 inputs are exact,
+only the storage rounding is left); the portable f16 kernel is the 4e-3 bar; f16 -> f16
+is 3x past it (~3 LSB at 8 bits), so it stays opt-in and is not used by 'auto'.
+
+**Speed** (M5 Pro 20-core GPU, Chrome 157 headless, `rt_ldr_small` 3ch, network only,
+`mode=tune`: configs interleaved round-robin on one device, 21-25 rounds; **best-effort:
+the Mac was shared**, load average 17-39 with two other agents' headless Chromes running,
+so medians are inflated 20-80 %; mins are the comparable figure; taken under the rule-11
+GPU lock). Whole network, min / median ms:
+
+| | 1280x720 fp32 | 1920x1088 fp32 | 1280x720 fp16 | 1920x1088 fp16 |
+|---|---|---|---|---|
+| portable | 22.0 / 26.9 | 48.4 / 80.5 | **13.7 / 14.7** | **30.5 / 42.6** |
+| matrix f32, 1 subgroup, ob 4 (old default) | 16.6 / 21.1 | 37.2 / 62.9 | 16.9 / 18.0 | 37.7 / 55.4 |
+| matrix f32, 2 subgroups over oc (`8,4,1,2,2`) | **15.9 / 19.9** | **36.3 / 60.0** | — | — |
+| matrix f16 -> f16, 1 subgroup | — | — | 15.8 / 17.2 | 35.4 / 51.9 |
+| matrix f16 -> f16, `8,4,1,2,4` | — | — | 15.3 / 16.8 | 34.8 / 49.0 |
+
+New fp32 'auto' default (2 subgroups over oc + edge layers on the portable kernel) vs
+the old one, same run (load ~30): 720p 16.8 -> **16.1** (median 24.6 -> 23.4), 1080p
+44.3 -> **42.5** (78.2 -> 72.2); portable 22.0 / 56.4. The 11-config tiling sweep (pixel
+splits `16,4,2,4`, `16,8,4,4`, `32,4,4,4`, mixed `16,4,2,2,2`, `8,8,2,4,2`) found nothing
+better than the oc split; pixel splits are flat or slower.
+
+Per layer (interleaved timestamps, per-layer median of 21 rounds, 1280x720, ms):
+
+| layer | fp32 portable | fp32 matrix 1 sg | fp32 matrix `8,4,1,2,2` | fp16 portable | fp16 matrix f16 `8,4,1,2,2` |
+|---|---|---|---|---|---|
+| enc_conv0 (3 -> 32) | **0.58** | 0.78 | 0.77 | **0.32** | 0.63 |
+| enc_conv1 (32 -> 32, pool) | 3.95 | 2.72 | **2.54** | **2.04** | 2.35 |
+| enc_conv2 | 1.08 | 0.65 | 0.66 | **0.52** | 0.60 |
+| dec_conv3a | 1.43 | 1.05 | **0.99** | 0.90 | **0.84** |
+| dec_conv2a (112 -> 64) | 5.37 | 3.99 | **3.81** | **3.28** | 3.47 |
+| dec_conv2b | 1.78 | 1.40 | **1.34** | **1.09** | 1.19 |
+| dec_conv1a (67 -> 64) | 4.04 | 3.39 | **3.27** | **2.44** | 2.92 |
+| dec_conv1b | 3.57 | 2.66 | **2.65** | **2.12** | 2.39 |
+| dec_conv0 (32 -> 3) | **0.52** | 0.71 | 0.76 | **0.32** | 0.63 |
+| sum (all 16) | 24.3 | 18.8 | **18.1** | **14.3** | 16.2 |
+| TMAC/s | 2.2 | 2.9 | **3.0** | **3.8** | 3.3 |
+
+At 1920x1088 the same ordering holds (fp32 sums 71.6 / 55.5 / 53.4; fp16 43.5 portable vs
+51.7 matrix f16), measured at higher load.
+
+Reading:
+
+- **fp32: the matrix path is 1.3-1.4x the portable kernel** on the whole network (mins;
+  1.2-1.6x on the big layers) and reaches ~3.0 TMAC/s of the ~3.5 the f32 matrix units peak at (`mma.html`, today 3.52).
+  A second subgroup over the output channels adds ~4 %: the kernel was already close to
+  the matrix rate, so sharing the staged patch saves little. The edge layers lose on the
+  matrix path (3 channels padded to 8), hence 'auto' keeps them on the portable kernel.
+- **fp16 on Apple: the portable kernel stays the fastest**, by ~10-15 %, on every big
+  layer. f16 MMA peaks at ~4.1 TMAC/s here against ~6.6 for plain f16 FMA (`mma.html`),
+  and the portable f16 kernel already runs at 3.8. Apple's f16 matrices also sum in f16
+  (3x the error). So nothing changes for fp16 on Apple, and the case for the matrix path
+  in fp16 rests on NVIDIA's tensor cores (below), where f16 -> f32 is ~2x the f32 rate.
+- The M5's GPU neural accelerators are not reached through `simdgroup_matrix` in Chrome
+  (f16 MMA 4.1 TMAC/s is ALU rate); they'd need Metal 4 tensor ops, which WebGPU has no
+  path to (pathtracer `subgroup-matrix-feedback.md` W5).
+
+### Subgroup matrices on Windows (dawn.node, RTX 3060): a Windows task
+
+Chrome on Windows runs Dawn on D3D12, which has no subgroup matrices (any flag; see the
+pathtracer's `docs/design/subgroup-matrix-feedback.md` §1b). Dawn's **Vulkan** backend
+exposes NVIDIA's tensor cores as f16 -> f32 16x16x16 / 16x8x16 / 16x8x8 (and int8)
+configs, reachable only through dawn.node (npm `webgpu`) outside the browser.
+`examples/wgsl-bench/dawn-net.mjs` runs the network on it:
+
+```bash
+yarn workspace @pmndrs/denoiser-wgsl build
+node examples/wgsl-bench/dawn-net.mjs precision=fp16 profile=1 wgsl~prec=fp32~sm=0 wgsl~sm=0 wgsl~sm=1 wgsl~sm=1~mt=32.4.2.2.2 wgsl~sm=1~shape=16x8x16
+```
+
+- Setup (from the pathtracer's `docs/design/dawn-node-vulkan.md`): `npm i webgpu`
+  (0.6.2) somewhere and point `DAWN_NODE` at its `index.js`; copy
+  `C:\Windows\System32\vulkan-1.dll` next to `dist/win32-x64/dawn.node`. The runner
+  defaults to `backend=vulkan` with `allow_unsafe_apis,vulkan_enable_f16_on_nvidia`
+  (without the second toggle Dawn hides `shader-f16` and every f16 matrix config on
+  NVIDIA) and turns timestamp quantization off.
+- Checked here on Metal through the same runner: configs listed, the matrix and
+  portable kernels agree as in Chrome. Two dawn.node 0.6.2 quirks it works around:
+  `device.adapterInfo.subgroupMatrixConfigs` is empty (the adapter's is complete), and
+  `queue.writeBuffer` sizes a `Float16Array` view at 1 byte per element (the runtime now
+  uploads through a byte view). Node 22 needs `--js-float16array` (the runner re-execs
+  itself with it).
+- Not yet run on the 3060. To do there: the variants above at 1280x720 / 1920x1088,
+  fp16 (f16 -> f32 is the tensor-core path) and fp32 (no f32 config on NVIDIA, so the
+  portable kernel; f16 -> f32 would round an fp32 model to f16, opt-in
+  `subgroupMatrixType: 'f16-f32'`). Expect retuning: the 16x16 default tiling
+  (`tw 16, th 4, ns 1, ob 2`) is a guess. Check that `subgroupMinSize/MaxSize` read
+  32..32 (the runtime only uses matrices on 32-wide subgroups). Record the per-layer
+  profile and max |Δ| vs `wgsl~prec=fp32~sm=0`. This is out-of-browser: a Windows
+  Chrome user still gets the portable kernel.
+
 ### Still on the table
 
-- Several subgroups per workgroup on the matrix path (blocked: matrix load/store
-  offsets must be workgroup-uniform, and `subgroupBroadcastFirst` doesn't count).
-  That would share the staged tile across subgroups and make Winograd worth
-  revisiting.
-- f16 subgroup matrices only exist with f16 accumulation here (`f16 x f16 -> f16`),
-  so they're out under the f32-accumulation rule; their raw rate is ≈ f32 anyway.
+- ~~Several subgroups per workgroup on the matrix path~~ (done 2026-11-18 with
+  `@builtin(subgroup_id)`, above). Winograd on top of it is still untried.
+- f16 -> f16 matrices (Apple) sum in f16 over the whole K: 3x the portable fp16
+  error. A split accumulation (f16 partial per input block, added to an f32 total
+  through workgroup memory) would fix it at the cost of a round trip per block.
 - Per-level tilings: low-res layers (and the large model's 192/256-channel ones)
   launch few workgroups; smaller pixel tiles there would raise occupancy.
 - Two 4-channel chunks per barrier stage; cheaper edge layers (enc_conv0 pads 3→4

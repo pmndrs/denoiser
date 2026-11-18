@@ -35,8 +35,9 @@ export interface WgslRuntimeOptions {
    * Vulkan cooperative matrices) when the device has
    * `chromium-experimental-subgroup-matrix`, 32-wide subgroups and a config of
    * the wanted type (`subgroupMatrixType`). 'auto' (default) = for fp32 models
-   * when an f32 -> f32 config exists (Apple); true = for both precisions; or a
-   * list of layer names. The portable vec4 kernel is the fallback, per layer
+   * when an f32 -> f32 config exists (Apple), except the edge layers with fewer
+   * than 2K input or N output channels (enc_conv0, dec_conv0: padding makes them
+   * slower there); true = every layer, both precisions; or a list of layer names. The portable vec4 kernel is the fallback, per layer
    * (also when a matrix pipeline fails to compile).
    */
   subgroupMatrix?: boolean | 'auto' | string[];
@@ -105,8 +106,11 @@ export class WgslRuntime implements NetworkRuntime {
       ? emulatedConfig(this.opts.subgroupMatrixType, this.opts.subgroupMatrixShape)
       : pickSubgroupMatrixConfig(device, f16, this.opts.subgroupMatrixType, this.opts.subgroupMatrixShape);
     const sm = this.opts.subgroupMatrix ?? 'auto';
+    // 'auto' leaves the edge layers (3/6/9 input or 3 output channels, padded to K / N) on the
+    // portable kernel: there the padding makes the matrix path slower (M5 Pro, 2026-11-18)
     const useMma = (op: ConvOp) => !!config
-      && (Array.isArray(sm) ? sm.includes(op.name) : sm === true || (sm === 'auto' && !f16));
+      && (Array.isArray(sm) ? sm.includes(op.name) : sm === true
+        || (sm === 'auto' && !f16 && op.c1 + op.c2 >= 2 * config.K && op.cout >= config.N));
     // several subgroups per workgroup index them with @builtin(subgroup_id) ('subgroups' feature)
     const multi = emulate || device.features.has('subgroups');
     this.matrixConfig = config;
@@ -176,8 +180,10 @@ function emulatedConfig(type: WgslRuntimeOptions['subgroupMatrixType'] = 'auto',
 
 /** Default subgroup-matrix tiling per config shape. */
 function mmaTilingFor(op: ConvOp, config: SgmConfig, override?: WgslRuntimeOptions['mmaTiling']): MmaTiling {
+  // 8x8: two subgroups split the output channels (ob 2 each): ~4 % over one subgroup with
+  // ob 4 on M5 Pro, bit-identical. Without the 'subgroups' feature init() falls back to one.
   const base: MmaTiling = config.M === 8
-    ? { tw: 8, th: 4, ns: 1, ob: 4, nso: 1 }
+    ? { tw: 8, th: 4, ns: 1, ob: 2, nso: 2 }
     : { tw: config.M, th: 4, ns: 1, ob: 2, nso: 1 };
   const { layers, ...all } = override ?? {};
   return { ...base, ...all, ...layers?.[op.name] };
@@ -241,7 +247,7 @@ class WgslSession implements NetworkSession {
       if (matrix && useMma(op)) {
         const { config: c, emulate, multi } = matrix;
         const t = mmaTilingFor(op, c, mmaTiling);
-        if (!multi) { t.ns = 1; t.nso = 1; }
+        if (!multi) { t.ob *= t.nso ?? 1; t.ns = 1; t.nso = 1; }
         try {
           const info = mmaShader(op, this.f16, t, { config: c, emulate });
           if (info.smem > smemMax) throw new Error(`needs ${info.smem} B of workgroup memory (limit ${smemMax})`);
