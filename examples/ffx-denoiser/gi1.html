@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GI-1.0 denoiser checks</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    pre { white-space: pre-wrap; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>GI-1.0 image-space denoiser (AMD Capsaicin v1.3) checks</h1>
+  <p>Correctness checks on an analytic scene: constant fields, noise, disocclusion blur, history
+    reprojection and ghosting. Results in <code>window.__ffx</code>; run headless with
+    <code>BASE=http://127.0.0.1:5210/gi1.html node run-headless.mjs "checks=all"</code>.</p>
+  <pre id="status"></pre>
+  <script type="module" src="./src/gi1.ts"></script>
+</body>
+</html>

@@ -7,5 +7,8 @@ export type {
   FfxReflectionDenoiserOptions, FfxReflectionDenoiserRuntimeOptions, FfxReflectionInputs, FfxReflectionTileList,
 } from './reflections';
 export type {
-  TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, ShadowInputs, SpecularInputs, Mat4,
+  TemporalDenoiser, TemporalConfig, FrameCamera, FrameGuides, ShadowInputs, SpecularInputs, DiffuseInputs, Mat4,
 } from '@pmndrs/denoiser-core';
+// AMD GI-1.0's image-space GI denoiser, ported from AMD Capsaicin v1.3 (MIT; see NOTICE).
+export { Gi1Denoiser } from './gi1';
+export type { Gi1Box, Gi1DenoiserOptions, Gi1Inputs } from './gi1';

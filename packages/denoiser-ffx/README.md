@@ -8,6 +8,7 @@ Exposed to users as `denoiser/ffx`.
 |---|---|---|
 | `FfxShadowDenoiser` | 1-spp ray-traced shadow visibility | prepare, tile classification, 3x a-trous filter |
 | `FfxReflectionDenoiser` | 1-spp glossy reflections | reproject, prefilter, resolve temporal |
+| `Gi1Denoiser` | diffuse GI irradiance (AMD GI-1.0's screen probes, or any per-pixel irradiance) | ReprojectGI, FilterGI x2 (from AMD Capsaicin v1.3, not the FidelityFX SDK) |
 
 ```ts
 import { FfxShadowDenoiser } from 'denoiser/ffx';
@@ -24,6 +25,18 @@ const mask = shadows.dispatch(
 // `mask` (rgba16float, .r = denoised visibility) is valid until the next dispatch.
 ```
 
-See `docs/specs/temporal.md` (FidelityFX port section) for conventions,
+`Gi1Denoiser` is AMD GI-1.0's image-space GI denoiser, ported from AMD Capsaicin v1.3
+(MIT, see `NOTICE`): a temporal accumulation with an adaptive history length (up to 64
+frames) and a separable blur where the history is short (disocclusions). It takes
+`DiffuseInputs.radiance` and the usual guides; `encode(encoder, ...)` records into the
+caller's encoder; `hintInAlpha` reads GI-1.0's keep/discard hint from `radiance.a`; the
+optional `guides.previousDepth` / `previousNormal` save its own history copy.
+Two port additions, on by default: `historyClamp: 'neighbourhood'` keeps a short history
+(about 4 samples) and clips the long one to it within two standard errors, so lighting
+changes are followed in a few frames (`'none'` is Capsaicin's history, which lags 45-160
+frames), and `changeReset` keeps the history short for 8 frames inside
+`inputs.changedRegions` (world boxes where the scene changed, or `'everything'`).
+
+See `docs/specs/temporal.md` (FidelityFX port and GI-1.0 port sections) for conventions,
 deviations from AMD's source and measured quality / cost, and
-`examples/ffx-denoiser` for the test bed.
+`examples/ffx-denoiser` for the test bed (`gi1.html` for the GI-1.0 checks).
