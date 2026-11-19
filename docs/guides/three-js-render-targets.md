@@ -5,7 +5,7 @@ denoiser as a `GPUTexture`, and get the denoised result **out** into a texture
 three.js can sample — no CPU pixels anywhere. Everything here is lifted from the
 working example ([`examples/three-pathtracer-webgpu/src/main.ts`](../../examples/three-pathtracer-webgpu/src/main.ts)).
 
-Requires three ≥ r185 (`three/webgpu`, the `WebGPURenderer`).
+Requires three ≥ r187 (`three/webgpu`, the `WebGPURenderer`).
 
 ## 0. One GPUDevice, shared with the denoiser
 

@@ -1,5 +1,38 @@
 # Handoff — 2026-10-14
 
+## 2026-11-20: three r187 (branch `chore/three-r187`, not pushed, not merged)
+
+- **three 0.187.0, @types/three ^0.187.0; peer range `>=0.187.0`** (was `>=0.185.0`) in `denoiser` and `denoiser-three`.
+  Raised because the nodes now extend `Node` (three r187 deprecates `TempNode`, and `Node` as a base only exists
+  with the r187 node core); the sibling stack (@pmndrs/reflections, @pmndrs/bvh) is on r187 as well.
+- **three-gpu-pathtracer: npm `0.0.28`** (first release built for r187) replaces the SHA pin `1e206d8` in
+  `ldraw-eiffel`, `three-pathtracer-webgpu`, `oidn-web-compare`, `pipeline-lab`; `three-mesh-bvh ^0.9.17` (its peer). This closes #11.
+- **Code changes:** `DenoiseNode`, `TemporalDenoiseNode` and the example nodes extend `Node`, not `TempNode`
+  (no "THREE.TempNode deprecated" warning from our code; the one left comes from `@pmndrs/upscaler` 0.5.0). No
+  VelocityNode or TAA-registration code lives in this repo, so nothing to change there.
+  `pipeline-lab`'s `DenoiserPass` is now an `EventDispatcher` with `useAuxiliaryBuffers = false` (0.0.28's
+  `setDenoiser` calls `addEventListener('progress')`; before that it threw "denoiser.addEventListener is not a function").
+  `pipeline-lab/src/types.d.ts` (the GradientEquirectTexture module declaration; `*.d.ts` is gitignored, force-added).
+- **#21 (compileAsync back faces) does not reproduce on r187**: the issue's repro reads 0.331 plain and 0.331 after
+  `compileAsync` (r186.1: 0.331 / 0.078). The impostors workaround is no longer needed on r187; close the issue
+  once the stack is on r187 (not closed here).
+- **Checks (real GPU, headless Chrome/WebGPU, loaded machine, correctness only):** `yarn build:lib`, the full `yarn build`,
+  the CI typecheck list plus `denoiser-three`, `denoiser-ffx`, `denoiser-realtime`, `three-temporal`, `pipeline-lab`: clean.
+  There are no unit tests (`yarn test` is `vitest run` and vitest isn't a dependency, as on main).
+  `three-temporal` pages (`run-realtime.mjs smoke`): index, shadows, shadows-split, realtime-shadows, realtime-gi,
+  realtime-glass, reflections-hybrid, reflections-rooms, golden: pass. `reflect-bench` and `reflection-probes` render
+  ("60 fps", "three r187, 3 probes") but fail the smoke runner's ready probe, exactly as on r186 (the probe expects a status
+  text those pages don't write). `run-realtime.mjs shadows` and `gi`, `run-headless.mjs ssr` and `shadows`: all checks pass, 0 NaN.
+  ffx-denoiser `mode=eval` (shadows + reflections): every non-timing field identical to r186.
+  Screenshots r187 vs r186 (realtime-shadows, 9 images): the FFX/ours/noisy/reference all differ by mean 0.6/255,
+  0.07% of pixels over 8/255, max 40: the same on the noisy and the reference image, so it is r187's scene render, not the denoiser.
+  Path tracer pages (`three-pathtracer-webgpu`, `ldraw-eiffel`, `oidn-web-compare`, `pipeline-lab`) load, accumulate and denoise.
+- **Not changed:** the reflection-probe stand-in (`three-temporal/src/probes`) still is the r186-era port (cube arrays in a
+  2D array texture, own prefilter); r187 has native cube-array binding and cube-mip PMREM, so it can be dropped for the
+  real `ReflectionProbes` when #35046 lands. Asset URLs in `ssr.ts` / `reflect-bench` still point at the three `r186` tag.
+  Remaining `THREE.TempNode` warning is `@pmndrs/upscaler` 0.5.0. New warning from the tracer: "adaptiveFrameBudget needs
+  timestamp queries" (harmless; create the renderer with `trackTimestamp: true` to silence).
+
 Where the project is and what's left, written for a fresh session in this folder.
 Older history: [STATUS.md](STATUS.md) (next actions, known issues), [ROADMAP.md](ROADMAP.md),
 eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
@@ -81,7 +114,7 @@ The user wanted to hold the push until they had looked things over, so ask befor
   probe 3.3, SSR 3.9, hybrid 4.2, ray traced 4.5 ms; no reflections 3.1 ms (re-measured 2026-10-19: `?manual`, "Explore" view,
   median of 6 × 60 frames, ±0.4 ms). Probe bake: ~1.8 ms since 2026-10-19 (see below).
 - **Shadow split experiment** merged (`three-temporal/shadows-split.html`).
-- **three-gpu-pathtracer** pinned to upstream main `1e206d8` (after 0.0.27). three is 0.186.1 (latest).
+- **three-gpu-pathtracer** pinned to upstream main `1e206d8` (after 0.0.27). three is 0.186.1 (latest as of then; 0.187.0 since 2026-11-20, see above).
   @pmndrs/upscaler 0.5.0 is the latest release; its merged #89/#90 fixes need a 0.5.1.
 
 ## 2026-10-19
@@ -173,7 +206,7 @@ Main was pushed to `origin/main` on this date, including everything above.
 - **Close #13** (maxRunPixels): already fixed in `packages/denoiser-core/src/engine.ts:195`.
 - **#14:** move the docs build to `npx -y @pmndrs/docs@latest build docs out --format website`.
   The frozen `ghcr.io/pmndrs/docs:3` image still works.
-- **#11:** update the text. The pathtracer is pinned to upstream main 0.0.27, awaiting an npm release.
+- **#11:** done on `chore/three-r187` (pathtracer from npm 0.0.28); close it when that merges.
 - **`examples/realtime-compare`:** fix its 5 TS errors under r186 TSL types. It builds and runs, and isn't in CI.
 - **A "Runtimes" side-by-side comparison demo page.**
 - **FFX demo perf:** about 3 ms of shadow rays at 960×540. three-mesh-bvh only has closest-hit; a custom

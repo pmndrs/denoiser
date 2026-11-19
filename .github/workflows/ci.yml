@@ -39,8 +39,8 @@ jobs:
         run: yarn build:lib
       # Explicit `tsc --noEmit` per workspace that has a tsconfig. Skipped:
       # `packages/denoiser-react` (still on the old v1 API, pending port/drop
-      # per STATUS.md). The two path tracer demos typecheck since three r186 +
-      # three-gpu-pathtracer 0.0.27 (which ships its own .d.ts).
+      # per STATUS.md). The two path tracer demos typecheck on three r187 +
+      # three-gpu-pathtracer 0.0.28 (which ships its own .d.ts).
       - name: Typecheck workspaces
         run: |
           set -e

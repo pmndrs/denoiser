@@ -26,7 +26,7 @@ npm install denoiser
 npm install onnxruntime-web
 ```
 
-`onnxruntime-web`, `three` (>= r185, for `denoiser/three`) and
+`onnxruntime-web`, `three` (>= r187, for `denoiser/three`) and
 `@huggingface/kernels` (for `denoiser/kernels`) are optional peer dependencies.
 
 ### Breaking changes (alpha)
