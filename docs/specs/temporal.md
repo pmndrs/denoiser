@@ -288,7 +288,7 @@ on Windows pass the adapter with `CHROME_ARGS=--use-adapter-luid=<high>,<low>`).
 scene (floor, back wall, a box that moves) ray cast per pixel in WGSL writes the guides, a
 noisy irradiance and its noise-free value; 640x360.
 
-RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19:
+RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19 (Intel UHD gen-12lp: every check passes with the same numbers to 3 digits):
 
 | check | result |
 |---|---|
@@ -307,5 +307,5 @@ a darkening (a shadow arriving) is the slowest. A faster response would be a lev
 the faithful path (a larger delta step, a lower cap, or a clamp of the history to the new
 sample's neighbourhood); none is built.
 
-Not done: timing (no bench run: the checks only test correctness), the Intel / Apple GPUs,
+Not done: timing (no bench run: the checks only test correctness), Apple GPUs,
 a three.js node wrapper.
