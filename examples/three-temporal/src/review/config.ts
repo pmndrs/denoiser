@@ -15,6 +15,11 @@ export const valueOf = (cfg: SideConfig, id: string): Value => cfg[id] ?? option
 /** Filter of a node on a side ('svgf' | 'recurrent'). */
 export const filterOf = (cfg: SideConfig, node: 'gi' | 'ao') => valueOf(cfg, node === 'gi' ? 'gi.filter' : 'ao.filter') as 'svgf' | 'recurrent';
 export const payloadOf = (cfg: SideConfig) => valueOf(cfg, 'gi.payload') as 'radiance' | 'sh';
+/** OIDN quality a side runs instead of the real-time filters (E-2b), or undefined for the real-time filters. */
+export const oidnOf = (cfg: SideConfig) => {
+  const v = valueOf(cfg, 'oidn.engine');
+  return v === 'oidn-fast' ? 'fast' as const : v === 'oidn-balanced' ? 'balanced' as const : v === 'oidn-high' ? 'high' as const : undefined;
+};
 
 const nodeOfTarget = (t: Target) => (t === 'ao' ? 'ao' : t === 'shadows' ? 'shadows' : 'gi');
 
@@ -36,6 +41,8 @@ function liveTargets(o: ReviewOption, cfg: SideConfig): Target[] {
 /** Why an option doesn't apply on this side (undefined = it applies), e.g. "needs filter 'recurrent'". */
 export function inapplicable(o: ReviewOption, cfg: SideConfig): string | undefined {
   if (o.unwired) return o.unwired;
+  if (o.filter === 'oidn') return undefined; // the engine switch: always applicable, passed to no node
+  if (oidnOf(cfg)) return 'this side shows OIDN (its real-time nodes keep running unseen, with these options)';
   if (o.filter === 'sh' && !o.switch && payloadOf(cfg) !== 'sh') return "needs payload 'sh' (the SH switch)";
   for (const [id, vs] of Object.entries(o.requires ?? {})) {
     if (!vs.includes(valueOf(cfg, id))) return `needs ${optionById.get(id)?.key ?? id} ${vs.map(String).join(' / ')}`;
@@ -59,7 +66,8 @@ export function nodeOptions(cfg: SideConfig): NodeOptions {
   const out: NodeOptions = { gi: { diffuse: {}, specular: {} }, ao: {}, shadows: {} };
   for (const [id, v] of Object.entries(cfg)) {
     const o = optionById.get(id);
-    if (!o || inapplicable(o, cfg)) continue;
+    // a side showing OIDN keeps its real-time nodes running unseen with their options (no rebuild when switching back)
+    if (!o || inapplicable(o, { ...cfg, 'oidn.engine': 'realtime' })) continue;
     const sh = payloadOf(cfg) === 'sh' && filterOf(cfg, 'gi') === 'svgf';
     for (const t of liveTargets(o, cfg)) {
       if (t === 'gi' && sh && o.radianceOnly) out.gi.specular[o.key] = v; // the SH diffuse node can't take it

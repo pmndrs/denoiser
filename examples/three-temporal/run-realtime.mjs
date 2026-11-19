@@ -328,6 +328,24 @@ async function runReview(cdp, sceneName) {
     else console.log(`  (info) ${sceneName}: ${d} ${detail}`);
     savePng(`${tag}-${d}-split.png`, await cdp.evalJs('window.__t.capture()'));
   }
+  // E-2b: OIDN on side B (src/review/oidn.ts, lockstep): every signal gets a result, outputs are finite, A and B differ
+  await T('window.__t.loadDecision("E2b", true)');
+  await T('window.__t.setOption("B", "oidn.engine", "oidn-fast")');
+  for (const sig of ['lit', 'diffuse']) {
+    await T(`window.__t.setModes({ signal: '${sig}', view: 'split', moving: true })`);
+    await T('window.__t.step(3)');
+    savePng(`${tag}-oidn-${sig}-split.png`, await cdp.evalJs('window.__t.capture()'));
+  }
+  const os = await T('window.__t.oidnState()');
+  results.data[`${sceneName}-oidn`] = os;
+  check(`${sceneName}: OIDN (side B) denoised all four signals in lockstep`, os.sides.B && Object.values(os.sides.B.denoised).every(Boolean), JSON.stringify(os));
+  const fin3 = await T('window.__t.finiteCheck()');
+  check(`${sceneName}: no NaN/Inf with OIDN on side B`, Object.entries(fin3).every(([, r]) => r.bad === 0) && Object.keys(fin3).some((k) => k.startsWith('B.oidn-')), JSON.stringify(fin3));
+  const dOidn = await T('window.__t.abDifference()');
+  check(`${sceneName}: OIDN side differs from the real-time side`, dOidn > 0, `mean |A - B| ${dOidn.toFixed(3)} / 255`);
+  await T('window.__t.setOption("B", "oidn.engine", undefined)');
+  await T('window.__t.step(2)');
+  check(`${sceneName}: OIDN off again`, !(await T('window.__t.oidnState()')).sides.B);
   await T('window.__t.swap()');
   await T('window.__t.flip()');
   await T('window.__t.step(4)');

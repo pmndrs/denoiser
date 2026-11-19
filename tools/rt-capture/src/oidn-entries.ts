@@ -6,8 +6,9 @@
 // image per awaited call), so these entries implement ReplayDenoiser.dispatchAsync and are
 // replay-only (`offline: true`); the test bed's live loop doesn't load them.
 //
-//   oidn          quality 'high' (largest weights available for the inputs), fp32
-//   oidn-default  the Denoiser's default quality ('fast' = *_small weights), fp32
+//   oidn           quality 'high' (largest weights available for the inputs), fp32
+//   oidn-balanced  quality 'balanced' (base weights, no suffix), fp32 (E-2b, results/E2b-oidn-vs-svgf.md)
+//   oidn-default   the Denoiser's default quality ('fast' = *_small weights), fp32
 //
 // Signals and inputs (replay names):
 //   diffuse, specular  demodulated HDR radiance as HDR color (OIDN's PU transfer + autoexposure)
@@ -217,6 +218,11 @@ export function registerOidnDenoisers(register: (e: DenoiserEntry) => void): voi
     id: 'oidn', offline: true, signals: OIDN_SIGNALS,
     description: "OIDN 2 single-frame baseline (denoiser Denoiser, WGSL runtime, quality 'high', fp32; no history)",
     create: createOidn({ quality: 'high' }),
+  });
+  register({
+    id: 'oidn-balanced', offline: true, signals: OIDN_SIGNALS,
+    description: "OIDN 2 single-frame baseline at quality 'balanced' (base weights, e.g. rt_hdr_calb_cnrm), fp32",
+    create: createOidn({ quality: 'balanced' }),
   });
   register({
     id: 'oidn-default', offline: true, signals: OIDN_SIGNALS,
