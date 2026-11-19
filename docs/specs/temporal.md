@@ -228,3 +228,84 @@ Not done: three.js `recurrentDenoise()` comparison for reflections (needs
 the raw WebGPU textures wrapped as three nodes); subgroup fast paths; FFX's
 SSSR tile classifier / variable-rate tracing (that's part of SSSR, not the
 denoiser); a three.js TSL node wrapper.
+
+## GI-1.0 port
+
+`Gi1Denoiser` (`TemporalDenoiser<DiffuseInputs>`, in `packages/denoiser-ffx`, users import
+`denoiser/ffx`): AMD GI-1.0's image-space GI denoiser, ported to WGSL from AMD Capsaicin
+v1.3 (commit `914b915`, MIT; AMD's notice in `shaders/gi1.ts` and the package `NOTICE`).
+Not part of the FidelityFX SDK, but the same kind of work (an AMD MIT port of a hand-tuned
+real-time filter), so it sits next to the FFX ports (pmndrs/gi DECISIONS 2026-11-19: "the
+denoiser can go into denoiser like the other fidelity work"). The paper is GI-1.0
+(Boissé et al., arXiv 2310.19855), §2.4.3 and Fig. 19.
+
+What it does: per pixel, a running sum of the irradiance with its sample count in `w`,
+reprojected through a 3x3 tent (rejecting samples whose world position is farther than about
+a screen-probe tile, or whose normal differs, `dot > 0.95`); the history length adapts to a
+smoothed luminance delta between the new sample and the history (up to 64 samples, 4 near
+changes, shorter at the screen edges); where the history holds fewer than 8 samples a blur
+mask sets a separable depth / normal-weighted blur of radius 8 − count, run horizontally then
+vertically. The filtered sum is next frame's history.
+
+### Passes and deviations
+
+| Capsaicin | port |
+|---|---|
+| `InterpolateScreenProbes` writes the noisy irradiance into `g_GIDenoiser_ColorBuffer`, which `ReprojectGI` reads and overwrites in place | the input is its own texture (`DiffuseInputs.radiance`); `hintInAlpha` (default false) reads GI-1.0's keep / don't-keep hint from its alpha, otherwise every pixel is a sample to keep |
+| previous depth and shading normal: the renderer's shared `PrevVisibilityDepth` / `PrevShadingNormal` | `prepare` pass copying depth (r32float) and normal (rgba16float, signed) into a ping-pong pair, or the caller's own copies via `FrameGuides.previousDepth` / `previousNormal` |
+| sky = zero shading normal (its visibility buffer writes one) | the same, or depth at the far plane (`FrameGuides` doesn't promise a zero normal) |
+| `ReprojectGI` (`gi1.comp:3997-4103`) | 1:1. Nearest-sampler reads become `textureLoad` at the clamped texel; `pow(t, 6)` and `pow(x, 0.25)` as products / square roots (WGSL's `pow` is undefined at 0) |
+| `FilterGI` x2 (`gi1.comp:4105-4154`, `gi1.cpp:2898-2926`) | 1:1, two pipelines (horizontal, vertical + output) instead of a `g_BlurDirection` uniform |
+| colour history RGBA16F, colour delta R16F | rgba32float / r32float. The history is a sum of up to 64 samples stored three times a frame; rgba16float stores truncate on some GPUs (pmndrs/gi measured it on an RTX 3060 and an Intel UHD), which drags a constant field down |
+| blur mask R8_SNORM | r32float holding the same snorm8 values (r8snorm isn't a storage format); internal, exposed read-only as `debugBlurMask` |
+| world positions, `g_Eye` | positions relative to the current eye (both inverse view-projections built in double precision on the host): the same distances, without f32 cancellation far from the origin |
+| `toLinearDepth(depth, g_NearFar)` | linear depth from the inverse projection (any depth convention) |
+| velocity (uv, current − previous, y down) | `guides.motion` (NDC delta) scaled by (0.5, −0.5) |
+| `cell_size` from `ScreenProbes::probe_size_` (`gi1.cpp:1839-1843`) | `probeSize` option (default 8), from the projection's field of view |
+| unorm normals decoded `2n − 1` | `normalEncoding: 'signed'` (default, FrameGuides' contract) or `'unorm'` (Capsaicin's decode) |
+
+The paper calls the blur mask "dilated"; Capsaicin's v1.3 kernels don't dilate it, and the
+port follows the code. `camera.jitter` (render pixels, as @pmndrs/upscaler) is applied to
+both frames' inverse view-projections, so positions rebuilt from a jittered depth land where
+they were drawn (the previous frame's jitter is kept by the denoiser).
+
+### Interface additions (denoiser-core)
+
+- `FrameGuides.previousDepth` / `previousNormal` (optional, both or neither): a caller that
+  already keeps last frame's depth and normals (a renderer's screen history) hands them in,
+  and `Gi1Denoiser` reprojects against them instead of its own copies. Ignored by the other
+  denoisers.
+- `TemporalDenoiser.encode?(encoder, inputs, guides, camera)` (optional): the frame recorded
+  into the caller's encoder instead of submitted, for pipelines that build the inputs in the
+  same encoder (a GI technique's screen passes). No `gpuTimings` for such frames.
+  `Gi1Denoiser` implements it; `dispatch` is `encode` plus a submit.
+
+### Checks and results
+
+`examples/ffx-denoiser/gi1.html` (same dev server, port 5210; headless:
+`BASE=http://127.0.0.1:5210/gi1.html node examples/ffx-denoiser/run-headless.mjs "checks=all"`;
+on Windows pass the adapter with `CHROME_ARGS=--use-adapter-luid=<high>,<low>`). An analytic
+scene (floor, back wall, a box that moves) ray cast per pixel in WGSL writes the guides, a
+noisy irradiance and its noise-free value; 640x360.
+
+RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19:
+
+| check | result |
+|---|---|
+| still constant field (E = 0.7, 40 frames) | every pixel within 0.07% of its input, mean within 0.05%: one rgba16float output store, which truncates on this GPU |
+| moving camera + moving box, constant field (60 frames) | the same, also inside the blur mask (151,641 masked pixel-frames): no darkening at disocclusion edges |
+| uniform noise ±50 % on a constant field (160 frames) | mean 0.9993 of the f32 value from frame 1 on (the input's own f16 store included); frame-to-frame std of a pixel 0.76 % against the input's 28.9 % |
+| box jumps after 40 still frames | all 4,846 uncovered pixels (whole 3x3 previously box) get the mask; 99.98 % of converged pixels don't; spatial std there 0.18x the input's |
+| reprojection: converged world-space pattern, camera moves, the frame's input withheld (hint 0) | output = history: mean error 0.96 %, p95 3.95 %, history found on 100 % of pixels. Control with zero motion: 8.7 %, found on 57 % |
+| ghosting: a box with a contact shadow on the floor slides 1.8 m in 30 frames and stops | before the move 141 floor pixels differ from the input by over 5 % (screen-edge vignette); after the stop 13,051 (frame 1), 7,272 (32), 3,315 (64), 945 (100), 394 (150) |
+
+The ghosting is GI-1.0's design, not the port: a scalar model of `ReprojectGI`'s
+recurrence (history cap 64, delta smoothed by 1/8) takes 45-160 frames to come within 5 % of
+a step change in irradiance (1 -> 0.2: 159 frames; 0.6 -> 1: 107). The history only
+shortens once the smoothed luminance delta is large against the history's own luminance, so
+a darkening (a shadow arriving) is the slowest. A faster response would be a lever beside
+the faithful path (a larger delta step, a lower cap, or a clamp of the history to the new
+sample's neighbourhood); none is built.
+
+Not done: timing (no bench run: the checks only test correctness), the Intel / Apple GPUs,
+a three.js node wrapper.

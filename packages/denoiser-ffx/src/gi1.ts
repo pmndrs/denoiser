@@ -33,6 +33,12 @@ export interface Gi1DenoiserOptions {
    * not to accumulate into the history. Default false: every pixel is a sample to keep.
    */
   hintInAlpha?: boolean;
+  /**
+   * How `guides.normal` is stored: `'signed'` (FrameGuides' contract, [-1, 1]) or `'unorm'`
+   * (0..1, decoded as 2n - 1, as Capsaicin decodes its own). Zero means nothing drawn
+   * either way. `guides.previousNormal` is always signed. Default `'signed'`.
+   */
+  normalEncoding?: 'signed' | 'unorm';
   /** Per-pass GPU timestamps into `gpuTimings` when the device supports them (dispatch only). Default true. */
   timestamps?: boolean;
 }
@@ -90,6 +96,7 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
     this.opts = {
       probeSize: options.probeSize ?? 8,
       hintInAlpha: options.hintInAlpha ?? false,
+      normalEncoding: options.normalEncoding ?? 'signed',
       timestamps: options.timestamps ?? true,
     };
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
@@ -98,6 +105,10 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
+
+  /** Change `normalEncoding` between frames. */
+  set normalEncoding(value: 'signed' | 'unorm') { this.opts.normalEncoding = value; }
+  get normalEncoding(): 'signed' | 'unorm' { return this.opts.normalEncoding; }
 
   /** Change `hintInAlpha` between frames. */
   set hintInAlpha(value: boolean) { this.opts.hintInAlpha = value; }
@@ -235,7 +246,8 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
     // uv delta (current - previous, y down).
     f[40] = 0.5; f[41] = -0.5;
     f[42] = cellSize;
-    u32[43] = (historyValid ? 1 : 0) | (this.opts.hintInAlpha ? 2 : 0) | (camera.reversedDepth ? 4 : 0);
+    u32[43] = (historyValid ? 1 : 0) | (this.opts.hintInAlpha ? 2 : 0) | (camera.reversedDepth ? 4 : 0)
+      | (this.opts.normalEncoding === 'unorm' ? 8 : 0);
     d.queue.writeBuffer(this.params, 0, buf);
 
     const cur = this.frame & 1, prev = cur ^ 1;

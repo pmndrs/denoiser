@@ -66,7 +66,8 @@ struct Params {
   motionScale: vec2f,
   // g_ScreenProbesConstants.cell_size: world size per unit distance of about one probe tile.
   cellSize: f32,
-  // bit 0: history valid; bit 1: radiance.a is GI-1.0's denoiser hint; bit 2: reversed depth.
+  // bit 0: history valid; bit 1: radiance.a is GI-1.0's denoiser hint; bit 2: reversed depth;
+  // bit 3: guides.normal is unorm-encoded (0..1).
   flags: u32,
 };
 @group(0) @binding(0) var<uniform> P: Params;
@@ -74,6 +75,7 @@ struct Params {
 const FLAG_HISTORY_VALID: u32 = 1u;
 const FLAG_HINT_IN_ALPHA: u32 = 2u;
 const FLAG_REVERSED_DEPTH: u32 = 4u;
+const FLAG_NORMALS_UNORM: u32 = 8u;
 
 // gi_denoiser.hlsl:26
 const kGIDenoiser_MaxBlurMask: f32 = 8.0;
@@ -129,10 +131,14 @@ fn main(@builtin(global_invocation_id) did: vec3u) {
     return; // out of bounds
   }
   let depth = ${depthIsDepthFormat ? 'textureLoad(depthIn, did.xy, 0)' : 'textureLoad(depthIn, did.xy, 0).x'};
-  let normal = textureLoad(normalIn, did.xy, 0).xyz;
+  var normal = textureLoad(normalIn, did.xy, 0).xyz;
   let reversed = (P.flags & FLAG_REVERSED_DEPTH) != 0u;
   let atFarPlane = select(depth >= 1.0, depth <= 0.0, reversed);
+  // The sky test on the stored value, then Capsaicin's decode of a unorm normal (2 * n - 1).
   let isSky = dot(normal, normal) == 0.0 || atFarPlane;
+  if ((P.flags & FLAG_NORMALS_UNORM) != 0u) {
+    normal = 2.0 * normal - 1.0;
+  }
   textureStore(depthOut, did.xy, vec4f(depth, 0.0, 0.0, 0.0));
   textureStore(normalOut, did.xy, select(vec4f(normal, 0.0), vec4f(0.0), isSky));
 }
