@@ -61,6 +61,32 @@ Presets set explicit values on both sides, so a flip test stays a flip test whil
 **URL.** The URL mirrors the state (scene, path, signal, view, both sides' overrides) for sharing a setup; nothing needs
 it. A scene switch reloads the page and carries the state over that way.
 
+## OIDN on a side (E-2b, 2026-11-19)
+
+The **E2b** flip-test card and the `oidn.engine` row (group "OIDN 2 single frame") put OIDN 2 on a side instead of the
+real-time filters: the `denoiser` package's single-image Denoiser on the WGSL runtime, through `denoiser/three`'s
+`denoise()` node, at quality **fast / balanced / high** (small / base / large `rt_hdr_calb_cnrm*` weights, fp32). The card's
+buttons set side B; the table row sets either side. Numbers: [E2b-oidn-vs-svgf.md](E2b-oidn-vs-svgf.md).
+
+- **Inputs** as in the replay harness (`tools/rt-capture/src/oidn-entries.ts`): the same 1-ray signals the other side gets
+  (diffuse radiance, SSR, AO ĥ, shadow visibility) as HDR colour, scalars as grey through the HDR weights, aux = albedo 1 +
+  the view-space normal. One Denoiser per signal on the renderer's device (`src/review/oidn.ts`).
+- **Lockstep.** OIDN takes tens to hundreds of ms per signal, so while a side shows OIDN every frame waits for it: the
+  frame is rendered offscreen (inputs and both sides' real-time filters advance one frame), OIDN runs on that frame's
+  inputs, then the same frame is presented with the node frame id held (no per-frame node runs twice). Motion therefore
+  runs at a few frames per second, and both sides always show the same frame. A note under the canvas says so, with the
+  current rate. Only the signal on screen is denoised (lit = all four). Pause (Space) keeps rendering new 1-ray frames:
+  the real-time side converges, OIDN re-denoises each frame alone.
+- The side's real-time nodes keep running unseen (their options show as not applicable on that side), so switching back
+  shows a warm history. Reference / raw views pause OIDN.
+- The ms shown is not OIDN's cost: the renderer's device has no subgroup-matrix feature (portable kernel) and the four
+  signals run together. The 1080p cost is in the results doc.
+- The OIDN nodes and the unseen real-time nodes render in a small per-side driver pass, because in the output pass they
+  would exceed 16 samplers per fragment stage; the bench renderer also asks for the adapter's
+  `maxSampledTexturesPerShaderStage` (up to 48; a limit, nothing else changes).
+- `node run-realtime.mjs review` checks it: all four OIDN signals get a result in lockstep, outputs are finite, A and B
+  differ, and switching back leaves no OIDN side.
+
 ## Adding an option (one entry)
 
 Everything on the page (controls, badges, presets, jumps, the decision table) is generated from
@@ -102,6 +128,7 @@ Defaults as the registry expects them after Dennis's 2026-10-27 answers (q23 / q
 q27 / q28 / q30 opt-in); the page flags any that the package resolves differently.
 
 | filter | option | values | default (history) | decision | status | shows best at |
+| oidn | `engine` (bench switch, E-2b) | real-time filters / OIDN fast / balanced / high | real-time filters | E2b | open | corner / orbit / diffuse |
 |---|---|---|---|---|---|---|
 | shadows | `stepTest` | false / true | true (was false before 2026-10-27) | q23 | default | bistro / bistro-move / shadow |
 | shadows | `edgeBox` | false / true | true (was false before 2026-10-27) | q23 | default | bistro / bistro-move / shadow |

@@ -10,7 +10,8 @@
 //
 // Pure data: no three.js imports (run-realtime.mjs and docs can read it too).
 
-export type Filter = 'svgf' | 'recurrent' | 'shadows' | 'occlusion' | 'sh';
+/** 'oidn': the bench-level engine switch (a side shows OIDN 2 single-frame instead of the real-time filters, E-2b). */
+export type Filter = 'svgf' | 'recurrent' | 'shadows' | 'occlusion' | 'sh' | 'oidn';
 /** Which node an option goes to: the joint diffuse + specular node (shared, or one signal), AO, shadows. */
 export type Target = 'gi' | 'gi.diffuse' | 'gi.specular' | 'ao' | 'shadows';
 export type Value = boolean | number | string;
@@ -92,6 +93,8 @@ export interface Decision {
   alsoAt?: Where[];
   /** A prominent flip-test card at the top of the page (Dennis asked for these). */
   highlight?: true;
+  /** Card buttons that set side B to each value of this (select) option, e.g. the OIDN quality. */
+  choices?: string;
   /** What the flip test shows, for the card (defaults to the options' `look` lines). */
   look?: string;
 }
@@ -283,6 +286,20 @@ export const OPTIONS: ReviewOption[] = [
     where: { scene: 'sponza', path: 'sponza-orbit', signal: 'diffuse' },
   },
 
+  // ---- OIDN 2 single-frame baseline (E-2b, results/E2b-oidn-vs-svgf.md) ------------------------------------------
+  // Not a denoiser option: the side's diffuse, specular, AO and shadow come from OIDN (the `denoiser` package's
+  // single-image Denoiser on the WGSL runtime, via denoiser/three's denoise() node) instead of the real-time filters.
+  // OIDN has no history; the bench then runs in lockstep (each frame waits for OIDN), see src/review/oidn.ts.
+  {
+    id: 'oidn.engine', filter: 'oidn', key: 'engine', targets: [], switch: true,
+    values: ['realtime', 'oidn-fast', 'oidn-balanced', 'oidn-high'],
+    valueLabels: { realtime: 'real-time filters', 'oidn-fast': 'OIDN fast', 'oidn-balanced': 'OIDN balanced', 'oidn-high': 'OIDN high' },
+    default: 'realtime', candidate: 'oidn-high', decision: 'E2b', status: 'open',
+    look: 'OIDN denoises each frame alone (no history): compare its flat, smudged texture and its frame-to-frame shimmer with the shipped filters; fast / balanced / high = small / base / large weights.',
+    where: { scene: 'corner', path: 'orbit', signal: 'diffuse' },
+    benchNote: 'Lockstep: with OIDN on a side, each frame waits for OIDN, so motion slows to a few frames per second; both sides always show the same frame. The ms shown is not the cost (results doc: 1080p cost).',
+  },
+
   // ---- shadows (ShadowDenoiser) ------------------------------------------------------------------------------------
   {
     id: 'shadows.stepTest', filter: 'shadows', key: 'stepTest', targets: ['shadows'],
@@ -404,6 +421,19 @@ export const OPTIONS: ReviewOption[] = [
 ];
 
 export const DECISIONS: Decision[] = [
+  {
+    id: 'E2b', highlight: true, choices: 'oidn.engine',
+    title: 'OIDN 2 (single frame) vs our real-time filters',
+    answer: 'nothing to decide: a visual check of the E-2b numbers (results/E2b-oidn-vs-svgf.md)',
+    set: { 'oidn.engine': ['realtime', 'oidn-high'] },
+    look: 'A = the shipped real-time filters, B = OIDN, which denoises every frame alone. Pick OIDN fast / balanced / high for B below. The page runs in lockstep while OIDN is on (a few frames per second), so both sides show the same frame. Look at texture and contact detail, and at shimmer from frame to frame (pause with Space: SVGF keeps converging, OIDN re-denoises each new 1-ray frame).',
+    where: { scene: 'corner', path: 'orbit', signal: 'diffuse', note: 'real scene: OIDN led SVGF here at frame 0 in E-2' },
+    alsoAt: [
+      { scene: 'corner', signal: 'diffuse', event: 'cut', note: 'press "camera cut" (K): the first frames after a cut, where history helps nobody' },
+      { scene: 'knot', path: 'knot-orbit', signal: 'shadow', note: 'moving occluder under an orbit: boil and penumbra shape' },
+      { scene: 'sponza', path: 'sponza-orbit', signal: 'lit', note: 'the lit composite on a large scene' },
+    ],
+  },
   {
     id: 'q23', highlight: true,
     title: 'Shadows: stepTest + edgeBox + rotationStep 0',

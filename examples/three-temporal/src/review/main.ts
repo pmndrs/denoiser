@@ -16,13 +16,15 @@ import { type N, readTexture, nonFiniteCount } from '../realtime/scene';
 import { buildKit, type Kit, type Parts } from './scenes';
 import { DECISIONS, OPTIONS, SCENE_PATHS, type Decision, type Filter, type ReviewOption, type SceneId, type Signal, type Value, type View, type Where } from './options';
 import * as C from './config';
+import { buildOidn, oidnAux, type OidnAux, type OidnSet } from './oidn';
 
 mountShell({ id: 'three-temporal-review' });
 
 type SideId = 'A' | 'B';
 type NodeName = 'gi' | 'ao' | 'shadows';
 interface GiSet { diffuse: N; specular: N; nodes: N[]; outTex(): THREE.Texture; resolved(): { diffuse?: N; specular?: N; filter?: string } }
-interface Side { cfg: C.SideConfig; keys: Record<NodeName, string>; gi: GiSet; ao: N; shadows: N }
+/** `oidn`: the side shows OIDN 2 single-frame instead of its real-time nodes (which keep running unseen; src/review/oidn.ts). */
+interface Side { cfg: C.SideConfig; keys: Record<NodeName, string>; gi: GiSet; ao: N; shadows: N; oidn?: OidnSet }
 
 const q = new URLSearchParams(location.search);
 const W = Number(q.get('w') ?? 960), H = Number(q.get('h') ?? 540);
@@ -32,6 +34,7 @@ const SIGNALS: Signal[] = ['lit', 'diffuse', 'specular', 'ao', 'shadow'];
 const VIEWS: View[] = ['split', 'A', 'B', 'diff', 'ref', 'noisy'];
 const CMP_VIEWS: View[] = ['split', 'A', 'B', 'diff'];
 const GROUPS: { filter: Filter; title: string }[] = [
+  { filter: 'oidn', title: 'OIDN 2 single frame (E-2b): show OIDN on a side instead of the real-time filters' },
   { filter: 'shadows', title: 'Shadows (ShadowDenoiser, signal "shadow" / "lit")' },
   { filter: 'svgf', title: 'SVGF / A-SVGF (the default filter: diffuse, specular, AO)' },
   { filter: 'occlusion', title: 'Occlusion (OcclusionDenoiser, signal "AO")' },
@@ -62,7 +65,11 @@ async function main() {
   const canvas = $<HTMLCanvasElement>('#view');
   canvas.width = W; canvas.height = H;
   if (!navigator.gpu) { log('WebGPU is not available in this browser.'); return; }
-  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false } as N);
+  // OIDN sides (E-2b) put more textures into the output pass than the default 16: ask for what the adapter offers (a limit,
+  // so nothing else changes)
+  const adapter = await navigator.gpu.requestAdapter();
+  const maxTex = Math.min(48, adapter?.limits.maxSampledTexturesPerShaderStage ?? 16);
+  const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, requiredLimits: { maxSampledTexturesPerShaderStage: maxTex } } as N);
   await renderer.init();
   renderer.setPixelRatio(1);
   renderer.setSize(W, H, false);
@@ -106,9 +113,17 @@ async function main() {
   };
   const buildAo = (cfg: C.SideConfig) => realtimeOcclusion(kit.inputs.difHit, { ...kit.guides, denoiser: C.nodeOptions(cfg).ao as N }) as N;
   const buildShadows = (cfg: C.SideConfig) => realtimeShadows(kit.inputs.sh, { ...kit.guides, hitDistance: kit.inputs.shDist, light: kit.light, denoiser: C.nodeOptions(cfg).shadows as N }) as N;
-  const makeSide = (cfg: C.SideConfig): Side => ({ cfg, keys: C.nodeKeys(cfg), gi: buildGi(cfg), ao: buildAo(cfg), shadows: buildShadows(cfg) });
+  // OIDN (E-2b): aux inputs shared by every OIDN node, built on first use
+  let aux: OidnAux | null = null;
+  const buildOidnSet = (cfg: C.SideConfig): OidnSet | undefined => {
+    const quality = C.oidnOf(cfg);
+    if (!quality) return undefined;
+    aux ??= oidnAux(kit);
+    return buildOidn(kit, aux, quality, (e) => { const m = `OIDN error: ${(e as Error).message ?? e}`; log(m); gpuErrors.push(m); });
+  };
+  const makeSide = (cfg: C.SideConfig): Side => ({ cfg, keys: C.nodeKeys(cfg), gi: buildGi(cfg), ao: buildAo(cfg), shadows: buildShadows(cfg), oidn: buildOidnSet(cfg) });
   const sides: Record<SideId, Side> = { A: makeSide(initial.A), B: makeSide(initial.B) };
-  const nodesOf = (s: Side): N[] => [...s.gi.nodes, s.ao, s.shadows];
+  const nodesOf = (s: Side): N[] => [...s.gi.nodes, s.ao, s.shadows, ...(s.oidn ? Object.values(s.oidn.nodes) : [])];
   // old nodes are disposed a few frames after the graph stops using them
   const graveyard: { nodes: N[]; at: number }[] = [];
   let frame = 0;
@@ -123,8 +138,10 @@ async function main() {
     if (keys.gi !== s.keys.gi) { dead.push(...s.gi.nodes); s.gi = buildGi(cfg); }
     if (keys.ao !== s.keys.ao) { dead.push(s.ao); s.ao = buildAo(cfg); }
     if (keys.shadows !== s.keys.shadows) { dead.push(s.shadows); s.shadows = buildShadows(cfg); }
+    const engine = C.oidnOf(cfg) !== C.oidnOf(s.cfg);
+    if (engine) { if (s.oidn) dead.push(...Object.values(s.oidn.nodes)); s.oidn = buildOidnSet(cfg); }
     s.cfg = cfg; s.keys = keys;
-    if (dead.length) { graveyard.push({ nodes: dead, at: frame + 4 }); buildOutput(); if (id === 'A') feedSsr(); }
+    if (dead.length || engine) { graveyard.push({ nodes: dead, at: frame + 4 }); buildOutput(); if (id === 'A') feedSsr(); }
     renderPanels(); mirror();
   };
   const setBoth = (p: C.Pair) => { setSide('A', p.A); setSide('B', p.B); };
@@ -134,14 +151,19 @@ async function main() {
   // ---- output graph --------------------------------------------------------------------------------------------
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
-  const partsOf = (s: Side): Parts => ({ dif: s.gi.diffuse.rgb, spec: s.gi.specular.rgb, ao: s.ao.r, vis: s.shadows.r });
+  const partsOf = (s: Side): Parts => s.oidn?.parts ?? ({ dif: s.gi.diffuse.rgb, spec: s.gi.specular.rgb, ao: s.ao.r, vis: s.shadows.r });
+  const oidnSides = () => [sides.A, sides.B].filter((s) => s.oidn);
   const tm = (sig: Signal, c: N): N => (sig === 'ao' || sig === 'shadow' ? c : acesFilmicToneMapping(c, float(1)));
   let graphKind: 'cmp' | 'ref' | 'noisy' = 'cmp';
   const buildOutput = () => {
     const sig = state.signal;
     graphKind = CMP_VIEWS.includes(state.view) ? 'cmp' : state.view === 'ref' ? 'ref' : 'noisy';
     // every denoiser of both sides stays in the graph (nodes outside it don't run): histories keep going in any view
-    const keep = [sides.A, sides.B].flatMap((s) => [s.gi.diffuse.r, s.gi.specular.r, s.ao.r, s.shadows.r]).reduce((a: N, n: N) => a.add(n), float(0) as N).mul(0);
+    const keepOf = (s: Side) => [s.gi.diffuse.r, s.gi.specular.r, s.ao.r, s.shadows.r].reduce((a: N, n: N) => a.add(n), float(0) as N).mul(0);
+    // a side showing OIDN (E-2b) keeps its real-time nodes running in its driver pass instead (with the OIDN nodes and their
+    // aux inputs): in the output pass they would exceed 16 samplers per stage
+    const keep = [sides.A, sides.B].filter((s) => !s.oidn).map(keepOf).reduce((a: N, n: N) => a.add(n), float(0) as N);
+    for (const s of oidnSides()) s.oidn!.setDriver(keepOf(s).add(aux!.keep));
     let col: N;
     if (graphKind === 'cmp') {
       // .toVar(): evaluated once up front; used inside several selects, a tone-mapping Fn call was otherwise only
@@ -160,18 +182,50 @@ async function main() {
   // ---- loop ----------------------------------------------------------------------------------------------------
   let job: { left: number; done: () => void } | null = null;
   const frames = (n: number) => new Promise<void>((res) => { job = { left: n, done: res }; });
-  renderer.setAnimationLoop(() => {
-    if (manual && !job) return;
-    if (kit.advance(state.moving, state.view === 'ref')) resetAll();
-    uFrame.value = frame;
+  const renderSafe = () => {
     try { pipeline.render(); } catch (e) {
       // a denoiser that rejects an option combination throws while its node is set up: say so instead of dying
       const msg = `ERROR: ${(e as Error).message ?? e} (A: ${C.describe(sides.A.cfg)}; B: ${C.describe(sides.B.cfg)}). Reset or change the last option.`;
       if (statusEl.textContent !== msg) { log(msg); gpuErrors.push(msg); }
     }
+  };
+  const endFrame = () => {
     frame++;
     while (graveyard.length && graveyard[0].at <= frame) for (const n of graveyard.shift()!.nodes) n.dispose();
     if (job && --job.left === 0) { const d = job.done; job = null; d(); }
+  };
+  // OIDN lockstep (src/review/oidn.ts): render the frame offscreen, wait for OIDN on that frame's inputs, then present the
+  // same frame with the node frame id held, so no per-frame node (scene pass, inputs, real-time filters) runs twice.
+  const hidden = new THREE.RenderTarget(W, H, { depthBuffer: false });
+  const nodeFrame = (renderer as unknown as { _nodes: { nodeFrame: { frameId: number } } })._nodes.nodeFrame;
+  let oidnBusy = false;
+  const oidn = { frames: 0, t0: 0, fps: 0 };
+  renderer.setAnimationLoop(() => {
+    if (oidnBusy) return;
+    if (manual && !job) return;
+    if (kit.advance(state.moving, state.view === 'ref')) resetAll();
+    uFrame.value = frame;
+    const os = oidnSides();
+    if (!os.length) { renderSafe(); endFrame(); return; }
+    // reference / raw views: OIDN pauses, the driver passes keep the unseen real-time nodes going
+    if (graphKind !== 'cmp') { renderSafe(); for (const s of os) s.oidn!.drive(renderer); endFrame(); return; }
+    const req = os.flatMap((s) => s.oidn!.request(state.signal));
+    renderer.setRenderTarget(hidden);
+    renderSafe();
+    renderer.setRenderTarget(null);
+    for (const s of os) s.oidn!.drive(renderer);
+    const fid = nodeFrame.frameId;
+    oidnBusy = true;
+    Promise.all(req.map((n) => n.settled())).then(() => {
+      for (const s of oidnSides()) s.oidn!.sync();
+      const now = nodeFrame.frameId;
+      nodeFrame.frameId = fid;
+      renderSafe();
+      nodeFrame.frameId = now;
+      const t = performance.now();
+      if (oidn.t0 && t - oidn.t0 < 2000) oidn.fps = 0.8 * oidn.fps + 0.2 * (1000 / (t - oidn.t0)); else oidn.fps = 0;
+      oidn.t0 = t; oidn.frames++;
+    }).finally(() => { oidnBusy = false; endFrame(); });
   });
   const idle = () => device.queue.onSubmittedWorkDone();
 
@@ -292,6 +346,7 @@ async function main() {
     '<option value="copy">copy the other side</option>',
   ].join('');
   const sideMs = (s: Side) => {
+    if (s.oidn) return s.oidn.ms();
     const ms = (n: N) => n?.denoiser?.gpuTimings?.get('total') as number | undefined;
     const parts: [string, number | undefined][] = [['gi', s.gi.nodes.reduce((a: number | undefined, n: N) => (ms(n) === undefined ? a : (a ?? 0) + ms(n)!), undefined)], ['ao', ms(s.ao)], ['shadows', ms(s.shadows)]];
     const known = parts.filter(([, v]) => v !== undefined) as [string, number][];
@@ -359,11 +414,13 @@ async function main() {
         const cur = C.valueOf(sides.B.cfg, o.id);
         return `<label><input type="checkbox" data-card-opt="${o.id}" data-on='${JSON.stringify(on)}' data-off='${JSON.stringify(off)}'${same(cur, on) ? ' checked' : ''} /> ${esc(o.key)} ${esc(C.valueLabel(o, on))}</label>`;
       }).join('')}</div>` : '';
+      const ch = d.choices ? C.optionById.get(d.choices) : undefined;
+      const choices = ch ? `<div class="rv-opts"><span class="hint">B:</span>${ch.values.map((v) => `<button class="dn-btn small" data-card-choice="${ch.id}" data-v='${JSON.stringify(v)}' aria-pressed="${same(C.valueOf(sides.B.cfg, ch.id), v)}">${esc(C.valueLabel(ch, v))}</button>`).join('')}</div>` : '';
       return `<div class="rv-card"><h3>${d.id}: ${esc(d.title)}</h3><p class="answer">Dennis: ${esc(d.answer)}</p>
         <p>${esc(d.look ?? opts.map(({ o }) => o.look).join(' '))}</p>
         <div class="rv-btns"><button class="dn-btn" data-load="${d.id}">Load the flip test (A = without, B = with)</button>
         ${[C.decisionWhere(d), ...(d.alsoAt ?? [])].filter(Boolean).map((w, i) => `<button class="dn-btn small" data-card-where="${d.id}:${i}" title="${esc(w!.note ?? '')}">${i ? 'also: ' : 'at: '}${esc(`${w!.scene}${w!.path ? ' / ' + w!.path : ''} / ${w!.signal}`)}</button>`).join('')}</div>
-        ${toggles}</div>`;
+        ${toggles}${choices}</div>`;
     }).join('');
   };
   const renderDecisions = () => {
@@ -411,9 +468,10 @@ async function main() {
     else if (t.id === 'sel-decision' && t.value) { const v = t.value; t.value = ''; loadDecision(v); }
   });
   document.addEventListener('click', (e) => {
-    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-reset],[data-clear],[data-where],[data-decision],[data-load],[data-card-where]');
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-reset],[data-clear],[data-where],[data-decision],[data-load],[data-card-where],[data-card-choice]');
     if (!t) return;
-    if (t.dataset.reset) setSide(t.dataset.reset as SideId, {});
+    if (t.dataset.cardChoice) setSide('B', { ...sides.B.cfg, [t.dataset.cardChoice]: JSON.parse(t.dataset.v!) });
+    else if (t.dataset.reset) setSide(t.dataset.reset as SideId, {});
     else if (t.dataset.clear) { const id = t.dataset.clear as SideId; const c = { ...sides[id].cfg }; delete c[t.dataset.opt!]; setSide(id, c); }
     else if (t.dataset.where) jump(C.optionById.get(t.dataset.where)?.where);
     else if (t.dataset.decision || t.dataset.load) loadDecision((t.dataset.decision ?? t.dataset.load)!);
@@ -422,7 +480,19 @@ async function main() {
 
   // ---- caption, URL mirror -------------------------------------------------------------------------------------
   const cap = $('#cap-view'), costEl = $('#cap-cost');
+  const oidnNote = $('#rv-oidn-note');
+  const paintOidnNote = () => {
+    const os = (['A', 'B'] as SideId[]).filter((id) => sides[id].oidn);
+    oidnNote.hidden = !os.length;
+    if (!os.length) return;
+    const who = os.map((id) => `side ${id}: OIDN ${sides[id].oidn!.quality}`).join(', ');
+    const rate = oidn.fps > 0 ? `the page runs at ${oidn.fps.toFixed(1)} frames/s` : 'the page waits for the first result (the weights load once)';
+    oidnNote.innerHTML = `<b>OIDN lockstep</b> (${esc(who)}): OIDN denoises every frame alone, with no history. Each frame waits for OIDN, ` +
+      `so ${esc(rate)}, and both sides show the same frame. ${graphKind === 'cmp' ? '' : 'Reference / raw view: OIDN is paused. '}` +
+      `Only the signal on screen is denoised (lit = all four). Timings here are not the cost (portable kernel, wall ms incl. waits): see results/E2b-oidn-vs-svgf.md.`;
+  };
   const paintCaption = () => {
+    paintOidnNote();
     const v = state.view;
     const a = `A: ${C.describe(sides.A.cfg)}`, b = `B: ${C.describe(sides.B.cfg)}`;
     const what = v === 'split' ? `${a} | ${b}` : v === 'A' ? a : v === 'B' ? b : v === 'diff' ? `|A − B| × ${2 ** state.gainExp} (${a}; ${b})`
@@ -493,6 +563,8 @@ async function main() {
     },
     swap,
     flip,
+    /** OIDN lockstep state (E-2b): frames presented, rate, per side the signals that have a result and the last ms. */
+    oidnState: () => ({ frames: oidn.frames, fps: oidn.fps, busy: oidnBusy, sides: Object.fromEntries((['A', 'B'] as SideId[]).filter((id) => sides[id].oidn).map((id) => [id, { quality: sides[id].oidn!.quality, ms: sides[id].oidn!.ms(), denoised: Object.fromEntries(Object.entries(sides[id].oidn!.nodes).map(([k, n]) => [k, n.denoised])) }])) }),
     reset: resetAll,
     state: () => ({ scene: kit.id, path: kit.path, ...state, A: sides.A.cfg, B: sides.B.cfg, keys: { A: sides.A.keys, B: sides.B.keys } }),
     /** Registry defaults vs what the package resolved (only options that apply and are not overridden on some side). */
@@ -514,6 +586,7 @@ async function main() {
           ['diffuse', s.gi.outTex()], ['specular', s.gi.nodes.length > 1 ? s.gi.nodes[1].getOutputTexture(0) : s.gi.nodes[0].getOutputTexture(1)],
           ['ao', s.ao.getOutputTexture(0)], ['shadows', s.shadows.getOutputTexture(0)],
         ];
+        if (s.oidn) for (const [k, n] of Object.entries(s.oidn.nodes)) if (n.denoised && n.texture) outs.push([`oidn-${k}`, n.texture]);
         for (const [k, tx] of outs) { const { w, h, data } = await readTexture(renderer, tx); r[`${id}.${k}`] = { w, h, bad: nonFiniteCount(data) }; }
       }
       return r;
