@@ -205,7 +205,7 @@ export async function blueNoise(frame: N) {
  * thousands of frames still average exactly). `count` = frames so far; 0 restarts.
  * Stops rendering once `max` frames are in.
  */
-export class AccumulateNode extends THREE.TempNode {
+export class AccumulateNode extends THREE.Node {
   readonly count = uniform(0);
   max = 128;
   private readonly targets = [0, 1].map(() => new THREE.RenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: false }));
