@@ -5,9 +5,12 @@
 //
 //   ?checks=all (default) | a,b,c,...   which checks to run (see CHECKS below)
 //   &w=640&h=360
-//   &clamp=neighbourhood|none&clip=1.5&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
+//   &clamp=neighbourhood|none&clip=2.5&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
 //                          (clamp=none: Capsaicin's unclipped history)
 //   &regions=0             changeReset off (the moving box's old and new bounds are ignored)
+//   &noiseKind=pixel|tile&tileJitter=1   noise per pixel, or per 8 px tile interpolated like GI-1.0's
+//                          probes (lookup jittered by up to a tile, or not)
+//   &ghostNoise=0          noise amplitude on the ghosting check
 //
 // Checks (results in window.__ffx.results, one entry per check, `pass` where there is a gate):
 //   still-constant   a noise-free constant field, still camera: unchanged (every pixel within 0.1%)
@@ -19,6 +22,7 @@
 //   reprojection     a world-space pattern, converged; then the camera moves and the frame's
 //                    input is withheld (hint 0): the output is the reprojected history, compared
 //                    with the pattern at the new pixels (and, as a control, with zero motion)
+//   nan-injection    NaN and infinity in the input every frame: the output stays finite and exact
 //   ghosting         a box with a contact shadow on the floor moves and stops: how many frames
 //                    until the floor matches the new input again (no trail); passes when, 64
 //                    frames after the stop, no more pixels are over 5% off than before the move
@@ -29,14 +33,14 @@ import { FAR, invert, lookAt, mul, NEAR, perspective, type V3 } from './camera';
 const q = new URLSearchParams(location.search);
 const W = Number(q.get('w') ?? 640);
 const H = Number(q.get('h') ?? 360);
-const CHECKS = ['still-constant', 'moving-constant', 'still-noisy', 'blur-mask', 'reprojection', 'ghosting'] as const;
+const CHECKS = ['still-constant', 'moving-constant', 'still-noisy', 'blur-mask', 'reprojection', 'ghosting', 'nan-injection'] as const;
 type CheckName = (typeof CHECKS)[number];
 const selected = (q.get('checks') ?? 'all') === 'all' ? [...CHECKS] : (q.get('checks')!.split(',') as CheckName[]);
 const FOVY = (50 * Math.PI) / 180;
 const E0 = 0.7;
 const CLIP = {
   historyClamp: (q.get('clamp') ?? 'neighbourhood') as 'neighbourhood' | 'none',
-  historyClip: Number(q.get('clip') ?? 1.5),
+  historyClip: Number(q.get('clip') ?? 2.5),
   historyClipRadius: Number(q.get('clipRadius') ?? 1),
   changeReset: q.get('regions') !== '0',
 };
@@ -53,6 +57,14 @@ const out: State = { ready: false };
 const MODE = { constant: 0, pattern: 1, shadow: 2 } as const;
 const FLAG_ZERO_MOTION = 1;
 const FLAG_ZERO_SIGNAL = 2;
+const FLAG_NAN_INJECTION = 4;
+/** Noise shapes: per pixel, or per 8 x 8 tile interpolated between tile centres like GI-1.0's probes. */
+const NOISE = { pixel: 0, tile: 1 } as const;
+const NOISE_KIND = q.get('noiseKind') === 'tile' ? NOISE.tile : NOISE.pixel;
+/** Tile noise: each pixel's lookup jittered by up to a tile (as InterpolateScreenProbes' jitter). */
+const TILE_JITTER = q.get('tileJitter') !== '0';
+/** Noise amplitude on the ghosting check (0 = noise-free). */
+const GHOST_NOISE = Number(q.get('ghostNoise') ?? 0);
 
 const SCENE_WGSL = /* wgsl */ `
 struct Scene {
@@ -63,7 +75,7 @@ struct Scene {
   box: vec3f, mode: u32,
   prevBox: vec3f, noise: f32,
   size: vec2u, hint: f32, flags: u32,
-  e0: f32, _p0: f32, _p1: f32, _p2: f32,
+  e0: f32, noiseKind: u32, tileJitter: u32, _p2: f32,
 };
 @group(0) @binding(0) var<uniform> S: Scene;
 @group(0) @binding(1) var depthOut: texture_storage_2d<r32float, write>;
@@ -78,6 +90,10 @@ fn pcg(v: u32) -> u32 {
   let state = v * 747796405u + 2891336453u;
   let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
   return (word >> 22u) ^ word;
+}
+
+fn tileValue(t: vec2i, frameSeed: u32) -> f32 {
+  return f32(pcg((bitcast<u32>(t.x) * 73856093u) ^ (bitcast<u32>(t.y) * 19349663u) ^ frameSeed)) / 4294967296.0;
 }
 
 fn unproject(ndc: vec3f) -> vec3f {
@@ -154,9 +170,29 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     }
   }
   let pixel = id.x + id.y * S.size.x;
-  let u = f32(pcg(pixel ^ pcg(S.frame * 1664525u + 1013904223u))) / 4294967296.0;
+  let frameSeed = pcg(S.frame * 1664525u + 1013904223u);
+  var u = f32(pcg(pixel ^ frameSeed)) / 4294967296.0;
+  if (S.noiseKind == ${NOISE.tile}u) {
+    // One value per 8 x 8 tile and frame, bilinear between tile centres; the lookup jittered by
+    // up to a tile per pixel, as GI-1.0 interpolates its screen probes.
+    var position = vec2f(id.xy) + 0.5;
+    if (S.tileJitter != 0u) {
+      let j = vec2f(f32(pcg((pixel * 2u) ^ frameSeed)), f32(pcg((pixel * 2u + 1u) ^ frameSeed))) / 4294967296.0;
+      position += (2.0 * j - 1.0) * 8.0;
+    }
+    let g = position / 8.0 - 0.5;
+    let i0 = vec2i(floor(g));
+    let fr = g - floor(g);
+    u = mix(mix(tileValue(i0, frameSeed), tileValue(i0 + vec2i(1, 0), frameSeed), fr.x),
+            mix(tileValue(i0 + vec2i(0, 1), frameSeed), tileValue(i0 + vec2i(1, 1), frameSeed), fr.x), fr.y);
+  }
   var signal = e * (1.0 + S.noise * (2.0 * u - 1.0));
   if ((S.flags & ${FLAG_ZERO_SIGNAL}u) != 0u) { signal = 0.0; }
+  if ((S.flags & ${FLAG_NAN_INJECTION}u) != 0u) {
+    // Every 37th pixel NaN, every 53rd +infinity (port check of RemoveNaNs and the input guard).
+    if (pixel % 37u == 0u) { signal = bitcast<f32>(0x7fc00000u); }
+    else if (pixel % 53u == 0u) { signal = bitcast<f32>(0x7f800000u); }
+  }
 
   textureStore(depthOut, id.xy, vec4f(clip.z / clip.w));
   textureStore(normalOut, id.xy, vec4f(n, f32(kind)));
@@ -225,7 +261,7 @@ class Bed {
     f.set(spec.box, 52); u[55] = spec.mode;
     f.set(spec.prevBox, 56); f[59] = spec.noise;
     u[60] = W; u[61] = H; f[62] = spec.hint; u[63] = spec.flags;
-    f[64] = E0;
+    f[64] = E0; u[65] = NOISE_KIND; u[66] = TILE_JITTER ? 1 : 0;
     this.device.queue.writeBuffer(this.sceneBuf, 0, buf);
     const enc = this.device.createCommandEncoder();
     const pass = enc.beginComputePass();
@@ -266,6 +302,12 @@ class Bed {
 
   async readFloat(texture: GPUTexture): Promise<Float32Array> {
     return new Float32Array(await this.read(texture, 4));
+  }
+
+  /** The blur mask: the high half of Gi1Denoiser's r32uint colour delta | mask. */
+  async readMask(texture: GPUTexture): Promise<Float32Array> {
+    const words = new Uint32Array(await this.read(texture, 4));
+    return Float32Array.from(words, (w) => HALF[w >>> 16]);
   }
 }
 
@@ -331,7 +373,7 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
         const o = step({ ...base, cam, prevCam: prev, box, prevBox });
         prev = cam; prevBox = box;
         if (i < 10) continue;
-        const outv = await bed.readHalf4(o), ref = await bed.readHalf4(bed.signal), mask = await bed.readFloat(dn.debugBlurMask!);
+        const outv = await bed.readHalf4(o), ref = await bed.readHalf4(bed.signal), mask = await bed.readMask(dn.debugDeltaMask!);
         const s = ratioStats(outv, ref);
         const m = ratioStats(outv, ref, (j) => mask[j] > 0);
         maskedPixels += m.n;
@@ -380,7 +422,7 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       const idBefore = await bed.readHalf4(bed.normal, 3);
       const o = step({ ...base, ...still(), noise: 0.5, box: [0.7, 0.5, 0], prevBox: [0, 0.5, 0] });
       const idNow = await bed.readHalf4(bed.normal, 3);
-      const mask = await bed.readFloat(dn.debugBlurMask!), outv = await bed.readHalf4(o), input = await bed.readHalf4(bed.signal);
+      const mask = await bed.readMask(dn.debugDeltaMask!), outv = await bed.readHalf4(o), input = await bed.readHalf4(bed.signal);
       // Pixels the box covered last frame and doesn't now; converged = static both frames, 16 px clear of the box's screen bounds.
       let x0 = W, x1 = 0, y0 = H, y1 = 0;
       for (let j = 0; j < W * H; j++) if (idBefore[j] === 2 || idNow[j] === 2) {
@@ -449,10 +491,29 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       return { pass: correct.meanRelError < 0.01 && correct.historyFoundShare > 0.9 && (zero.meanRelError > 5 * correct.meanRelError || zero.historyFoundShare < 0.5), withMotion: correct, zeroMotionControl: zero };
     }
 
+    if (name === 'nan-injection') {
+      // A constant field with NaN at every 37th pixel and +infinity at every 53rd, every frame:
+      // the output stays finite and equal to the field (the bad samples are not kept; their
+      // pixels take the neighbours' history from the second frame on).
+      let worst = { min: Infinity, max: -Infinity }, nonFinite = 0;
+      for (let i = 0; i < 30; i++) {
+        const o = step({ ...base, ...still(), flags: FLAG_NAN_INJECTION });
+        if (i < 2) continue;
+        const outv = await bed.readHalf4(o), ref = await bed.readFloat(bed.reference);
+        for (let j = 0; j < ref.length; j++) {
+          if (ref[j] <= 0) continue;
+          if (!Number.isFinite(outv[j])) { nonFinite++; continue; }
+          const r = outv[j] / ref[j];
+          worst = { min: Math.min(worst.min, r), max: Math.max(worst.max, r) };
+        }
+      }
+      return { pass: Number.isFinite(worst.min) && nonFinite === 0 && worst.min >= 0.999 && worst.max <= 1.001, nonFinitePixelFrames: nonFinite, minRatio: round(worst.min, 6), maxRatio: round(worst.max, 6), frames: 28 };
+    }
+
     if (name === 'ghosting') {
       const start = -1.2, end = 0.6, moveFrames = 30;
       let box: V3 = [start, 0.5, 0];
-      for (let i = 0; i < 70; i++) step({ ...base, ...still(), mode: MODE.shadow, box, prevBox: box });
+      for (let i = 0; i < 70; i++) step({ ...base, ...still(), mode: MODE.shadow, noise: GHOST_NOISE, box, prevBox: box });
       const errorCounts = async (o: GPUTexture) => {
         const outv = await bed.readHalf4(o), ref = await bed.readFloat(bed.reference), id = await bed.readHalf4(bed.normal, 3);
         let over2 = 0, over5 = 0, err = 0, n = 0;
@@ -467,13 +528,13 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       };
       // The converged view before the move: what the trail is measured against (the screen
       // edges' vignette keeps a short, blurred history there, so they never match exactly).
-      const baseline = await errorCounts(step({ ...base, ...still(), mode: MODE.shadow, box, prevBox: box }));
+      const baseline = await errorCounts(step({ ...base, ...still(), mode: MODE.shadow, noise: GHOST_NOISE, box, prevBox: box }));
       const perFrame: { frame: number; over2pct: number; over5pct: number; meanRelError: number }[] = [];
       let maxTrailMoving = 0;
       for (let i = 0; i < moveFrames + 150; i++) {
         const prevBox = box;
         if (i < moveFrames) box = [start + ((end - start) * (i + 1)) / moveFrames, 0.5, 0];
-        const o = step({ ...base, ...still(), mode: MODE.shadow, box, prevBox });
+        const o = step({ ...base, ...still(), mode: MODE.shadow, noise: GHOST_NOISE, box, prevBox });
         const { over2, over5, meanRelError } = await errorCounts(o);
         if (i < moveFrames) maxTrailMoving = Math.max(maxTrailMoving, over5);
         else perFrame.push({ frame: i - moveFrames + 1, over2pct: over2, over5pct: over5, meanRelError: round(meanRelError, 4) });
@@ -483,7 +544,10 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       return {
         baselineBeforeMove: { over2pct: baseline.over2, over5pct: baseline.over5, meanRelError: round(baseline.meanRelError, 4) },
         maxPixelsOver5pctWhileMoving: maxTrailMoving,
-        pass: (perFrame.find((p) => p.frame === 64)?.over5pct ?? Infinity) <= baseline.over5,
+        // At frame 64 no more pixels over 5 % and over 2 % than before the move (both criteria).
+        pass: Number.isFinite(baseline.meanRelError) && (perFrame.find((p) => p.frame === 64)?.over5pct ?? Infinity) <= baseline.over5
+          && (perFrame.find((p) => p.frame === 64)?.over2pct ?? Infinity) <= baseline.over2,
+        noise: { amplitude: GHOST_NOISE, kind: NOISE_KIND === NOISE.tile ? 'tile' : 'pixel', tileJitter: TILE_JITTER },
         framesAfterStopUntilBaselineOver5pct: clearedAt('over5pct', baseline.over5),
         framesAfterStopUntilBaselineOver2pct: clearedAt('over2pct', baseline.over2),
         afterStop: perFrame.filter((p) => [1, 2, 4, 8, 16, 32, 64, 100, 150].includes(p.frame)),

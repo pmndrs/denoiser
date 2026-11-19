@@ -4,20 +4,25 @@
 // GI1::GIDenoiser::ensureMemoryIsAllocated, gi1.cpp:1193-1228)
 // (Copyright (c) 2025 Advanced Micro Devices, Inc., MIT — see NOTICE):
 //
-//   prepare        depth -> r32f, normal -> rgba16f (this frame's copies, sky = zero normal;
-//                  replaces Capsaicin's shared PrevVisibilityDepth / PrevShadingNormal)
 //   ReprojectGI    noisy irradiance + reprojected history -> colour[cur] (running sum, count
-//                  in w), colour delta[cur], blur mask
+//                  in w), short history[cur], colour delta + blur mask[cur]
 //   FilterGI (x)   colour[cur] -> colour[prev]   disocclusion blur, horizontal
 //   FilterGI (y)   colour[prev] -> colour[cur]   vertical; also writes the output
+//   keep           this frame's depth and signed normal for the next frame, only when the
+//                  caller doesn't hand its own (replaces Capsaicin's shared
+//                  PrevVisibilityDepth / PrevShadingNormal)
 //
 // colour[cur] (the filtered sum) is next frame's history, as Capsaicin's buffer index swap
 // makes it (gi1.cpp:3102).
+//
+// Memory: 48 bytes a pixel (colour and short history, 2 x rgba16float each; delta + mask,
+// 2 x r32uint; output rgba16float), plus 12 when the denoiser keeps its own previous depth
+// and normal.
 import type {
   DiffuseInputs, FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
 import { eyeFromView, invert, isDepthFormat, mat4, PassTimer, type M4 } from './common';
-import { GI1_MAX_CHANGE_BOXES, GI1_REPROJECT_WGSL, gi1FilterWgsl, gi1PrepareWgsl } from './shaders/gi1';
+import { GI1_MAX_CHANGE_BOXES, gi1FilterWgsl, gi1KeepWgsl, gi1ReprojectWgsl } from './shaders/gi1';
 
 /** A world-space axis-aligned box. */
 export interface Gi1Box {
@@ -29,31 +34,34 @@ export interface Gi1Box {
 export interface Gi1Inputs extends DiffuseInputs {
   /**
    * Port addition: world-space boxes where the scene changed since the last frame (a moved
-   * object's old and new bounds, a light's reach). Pixels whose surface lies inside one get no
-   * history this frame (as at a disocclusion: the new sample, blurred). Up to 16; more, or
-   * `'everything'`, drops all history (as `resetHistory`). Omit when nothing changed.
+   * object's old and new bounds, a light's reach), or `'everything'` (the sun, the sky).
+   * With `changeReset`, pixels whose surface lies inside one keep a short history (at most 3
+   * samples, then Capsaicin's 4-sample cap) for `changeFrames` frames, so the GI follows the
+   * change while staying denoised. Up to 16 boxes over those frames; more count as
+   * everything. Omit when nothing changed. Only `resetHistory()` drops the history.
    */
   changedRegions?: readonly Gi1Box[] | 'everything';
 }
 
 export interface Gi1DenoiserOptions {
   /**
-   * Port addition: `'neighbourhood'` clips the reprojected history's mean to this frame's
-   * input around the pixel (variance clipping: mean ± `historyClip` standard deviations per
-   * channel over a (2 `historyClipRadius` + 1)² window), so a change of lighting is followed
-   * within a few frames. `'none'` is Capsaicin's unclipped history, which takes 45-160 frames
-   * to follow a step change. Default `'neighbourhood'`.
+   * Port addition: `'neighbourhood'` keeps a short history (about 4 samples) and its luminance
+   * moments beside Capsaicin's, and clips the long history's mean to the short mean ±
+   * `historyClip` × max(spatial, temporal) standard deviation in YCoCg (the spatial one over a
+   * (2 `historyClipRadius` + 1)² window of the input). A change of lighting is then followed
+   * within a few frames; the temporal deviation keeps it from clipping to noise that is
+   * smooth in space (probe-interpolated GI). `'none'` is Capsaicin's history, which takes
+   * 45-160 frames to follow a step change. Default `'neighbourhood'`.
    */
   historyClamp?: 'neighbourhood' | 'none';
-  /** The clip box's half width in standard deviations. Default 1.5. */
+  /** The clip box's half width in standard deviations. Default 2.5. */
   historyClip?: number;
-  /** Radius in pixels of the clip's neighbourhood. Default 1 (3 x 3). */
+  /** Radius in pixels of the clip's spatial window. Default 1 (3 x 3). */
   historyClipRadius?: number;
-  /**
-   * Port addition: no history inside `Gi1Inputs.changedRegions` (and none anywhere for
-   * `'everything'`). Off, the regions are ignored. Default true.
-   */
+  /** Port addition: the soft history reset in `Gi1Inputs.changedRegions`. Default true. */
   changeReset?: boolean;
+  /** Frames a reported change keeps its region's history short. Default 8. */
+  changeFrames?: number;
   /**
    * The screen-probe size in pixels that sizes the reprojection's distance test
    * (Capsaicin's `g_ScreenProbesConstants.cell_size`, gi1.cpp:1839-1843:
@@ -113,16 +121,22 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
   private needsReset = true;
   /** The sub-pixel jitter of the previous frame (pixels), for its inverse view-projection. */
   private prevJitter: readonly [number, number] = [0, 0];
+  /** Changed regions still within `changeFrames`, with the frame they were reported. */
+  private recentChanges: { box: Gi1Box; frame: number }[] = [];
+  /** A global change keeps every pixel's history short until this frame (inclusive). */
+  private everythingChangedUntil = -1;
+  /** Whether the previous frame's depth / normal came from the denoiser's own copies. */
+  private usedOwnCopies: boolean | null = null;
 
   private params: GPUBuffer;
   private layouts: Record<string, GPUBindGroupLayout> = {};
   private pipes: Record<string, GPUComputePipeline> = {};
 
-  private depth: GPUTexture[] = [];
-  private normal: GPUTexture[] = [];
   private color: GPUTexture[] = [];
-  private colorDelta: GPUTexture[] = [];
-  private blurMask?: GPUTexture;
+  private shortHistory: GPUTexture[] = [];
+  private deltaMask: GPUTexture[] = [];
+  private keptDepth?: GPUTexture;
+  private keptNormal?: GPUTexture;
   private output?: GPUTexture;
 
   constructor(device: GPUDevice, options: Gi1DenoiserOptions = {}) {
@@ -133,9 +147,10 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
       normalEncoding: options.normalEncoding ?? 'signed',
       timestamps: options.timestamps ?? true,
       historyClamp: options.historyClamp ?? 'neighbourhood',
-      historyClip: options.historyClip ?? 1.5,
+      historyClip: options.historyClip ?? 2.5,
       historyClipRadius: options.historyClipRadius ?? 1,
       changeReset: options.changeReset ?? true,
+      changeFrames: options.changeFrames ?? 8,
     };
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ label: 'gi1 params', size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -144,7 +159,7 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
 
-  /** `historyClamp`, `historyClip`, `historyClipRadius` and `changeReset` can change between frames. */
+  // The options below can change between frames.
   set historyClamp(value: 'neighbourhood' | 'none') { this.opts.historyClamp = value; }
   get historyClamp(): 'neighbourhood' | 'none' { return this.opts.historyClamp; }
   set historyClip(value: number) { this.opts.historyClip = value; }
@@ -153,20 +168,26 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
   get historyClipRadius(): number { return this.opts.historyClipRadius; }
   set changeReset(value: boolean) { this.opts.changeReset = value; }
   get changeReset(): boolean { return this.opts.changeReset; }
-
-  /** Change `normalEncoding` between frames. */
+  set changeFrames(value: number) { this.opts.changeFrames = value; }
+  get changeFrames(): number { return this.opts.changeFrames; }
   set normalEncoding(value: 'signed' | 'unorm') { this.opts.normalEncoding = value; }
   get normalEncoding(): 'signed' | 'unorm' { return this.opts.normalEncoding; }
-
-  /** Change `hintInAlpha` between frames. */
   set hintInAlpha(value: boolean) { this.opts.hintInAlpha = value; }
   get hintInAlpha(): boolean { return this.opts.hintInAlpha; }
 
   /**
-   * The blur mask of the latest frame (r32float, the snorm8 values Capsaicin's R8_SNORM
-   * holds: blur radius / 8, -1/8 on the sky). Internal; exposed for tests and debug views.
+   * The latest frame's colour delta and blur mask (r32uint: pack2x16float(delta, mask), the
+   * mask being the snorm8 values Capsaicin's R8_SNORM holds: blur radius / 8, -1/8 on the sky).
+   * Internal; exposed for tests and debug views.
    */
-  get debugBlurMask(): GPUTexture | undefined { return this.blurMask; }
+  get debugDeltaMask(): GPUTexture | undefined { return this.deltaMask[(this.frame - 1) & 1]; }
+
+  /** GPU bytes held now (the previous depth / normal copies only once the denoiser keeps its own). */
+  get memoryBytes(): number {
+    const textures = [...this.color, ...this.shortHistory, ...this.deltaMask, this.keptDepth, this.keptNormal, this.output];
+    const bytesPerPixel: Partial<Record<GPUTextureFormat, number>> = { rgba16float: 8, r32uint: 4, r32float: 4 };
+    return textures.reduce((sum, t) => sum + (t ? t.width * t.height * (bytesPerPixel[t.format] ?? 0) : 0), 0);
+  }
 
   private createPipelines() {
     const d = this.device;
@@ -176,26 +197,6 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
       ({ binding, visibility: C, texture: { sampleType } });
     const sto = (binding: number, format: GPUTextureFormat): GPUBindGroupLayoutEntry =>
       ({ binding, visibility: C, storageTexture: { access: 'write-only', format } });
-
-    for (const kind of ['depth', 'float'] as const) {
-      this.layouts[`prepare_${kind}`] = d.createBindGroupLayout({
-        label: `gi1 prepare (${kind})`,
-        entries: [uni, tex(1, kind === 'depth' ? 'depth' : 'unfilterable-float'), tex(2), sto(3, 'r32float'), sto(4, 'rgba16float')],
-      });
-    }
-    this.layouts.reproject = d.createBindGroupLayout({
-      label: 'gi1 ReprojectGI',
-      entries: [uni, tex(1), tex(2), tex(3), tex(4), tex(5), tex(6), tex(7), tex(8),
-        sto(9, 'rgba32float'), sto(10, 'r32float'), sto(11, 'r32float')],
-    });
-    this.layouts.filter_x = d.createBindGroupLayout({
-      label: 'gi1 FilterGI (x)',
-      entries: [uni, tex(1), tex(2), tex(3), tex(4), sto(5, 'rgba32float')],
-    });
-    this.layouts.filter_y = d.createBindGroupLayout({
-      label: 'gi1 FilterGI (y)',
-      entries: [uni, tex(1), tex(2), tex(3), tex(4), sto(5, 'rgba32float'), sto(6, 'rgba16float')],
-    });
     const make = (name: string, code: string, layout: GPUBindGroupLayout) => {
       this.pipes[name] = d.createComputePipeline({
         label: `gi1 ${name}`,
@@ -203,11 +204,26 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
         compute: { module: d.createShaderModule({ label: `gi1 ${name}`, code }), entryPoint: 'main' },
       });
     };
-    make('prepare_depth', gi1PrepareWgsl(true), this.layouts.prepare_depth);
-    make('prepare_float', gi1PrepareWgsl(false), this.layouts.prepare_float);
-    make('reproject', GI1_REPROJECT_WGSL, this.layouts.reproject);
-    make('filter_x', gi1FilterWgsl(false), this.layouts.filter_x);
-    make('filter_y', gi1FilterWgsl(true), this.layouts.filter_y);
+    for (const kind of ['depth', 'float'] as const) {
+      const isDepth = kind === 'depth';
+      const depth = (binding: number) => tex(binding, isDepth ? 'depth' : 'unfilterable-float');
+      const layout = (name: string, entries: GPUBindGroupLayoutEntry[]) => {
+        const l = d.createBindGroupLayout({ label: `gi1 ${name} (${kind})`, entries: [uni, ...entries] });
+        this.layouts[`${name}_${kind}`] = l;
+        return l;
+      };
+      make(`reproject_${kind}`, gi1ReprojectWgsl(isDepth), layout('reproject', [
+        tex(1), depth(2), tex(3), tex(4), tex(5), tex(6), tex(7), tex(8, 'uint'), tex(9),
+        sto(10, 'rgba16float'), sto(11, 'rgba16float'), sto(12, 'r32uint'),
+      ]));
+      make(`filter_x_${kind}`, gi1FilterWgsl(false, isDepth), layout('filter_x', [
+        tex(1), tex(2, 'uint'), depth(3), tex(4), sto(5, 'rgba16float'),
+      ]));
+      make(`filter_y_${kind}`, gi1FilterWgsl(true, isDepth), layout('filter_y', [
+        tex(1), tex(2, 'uint'), depth(3), tex(4), sto(5, 'rgba16float'), sto(6, 'rgba16float'),
+      ]));
+      make(`keep_${kind}`, gi1KeepWgsl(isDepth), layout('keep', [depth(1), tex(2), sto(3, 'r32float'), sto(4, 'rgba16float')]));
+    }
   }
 
   configure({ width, height }: TemporalConfig): void {
@@ -217,20 +233,26 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
     const d = this.device;
     const tex = (label: string, format: GPUTextureFormat, extra = 0) =>
       d.createTexture({ label: `gi1 ${label}`, size: [width, height], format, usage: storageTex() | extra });
-    this.depth = [tex('depth0', 'r32float'), tex('depth1', 'r32float')];
-    this.normal = [tex('normal0', 'rgba16float'), tex('normal1', 'rgba16float')];
-    // Capsaicin: RGBA16F colour and R16F delta; rgba32float / r32float here (see shaders/gi1.ts).
-    this.color = [tex('color0', 'rgba32float'), tex('color1', 'rgba32float')];
-    this.colorDelta = [tex('colorDelta0', 'r32float'), tex('colorDelta1', 'r32float')];
-    // Capsaicin: R8_SNORM; r32float holding the same snorm8 values (r8snorm can't be a storage texture).
-    this.blurMask = tex('blurMask', 'r32float', GPUTextureUsage.COPY_SRC);
+    // Capsaicin: RGBA16F colour (stored rounded to nearest here, see shaders/gi1.ts).
+    this.color = [tex('color0', 'rgba16float'), tex('color1', 'rgba16float')];
+    // Port addition (historyClamp): the short history, rgb mean and luminance² mean.
+    this.shortHistory = [tex('short0', 'rgba16float'), tex('short1', 'rgba16float')];
+    // Capsaicin: R16F delta and R8_SNORM blur mask; two halves of one r32uint here.
+    const copySrc = GPUTextureUsage.COPY_SRC;
+    this.deltaMask = [tex('deltaMask0', 'r32uint', copySrc), tex('deltaMask1', 'r32uint', copySrc)];
     // GI_IrradianceBuffer: RGBA16F (gi1.cpp:1707), filterable, as consumers sample it.
-    this.output = tex('output', 'rgba16float', GPUTextureUsage.COPY_SRC);
+    this.output = tex('output', 'rgba16float', copySrc);
     this.needsReset = true;
     this.frame = 0;
+    this.usedOwnCopies = null;
   }
 
-  resetHistory(): void { this.needsReset = true; }
+  /** Drops all history at the next frame (a cut). Scene changes use `changedRegions` instead. */
+  resetHistory(): void {
+    this.needsReset = true;
+    this.recentChanges = [];
+    this.everythingChangedUntil = -1;
+  }
 
   dispatch(inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     const enc = this.device.createCommandEncoder({ label: 'gi1' });
@@ -242,12 +264,34 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
     return output;
   }
 
+  /**
+   * One frame recorded into the caller's encoder (see TemporalDenoiser.encode). The frame's
+   * constants go to one uniform buffer through `queue.writeBuffer`, so encode one frame per
+   * instance before each submit: a second `encode` on the same instance before the submit
+   * overwrites the first one's constants.
+   */
   encode(encoder: GPUCommandEncoder, inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     return this.record(encoder, inputs, guides, camera, undefined);
   }
 
+  /** This frame's soft-reset regions: the boxes reported in the last `changeFrames` frames, or everything. */
+  private changesFor(regions: Gi1Inputs['changedRegions']): { everything: boolean; boxes: Gi1Box[] } {
+    const frame = this.frame;
+    const keep = Math.max(1, Math.round(this.opts.changeFrames));
+    if (!this.opts.changeReset) {
+      this.recentChanges = [];
+      this.everythingChangedUntil = -1;
+      return { everything: false, boxes: [] };
+    }
+    if (regions === 'everything') this.everythingChangedUntil = frame + keep - 1;
+    else if (regions) for (const box of regions) this.recentChanges.push({ box, frame });
+    this.recentChanges = this.recentChanges.filter((change) => change.frame > frame - keep);
+    const everything = frame <= this.everythingChangedUntil || this.recentChanges.length > GI1_MAX_CHANGE_BOXES;
+    return { everything, boxes: everything ? [] : this.recentChanges.map((change) => change.box) };
+  }
+
   private record(enc: GPUCommandEncoder, inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera, timer: PassTimer | undefined): GPUTexture {
-    if (!this.output || !this.blurMask) throw new Error('Gi1Denoiser: call configure() before dispatch()');
+    if (!this.output) throw new Error('Gi1Denoiser: call configure() before dispatch()');
     const { width: W, height: H } = this;
     const sized: [string, GPUTexture | undefined][] = [
       ['radiance', inputs.radiance], ['depth', guides.depth], ['normal', guides.normal], ['motion', guides.motion],
@@ -263,9 +307,17 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
       throw new Error('Gi1Denoiser: guides.previousDepth must be a float colour texture (r32float), not a depth format');
     }
     const d = this.device;
-    const regions = this.opts.changeReset ? inputs.changedRegions : undefined;
-    const everythingChanged = regions === 'everything' || (regions !== undefined && regions.length > GI1_MAX_CHANGE_BOXES);
-    const historyValid = !this.needsReset && !everythingChanged;
+    const ownCopies = !guides.previousDepth;
+    if (ownCopies && !this.keptDepth) {
+      const tex = (label: string, format: GPUTextureFormat) =>
+        d.createTexture({ label: `gi1 ${label}`, size: [W, H], format, usage: storageTex() });
+      this.keptDepth = tex('previous depth', 'r32float');
+      this.keptNormal = tex('previous normal', 'rgba16float');
+    }
+    // Switching to our own copies: they don't hold the last frame.
+    if (ownCopies && this.usedOwnCopies === false) this.needsReset = true;
+    const changes = this.changesFor(inputs.changedRegions);
+    const historyValid = !this.needsReset;
 
     // ---- constants (gi1.cpp:1819-1843, 1983-1984)
     const jitter = camera.jitter ?? [0, 0];
@@ -297,12 +349,11 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
     f[40] = 0.5; f[41] = -0.5;
     f[42] = cellSize;
     u32[43] = (historyValid ? 1 : 0) | (this.opts.hintInAlpha ? 2 : 0) | (camera.reversedDepth ? 4 : 0)
-      | (this.opts.normalEncoding === 'unorm' ? 8 : 0);
+      | (this.opts.normalEncoding === 'unorm' ? 8 : 0) | (changes.everything ? 16 : 0);
     f[44] = this.opts.historyClamp === 'neighbourhood' ? this.opts.historyClip : 0;
     new Int32Array(buf)[45] = Math.max(0, Math.round(this.opts.historyClipRadius));
-    const boxes = regions && regions !== 'everything' && !everythingChanged ? regions : [];
-    u32[46] = boxes.length;
-    boxes.forEach((box, i) => {
+    u32[46] = changes.boxes.length;
+    changes.boxes.forEach((box, i) => {
       // Relative to the current eye, as the shader's positions are.
       f.set([box.min[0] - eye[0], box.min[1] - eye[1], box.min[2] - eye[2], 0], 48 + i * 8);
       f.set([box.max[0] - eye[0], box.max[1] - eye[1], box.max[2] - eye[2], 0], 52 + i * 8);
@@ -313,46 +364,47 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
     const v = (t: GPUTexture) => t.createView();
     const kind = isDepthFormat(guides.depth.format) ? 'depth' : 'float';
     const depthIn = kind === 'depth' ? guides.depth.createView({ aspect: 'depth-only' }) : guides.depth.createView();
-    const previousDepth = guides.previousDepth ?? this.depth[prev];
-    const previousNormal = guides.previousNormal ?? this.normal[prev];
+    const previousDepth = guides.previousDepth ?? this.keptDepth!;
+    const previousNormal = guides.previousNormal ?? this.keptNormal!;
     const P = { binding: 0, resource: { buffer: this.params } };
     const bg = (layout: string, resources: GPUBindingResource[]) =>
-      d.createBindGroup({ layout: this.layouts[layout], entries: [P, ...resources.map((resource, i) => ({ binding: i + 1, resource }))] });
+      d.createBindGroup({ layout: this.layouts[`${layout}_${kind}`], entries: [P, ...resources.map((resource, i) => ({ binding: i + 1, resource }))] });
     const groups: [number, number] = [Math.ceil(W / WORKGROUP), Math.ceil(H / WORKGROUP)];
-    const run = (name: string, pipe: string, group: GPUBindGroup) => {
+    const run = (name: string, group: GPUBindGroup) => {
       const pass = enc.beginComputePass({ label: `gi1 ${name}`, timestampWrites: timer?.pass(name) });
-      pass.setPipeline(this.pipes[pipe]);
+      pass.setPipeline(this.pipes[`${name}_${kind}`]);
       pass.setBindGroup(0, group);
       pass.dispatchWorkgroups(groups[0], groups[1]);
       pass.end();
     };
 
-    run('prepare', `prepare_${kind}`, bg(`prepare_${kind}`, [depthIn, v(guides.normal), v(this.depth[cur]), v(this.normal[cur])]));
-    run('reproject', 'reproject', bg('reproject', [
-      v(inputs.radiance), v(this.depth[cur]), v(this.normal[cur]), v(guides.motion),
-      v(this.color[prev]), v(previousDepth), v(previousNormal), v(this.colorDelta[prev]),
-      v(this.color[cur]), v(this.colorDelta[cur]), v(this.blurMask),
+    run('reproject', bg('reproject', [
+      v(inputs.radiance), depthIn, v(guides.normal), v(guides.motion),
+      v(this.color[prev]), v(previousDepth), v(previousNormal), v(this.deltaMask[prev]), v(this.shortHistory[prev]),
+      v(this.color[cur]), v(this.shortHistory[cur]), v(this.deltaMask[cur]),
     ]));
     // FilterGI twice, ping-ponging the colour buffers (gi1.cpp:2907-2925).
-    run('filter_x', 'filter_x', bg('filter_x', [
-      v(this.color[cur]), v(this.blurMask), v(this.depth[cur]), v(this.normal[cur]), v(this.color[prev]),
+    run('filter_x', bg('filter_x', [v(this.color[cur]), v(this.deltaMask[cur]), depthIn, v(guides.normal), v(this.color[prev])]));
+    run('filter_y', bg('filter_y', [
+      v(this.color[prev]), v(this.deltaMask[cur]), depthIn, v(guides.normal), v(this.color[cur]), v(this.output),
     ]));
-    run('filter_y', 'filter_y', bg('filter_y', [
-      v(this.color[prev]), v(this.blurMask), v(this.depth[cur]), v(this.normal[cur]), v(this.color[cur]), v(this.output),
-    ]));
+    // After the frame's last read of the previous copies.
+    if (ownCopies) run('keep', bg('keep', [depthIn, v(guides.normal), v(this.keptDepth!), v(this.keptNormal!)]));
 
     this.needsReset = false;
+    this.usedOwnCopies = ownCopies;
     this.prevJitter = [jitter[0], jitter[1]];
     this.frame++;
     return this.output;
   }
 
   private destroyTargets() {
-    for (const t of [...this.depth, ...this.normal, ...this.color, ...this.colorDelta]) t.destroy();
-    this.blurMask?.destroy();
+    for (const t of [...this.color, ...this.shortHistory, ...this.deltaMask]) t.destroy();
+    this.keptDepth?.destroy();
+    this.keptNormal?.destroy();
     this.output?.destroy();
-    this.depth = []; this.normal = []; this.color = []; this.colorDelta = [];
-    this.blurMask = this.output = undefined;
+    this.color = []; this.shortHistory = []; this.deltaMask = [];
+    this.keptDepth = this.keptNormal = this.output = undefined;
   }
 
   dispose(): void {
