@@ -5,7 +5,7 @@
 //
 //   ?checks=all (default) | a,b,c,...   which checks to run (see CHECKS below)
 //   &w=640&h=360
-//   &clamp=neighbourhood|none&clip=1&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
+//   &clamp=neighbourhood|none&clip=1.5&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
 //                          (clamp=none: Capsaicin's unclipped history)
 //   &regions=0             changeReset off (the moving box's old and new bounds are ignored)
 //
@@ -36,7 +36,7 @@ const FOVY = (50 * Math.PI) / 180;
 const E0 = 0.7;
 const CLIP = {
   historyClamp: (q.get('clamp') ?? 'neighbourhood') as 'neighbourhood' | 'none',
-  historyClip: Number(q.get('clip') ?? 1),
+  historyClip: Number(q.get('clip') ?? 1.5),
   historyClipRadius: Number(q.get('clipRadius') ?? 1),
   changeReset: q.get('regions') !== '0',
 };

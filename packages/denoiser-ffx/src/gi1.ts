@@ -45,7 +45,7 @@ export interface Gi1DenoiserOptions {
    * to follow a step change. Default `'neighbourhood'`.
    */
   historyClamp?: 'neighbourhood' | 'none';
-  /** The clip box's half width in standard deviations. Default 1. */
+  /** The clip box's half width in standard deviations. Default 1.5. */
   historyClip?: number;
   /** Radius in pixels of the clip's neighbourhood. Default 1 (3 x 3). */
   historyClipRadius?: number;
@@ -133,7 +133,7 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
       normalEncoding: options.normalEncoding ?? 'signed',
       timestamps: options.timestamps ?? true,
       historyClamp: options.historyClamp ?? 'neighbourhood',
-      historyClip: options.historyClip ?? 1,
+      historyClip: options.historyClip ?? 1.5,
       historyClipRadius: options.historyClipRadius ?? 1,
       changeReset: options.changeReset ?? true,
     };

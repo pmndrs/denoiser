@@ -263,6 +263,8 @@ vertically. The filtered sum is next frame's history.
 | velocity (uv, current − previous, y down) | `guides.motion` (NDC delta) scaled by (0.5, −0.5) |
 | `cell_size` from `ScreenProbes::probe_size_` (`gi1.cpp:1839-1843`) | `probeSize` option (default 8), from the projection's field of view |
 | unorm normals decoded `2n − 1` | `normalEncoding: 'signed'` (default, FrameGuides' contract) or `'unorm'` (Capsaicin's decode) |
+| the reprojected history is used as is; its length adapts to a luminance delta smoothed over 8 frames, so after a lighting change the output takes 45-160 frames to follow (see the ghosting check below) | **`historyClamp: 'neighbourhood'` (default):** the history's mean is clipped toward this frame's input statistics around the pixel (variance clipping, Salvi 2016: mean ± `historyClip` (1.5) standard deviations per channel over a 3x3 window, `historyClipRadius` 1; Playdead's AABB clip toward the mean; sky pixels and, with the hint, samples not to keep are left out). The count is kept. `'none'` is Capsaicin's behaviour. Pipelines and bindings are the same either way (one uniform) |
+| no change signal | **`changeReset` (default true)** with `Gi1Inputs.changedRegions` (up to 16 world boxes, or `'everything'`): pixels whose surface lies in a changed region take no history that frame, as at a disocclusion |
 
 The paper calls the blur mask "dilated"; Capsaicin's v1.3 kernels don't dilate it, and the
 port follows the code. `camera.jitter` (render pixels, as @pmndrs/upscaler) is applied to
@@ -288,24 +290,36 @@ on Windows pass the adapter with `CHROME_ARGS=--use-adapter-luid=<high>,<low>`).
 scene (floor, back wall, a box that moves) ray cast per pixel in WGSL writes the guides, a
 noisy irradiance and its noise-free value; 640x360.
 
-RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19 (Intel UHD gen-12lp: every check passes with the same numbers to 3 digits):
+RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19, defaults (history clamp on); `clamp=none` gives
+Capsaicin's behaviour. (The first round, before the clamp, also ran on an Intel UHD gen-12lp with the same numbers to 3 digits.)
 
 | check | result |
 |---|---|
 | still constant field (E = 0.7, 40 frames) | every pixel within 0.07% of its input, mean within 0.05%: one rgba16float output store, which truncates on this GPU |
 | moving camera + moving box, constant field (60 frames) | the same, also inside the blur mask (151,641 masked pixel-frames): no darkening at disocclusion edges |
-| uniform noise ±50 % on a constant field (160 frames) | mean 0.9993 of the f32 value from frame 1 on (the input's own f16 store included); frame-to-frame std of a pixel 0.76 % against the input's 28.9 % |
+| uniform noise ±50 % on a constant field (160 frames) | mean 0.9993 of the f32 value from frame 1 on (the input's own f16 store included); frame-to-frame std of a pixel 0.98 % against the input's 28.9 % (0.76 % with `clamp=none`) |
 | box jumps after 40 still frames | all 4,846 uncovered pixels (whole 3x3 previously box) get the mask; 99.98 % of converged pixels don't; spatial std there 0.18x the input's |
-| reprojection: converged world-space pattern, camera moves, the frame's input withheld (hint 0) | output = history: mean error 0.96 %, p95 3.95 %, history found on 100 % of pixels. Control with zero motion: 8.7 %, found on 57 % |
-| ghosting: a box with a contact shadow on the floor slides 1.8 m in 30 frames and stops | before the move 141 floor pixels differ from the input by over 5 % (screen-edge vignette); after the stop 13,051 (frame 1), 7,272 (32), 3,315 (64), 945 (100), 394 (150) |
+| reprojection: converged world-space pattern, camera moves, the frame's input withheld (hint 0) | output = history: mean error 0.77 %, p95 2.6 %, history found on 100 % of pixels (no clip: every input sample is a hint-0 one). Control with zero motion: 8.7 %, found on 57 % |
+| ghosting: a box with a contact shadow on the floor slides 1.8 m in 30 frames and stops; passes when, 64 frames after the stop, no more pixels are over 5 % off than before the move | **clamp on: passes**, back to the pre-move count (129) 9 frames after the stop; at most 216 pixels over 5 % while moving. `clamp=none` (Capsaicin): fails, 141 before; 13,051 (frame 1), 7,272 (32), 3,315 (64), 945 (100), 394 (150) |
 
-The ghosting is GI-1.0's design, not the port: a scalar model of `ReprojectGI`'s
+Capsaicin's ghosting is GI-1.0's design, not the port: a scalar model of `ReprojectGI`'s
 recurrence (history cap 64, delta smoothed by 1/8) takes 45-160 frames to come within 5 % of
 a step change in irradiance (1 -> 0.2: 159 frames; 0.6 -> 1: 107). The history only
 shortens once the smoothed luminance delta is large against the history's own luminance, so
-a darkening (a shadow arriving) is the slowest. A faster response would be a lever beside
-the faithful path (a larger delta step, a lower cap, or a clamp of the history to the new
-sample's neighbourhood); none is built.
+a darkening (a shadow arriving) is the slowest. Hence the clamp (pmndrs/gi, lead decision
+2026-11-19: the lag is a defect for dynamic scenes). Settings tried on the ghosting check
+(pixels over 5 % at frame 64 against the baseline; noisy-field frame-to-frame std):
+radius 3, γ 1: 315 / 141, 0.76 %; radius 2, γ 1: 217 / 140, 0.77 %; radius 2, γ 0.75: passes
+but the converged view gets worse (524 over 5 % before the move); radius 1, γ 1: passes in 8
+frames, 1.63 %; **radius 1, γ 1.5: passes in 9 frames, 0.98 %** (the default). A wide window
+spans the shadow's gradient, so its box holds the stale history.
+
+The clip assumes the input's spatial spread stands for its temporal noise. That holds for
+GI-1.0's jittered interpolation (pmndrs/gi's radiance cache, jitter on: the clamp roughly
+doubles its frame-to-frame change); with the interpolation jitter off the input is smooth in
+space but not in time, the box is too tight, and the clamped output flickers 4-20x more than
+the unclamped one (pmndrs/gi NOTES). `changeReset` is not exercised by the ghosting check
+(the moved box's bounds hold the box and the floor under it, not the shadow beside it).
 
 Not done: timing (no bench run: the checks only test correctness), Apple GPUs,
 a three.js node wrapper.
