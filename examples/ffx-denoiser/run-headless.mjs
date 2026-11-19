@@ -6,6 +6,7 @@
 //   node run-headless.mjs "signal=shadows&mode=eval" "signal=shadows&mode=bench"
 //   node run-headless.mjs --shot=out/shadows-45.png "signal=shadows&stopAt=45&refspp=1024"
 //   WINDOW=420,1800 (narrow-screen shots)  BASE=http://127.0.0.1:5211/ CHROME=/path/to/chrome node run-headless.mjs ...
+//   BASE=http://127.0.0.1:5210/gi1.html node run-headless.mjs "checks=all"   # GI-1.0 denoiser checks (gi1.html)
 //
 // No puppeteer: CDP over Node's native WebSocket (as examples/kernels-smoke).
 import { spawn } from 'node:child_process';
@@ -13,7 +14,11 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME = process.env.CHROME ?? (process.platform === 'win32'
+  ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+  : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+// Extra Chrome switches, space separated (e.g. a Windows adapter pick: --use-adapter-luid=...).
+const EXTRA_ARGS = (process.env.CHROME_ARGS ?? '').split(' ').filter(Boolean);
 const BASE = process.env.BASE ?? 'http://127.0.0.1:5210/';
 const args = process.argv.slice(2);
 const shot = args.find((a) => a.startsWith('--shot='))?.slice(7);
@@ -58,7 +63,7 @@ async function run(query) {
   const port = 9300 + Math.floor(Math.random() * 500);
   const userDir = path.join(os.tmpdir(), `ffx-denoiser-${process.pid}-${Date.now()}`);
   const chrome = spawn(CHROME, [
-    '--headless=new', '--no-sandbox', '--use-angle=metal', '--enable-unsafe-webgpu',
+    '--headless=new', '--no-sandbox', ...(process.platform === 'darwin' ? ['--use-angle=metal'] : []), '--enable-unsafe-webgpu', ...EXTRA_ARGS,
     '--enable-webgpu-developer-features', // unquantized timestamp queries
     `--window-size=${process.env.WINDOW ?? '1960,1000'}`, `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`,
     `${BASE}?${query}`,
