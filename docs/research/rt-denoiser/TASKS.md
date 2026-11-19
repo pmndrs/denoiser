@@ -670,6 +670,20 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       e1b, owner spec-author
 - [x] (e2, results/E2-oidn-baseline.md, HEAD 7a8b980 pinned; offline `oidn` / `oidn-default` replay entries in tools/rt-capture: with history our filters beat OIDN high on the test bed on every signal and tie it on the real scene except shadows (OIDN +0.7 dB PSNR, worse FLIP/penumbra); OIDN flickers 1.1–2.9× ours; 205–239 ms per signal at 1080p) **E-2 OIDN baseline** (SPEC §13): OIDN 2 single-frame per signal on the standard captures,
       scored like the others. — orchestrator, owner: oidn agent
+- [x] (e2b, branch feat/oidn-vs-svgf-bench, results/E2b-oidn-vs-svgf.md; review bench card E2b) **E-2b OIDN fast / balanced /
+      high vs our filters at HEAD**: E-2 rerun on its captures plus the moving-occluder and golden captures, per region
+      (static / moving / disoccluded / dense / penumbra), frame 0 vs settled, flicker, boil k = 1 / 8, 1080p cost. With
+      history ours beat every OIDN quality on every signal and group (5 per-capture exceptions below); OIDN high / balanced
+      lead frame 0 on real-scene diffuse (≤ 1.1 dB) and AO (≤ 2.1 dB); real-scene shadows flipped to ours (+2.1 dB).
+      OIDN on the review bench runs in lockstep (`oidn.engine`). — asked by Dennis 2026-11-19
+- [ ] `bistro-move` shadows: shipped ShadowDenoiser 24.38 dB = the raw input (24.42), OIDN high 26.83 (E2b), FFX 19.65
+      (scorecard); loses on dense geometry (23.1 vs raw 31.4 dB, bias +1.5 levels) from frame 0, so the spatial filter on
+      Bistro's thin geometry under a small moving light, not lag. Also `golden-G4-pan-light-on` shadows −0.27 vs OIDN high
+      (light switching on). — found by e2b, owner shadows
+- [ ] Frame-0 (no history) AO and shadows on the asset scenes: OIDN high leads our first frame on AO in 8/8 real
+      captures (+0.2…2.1 dB) and shadows on `three-knot-static` (+1.8) / `sponza-move` (+0.5) (E2b "Conclusion").
+      Candidate: a stronger first-frame spatial pass for occlusion / shadows (recurrent's historyFixDense is the diffuse
+      analogue). — found by e2b, owner unassigned
 - [x] (moving-shadows, d02613d e573a04 033a869 + docs commit; results/M4.md §12) **moving-shadows**: the rotating knot's shadow
       boiled with ours. Measured: knot captures `three-knot-static` / `-orbit` / `-still` (control), dynamic-region and boil
       metrics (compare.mjs, test bed). Cause: wide soft penumbrae boil whether the knot moves or not (anti-lag restarts in
