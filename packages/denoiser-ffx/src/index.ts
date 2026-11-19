@@ -11,4 +11,4 @@ export type {
 } from '@pmndrs/denoiser-core';
 // AMD GI-1.0's image-space GI denoiser, ported from AMD Capsaicin v1.3 (MIT; see NOTICE).
 export { Gi1Denoiser } from './gi1';
-export type { Gi1DenoiserOptions } from './gi1';
+export type { Gi1Box, Gi1DenoiserOptions, Gi1Inputs } from './gi1';

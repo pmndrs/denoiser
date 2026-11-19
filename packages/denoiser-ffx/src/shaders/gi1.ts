@@ -50,6 +50,12 @@
 //   velocity (current - previous, y down) by P.motionScale.
 // - Nearest-sampler reads (SampleLevel with g_NearestSampler) are textureLoad at the clamped
 //   texel: the same texel a clamp-to-edge nearest sampler returns.
+// - Port additions, both default on and switchable: the reprojected history is clipped to this
+//   frame's neighbourhood (variance clipping; historyClamp 'none' = Capsaicin's unclipped history),
+//   and no history is reprojected inside changed regions the caller lists (changeReset).
+
+/** Changed regions the reprojection takes per frame (more count as everything changed). */
+export const GI1_MAX_CHANGE_BOXES = 16;
 
 const GI1_PARAMS_WGSL = /* wgsl */ `
 struct Params {
@@ -69,6 +75,13 @@ struct Params {
   // bit 0: history valid; bit 1: radiance.a is GI-1.0's denoiser hint; bit 2: reversed depth;
   // bit 3: guides.normal is unorm-encoded (0..1).
   flags: u32,
+  // Port addition: the history clip (0 = off, Capsaicin as is) and its neighbourhood radius.
+  clipGamma: f32,
+  clipRadius: i32,
+  // Port addition: changed regions (world boxes relative to the current eye): no history inside.
+  changeCount: u32,
+  _pad0: u32,
+  changeBoxes: array<vec4f, ${GI1_MAX_CHANGE_BOXES * 2}>,  // min, max pairs
 };
 @group(0) @binding(0) var<uniform> P: Params;
 
@@ -166,6 +179,55 @@ fn snorm8(value: f32) -> f32 {
   return round(clamp(value, -1.0, 1.0) * 127.0) / 127.0;
 }
 
+// Port addition: is this point (relative to the current eye) inside a changed region?
+fn inChangedRegion(world: vec3f) -> bool {
+  for (var i = 0u; i < P.changeCount; i++) {
+    if (all(world >= P.changeBoxes[2u * i].xyz) && all(world <= P.changeBoxes[2u * i + 1u].xyz)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Port addition: variance clipping (Salvi, "An excursion in temporal supersampling", GDC 2016)
+// of the reprojected history's mean against this frame's input in a (2r + 1)² neighbourhood:
+// mean ± clipGamma × standard deviation per channel, the history clipped toward the mean
+// (Playdead's ClipAABB, as FFX reflections' resolve does). Sky pixels, and with the hint the
+// samples not to keep, are left out of the statistics. The count (w) is kept.
+fn clipHistory(did: vec2u, history: vec4f) -> vec4f {
+  var m1 = vec3f(0.0);
+  var m2 = vec3f(0.0);
+  var n = 0.0;
+  let hint = (P.flags & FLAG_HINT_IN_ALPHA) != 0u;
+  for (var dy = -P.clipRadius; dy <= P.clipRadius; dy++) {
+    for (var dx = -P.clipRadius; dx <= P.clipRadius; dx++) {
+      let p = vec2u(clamp(vec2i(did) + vec2i(dx, dy), vec2i(0), vec2i(P.renderSize) - 1));
+      let normal = textureLoad(shadingNormalBuffer, p, 0).xyz;
+      let c = textureLoad(colorIn, p, 0);
+      if (dot(normal, normal) == 0.0 || (hint && c.w <= 0.0)) {
+        continue;
+      }
+      m1 += c.xyz;
+      m2 += c.xyz * c.xyz;
+      n += 1.0;
+    }
+  }
+  if (n == 0.0) {
+    return history;
+  }
+  let mean = m1 / n;
+  let extent = P.clipGamma * sqrt(max(m2 / n - mean * mean, vec3f(0.0))) + vec3f(1e-6);
+  let count = max(history.w, 1.0);
+  let value = history.xyz / count;
+  let offset = value - mean;
+  let units = abs(offset / extent);
+  let largest = max(units.x, max(units.y, units.z));
+  if (largest <= 1.0) {
+    return history;
+  }
+  return vec4f((mean + offset / largest) * count, history.w);
+}
+
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) id: vec3u) {
   let did = id.xy;
@@ -205,6 +267,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 
       var weight = 0.0;
       let texel_size = P.inverseRenderSize;
+      let changed = inChangedRegion(world);
 
       let kOneOverSqrtOfTwo = 0.707107;
 
@@ -216,8 +279,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
           let previous_normal = textureLoad(previousDetailsBuffer, texel, 0).xyz;
 
           // Port: with no history (first frame, after a reset) every sample is invalid, as
-          // Capsaicin's freshly zeroed buffers are.
-          if (!historyValid || c.w < 1.0 || dot(previous_normal, previous_normal) == 0.0) {
+          // Capsaicin's freshly zeroed buffers are; so is any inside a changed region.
+          if (!historyValid || changed || c.w < 1.0 || dot(previous_normal, previous_normal) == 0.0) {
             continue; // skip invalid sample(s)
           }
 
@@ -241,6 +304,13 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         color_delta *= s; // restore delta
 
         lighting = removeNaNs4(lighting / weight);
+
+        // Port addition (historyClamp 'neighbourhood', the default; P.clipGamma > 0): the history's mean clipped to this
+        // frame's neighbourhood, so a lighting change is followed in a few frames instead of
+        // the 45-160 Capsaicin's delta-driven history length takes (temporal.md, GI-1.0 port).
+        if (P.clipGamma > 0.0) {
+          lighting = clipHistory(did, lighting);
+        }
       }
 
       if (color.w > 0.0) {

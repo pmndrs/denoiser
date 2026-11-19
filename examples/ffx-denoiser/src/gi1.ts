@@ -5,6 +5,9 @@
 //
 //   ?checks=all (default) | a,b,c,...   which checks to run (see CHECKS below)
 //   &w=640&h=360
+//   &clamp=neighbourhood|none&clip=1&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
+//                          (clamp=none: Capsaicin's unclipped history)
+//   &regions=0             changeReset off (the moving box's old and new bounds are ignored)
 //
 // Checks (results in window.__ffx.results, one entry per check, `pass` where there is a gate):
 //   still-constant   a noise-free constant field, still camera: unchanged (every pixel within 0.1%)
@@ -17,7 +20,8 @@
 //                    input is withheld (hint 0): the output is the reprojected history, compared
 //                    with the pattern at the new pixels (and, as a control, with zero motion)
 //   ghosting         a box with a contact shadow on the floor moves and stops: how many frames
-//                    until the floor matches the new input again (no trail)
+//                    until the floor matches the new input again (no trail); passes when, 64
+//                    frames after the stop, no more pixels are over 5% off than before the move
 import { Gi1Denoiser } from '@pmndrs/denoiser-ffx';
 import type { FrameCamera } from '@pmndrs/denoiser-ffx';
 import { FAR, invert, lookAt, mul, NEAR, perspective, type V3 } from './camera';
@@ -30,6 +34,13 @@ type CheckName = (typeof CHECKS)[number];
 const selected = (q.get('checks') ?? 'all') === 'all' ? [...CHECKS] : (q.get('checks')!.split(',') as CheckName[]);
 const FOVY = (50 * Math.PI) / 180;
 const E0 = 0.7;
+const CLIP = {
+  historyClamp: (q.get('clamp') ?? 'neighbourhood') as 'neighbourhood' | 'none',
+  historyClip: Number(q.get('clip') ?? 1),
+  historyClipRadius: Number(q.get('clipRadius') ?? 1),
+  changeReset: q.get('regions') !== '0',
+};
+const PASS_REGIONS = true; // passed always; CLIP.changeReset decides whether they are used
 
 const status = document.querySelector<HTMLPreElement>('#status')!;
 const log = (s: string) => { status.textContent += s + '\n'; };
@@ -281,12 +292,16 @@ const still = (cam: Cam = BASE) => ({ cam, prevCam: cam });
 async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<string, unknown>> {
   const bed = new Bed(device);
   const hintInAlpha = name === 'reprojection';
-  const dn = new Gi1Denoiser(device, { hintInAlpha, timestamps: false });
+  const dn = new Gi1Denoiser(device, { hintInAlpha, timestamps: false, ...CLIP });
   dn.configure({ width: W, height: H });
   const guides = { depth: bed.depth, normal: bed.normal, motion: bed.motion };
+  // The box's old and new bounds when it moves, as a renderer's change feed reports them.
+  const boxBounds = (c: V3) => ({ min: [c[0] - 0.5, c[1] - 0.5, c[2] - 0.5] as const, max: [c[0] + 0.5, c[1] + 0.5, c[2] + 0.5] as const });
   const step = (spec: FrameSpec) => {
     const camera = bed.render(spec);
-    return dn.dispatch({ radiance: bed.signal }, guides, camera);
+    const moved = spec.box.some((v, i) => v !== spec.prevBox[i]);
+    const changedRegions = PASS_REGIONS && moved ? [boxBounds(spec.prevBox), boxBounds(spec.box)] : undefined;
+    return dn.dispatch({ radiance: bed.signal, changedRegions }, guides, camera);
   };
   const base: Omit<FrameSpec, 'cam' | 'prevCam'> = { box: [0, 0.5, 0], prevBox: [0, 0.5, 0], mode: MODE.constant, noise: 0, hint: 1, flags: 0 };
 
@@ -401,7 +416,7 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
 
     if (name === 'reprojection') {
       const measure = async (zeroMotion: boolean) => {
-        const d2 = new Gi1Denoiser(device, { hintInAlpha: true, timestamps: false });
+        const d2 = new Gi1Denoiser(device, { hintInAlpha: true, timestamps: false, ...CLIP });
         d2.configure({ width: W, height: H });
         for (let i = 0; i < 70; i++) {
           const camera = bed.render({ ...base, ...still(), mode: MODE.pattern });
@@ -468,6 +483,7 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       return {
         baselineBeforeMove: { over2pct: baseline.over2, over5pct: baseline.over5, meanRelError: round(baseline.meanRelError, 4) },
         maxPixelsOver5pctWhileMoving: maxTrailMoving,
+        pass: (perFrame.find((p) => p.frame === 64)?.over5pct ?? Infinity) <= baseline.over5,
         framesAfterStopUntilBaselineOver5pct: clearedAt('over5pct', baseline.over5),
         framesAfterStopUntilBaselineOver2pct: clearedAt('over2pct', baseline.over2),
         afterStop: perFrame.filter((p) => [1, 2, 4, 8, 16, 32, 64, 100, 150].includes(p.frame)),
@@ -498,7 +514,7 @@ async function main() {
   await device.queue.onSubmittedWorkDone();
   const failed = Object.entries(results).filter(([, r]) => (r as { pass?: boolean }).pass === false).map(([k]) => k);
   if (errors.length) failed.push('device errors');
-  out.results = { adapter: `${info.vendor} ${info.architecture} ${info.description}`, size: [W, H], failed, deviceErrors: errors, checks: results };
+  out.results = { options: CLIP, adapter: `${info.vendor} ${info.architecture} ${info.description}`, size: [W, H], failed, deviceErrors: errors, checks: results };
   out.ready = true;
 }
 

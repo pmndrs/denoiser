@@ -17,9 +17,43 @@ import type {
   DiffuseInputs, FrameCamera, FrameGuides, TemporalConfig, TemporalDenoiser,
 } from '@pmndrs/denoiser-core';
 import { eyeFromView, invert, isDepthFormat, mat4, PassTimer, type M4 } from './common';
-import { GI1_REPROJECT_WGSL, gi1FilterWgsl, gi1PrepareWgsl } from './shaders/gi1';
+import { GI1_MAX_CHANGE_BOXES, GI1_REPROJECT_WGSL, gi1FilterWgsl, gi1PrepareWgsl } from './shaders/gi1';
+
+/** A world-space axis-aligned box. */
+export interface Gi1Box {
+  min: readonly [number, number, number];
+  max: readonly [number, number, number];
+}
+
+/** `DiffuseInputs`, plus where the scene changed this frame. */
+export interface Gi1Inputs extends DiffuseInputs {
+  /**
+   * Port addition: world-space boxes where the scene changed since the last frame (a moved
+   * object's old and new bounds, a light's reach). Pixels whose surface lies inside one get no
+   * history this frame (as at a disocclusion: the new sample, blurred). Up to 16; more, or
+   * `'everything'`, drops all history (as `resetHistory`). Omit when nothing changed.
+   */
+  changedRegions?: readonly Gi1Box[] | 'everything';
+}
 
 export interface Gi1DenoiserOptions {
+  /**
+   * Port addition: `'neighbourhood'` clips the reprojected history's mean to this frame's
+   * input around the pixel (variance clipping: mean ± `historyClip` standard deviations per
+   * channel over a (2 `historyClipRadius` + 1)² window), so a change of lighting is followed
+   * within a few frames. `'none'` is Capsaicin's unclipped history, which takes 45-160 frames
+   * to follow a step change. Default `'neighbourhood'`.
+   */
+  historyClamp?: 'neighbourhood' | 'none';
+  /** The clip box's half width in standard deviations. Default 1. */
+  historyClip?: number;
+  /** Radius in pixels of the clip's neighbourhood. Default 1 (3 x 3). */
+  historyClipRadius?: number;
+  /**
+   * Port addition: no history inside `Gi1Inputs.changedRegions` (and none anywhere for
+   * `'everything'`). Off, the regions are ignored. Default true.
+   */
+  changeReset?: boolean;
   /**
    * The screen-probe size in pixels that sizes the reprojection's distance test
    * (Capsaicin's `g_ScreenProbesConstants.cell_size`, gi1.cpp:1839-1843:
@@ -43,7 +77,7 @@ export interface Gi1DenoiserOptions {
   timestamps?: boolean;
 }
 
-const PARAMS_SIZE = 256;
+const PARAMS_SIZE = 768; // 192 bytes of constants + 16 boxes x 2 vec4f
 const WORKGROUP = 8;
 // Read lazily: GPUTextureUsage is undefined where WebGPU is absent (SSR / Node), and this runs at import.
 const storageTex = () => GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING;
@@ -68,7 +102,7 @@ function mul64(a: ArrayLike<number>, b: ArrayLike<number>): number[] {
   return o;
 }
 
-export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
+export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
   readonly name = 'gi1';
   readonly device: GPUDevice;
   private opts: Required<Gi1DenoiserOptions>;
@@ -98,6 +132,10 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
       hintInAlpha: options.hintInAlpha ?? false,
       normalEncoding: options.normalEncoding ?? 'signed',
       timestamps: options.timestamps ?? true,
+      historyClamp: options.historyClamp ?? 'neighbourhood',
+      historyClip: options.historyClip ?? 1,
+      historyClipRadius: options.historyClipRadius ?? 1,
+      changeReset: options.changeReset ?? true,
     };
     if (this.opts.timestamps && PassTimer.supported(device)) this.timer = new PassTimer(device);
     this.params = device.createBuffer({ label: 'gi1 params', size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -105,6 +143,16 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
   }
 
   get gpuTimings(): ReadonlyMap<string, number> | undefined { return this.timer?.timings; }
+
+  /** `historyClamp`, `historyClip`, `historyClipRadius` and `changeReset` can change between frames. */
+  set historyClamp(value: 'neighbourhood' | 'none') { this.opts.historyClamp = value; }
+  get historyClamp(): 'neighbourhood' | 'none' { return this.opts.historyClamp; }
+  set historyClip(value: number) { this.opts.historyClip = value; }
+  get historyClip(): number { return this.opts.historyClip; }
+  set historyClipRadius(value: number) { this.opts.historyClipRadius = value; }
+  get historyClipRadius(): number { return this.opts.historyClipRadius; }
+  set changeReset(value: boolean) { this.opts.changeReset = value; }
+  get changeReset(): boolean { return this.opts.changeReset; }
 
   /** Change `normalEncoding` between frames. */
   set normalEncoding(value: 'signed' | 'unorm') { this.opts.normalEncoding = value; }
@@ -184,7 +232,7 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
 
   resetHistory(): void { this.needsReset = true; }
 
-  dispatch(inputs: DiffuseInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
+  dispatch(inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     const enc = this.device.createCommandEncoder({ label: 'gi1' });
     this.timer?.begin();
     const output = this.record(enc, inputs, guides, camera, this.timer);
@@ -194,11 +242,11 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
     return output;
   }
 
-  encode(encoder: GPUCommandEncoder, inputs: DiffuseInputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
+  encode(encoder: GPUCommandEncoder, inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture {
     return this.record(encoder, inputs, guides, camera, undefined);
   }
 
-  private record(enc: GPUCommandEncoder, inputs: DiffuseInputs, guides: FrameGuides, camera: FrameCamera, timer: PassTimer | undefined): GPUTexture {
+  private record(enc: GPUCommandEncoder, inputs: Gi1Inputs, guides: FrameGuides, camera: FrameCamera, timer: PassTimer | undefined): GPUTexture {
     if (!this.output || !this.blurMask) throw new Error('Gi1Denoiser: call configure() before dispatch()');
     const { width: W, height: H } = this;
     const sized: [string, GPUTexture | undefined][] = [
@@ -215,7 +263,9 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
       throw new Error('Gi1Denoiser: guides.previousDepth must be a float colour texture (r32float), not a depth format');
     }
     const d = this.device;
-    const historyValid = !this.needsReset;
+    const regions = this.opts.changeReset ? inputs.changedRegions : undefined;
+    const everythingChanged = regions === 'everything' || (regions !== undefined && regions.length > GI1_MAX_CHANGE_BOXES);
+    const historyValid = !this.needsReset && !everythingChanged;
 
     // ---- constants (gi1.cpp:1819-1843, 1983-1984)
     const jitter = camera.jitter ?? [0, 0];
@@ -248,6 +298,15 @@ export class Gi1Denoiser implements TemporalDenoiser<DiffuseInputs> {
     f[42] = cellSize;
     u32[43] = (historyValid ? 1 : 0) | (this.opts.hintInAlpha ? 2 : 0) | (camera.reversedDepth ? 4 : 0)
       | (this.opts.normalEncoding === 'unorm' ? 8 : 0);
+    f[44] = this.opts.historyClamp === 'neighbourhood' ? this.opts.historyClip : 0;
+    new Int32Array(buf)[45] = Math.max(0, Math.round(this.opts.historyClipRadius));
+    const boxes = regions && regions !== 'everything' && !everythingChanged ? regions : [];
+    u32[46] = boxes.length;
+    boxes.forEach((box, i) => {
+      // Relative to the current eye, as the shader's positions are.
+      f.set([box.min[0] - eye[0], box.min[1] - eye[1], box.min[2] - eye[2], 0], 48 + i * 8);
+      f.set([box.max[0] - eye[0], box.max[1] - eye[1], box.max[2] - eye[2], 0], 52 + i * 8);
+    });
     d.queue.writeBuffer(this.params, 0, buf);
 
     const cur = this.frame & 1, prev = cur ^ 1;
