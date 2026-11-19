@@ -31,10 +31,11 @@ frames) and a separable blur where the history is short (disocclusions). It take
 `DiffuseInputs.radiance` and the usual guides; `encode(encoder, ...)` records into the
 caller's encoder; `hintInAlpha` reads GI-1.0's keep/discard hint from `radiance.a`; the
 optional `guides.previousDepth` / `previousNormal` save its own history copy.
-Two port additions, on by default: `historyClamp: 'neighbourhood'` clips the history to
-the frame's neighbourhood so lighting changes are followed in a few frames (`'none'` is
-Capsaicin's history, which lags 45-160 frames), and `changeReset` drops the history inside
-`inputs.changedRegions` (world boxes where the scene changed).
+Two port additions, on by default: `historyClamp: 'neighbourhood'` keeps a short history
+(about 4 samples) and clips the long one to it within two standard errors, so lighting
+changes are followed in a few frames (`'none'` is Capsaicin's history, which lags 45-160
+frames), and `changeReset` keeps the history short for 8 frames inside
+`inputs.changedRegions` (world boxes where the scene changed, or `'everything'`).
 
 See `docs/specs/temporal.md` (FidelityFX port and GI-1.0 port sections) for conventions,
 deviations from AMD's source and measured quality / cost, and

@@ -54,7 +54,7 @@ export interface Gi1DenoiserOptions {
    * 45-160 frames to follow a step change. Default `'neighbourhood'`.
    */
   historyClamp?: 'neighbourhood' | 'none';
-  /** The clip box's half width in standard deviations. Default 2.5. */
+  /** The clip box's half width in standard errors of the short mean. Default 2. */
   historyClip?: number;
   /** Radius in pixels of the clip's spatial window. Default 1 (3 x 3). */
   historyClipRadius?: number;
@@ -147,7 +147,7 @@ export class Gi1Denoiser implements TemporalDenoiser<Gi1Inputs> {
       normalEncoding: options.normalEncoding ?? 'signed',
       timestamps: options.timestamps ?? true,
       historyClamp: options.historyClamp ?? 'neighbourhood',
-      historyClip: options.historyClip ?? 2.5,
+      historyClip: options.historyClip ?? 2,
       historyClipRadius: options.historyClipRadius ?? 1,
       changeReset: options.changeReset ?? true,
       changeFrames: options.changeFrames ?? 8,

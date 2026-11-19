@@ -56,9 +56,9 @@
 //   texel: the same texel a clamp-to-edge nearest sampler returns.
 // - Port additions, switchable (Gi1DenoiserOptions):
 //   * historyClamp 'neighbourhood' (default): a short history (about 4 samples) and its
-//     luminance moments are reprojected with the long one; the long history's mean is clipped
-//     to the short mean ± clipGamma × max(spatial, temporal) standard deviation in YCoCg
-//     (A-SVGF / variance clipping). Capsaicin's delta still sees the unclipped history.
+//     luminance variance are reprojected with the long one; the long history's mean is clipped
+//     to the short mean ± clipGamma × its standard error in YCoCg (the input's spatial deviation
+//     too while the history is younger than 4 samples) (A-SVGF / variance clipping). Capsaicin's delta still sees the unclipped history.
 //     'none' = Capsaicin's history.
 //   * changeReset (default on): inside changed regions (or everywhere, for a global change)
 //     the history is shortened to at most 3 samples and alpha_blend is 0 (Capsaicin's own
@@ -325,7 +325,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     color = vec4f(0.0); // port: a non-finite sample is not kept
   }
   var lighting = vec4f(0.0);
-  var shortHistory = vec4f(0.0); // port addition: rgb mean of about 4 samples, a: mean luminance²
+  var shortHistory = vec4f(0.0); // port addition: rgb mean of about 4 samples, a: luminance variance
   let normal = loadNormal(did);
 
   var alpha_blend = 1.0;
@@ -421,22 +421,30 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   }
 
   // Port addition (historyClamp): the short history takes this frame's sample (a running mean
-  // over at most 4), then bounds the long history's mean.
-  let lumaA = luminance(color.xyz);
+  // over at most 4, its luminance variance updated the exponential Welford way: storing the
+  // variance itself, not E[l²], keeps it exact in a half where E[l²] - E[l]² would cancel),
+  // then bounds the long history's mean.
   if (color.w > 0.0) {
     if (weight > 0.0) {
       let a = 1.0 / min(max(lighting.w, 0.0) + 1.0, SHORT_HISTORY_SAMPLES);
-      shortHistory = vec4f(mix(shortHistory.xyz, color.xyz, a), mix(shortHistory.w, lumaA * lumaA, a));
+      let lumaDelta = luminance(color.xyz) - luminance(shortHistory.xyz);
+      let variance = (1.0 - a) * (shortHistory.w + a * lumaDelta * lumaDelta);
+      shortHistory = vec4f(mix(shortHistory.xyz, color.xyz, a), variance);
     } else {
-      shortHistory = vec4f(color.xyz, lumaA * lumaA);
+      shortHistory = vec4f(color.xyz, 0.0);
     }
   } else if (weight == 0.0) {
-    shortHistory = vec4f(color.xyz, lumaA * lumaA); // a fallback sample, shown but not kept
+    shortHistory = vec4f(color.xyz, 0.0); // a fallback sample, shown but not kept
   }
   if (P.clipGamma > 0.0 && weight > 0.0 && !is_sky_pixel) {
-    let shortLuma = luminance(shortHistory.xyz);
-    let temporalSigma = sqrt(max(shortHistory.w - shortLuma * shortLuma, 0.0));
-    let extent = P.clipGamma * max(spatialSigma(did), vec3f(temporalSigma));
+    // The box's half width: the short mean's standard error (its samples' deviation over
+    // sqrt(4)) once the history holds 4 samples; before that the input's spatial deviation
+    // too, since a young short history says little. (A spatial deviation on a mature pixel
+    // would widen the box on every gradient, a contact shadow's edge, and keep the trail.)
+    let temporalSigma = sqrt(max(shortHistory.w, 0.0));
+    let mature = lighting.w >= SHORT_HISTORY_SAMPLES;
+    let sigma = select(max(spatialSigma(did), vec3f(temporalSigma)), vec3f(temporalSigma / sqrt(SHORT_HISTORY_SAMPLES)), mature);
+    let extent = P.clipGamma * sigma;
     let count = max(lighting.w, 1.0);
     lighting = vec4f(clipToBox(lighting.xyz / count, toYCoCg(shortHistory.xyz), extent) * count, lighting.w);
   }

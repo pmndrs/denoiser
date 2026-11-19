@@ -5,7 +5,7 @@
 //
 //   ?checks=all (default) | a,b,c,...   which checks to run (see CHECKS below)
 //   &w=640&h=360
-//   &clamp=neighbourhood|none&clip=2.5&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
+//   &clamp=neighbourhood|none&clip=2&clipRadius=1   Gi1Denoiser historyClamp / historyClip / historyClipRadius
 //                          (clamp=none: Capsaicin's unclipped history)
 //   &regions=0             changeReset off (the moving box's old and new bounds are ignored)
 //   &noiseKind=pixel|tile&tileJitter=1   noise per pixel, or per 8 px tile interpolated like GI-1.0's
@@ -40,7 +40,7 @@ const FOVY = (50 * Math.PI) / 180;
 const E0 = 0.7;
 const CLIP = {
   historyClamp: (q.get('clamp') ?? 'neighbourhood') as 'neighbourhood' | 'none',
-  historyClip: Number(q.get('clip') ?? 2.5),
+  historyClip: Number(q.get('clip') ?? 2),
   historyClipRadius: Number(q.get('clipRadius') ?? 1),
   changeReset: q.get('regions') !== '0',
 };
@@ -190,8 +190,10 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   if ((S.flags & ${FLAG_ZERO_SIGNAL}u) != 0u) { signal = 0.0; }
   if ((S.flags & ${FLAG_NAN_INJECTION}u) != 0u) {
     // Every 37th pixel NaN, every 53rd +infinity (port check of RemoveNaNs and the input guard).
-    if (pixel % 37u == 0u) { signal = bitcast<f32>(0x7fc00000u); }
-    else if (pixel % 53u == 0u) { signal = bitcast<f32>(0x7f800000u); }
+    // Built at run time: WGSL rejects a constant NaN or infinity.
+    let runtimeZero = S.frame & 0u;
+    if (pixel % 37u == 0u) { signal = bitcast<f32>(0x7fc00000u + runtimeZero); }
+    else if (pixel % 53u == 0u) { signal = bitcast<f32>(0x7f800000u + runtimeZero); }
   }
 
   textureStore(depthOut, id.xy, vec4f(clip.z / clip.w));
@@ -499,11 +501,14 @@ async function runCheck(device: GPUDevice, name: CheckName): Promise<Record<stri
       for (let i = 0; i < 30; i++) {
         const o = step({ ...base, ...still(), flags: FLAG_NAN_INJECTION });
         if (i < 2) continue;
-        const outv = await bed.readHalf4(o), ref = await bed.readFloat(bed.reference);
+        // Against the input as stored (rgba16float); a bad pixel against its finite neighbour's.
+        const outv = await bed.readHalf4(o), ref = await bed.readFloat(bed.reference), input = await bed.readHalf4(bed.signal);
         for (let j = 0; j < ref.length; j++) {
           if (ref[j] <= 0) continue;
           if (!Number.isFinite(outv[j])) { nonFinite++; continue; }
-          const r = outv[j] / ref[j];
+          // The field's value as stored: any surface pixel's finite input (they're all equal).
+          const stored = input.find((value, index) => ref[index] > 0 && Number.isFinite(value) && value > 0)!;
+          const r = outv[j] / stored;
           worst = { min: Math.min(worst.min, r), max: Math.max(worst.max, r) };
         }
       }

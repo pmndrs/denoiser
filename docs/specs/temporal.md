@@ -251,20 +251,29 @@ vertically. The filtered sum is next frame's history.
 
 | Capsaicin | port |
 |---|---|
-| `InterpolateScreenProbes` writes the noisy irradiance into `g_GIDenoiser_ColorBuffer`, which `ReprojectGI` reads and overwrites in place | the input is its own texture (`DiffuseInputs.radiance`); `hintInAlpha` (default false) reads GI-1.0's keep / don't-keep hint from its alpha, otherwise every pixel is a sample to keep |
-| previous depth and shading normal: the renderer's shared `PrevVisibilityDepth` / `PrevShadingNormal` | `prepare` pass copying depth (r32float) and normal (rgba16float, signed) into a ping-pong pair, or the caller's own copies via `FrameGuides.previousDepth` / `previousNormal` |
+| `InterpolateScreenProbes` writes the noisy irradiance into `g_GIDenoiser_ColorBuffer`, which `ReprojectGI` reads and overwrites in place | the input is its own texture (`DiffuseInputs.radiance`); `hintInAlpha` (default false) reads GI-1.0's keep / don't-keep hint from its alpha, otherwise every pixel is a sample to keep. A non-finite input sample is not kept (value 0) |
+| previous depth and shading normal: the renderer's shared `PrevVisibilityDepth` / `PrevShadingNormal` | the caller's copies via `FrameGuides.previousDepth` / `previousNormal`, or, without them, a `keep` pass at the end of the frame copying depth (r32float) and the signed normal (rgba16float) for the next frame. The current depth and normal are read from the guides in place (depth-format and float pipeline variants) |
 | sky = zero shading normal (its visibility buffer writes one) | the same, or depth at the far plane (`FrameGuides` doesn't promise a zero normal) |
-| `ReprojectGI` (`gi1.comp:3997-4103`) | 1:1. Nearest-sampler reads become `textureLoad` at the clamped texel; `pow(t, 6)` and `pow(x, 0.25)` as products / square roots (WGSL's `pow` is undefined at 0) |
+| `ReprojectGI` (`gi1.comp:3997-4103`) | 1:1. Nearest-sampler reads become `textureLoad` at the clamped texel; `pow(t, 6)` and `pow(x, 0.25)` as products / square roots (WGSL's `pow` is undefined at 0). `RemoveNaNs` tests NaN / infinity by the bits instead of relying on `saturate(NaN) = 0` (WGSL doesn't promise it), and runs on the history's mean and count instead of its sum: Capsaicin's form caps the sum at 1e4, i.e. the irradiance at 1e4 / count (156 at 64 samples); ours caps the irradiance at 1e4 |
 | `FilterGI` x2 (`gi1.comp:4105-4154`, `gi1.cpp:2898-2926`) | 1:1, two pipelines (horizontal, vertical + output) instead of a `g_BlurDirection` uniform |
-| colour history RGBA16F, colour delta R16F | rgba32float / r32float. The history is a sum of up to 64 samples stored three times a frame; rgba16float stores truncate on some GPUs (pmndrs/gi measured it on an RTX 3060 and an Intel UHD), which drags a constant field down |
-| blur mask R8_SNORM | r32float holding the same snorm8 values (r8snorm isn't a storage format); internal, exposed read-only as `debugBlurMask` |
+| colour history RGBA16F, colour delta R16F | RGBA16F colour; every half store rounds to the nearest half first (pmndrs/gi's `rcNearestHalf`): rgba16float stores and `pack2x16float` truncate on some GPUs, which drags a running sum down by up to a half step per store. Delta and blur mask share an r32uint (two halves; neither R16F nor R8_SNORM is a storage format) |
+| blur mask R8_SNORM | the same snorm8 values, as the high half of the delta's r32uint; internal, readable as `debugDeltaMask` |
 | world positions, `g_Eye` | positions relative to the current eye (both inverse view-projections built in double precision on the host): the same distances, without f32 cancellation far from the origin |
 | `toLinearDepth(depth, g_NearFar)` | linear depth from the inverse projection (any depth convention) |
 | velocity (uv, current − previous, y down) | `guides.motion` (NDC delta) scaled by (0.5, −0.5) |
 | `cell_size` from `ScreenProbes::probe_size_` (`gi1.cpp:1839-1843`) | `probeSize` option (default 8), from the projection's field of view |
 | unorm normals decoded `2n − 1` | `normalEncoding: 'signed'` (default, FrameGuides' contract) or `'unorm'` (Capsaicin's decode) |
-| the reprojected history is used as is; its length adapts to a luminance delta smoothed over 8 frames, so after a lighting change the output takes 45-160 frames to follow (see the ghosting check below) | **`historyClamp: 'neighbourhood'` (default):** the history's mean is clipped toward this frame's input statistics around the pixel (variance clipping, Salvi 2016: mean ± `historyClip` (1.5) standard deviations per channel over a 3x3 window, `historyClipRadius` 1; Playdead's AABB clip toward the mean; sky pixels and, with the hint, samples not to keep are left out). The count is kept. `'none'` is Capsaicin's behaviour. Pipelines and bindings are the same either way (one uniform) |
-| no change signal | **`changeReset` (default true)** with `Gi1Inputs.changedRegions` (up to 16 world boxes, or `'everything'`): pixels whose surface lies in a changed region take no history that frame, as at a disocclusion |
+| the reprojected history is used as is; its length adapts to a luminance delta smoothed over 8 frames, so after a lighting change the output takes 45-160 frames to follow | **`historyClamp: 'neighbourhood'` (default):** a short history (running mean of at most 4 samples, rgb, plus its luminance variance, updated the exponential Welford way: a half can't hold E[l²] − E[l]² without cancelling to about 2 %) is reprojected with the long one through the same 3x3 weights; the long history's mean is clipped toward the short mean's box in YCoCg, ± `historyClip` (2) × the short mean's standard error (its samples' σ / √4); while the history is younger than 4 samples, ± `historyClip` × max(that σ, the input's spatial σ over 3x3) (A-SVGF's temporal moments, Schied et al. 2018; Salvi's variance clipping). The review's max(σ_spatial, σ_temporal) on every pixel kept a trail: on a mature pixel the spatial σ of a shadow's gradient widens the box (ghosting bed, noise-free: 274 pixels over 5 % at frame 64 against 143 before the move). Capsaicin's delta and `alpha_blend` still use the unclipped history, so the history also shortens. `'none'` = Capsaicin. An earlier 3x3 spatial-only clip was dropped: GI-1.0's input is probe-interpolated, its noise correlated over about 8 px, so with the interpolation jitter off the 3x3 σ is near 0 and the history snapped to the current frame |
+| no change signal | **`changeReset` (default true)** with `Gi1Inputs.changedRegions` (world boxes, or `'everything'` for the sun / sky): a soft reset. For `changeFrames` (8) frames after a report, pixels in a region keep at most 3 samples of history and get `alpha_blend` 0 (Capsaicin's 4-sample cap), so the GI follows the change while staying denoised. More than 16 boxes over those frames count as everything. Only `resetHistory()` drops the history |
+
+Memory: 48 bytes a pixel (colour and short history 2 x rgba16float each, delta + mask
+2 x r32uint, output rgba16float), 60 when the denoiser keeps its own previous depth and normal;
+398 MB at 3840x2160 (497 MB with its own copies). Capsaicin's own buffers are about 29 bytes
+(240 MB at 4K); the difference is the short history (16 bytes, the clamp) and the r32uint
+for delta and mask (R16F and R8 aren't storage formats).
+
+`encode()` writes the frame's constants to one uniform buffer: encode one frame per instance
+before each submit (a second `encode` on the same instance overwrites the first one's).
 
 The paper calls the blur mask "dilated"; Capsaicin's v1.3 kernels don't dilate it, and the
 port follows the code. `camera.jitter` (render pixels, as @pmndrs/upscaler) is applied to
@@ -290,36 +299,42 @@ on Windows pass the adapter with `CHROME_ARGS=--use-adapter-luid=<high>,<low>`).
 scene (floor, back wall, a box that moves) ray cast per pixel in WGSL writes the guides, a
 noisy irradiance and its noise-free value; 640x360.
 
-RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19, defaults (history clamp on); `clamp=none` gives
-Capsaicin's behaviour. (The first round, before the clamp, also ran on an Intel UHD gen-12lp with the same numbers to 3 digits.)
+RTX 3060 Laptop (Chrome, D3D12, `--use-adapter-luid`), 2026-11-19, defaults (`historyClamp`
+'neighbourhood', `historyClip` 2, `changeReset` on), after the review's rework; `clamp=none` gives
+Capsaicin's history. (The first round also ran on an Intel UHD gen-12lp; the rework hasn't.)
 
 | check | result |
 |---|---|
-| still constant field (E = 0.7, 40 frames) | every pixel within 0.07% of its input, mean within 0.05%: one rgba16float output store, which truncates on this GPU |
-| moving camera + moving box, constant field (60 frames) | the same, also inside the blur mask (151,641 masked pixel-frames): no darkening at disocclusion edges |
-| uniform noise ±50 % on a constant field (160 frames) | mean 0.9993 of the f32 value from frame 1 on (the input's own f16 store included); frame-to-frame std of a pixel 0.98 % against the input's 28.9 % (0.76 % with `clamp=none`) |
-| box jumps after 40 still frames | all 4,846 uncovered pixels (whole 3x3 previously box) get the mask; 99.98 % of converged pixels don't; spatial std there 0.18x the input's |
-| reprojection: converged world-space pattern, camera moves, the frame's input withheld (hint 0) | output = history: mean error 0.77 %, p95 2.6 %, history found on 100 % of pixels (no clip: every input sample is a hint-0 one). Control with zero motion: 8.7 %, found on 57 % |
-| ghosting: a box with a contact shadow on the floor slides 1.8 m in 30 frames and stops; passes when, 64 frames after the stop, no more pixels are over 5 % off than before the move | **clamp on: passes**, back to the pre-move count (129) 9 frames after the stop; at most 216 pixels over 5 % while moving. `clamp=none` (Capsaicin): fails, 141 before; 13,051 (frame 1), 7,272 (32), 3,315 (64), 945 (100), 394 (150) |
+| still constant field (E = 0.7, 40 frames) | every pixel within 0.07 % of its input (one half step either way) |
+| moving camera + moving box, constant field (60 frames) | the same, also inside the blur mask: no darkening at disocclusion edges |
+| uniform noise ±50 % on a constant field (160 frames) | mean 0.9996 of the f32 value; frame-to-frame std of a pixel 0.76 % against the input's 28.9 % (the same with `clamp=none`) |
+| box jumps after 40 still frames | all 4,846 uncovered pixels get the mask; 99.98 % of converged pixels don't |
+| reprojection: converged world-space pattern, camera moves, the frame's input withheld (hint 0) | output = history: mean error 0.28 %; control with zero motion 8.7 % |
+| NaN at every 37th and +infinity at every 53rd input pixel, every frame (28 frames) | output finite everywhere and within 0.07 % of the field |
+| ghosting, noise-free: a box with a contact shadow on the floor slides 1.8 m in 30 frames and stops; passes when, 64 frames after the stop, no more pixels are over 5 % **and** over 2 % off than before the move | **passes**: back to the pre-move counts in 16 frames (5 %) and 25 (2 %). `clamp=none`: fails, 3,130 over 5 % at frame 64 against 145 |
+| ghosting, 8 px tile noise ±30 % interpolated like GI-1.0's probes, lookup jittered | fails, narrowly at 5 %: 166 against 123 before the move (none: about 3,300); at 2 %: 5,936 against 3,426 |
+| the same, jitter off | fails narrowly: 1,060 against 851 (5 %), 27,739 against 26,937 (2 %); the converged view is worse than with no clamp (851 pixels over 5 % before the move against 186): the box clips into probe noise that is smooth in space |
 
 Capsaicin's ghosting is GI-1.0's design, not the port: a scalar model of `ReprojectGI`'s
 recurrence (history cap 64, delta smoothed by 1/8) takes 45-160 frames to come within 5 % of
 a step change in irradiance (1 -> 0.2: 159 frames; 0.6 -> 1: 107). The history only
 shortens once the smoothed luminance delta is large against the history's own luminance, so
 a darkening (a shadow arriving) is the slowest. Hence the clamp (pmndrs/gi, lead decision
-2026-11-19: the lag is a defect for dynamic scenes). Settings tried on the ghosting check
-(pixels over 5 % at frame 64 against the baseline; noisy-field frame-to-frame std):
-radius 3, γ 1: 315 / 141, 0.76 %; radius 2, γ 1: 217 / 140, 0.77 %; radius 2, γ 0.75: passes
-but the converged view gets worse (524 over 5 % before the move); radius 1, γ 1: passes in 8
-frames, 1.63 %; **radius 1, γ 1.5: passes in 9 frames, 0.98 %** (the default). A wide window
-spans the shadow's gradient, so its box holds the stale history.
+2026-11-19: the lag is a defect for dynamic scenes).
 
-The clip assumes the input's spatial spread stands for its temporal noise. That holds for
-GI-1.0's jittered interpolation (pmndrs/gi's radiance cache, jitter on: the clamp roughly
-doubles its frame-to-frame change); with the interpolation jitter off the input is smooth in
-space but not in time, the box is too tight, and the clamped output flickers 4-20x more than
-the unclamped one (pmndrs/gi NOTES). `changeReset` is not exercised by the ghosting check
-(the moved box's bounds hold the box and the floor under it, not the shadow beside it).
+How the clamp got here: a first 3x3 spatial-only clip (mean ± 1.5 σ of the input) passed the
+noise-free check but clipped to probe noise once the interpolation jitter was off (Cornell,
+pmndrs/gi: 5.0 % frame-to-frame against 0.24 % unclamped). The review's short history with
+max(σ_spatial, σ_temporal) on every pixel kept a trail (the gradient's spatial σ) and, with
+the short history's E[l²] stored in a half, a σ floor of about 2 % from cancellation. Now: the
+short history's variance stored directly, and the box is its mean's standard error (spatial σ
+only while the history is young). Sweep on the jitter-off tile-noise ghosting (over 5 % at
+frame 64 / before): γ 1.5: 719 / 195; γ 2: 1,060 / 851; γ 2.5: 483 / 251; γ 3: 678 / 188;
+noise-free γ 2.5 fails the 2 % criterion by 4 pixels (87 / 83), γ 2 passes.
+
+`changeReset` is not exercised by the ghosting check (the moved box's bounds hold the box and
+the floor under it, not the shadow beside it); pmndrs/gi's `radiance-cache-denoiser-change`
+page moves a light through it.
 
 Not done: timing (no bench run: the checks only test correctness), Apple GPUs,
 a three.js node wrapper.
