@@ -2,7 +2,7 @@
 
 three.js integration (WebGPURenderer, TSL nodes) for pmndrs/denoiser.
 **Internal workspace package — never published.** Ships inside the `denoiser`
-package as the `denoiser/three` entry; `three` (>= r185) is an optional peer
+package as the `denoiser/three` entry; `three` (>= r187) is an optional peer
 dependency of `denoiser`.
 
 - `shared/` — `getDevice(renderer)`, `getGPUTexture(renderer, texture)`,

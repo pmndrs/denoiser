@@ -22,8 +22,8 @@
 import type { FrameCamera, FrameGuides, TemporalDenoiser } from '@pmndrs/denoiser-core';
 import { nodeObject, passTexture } from 'three/tsl';
 import {
-  type Camera, type Matrix4, type Node, type Texture, type WebGPURenderer,
-  HalfFloatType, LinearFilter, NoColorSpace, NodeUpdateType, RGBAFormat, StorageTexture, TempNode,
+  type Camera, type Matrix4, type Texture, type WebGPURenderer,
+  HalfFloatType, LinearFilter, NoColorSpace, NodeUpdateType, RGBAFormat, StorageTexture, Node,
 } from 'three/webgpu';
 import { CameraHistory, getDevice, getGPUTexture } from '../shared/three';
 
@@ -75,7 +75,7 @@ export function resolveTexture(node: TextureNodeLike): Texture | null {
  * texture. Build one with {@link temporalDenoise}, or use the signal-specific
  * helpers (`ffxShadows`, `ffxReflections`).
  */
-export class TemporalDenoiseNode<I extends object = object> extends TempNode {
+export class TemporalDenoiseNode<I extends object = object> extends Node {
   readonly isTemporalDenoiseNode = true;
 
   /** Skip the denoiser (history is dropped; re-enabling starts fresh). Output keeps its last frame. */

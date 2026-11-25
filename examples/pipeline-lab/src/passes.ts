@@ -13,11 +13,17 @@ import type { Denoiser } from 'denoiser';
 import { gpuTex } from '../../_shared/stack';
 
 /**
- * The path tracer's denoiser hook (the OIDNDenoiser contract: `texture`, `complete`,
- * `running`, `init`, `setScene`, `update`, `reset`), running our Denoiser on the shared device.
+ * The path tracer's denoiser hook (the OIDNDenoiser contract: an EventDispatcher with `texture`,
+ * `complete`, `running`, `useAuxiliaryBuffers`, `init`, `setScene`, `update`, `reset`, `dispose`), running our Denoiser on the shared device.
  * Output is linear HDR in an rgba16float texture; the tracer's present pass tone maps it.
  */
-export class DenoiserPass {
+export class DenoiserPass extends THREE.EventDispatcher {
+  /**
+   * three-gpu-pathtracer 0.0.28 attaches the denoiser as an EventDispatcher ('progress') and
+   * accumulates its own albedo/normal when this is true. We rasterize the guides instead
+   * (`useAux` below), so the tracer's accumulation stays off.
+   */
+  readonly useAuxiliaryBuffers = false;
   /** Rasterized albedo + normal guide the filter (the cleanAux models). */
   useAux = true;
   /** Wall time of the last denoise, ms (submit → result ready). */
@@ -38,6 +44,7 @@ export class DenoiserPass {
   private epoch = 0;
 
   constructor(readonly denoiser: Denoiser) {
+    super();
     this.gbuffer.textures[0].name = 'albedo'; // MRT outputs bind to attachments by name
     this.gbuffer.textures[1].name = 'normal';
   }

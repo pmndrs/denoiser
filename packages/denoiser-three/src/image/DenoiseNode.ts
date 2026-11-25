@@ -6,9 +6,9 @@
 //
 // Mirrors @pmndrs/upscaler's UpscalerNode: a TempNode whose `updateBefore` does the
 // GPU work and whose `setup` returns a pass-texture node over the output texture.
-import { TempNode, NodeUpdateType, StorageTexture, HalfFloatType, LinearFilter, LinearSRGBColorSpace, NoColorSpace } from 'three/webgpu';
+import { Node, NodeUpdateType, StorageTexture, HalfFloatType, LinearFilter, LinearSRGBColorSpace, NoColorSpace } from 'three/webgpu';
 import { nodeObject, convertToTexture, passTexture, uniform, mix } from 'three/tsl';
-import type { Node, NodeBuilder, NodeFrame, Texture, WebGPURenderer } from 'three/webgpu';
+import type { NodeBuilder, NodeFrame, Texture, WebGPURenderer } from 'three/webgpu';
 import type { Denoiser, DenoiserCreateOptions, NetworkRuntime, OutputTransfer } from '@pmndrs/denoiser-core';
 import { getGPUTexture } from '../shared/three';
 import { createDenoiserForRenderer } from './createDenoiser';
@@ -67,7 +67,7 @@ export interface DenoiseNodeOptions {
  * denoised.request();               // run on the next frame
  * ```
  */
-export class DenoiseNode extends TempNode {
+export class DenoiseNode extends Node {
   readonly isDenoiseNode = true;
 
   private readonly _color: TextureNodeLike;

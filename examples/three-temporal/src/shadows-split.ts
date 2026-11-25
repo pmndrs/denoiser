@@ -230,7 +230,7 @@ function buildScene() {
  * `count` = frames accumulated so far; set it to 0 to restart. Stops rendering
  * once `max` frames are in (the result then stays put).
  */
-class AccumulateNode extends THREE.TempNode {
+class AccumulateNode extends THREE.Node {
   readonly count = uniform(0);
   max = 128;
   private readonly targets = [0, 1].map(() => new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false }));

@@ -65,7 +65,7 @@ const F32 = { type: THREE.FloatType };
 
 /** Keeps nodes in a pipeline's graph (their passes run) without sampling them: one sampler per sampled texture would pass
  *  Metal's 16 per stage. Same trick as AccumulateNode's `deps`. */
-class KeepNode extends THREE.TempNode {
+class KeepNode extends THREE.Node {
   constructor(private readonly deps: N[]) { super('vec4'); }
   setup(builder: N) {
     const props = builder.getNodeProperties(this);

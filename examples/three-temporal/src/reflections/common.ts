@@ -46,7 +46,7 @@ export const clampSample = (v: N, rough: N) => {
  * once `max` frames are in (the result then stays put). With `minWeight` > 0 it
  * becomes an exponential moving average that never stops.
  */
-export class AccumulateNode extends THREE.TempNode {
+export class AccumulateNode extends THREE.Node {
   readonly count = uniform(0);
   max = 128;
   private readonly targets = [0, 1].map(() => new THREE.RenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false }));

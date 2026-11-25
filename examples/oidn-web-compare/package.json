@@ -13,9 +13,9 @@
     "denoiser": "workspace:*",
     "oidn-web": "0.5.0",
     "oidn-web-tfjs": "npm:oidn-web@0.3.5",
-    "three": "^0.186.1",
-    "three-gpu-pathtracer": "github:gkjohnson/three-gpu-pathtracer#1e206d8340e4c01165fe3d157627333a3d508114",
-    "three-mesh-bvh": "^0.9.16",
+    "three": "^0.187.0",
+    "three-gpu-pathtracer": "0.0.28",
+    "three-mesh-bvh": "^0.9.17",
     "xatlas-web": "^0.1.0"
   },
   "devDependencies": {
