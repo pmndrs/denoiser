@@ -23,6 +23,31 @@ eval numbers in [eval-2026-10-08-quiet.md](eval-2026-10-08-quiet.md).
 - **Still open:** #27 (reflection pages on `@pmndrs/reflections`; do not merge until that package is released). #15 (jitter study) was closed. The denoiser → upscaler chain is tracked in #30,
   and the branch `exp/jitter-study` is kept.
 
+## 2026-11-18: subgroup-matrix kernel v2 (branch `feat/wgsl-sgm-v2`, not merged)
+
+For the pathtracer's P5 "coop-matrix denoiser". The WGSL runtime already had an f32 8x8
+subgroup-matrix kernel (`mma.ts`, Oct 7); its two blockers are now gone:
+
+- **Generic kernel:** any `subgroupMatrixConfigs` entry (M x N x K, f32 / f16 operands,
+  f32 / f16 sums), several subgroups per workgroup through `@builtin(subgroup_id)` (accepted
+  by the matrix uniformity rule on Chrome 157 / Metal), an emulated twin for configs this GPU
+  lacks (NVIDIA's 16x16x16 checked here), per-layer fallback to the portable kernel. New
+  options: `subgroupMatrixType`, `subgroupMatrixShape`, `subgroupMatrixEmulate`,
+  `mmaTiling.nso`; `WgslRuntime.layerKernels`.
+- **Defaults:** fp16 and non-Apple devices unchanged. fp32 'auto' on Apple got two measured
+  tweaks: 2 subgroups over the output channels (bit-identical) and enc_conv0 / dec_conv0 back
+  on the portable kernel (≤ 1.3e-6): ~4 % faster (720p 16.8 -> 16.1 ms, 1080p 44.3 -> 42.5,
+  mins at load ~30). Facade parity unchanged (fp32 1 LSB vs ORT, fp16 1 LSB vs ORT fp32).
+- **fp16 on Apple stays on the portable kernel:** it beats every matrix form by 10-15 %
+  (f16 MMA ~4.1 TMAC/s < f16 FMA 6.6); Apple's f16 matrices also sum in f16 (3x the error).
+- **Windows / RTX 3060 is the open half:** Chrome on Windows has no subgroup matrices; dawn.node
+  on Vulkan does (f16 -> f32 tensor cores). `examples/wgsl-bench/dawn-net.mjs` runs the network
+  there (smoke-tested here on Metal). Not run on the 3060 yet; steps in
+  `docs/specs/runtimes.md` "Subgroup matrices on Windows", task on the rt-denoiser TASKS board.
+- How to try it in Chrome (flag, Pipeline Lab toggles): `docs/guides/subgroup-matrices.md`.
+- Numbers, tolerances, per-layer tables: `docs/specs/runtimes.md` "Subgroup matrices v2". All
+  timings best-effort (shared Mac, other agents' GPU jobs running), under the rule-11 lock.
+
 ## Where the repo lives
 
 - **Work here:** `/Users/dex/Developer/Denoiser`, branch `main`.

@@ -53,6 +53,8 @@ const ui = {
   split: $<HTMLInputElement>('split'),
   refspp: $<HTMLInputElement>('refspp'),
   runs: $<HTMLInputElement>('runs'),
+  precision: $<HTMLSelectElement>('precision'),
+  matrix: $<HTMLSelectElement>('matrix'),
 };
 for (const o of SCENES) ui.scene.add(new Option(o.label, o.id));
 for (const [k, el] of Object.entries(ui)) {
@@ -74,11 +76,42 @@ async function main() {
   if (!(await ensureWebGPU())) return;
   const canvas = $<HTMLCanvasElement>('view');
   const picker = mountRuntimePicker($('runtimePicker'));
+  const precision = ui.precision.value as 'fp32' | 'fp16';
+  const matrix = ui.matrix.value as 'auto' | 'on' | 'off';
   const { renderer, denoiser, device } = await createStack({
     renderer: { canvas, antialias: false },
     weightsUrl: import.meta.env.DEV && __LOCAL_ONNX_MODELS__ ? '/models' : undefined,
     quality: ui.quality.value as 'fast' | 'balanced' | 'high',
+    precision,
+    wgsl: { subgroupMatrix: matrix === 'auto' ? 'auto' : matrix === 'on' },
   }).catch((e) => { picker.failed((e as Error).message); throw e; });
+  // precision / matrix kernel are fixed when the denoiser is created: a change reloads the page
+  for (const el of [ui.precision, ui.matrix]) el.addEventListener('change', () => { syncUrl(); location.reload(); });
+  const hasMatrices = device.features.has('chromium-experimental-subgroup-matrix' as GPUFeatureName);
+  /** Which conv kernel the WGSL runtime runs, from its per-layer list (after the first denoise). */
+  const kernelSummary = (): string => {
+    const rt = denoiser.runtime as N;
+    const wgsl = rt.layerKernels ? rt : rt.wgsl;
+    if (!wgsl?.layerKernels || (rt.lastChoice && rt.lastChoice !== 'wgsl')) return '';
+    const ks = Object.values(wgsl.layerKernels as Record<string, string>);
+    const m = ks.filter((k) => k !== 'portable');
+    if (!m.length) return 'portable kernel';
+    const cfg = /sgm (\S+ \S+)/.exec(m[0])?.[1] ?? '';
+    return `matrix ${m.length}/${ks.length} layers (${cfg})`;
+  };
+  const kernelInfo = $<HTMLParagraphElement>('kernelInfo');
+  const renderKernelInfo = () => {
+    const k = kernelSummary();
+    kernelInfo.textContent = (hasMatrices
+      ? 'Subgroup matrices: available.'
+      : 'Subgroup matrices: not exposed by this browser (start Chrome with --enable-unsafe-webgpu); the matrix kernel setting has no effect.')
+      + (k ? ` Running: ${k}.` : ' Kernel shown after the first denoise (WGSL only).');
+  };
+  renderKernelInfo();
+  const runtimeLabel = () => {
+    const k = kernelSummary();
+    return `${picker.label()} · ${precision}${k ? ` · ${k}` : ''}`;
+  };
   picker.attach(denoiser);
   device.lost.then((i) => log(`DEVICE LOST: ${i.reason} ${i.message}`));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -210,7 +243,7 @@ async function main() {
   // ---- loop ------------------------------------------------------------------------
   const stats = $<HTMLDivElement>('stats');
   let frames = 0, fpsT0 = performance.now(), fps = 0;
-  denoisePass.onDenoised = (ms) => picker.denoised(ms);
+  denoisePass.onDenoised = (ms) => { picker.denoised(ms); renderKernelInfo(); };
 
   applySize();
   applyStages();
@@ -237,14 +270,15 @@ async function main() {
   let benchRunning = false;
   const bench = createBench({
     renderer, device, pathTracer, camera: () => lab.camera, denoisePass, upscalePass,
-    runtime: () => picker.label(), log,
+    runtime: runtimeLabel, log,
   });
   const benchBtn = $<HTMLButtonElement>('bench');
   const benchAllBtn = $<HTMLButtonElement>('benchAll');
+  const benchKernelsBtn = $<HTMLButtonElement>('benchKernels');
   async function runBench() {
     if (benchRunning) return;
     benchRunning = true;
-    benchBtn.disabled = benchAllBtn.disabled = true;
+    benchBtn.disabled = benchAllBtn.disabled = benchKernelsBtn.disabled = true;
     try {
       // the shot is the scene's own camera, not wherever it was orbited to
       lab.camera.position.copy(home.position);
@@ -269,7 +303,7 @@ async function main() {
       log('benchmark ERROR: ' + (e as Error).message);
     } finally {
       benchRunning = false;
-      benchBtn.disabled = benchAllBtn.disabled = false;
+      benchBtn.disabled = benchAllBtn.disabled = benchKernelsBtn.disabled = false;
       applyStages();
       restart();
     }
@@ -277,18 +311,29 @@ async function main() {
   benchBtn.addEventListener('click', () => void runBench());
   // every runtime: the runtime is fixed per page load (ORT owns the device), so this reloads
   // through a queue kept in localStorage, adding one row per runtime
+  // queue entries: URL settings for one reload (runtime, and for 'Compare kernels' precision + matrix)
+  type QueueEntry = { runtime: RuntimeName; precision?: string; matrix?: string };
   benchAllBtn.addEventListener('click', () => {
-    const queue = runtimeOptions().filter((o) => !o.unavailable && o.id !== 'auto').map((o) => o.id);
+    const queue: QueueEntry[] = runtimeOptions().filter((o) => !o.unavailable && o.id !== 'auto').map((o) => ({ runtime: o.id }));
+    store.set(QUEUE_KEY, queue);
+    nextInQueue();
+  });
+  benchKernelsBtn.addEventListener('click', () => {
+    const queue: QueueEntry[] = [];
+    for (const p of ['fp32', 'fp16']) for (const m of ['off', 'on']) queue.push({ runtime: 'wgsl', precision: p, matrix: m });
     store.set(QUEUE_KEY, queue);
     nextInQueue();
   });
   function nextInQueue() {
-    const queue: RuntimeName[] = store.get(QUEUE_KEY, []);
-    const next = queue.shift();
+    const queue: (QueueEntry | RuntimeName)[] = store.get(QUEUE_KEY, []);
+    const raw = queue.shift();
     store.set(QUEUE_KEY, queue);
-    if (!next) return;
+    if (!raw) return;
+    const next: QueueEntry = typeof raw === 'string' ? { runtime: raw } : raw; // old queues held names
     const u = new URL(location.href);
-    u.searchParams.set('runtime', next);
+    u.searchParams.set('runtime', next.runtime);
+    if (next.precision) u.searchParams.set('precision', next.precision);
+    if (next.matrix) u.searchParams.set('matrix', next.matrix);
     u.searchParams.set('autobench', '1');
     location.href = u.toString();
   }
@@ -329,7 +374,7 @@ async function main() {
       ['samples', `${samples.value} / ${pathTracer.maxSamples}`],
       ['denoise', !ui.denoise.checked ? 'off' : denoisePass.running ? 'running…' : denoisePass.complete ? `${denoisePass.lastMs.toFixed(1)} ms` : 'waiting for samples'],
       ['upscale', up === 'off' ? 'off (stretched)' : `${up} · ${upscalePass.gpuMs ? upscalePass.gpuMs.toFixed(2) + ' ms GPU' : '—'}`],
-      ['runtime', picker.label()],
+      ['runtime', runtimeLabel()],
       ['frame rate', `${fps.toFixed(0)} fps`],
     ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
     requestAnimationFrame(loop);

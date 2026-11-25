@@ -2,7 +2,8 @@
 // conv dispatches (see ./graph.ts, ./conv.ts), encoded into ONE command encoder
 // per run, all intermediates in persistent per-geometry buffers. Two conv
 // kernels: portable vec4 (./conv.ts) and, when the device has the experimental
-// subgroup-matrix feature, an 8x8-matrix GEMM (./mma.ts; fp32 by default).
+// subgroup-matrix feature, an implicit GEMM on subgroup matrices (./mma.ts;
+// fp32 models by default, f16 configs opt-in).
 //
 //   const denoiser = await Denoiser.create({ runtime: new WgslRuntime() });
 //
@@ -14,7 +15,7 @@ import type {
 import { DEFAULT_TZA_URL, parseTZA } from '@pmndrs/denoiser-core';
 import { assignSlots, buildGraph, type ConvOp, type Graph } from './graph';
 import { ceil4, convShader, packBias, packWeights, type ConvTiling } from './conv';
-import { mmaShader, packWeightsMma, type MmaTiling } from './mma';
+import { mmaShader, packWeightsMma, type MmaTiling, type SgmConfig, type SgmScalar } from './mma';
 
 export interface WgslRuntimeOptions {
   /** Base URL the OIDN `.tza` weight files are served from (default: jsDelivr CDN, models-v3). */
@@ -30,27 +31,57 @@ export interface WgslRuntimeOptions {
   /** Override the conv tiling (all layers, or per layer name) — for tuning experiments. */
   tiling?: TilingOverride;
   /**
-   * Run convs as 8x8 subgroup-matrix GEMMs (Metal simdgroup_matrix) when the
-   * device has `chromium-experimental-subgroup-matrix` with an f32 8x8x8 config
-   * and 32-wide subgroups. 'auto' (default) = when available, for fp32 models
-   * (for fp16 the portable kernel's f16 math is faster); true = for both
-   * precisions; or a list of layer names. The portable vec4 kernel is the fallback.
+   * Run convs as implicit GEMMs on subgroup matrices (Metal simdgroup_matrix,
+   * Vulkan cooperative matrices) when the device has
+   * `chromium-experimental-subgroup-matrix`, 32-wide subgroups and a config of
+   * the wanted type (`subgroupMatrixType`). 'auto' (default) = for fp32 models
+   * when an f32 -> f32 config exists (Apple), except the edge layers with fewer
+   * than 2K input or N output channels (enc_conv0, dec_conv0: padding makes them
+   * slower there); true = every layer, both precisions; or a list of layer names. The portable vec4 kernel is the fallback, per layer
+   * (also when a matrix pipeline fails to compile).
    */
   subgroupMatrix?: boolean | 'auto' | string[];
+  /**
+   * Operand -> accumulator type of the matrices: 'f32' (f32 -> f32, Apple),
+   * 'f16-f32' (f16 -> f32, NVIDIA/Vulkan), 'f16' (f16 -> f16, Apple: f16 sums,
+   * less accurate). 'auto' (default): fp32 models f32 only (never rounds an fp32
+   * model to f16); fp16 models f16 -> f32 if offered, else f32.
+   */
+  subgroupMatrixType?: 'auto' | 'f32' | 'f16-f32' | 'f16';
+  /** Matrix shape [M, N, K] among the device's configs (default: the largest square one). */
+  subgroupMatrixShape?: [number, number, number];
+  /**
+   * Emulate the matrix built-ins in plain WGSL (any device, slow): checks the
+   * tiling of configs this GPU doesn't have. Needs `subgroupMatrixType` other
+   * than 'auto' (or uses f32) and takes `subgroupMatrixShape` (default 8x8x8).
+   * Correctness testing only.
+   */
+  subgroupMatrixEmulate?: boolean;
   /** Override the subgroup-matrix tiling — for tuning experiments. */
   mmaTiling?: Partial<MmaTiling> & { layers?: Record<string, Partial<MmaTiling>> };
 }
 
-export interface LayerTiming { name: string; ms: number }
+export interface LayerTiming {
+  name: string;
+  ms: number;
+  kernel?: string;
+  /** Multiply-accumulates of the layer (real channels, no padding). */
+  macs?: number;
+}
 export type TilingOverride = Partial<ConvTiling> & { layers?: Record<string, Partial<ConvTiling>> };
 
 const F16 = (globalThis as unknown as { Float16Array?: Float32ArrayConstructor }).Float16Array;
+const bytesOf = (a: ArrayBufferView) => new Uint8Array(a.buffer as ArrayBuffer, a.byteOffset, a.byteLength);
 
 export class WgslRuntime implements NetworkRuntime {
   readonly name = 'wgsl';
   private device?: Promise<GPUDevice>;
   /** Per-layer GPU ms of the most recent profiled run (profile: true). */
   lastProfile?: LayerTiming[];
+  /** The kernel each layer of the last loaded model runs ('portable' or 'sgm MxNxK T->TR ...'). */
+  layerKernels?: Record<string, string>;
+  /** The subgroup-matrix config the last load picked (undefined = portable only). */
+  matrixConfig?: SgmConfig;
 
   constructor(private opts: WgslRuntimeOptions = {}) {}
 
@@ -70,11 +101,22 @@ export class WgslRuntime implements NetworkRuntime {
     }
     const profile = !!this.opts.profile && device.features.has('timestamp-query');
     const session = new WgslSession(device, graph, f16, profile, (p) => { this.lastProfile = p; });
-    const mmaOk = hasSubgroupMatrix(device);
+    const emulate = !!this.opts.subgroupMatrixEmulate;
+    const config = emulate
+      ? emulatedConfig(this.opts.subgroupMatrixType, this.opts.subgroupMatrixShape)
+      : pickSubgroupMatrixConfig(device, f16, this.opts.subgroupMatrixType, this.opts.subgroupMatrixShape);
     const sm = this.opts.subgroupMatrix ?? 'auto';
-    const useMma = (op: ConvOp) => mmaOk
-      && (Array.isArray(sm) ? sm.includes(op.name) : sm === true || (sm === 'auto' && !f16));
-    await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling);
+    // 'auto' leaves the edge layers (3/6/9 input or 3 output channels, padded to K / N) on the
+    // portable kernel: there the padding makes the matrix path slower (M5 Pro, 2026-11-18)
+    const useMma = (op: ConvOp) => !!config
+      && (Array.isArray(sm) ? sm.includes(op.name) : sm === true
+        || (sm === 'auto' && !f16 && op.c1 + op.c2 >= 2 * config.K && op.cout >= config.N));
+    // several subgroups per workgroup index them with @builtin(subgroup_id) ('subgroups' feature)
+    const multi = emulate || device.features.has('subgroups');
+    this.matrixConfig = config;
+    this.layerKernels = await session.init(weights, this.opts.tiling, useMma, this.opts.mmaTiling, config && {
+      config, emulate, multi,
+    });
     return session;
   }
 
@@ -95,23 +137,59 @@ interface Layer {
   /** Output pixels per workgroup. */
   tileW: number;
   tileH: number;
-  mma: boolean;
+  kernel: string;
 }
 
-/** f32 8x8x8 subgroup matrices on 32-wide subgroups (Apple simdgroup_matrix). */
-function hasSubgroupMatrix(device: GPUDevice): boolean {
-  if (!device.features.has('chromium-experimental-subgroup-matrix' as GPUFeatureName)) return false;
-  const info = (device as unknown as { adapterInfo?: { subgroupMinSize?: number; subgroupMaxSize?: number; subgroupMatrixConfigs?: Array<Record<string, unknown>> } }).adapterInfo;
-  if (!info || info.subgroupMinSize !== 32 || info.subgroupMaxSize !== 32) return false;
-  return !!info.subgroupMatrixConfigs?.some((c) => c.componentType === 'f32' && c.resultComponentType === 'f32'
-    && c.M === 8 && c.N === 8 && c.K === 8);
+/** The device's f32/f16 subgroup-matrix configs, when it has the feature and 32-wide subgroups. */
+export function subgroupMatrixConfigs(device: GPUDevice): SgmConfig[] {
+  if (!device.features.has('chromium-experimental-subgroup-matrix' as GPUFeatureName)) return [];
+  const info = (device as unknown as { adapterInfo?: { subgroupMinSize?: number; subgroupMaxSize?: number; subgroupMatrixConfigs?: ArrayLike<Record<string, unknown>> } }).adapterInfo;
+  if (!info || info.subgroupMinSize !== 32 || info.subgroupMaxSize !== 32) return [];
+  const isFloat = (t: unknown): t is SgmScalar => t === 'f32' || t === 'f16';
+  return Array.from(info.subgroupMatrixConfigs ?? []).flatMap((c) => {
+    const T = c.componentType;
+    const TR = c.resultComponentType;
+    const [M, N, K] = [c.M, c.N, c.K].map(Number);
+    return isFloat(T) && isFloat(TR) && K % 4 === 0 ? [{ M, N, K, T, TR }] : [];
+  });
 }
 
-function mmaTilingFor(op: ConvOp, override?: WgslRuntimeOptions['mmaTiling']): MmaTiling {
-  const base: MmaTiling = { tw: 8, th: 4, ns: 1, ob: 4 };
+const TYPES: Record<string, [SgmScalar, SgmScalar]> = { f32: ['f32', 'f32'], f16: ['f16', 'f16'], 'f16-f32': ['f16', 'f32'] };
+
+function pickSubgroupMatrixConfig(
+  device: GPUDevice, f16: boolean, type: WgslRuntimeOptions['subgroupMatrixType'] = 'auto', shape?: [number, number, number],
+): SgmConfig | undefined {
+  const configs = subgroupMatrixConfigs(device);
+  const order = type === 'auto' ? (f16 ? ['f16-f32', 'f32'] : ['f32']) : [type];
+  for (const t of order) {
+    const [T, TR] = TYPES[t];
+    const ok = configs.filter((c) => c.T === T && c.TR === TR
+      && (!shape || (c.M === shape[0] && c.N === shape[1] && c.K === shape[2])));
+    // largest square first (16x16x16 over 16x8x16 on NVIDIA; Apple has 8x8x8 only)
+    ok.sort((a, b) => Number(b.M === b.N && b.N === b.K) - Number(a.M === a.N && a.N === a.K) || b.M * b.N * b.K - a.M * a.N * a.K);
+    if (ok.length) return ok[0];
+  }
+  return undefined;
+}
+
+function emulatedConfig(type: WgslRuntimeOptions['subgroupMatrixType'] = 'auto', shape?: [number, number, number]): SgmConfig {
+  const [T, TR] = TYPES[type === 'auto' ? 'f32' : type];
+  const [M, N, K] = shape ?? [8, 8, 8];
+  return { M, N, K, T, TR };
+}
+
+/** Default subgroup-matrix tiling per config shape. */
+function mmaTilingFor(op: ConvOp, config: SgmConfig, override?: WgslRuntimeOptions['mmaTiling']): MmaTiling {
+  // 8x8: two subgroups split the output channels (ob 2 each): ~4 % over one subgroup with
+  // ob 4 on M5 Pro, bit-identical. Without the 'subgroups' feature init() falls back to one.
+  const base: MmaTiling = config.M === 8
+    ? { tw: 8, th: 4, ns: 1, ob: 2, nso: 2 }
+    : { tw: config.M, th: 4, ns: 1, ob: 2, nso: 1 };
   const { layers, ...all } = override ?? {};
   return { ...base, ...all, ...layers?.[op.name] };
 }
+
+interface MatrixSetup { config: SgmConfig; emulate: boolean; multi: boolean }
 
 /** Default tiling, by layer shape. */
 function tilingFor(op: ConvOp, override?: TilingOverride): ConvTiling {
@@ -143,50 +221,69 @@ class WgslSession implements NetworkSession {
     tiling: TilingOverride | undefined,
     useMma: (op: ConvOp) => boolean,
     mmaTiling: WgslRuntimeOptions['mmaTiling'],
-  ) {
+    matrix: MatrixSetup | undefined,
+  ): Promise<Record<string, string>> {
     const d = this.device;
+    const compile = async (op: ConvOp, code: string, what: string) => {
+      const module = d.createShaderModule({ code, label: op.name });
+      return d.createComputePipelineAsync({
+        layout: 'auto', compute: { module, entryPoint: 'main' }, label: op.name,
+      }).catch(async (err) => {
+        const msgs = (await module.getCompilationInfo()).messages
+          .map((m) => `${m.type} ${m.lineNum}:${m.linePos} ${m.message}`).join('\n');
+        throw new Error(`WgslRuntime: ${op.name}${what}: ${err}\n${msgs}`);
+      });
+    };
+    const smemMax = d.limits.maxComputeWorkgroupStorageSize;
     this.layers = await Promise.all(this.graph.ops.map(async (op): Promise<Layer> => {
       const w = weights.get(`${op.name}.weight`)!;
       const b = weights.get(`${op.name}.bias`)!;
-      const mma = useMma(op);
-      let code: string;
-      let wData: Float32Array;
-      let ocg: number;
-      let tileW: number;
-      let tileH: number;
-      if (mma) {
-        const info = mmaShader(op, this.f16, mmaTilingFor(op, mmaTiling));
-        code = info.code;
-        wData = packWeightsMma(w.data, op.cout, op.c1, op.c2); // f32: the MMA operands are f32
-        ocg = info.cout8 / info.ob;
-        tileW = info.tiling.tw;
-        tileH = info.tiling.th;
-      } else {
+      let pipeline: GPUComputePipeline | undefined;
+      let wData!: Float32Array;
+      let ocg = 0;
+      let tileW = 0;
+      let tileH = 0;
+      let kernel = 'portable';
+      if (matrix && useMma(op)) {
+        const { config: c, emulate, multi } = matrix;
+        const t = mmaTilingFor(op, c, mmaTiling);
+        if (!multi) { t.ob *= t.nso ?? 1; t.ns = 1; t.nso = 1; }
+        try {
+          const info = mmaShader(op, this.f16, t, { config: c, emulate });
+          if (info.smem > smemMax) throw new Error(`needs ${info.smem} B of workgroup memory (limit ${smemMax})`);
+          pipeline = await compile(op, info.code, ' (subgroup matrix)');
+          const packed = packWeightsMma(w.data, op.cout, op.c1, op.c2, c.K, c.N);
+          wData = c.T === 'f16' ? new F16!(packed) : packed;
+          ocg = info.ocg;
+          tileW = info.tiling.tw;
+          tileH = info.tiling.th;
+          const tl = info.tiling;
+          kernel = `sgm ${c.M}x${c.N}x${c.K} ${c.T}->${c.TR}${emulate ? ' emulated' : ''} ${tl.tw}x${tl.th} ${tl.ns}x${tl.nso}sg ob${tl.ob}`;
+        } catch (err) {
+          // clean fallback: this layer runs the portable kernel
+          console.warn(`WgslRuntime: ${op.name}: subgroup-matrix kernel unavailable, using the portable kernel. ${err}`);
+          pipeline = undefined;
+        }
+      }
+      if (!pipeline) {
         const info = convShader(op, this.f16, tilingFor(op, tiling));
-        code = info.code;
+        pipeline = await compile(op, info.code, '');
         const packed = packWeights(w.data, op.cout, op.c1, op.c2);
         wData = this.f16 ? new F16!(packed) : packed;
         ocg = info.cout4 / info.tiling.oc4;
         tileW = info.tileW;
         tileH = info.tileH;
       }
-      const module = d.createShaderModule({ code, label: op.name });
-      const pipeline = await d.createComputePipelineAsync({
-        layout: 'auto', compute: { module, entryPoint: 'main' }, label: op.name,
-      }).catch(async (err) => {
-        const msgs = (await module.getCompilationInfo()).messages
-          .map((m) => `${m.type} ${m.lineNum}:${m.linePos} ${m.message}`).join('\n');
-        throw new Error(`WgslRuntime: ${op.name}${mma ? ' (subgroup matrix)' : ''}: ${err}\n${msgs}`);
-      });
       const wBuf = d.createBuffer({
         size: Math.max(16, wData.byteLength), usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: `${op.name}.w`,
       });
-      d.queue.writeBuffer(wBuf, 0, wData as unknown as BufferSource);
+      d.queue.writeBuffer(wBuf, 0, bytesOf(wData)); // byte view: dawn.node sizes a Float16Array view as 1 B/element
       const bData = packBias(b.data, op.cout);
       const bBuf = d.createBuffer({ size: bData.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST, label: `${op.name}.b` });
-      d.queue.writeBuffer(bBuf, 0, bData as unknown as BufferSource);
-      return { op, pipeline, weights: wBuf, bias: bBuf, ocg, tileW, tileH, mma };
+      d.queue.writeBuffer(bBuf, 0, bytesOf(bData));
+      return { op, pipeline, weights: wBuf, bias: bBuf, ocg, tileW, tileH, kernel };
     }));
+    return Object.fromEntries(this.layers.map((l) => [l.op.name, l.kernel]));
   }
 
   async bind(geometry: NetworkGeometry): Promise<NetworkBinding> {
@@ -210,7 +307,7 @@ class WgslSession implements NetworkSession {
     const srcBuf = (s: ConvOp['src1']) => (s.kind === 'input' ? input : tensorBuf(s.id));
 
     const owned: GPUBuffer[] = [input, output, ...slotBufs];
-    const steps = this.layers.map(({ op, pipeline, weights, bias, ocg, tileW, tileH }) => {
+    const steps = this.layers.map(({ op, pipeline, weights, bias, ocg, tileW, tileH, kernel }) => {
       const h = H >> op.level;
       const w = W >> op.level;
       const params = new Uint32Array([h, w, h >> 1, w >> 1, ocg, 0, 0, 0]);
@@ -227,7 +324,7 @@ class WgslSession implements NetworkSession {
       if (op.src2) entries.push({ binding: 4, resource: { buffer: srcBuf(op.src2) } });
       const bindGroup = d.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries, label: op.name });
       const groups: [number, number, number] = [Math.ceil(w / tileW), Math.ceil(h / tileH), B * ocg];
-      return { name: op.name, pipeline, bindGroup, groups };
+      return { name: op.name, pipeline, bindGroup, groups, kernel, macs: B * h * w * op.cout * (op.c1 + op.c2) * 9 };
     });
 
     let query: { set: GPUQuerySet; resolve: GPUBuffer; read: GPUBuffer } | undefined;
@@ -268,7 +365,7 @@ class WgslSession implements NetworkSession {
         await query.read.mapAsync(GPUMapMode.READ);
         const t = new BigUint64Array(query.read.getMappedRange().slice(0));
         query.read.unmap();
-        this.onProfile(steps.map((s, i) => ({ name: s.name, ms: Number(t[2 * i + 1] - t[2 * i]) / 1e6 })));
+        this.onProfile(steps.map((s, i) => ({ name: s.name, ms: Number(t[2 * i + 1] - t[2 * i]) / 1e6, kernel: s.kernel, macs: s.macs })));
       }
     };
 

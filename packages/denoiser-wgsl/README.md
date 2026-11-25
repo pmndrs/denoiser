@@ -26,6 +26,11 @@ creates a `Denoiser` in ~25 ms. **Tuned on one Apple GPU only** — validate on
 other hardware before relying on it. With Chrome's experimental
 `chromium-experimental-subgroup-matrix` feature (behind
 `--enable-unsafe-webgpu` today) fp32 uses a faster 8×8-matrix kernel; everyone
-else gets the portable kernel. Details, numbers and what was tried:
+else gets the portable kernel. The matrix kernel takes any config the device
+lists (`subgroupMatrixType: 'f32' | 'f16-f32' | 'f16'`, `subgroupMatrixShape`),
+several subgroups per workgroup (`mmaTiling.ns` / `nso`), and falls back to the
+portable kernel per layer; `WgslRuntime.layerKernels` says which ran. NVIDIA's
+tensor cores (f16 → f32 16×16×16) are only reachable outside Chrome today, through
+dawn.node on Vulkan (`examples/wgsl-bench/dawn-net.mjs`). Details, numbers and what was tried:
 [docs/specs/runtimes.md](../../docs/specs/runtimes.md); bench:
 [examples/wgsl-bench](../../examples/wgsl-bench).

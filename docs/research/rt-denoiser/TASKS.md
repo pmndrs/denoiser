@@ -1200,6 +1200,16 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       (no default changed this session) and the phased plan (0: bench into this branch + headless runner + metrics +
       timings; 1: find the gap to FFX on traced input; 2: hybrid-aware input contract; 3: beat FFX) are in
       [results/REFLECT-BENCH.md](results/REFLECT-BENCH.md).
+- [~] (wgsl-sgm session, 2026-11-18, branch `feat/wgsl-sgm-v2`, merged 2026-11-25) **OIDN WGSL runtime: subgroup-matrix
+      kernel v2** (pathtracer P5 "coop-matrix denoiser"; not the realtime denoiser, listed here because the Windows
+      machine reads this board). Done on the Mac: generic M x N x K / type kernel, several subgroups per workgroup via
+      `@builtin(subgroup_id)`, emulated twin, per-layer fallback, `examples/wgsl-bench/dawn-net.mjs` (dawn.node runner).
+      Without the Chrome flag nothing changes (bit-identical); with it, fp32 'auto' is faster and within 1.3e-6.
+      How to try it: `docs/guides/subgroup-matrices.md`. Results and tolerances: `docs/specs/runtimes.md` "Subgroup matrices v2".
+      **Open, Windows RTX 3060:** run `dawn-net.mjs` on Vulkan (fp16 f16 -> f32 16x16x16 tensor cores vs the portable
+      kernel, 720p / 1080p, per-layer profile, max |Δ| vs the fp32 oracle), retune the 16-wide tiling, then propose
+      whether `subgroupMatrix: 'auto'` should take fp16 models on f16 -> f32 configs (today: fp32 models only). Steps in
+      `docs/specs/runtimes.md` "Subgroup matrices on Windows". — owner unassigned (packages/denoiser-wgsl)
 
 ## Probes for the Windows harness
 

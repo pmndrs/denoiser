@@ -12,6 +12,7 @@ import * as THREE from 'three/webgpu';
 import type { Denoiser } from 'denoiser';
 import { OrtRuntime } from 'denoiser/ort';
 import { createDenoiserForRenderer, getGPUTexture, getDevice } from 'denoiser/three';
+import type { WgslRuntimeOptions } from 'denoiser/wgsl';
 import { runtimePicker, type RuntimeOption } from './chrome';
 
 export type RuntimeName = 'auto' | 'ort' | 'wgsl' | 'webnn' | 'kernels';
@@ -68,6 +69,8 @@ export interface StackOptions {
   beforeInit?: (renderer: THREE.WebGPURenderer) => void | Promise<void>;
   /** tza/WGSL-family runtimes: where the .tza weights are served (undefined = the default CDN). */
   tzaUrl?: string;
+  /** WGSL runtime options (also used when `auto` picks WGSL), e.g. `subgroupMatrix`. */
+  wgsl?: Omit<WgslRuntimeOptions, 'device' | 'tzaUrl'>;
 }
 
 export interface Stack {
@@ -77,11 +80,11 @@ export interface Stack {
   device: GPUDevice;
 }
 
-async function makeRuntime(name: Exclude<RuntimeName, 'ort'>, device: GPUDevice, tzaUrl?: string) {
+async function makeRuntime(name: Exclude<RuntimeName, 'ort'>, device: GPUDevice, tzaUrl?: string, wgsl?: StackOptions['wgsl']) {
   // Lazy: only the selected runtime's code (and @huggingface/kernels) gets loaded.
   switch (name) {
-    case 'auto': { const { AutoRuntime } = await import('denoiser/auto'); return new AutoRuntime({ device, tzaUrl }); }
-    case 'wgsl': { const { WgslRuntime } = await import('denoiser/wgsl'); return new WgslRuntime({ device, tzaUrl }); }
+    case 'auto': { const { AutoRuntime } = await import('denoiser/auto'); return new AutoRuntime({ device, tzaUrl, wgsl }); }
+    case 'wgsl': { const { WgslRuntime } = await import('denoiser/wgsl'); return new WgslRuntime({ ...wgsl, device, tzaUrl }); }
     case 'webnn': { const { WebnnRuntime } = await import('denoiser/webnn'); return new WebnnRuntime({ device, tzaUrl }); }
     case 'kernels': { const { KernelsRuntime } = await import('denoiser/kernels'); return new KernelsRuntime({ device, tzaUrl }); }
   }
@@ -159,7 +162,7 @@ export async function createStack(opts: StackOptions = {}): Promise<Stack> {
     await renderer.init();
     // dev: the repo's own .tza files (vite-tzas plugin); prod: the runtimes' CDN default
     const tzaUrl = opts.tzaUrl ?? (import.meta.env.DEV ? '/tzas' : undefined);
-    const runtime = await makeRuntime(runtimeName, getDevice(renderer), tzaUrl);
+    const runtime = await makeRuntime(runtimeName, getDevice(renderer), tzaUrl, opts.wgsl);
     denoiser = await createDenoiserForRenderer(renderer, { runtime, precision, quality });
   }
   return { runtimeName, renderer, denoiser, device: getDevice(renderer) };

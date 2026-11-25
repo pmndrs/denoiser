@@ -13,7 +13,7 @@
 import type {
   NetworkGeometry, NetworkModel, NetworkRuntime, NetworkSession,
 } from '@pmndrs/denoiser-core';
-import { WgslRuntime } from '@pmndrs/denoiser-wgsl';
+import { WgslRuntime, type WgslRuntimeOptions } from '@pmndrs/denoiser-wgsl';
 import { WebnnRuntime } from '@pmndrs/denoiser-webnn';
 
 export interface AutoRuntimeOptions {
@@ -28,6 +28,8 @@ export interface AutoRuntimeOptions {
    * turn it off when first-call latency matters more than steady-state speed.
    */
   webnn?: 'gpu' | 'npu' | false;
+  /** Options for the WGSL runtime when it is picked (e.g. `subgroupMatrix`). */
+  wgsl?: Omit<WgslRuntimeOptions, 'device' | 'tzaUrl'>;
 }
 
 export class AutoRuntime implements NetworkRuntime {
@@ -57,7 +59,7 @@ export class AutoRuntime implements NetworkRuntime {
     if ((await this.choose(model)) === 'webnn') {
       runtime = this.webnn ??= new WebnnRuntime({ tzaUrl, device, deviceType: this.opts.webnn || 'gpu' });
     } else {
-      runtime = this.wgsl ??= new WgslRuntime({ tzaUrl, device });
+      runtime = this.wgsl ??= new WgslRuntime({ ...this.opts.wgsl, tzaUrl, device });
     }
     this.lastChoice = runtime.name;
     return runtime.load(model, hints);

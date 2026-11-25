@@ -104,6 +104,17 @@
             <option value="balanced" selected>balanced (base)</option>
             <option value="high">high (large)</option>
           </select></label>
+          <label>precision <select id="precision" title="Reloads the page: the precision is fixed when the denoiser is created">
+            <option value="fp32" selected>fp32</option>
+            <option value="fp16">fp16</option>
+          </select></label>
+          <label>matrix kernel <select id="matrix" title="WGSL runtime only. Reloads the page. Subgroup matrices need Chrome started with --enable-unsafe-webgpu">
+            <option value="auto" selected>auto (fp32 only)</option>
+            <option value="on">on (every layer)</option>
+            <option value="off">off (portable kernel)</option>
+          </select></label>
+          <p class="hint" id="kernelInfo"></p>
+          <p class="hint"><a href="https://github.com/pmndrs/denoiser/blob/main/docs/guides/subgroup-matrices.md" target="_blank" rel="noopener">How to turn on subgroup matrices in Chrome</a></p>
         </fieldset>
         <fieldset>
           <legend>3 · Upscaler</legend>
@@ -133,6 +144,7 @@
           <div class="buttons">
             <button id="bench" class="dn-btn dn-btn--primary" type="button">Run benchmark</button>
             <button id="benchAll" class="dn-btn" type="button" title="Reloads the page once per available runtime and adds a row for each">Run on every runtime</button>
+            <button id="benchKernels" class="dn-btn" type="button" title="WGSL runtime: fp32 and fp16, matrix kernel off and on. Reloads the page once per setup and adds a row for each">Compare kernels</button>
           </div>
         </fieldset>
       </aside>
