@@ -1,6 +1,6 @@
 # Handoff — 2026-10-14
 
-## 2026-11-20: three r187 (branch `chore/three-r187`, not pushed, not merged)
+## 2026-11-20: three r187 (`chore/three-r187`, merged 2026-11-25)
 
 - **three 0.187.0, @types/three ^0.187.0; peer range `>=0.187.0`** (was `>=0.185.0`) in `denoiser` and `denoiser-three`.
   Raised because the nodes now extend `Node` (three r187 deprecates `TempNode`, and `Node` as a base only exists
