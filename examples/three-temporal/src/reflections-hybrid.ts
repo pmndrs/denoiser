@@ -546,6 +546,8 @@ async function main() {
   const PROBE_MAX = new THREE.Vector3(8.0, 4.0, 4.6);
   const PROBE_SIZE = Number(q.get('probesize') ?? 256);
   const probes = new ReflectionProbes();
+  // The package's defaults moved since the local copies (W26 / W31 / W37): pin the copies' behaviour (r187 roughness-to-mip, no distance roughness, one capture pass) so the page looks as before.
+  probes.lodMapping = 'r187'; probes.distanceRoughness = false;
   const probe = new ReflectionProbe();
   const probeBox = new THREE.Box3(PROBE_MIN, PROBE_MAX);
   // the volumes are centred on the probe; it captures from PROBE_POS (originOffset), off centre
@@ -591,7 +593,7 @@ async function main() {
     };
   }
   // environment: false - the probe's influence covers the scene, so the environment slot is never sampled
-  const bakeOnce = () => probes.bake(renderer, scene, { resolution: PROBE_SIZE, near: 0.05, far: 30, environment: false });
+  const bakeOnce = () => probes.bake(renderer, scene, { resolution: PROBE_SIZE, near: 0.05, far: 30, environment: false, bounces: 1 });
   async function bakeProbe() {
     const restore = probeCaptureSetup();
     await idleGPU();

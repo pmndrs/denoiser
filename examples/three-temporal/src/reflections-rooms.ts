@@ -255,6 +255,8 @@ async function main() {
 
   // ---- the probes: one per room plus a doorway probe (Ben's setup) --------------------------
   const probes = new ReflectionProbes();
+  // The package's defaults moved since the local copies (W26 / W31 / W37): pin the copies' behaviour (r187 roughness-to-mip, no distance roughness, one capture pass) so the page looks as before.
+  probes.lodMapping = 'r187'; probes.distanceRoughness = false;
   for (const s of [
     { position: [-4, 2.5, 0], influenceSize: [8.4, 5.4, 8.4], projectionSize: [8, 5, 8] },
     { position: [4, 2.5, 0], influenceSize: [8.4, 5.4, 8.4], projectionSize: [8, 5, 8] },
@@ -284,7 +286,7 @@ async function main() {
     const ballVisible = ball.visible;
     ball.visible = helper.visible = false;
     if (SHADOWS_ONCE) for (const l of lights) { l.shadow.autoUpdate = false; l.shadow.needsUpdate = true; }
-    probes.bake(renderer, scene, { resolution: PROBE_RES, near: 0.05, far: 30 });
+    probes.bake(renderer, scene, { resolution: PROBE_RES, near: 0.05, far: 30, bounces: 1 });
     if (SHADOWS_ONCE) for (const l of lights) l.shadow.autoUpdate = true;
     ball.visible = ballVisible;
     helper.visible = showHelper;

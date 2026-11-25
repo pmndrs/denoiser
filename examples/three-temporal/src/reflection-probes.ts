@@ -106,6 +106,8 @@ async function main() {
 
   // one probe per room plus a smaller doorway probe, which takes priority where they overlap
   const probes = new ReflectionProbes();
+  // The package's defaults moved since the local copies (W26 / W31 / W37): pin the copies' behaviour (r187 roughness-to-mip, no distance roughness, one capture pass) so the page looks as before.
+  probes.lodMapping = 'r187'; probes.distanceRoughness = false;
   /** Storage per lookup: 'warp' / 'none' bake into the 2D array with that seam fix, 'hw' into a cube array. */
   function configure() {
     const hw = params.lookup === 'hw' && cubeArrays;
@@ -169,7 +171,7 @@ async function main() {
     // keep helpers and test objects out of the reflections; a live capture keeps the moving object
     probesHelper.visible = grid.visible = false;
     dynamicObject.visible = live && params.dynamicObject !== 'None';
-    probes.bake(renderer, scene, { resolution: params.resolution, near: 0.05, far: 30 });
+    probes.bake(renderer, scene, { resolution: params.resolution, near: 0.05, far: 30, bounces: 1 });
     probesHelper.visible = params.showProbes;
     grid.visible = params.showGrid;
     dynamicObject.visible = params.dynamicObject !== 'None';

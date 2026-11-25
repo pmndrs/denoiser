@@ -247,9 +247,11 @@ async function main() {
 
   // ---- environment lookups: an empty probe set, so every lookup is the prefiltered environment ------------------
   const probes = new ReflectionProbes();
+  // The package's defaults moved since the local copies (W26 / W31 / W37): pin the copies' behaviour (r187 roughness-to-mip, no distance roughness, one capture pass) so the page looks as before.
+  probes.lodMapping = 'r187'; probes.distanceRoughness = false;
   scene.add(probes);
   uEnvSpecular.value = 1;
-  probes.bake(renderer, scene, { resolution: 256, near: 0.1, far: 50 });
+  probes.bake(renderer, scene, { resolution: 256, near: 0.1, far: 50, bounces: 1 });
   uEnvSpecular.value = 0;
   const envLookup = (P: N, d: N, rough: N) => sampleReflectionProbes(probes, P, d, rough);
 
