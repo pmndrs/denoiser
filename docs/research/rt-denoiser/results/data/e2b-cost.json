@@ -1,0 +1,639 @@
+{
+ "capture": "std1080-orbit",
+ "generated": "2026-11-19T03:59:22.797Z",
+ "host": "Apple M5 Pro",
+ "summary": {
+  "oidn-high": {
+   "label": "OIDN high, fp32 (large weights)",
+   "kind": "oidn",
+   "metric": "oidnMs",
+   "fastest": 215.5,
+   "bestMedian": 271.2,
+   "wallFastest": 314.3,
+   "wallBestMedian": 356.2
+  },
+  "oidn-balanced": {
+   "label": "OIDN balanced, fp32 (base weights)",
+   "kind": "oidn",
+   "metric": "oidnMs",
+   "fastest": 85.8,
+   "bestMedian": 89.8,
+   "wallFastest": 167.9,
+   "wallBestMedian": 169.4
+  },
+  "oidn-fast": {
+   "label": "OIDN fast, fp32 (small weights)",
+   "kind": "oidn",
+   "metric": "oidnMs",
+   "fastest": 45.2,
+   "bestMedian": 45.7,
+   "wallFastest": 117,
+   "wallBestMedian": 123
+  },
+  "oidn-high-fp16": {
+   "label": "OIDN high, fp16",
+   "kind": "oidn",
+   "metric": "oidnMs",
+   "fastest": 218,
+   "bestMedian": 253.5,
+   "wallFastest": 333.9,
+   "wallBestMedian": 383.8
+  },
+  "oidn-fast-fp16": {
+   "label": "OIDN fast, fp16",
+   "kind": "oidn",
+   "metric": "oidnMs",
+   "fastest": 36.7,
+   "bestMedian": 37.3,
+   "wallFastest": 122.9,
+   "wallBestMedian": 131.1
+  },
+  "svgf-auto": {
+   "label": "ours: A-SVGF diffuse + specular (both signals, shipped)",
+   "kind": "ours",
+   "metric": "gpu",
+   "fastest": 4.3311,
+   "bestMedian": 4.7518,
+   "wallFastest": 5.8,
+   "wallBestMedian": 6.5
+  },
+  "shadows": {
+   "label": "ours: shadows (shipped)",
+   "kind": "ours",
+   "metric": "gpu",
+   "fastest": 0.6548,
+   "bestMedian": 0.7222,
+   "wallFastest": 1.7,
+   "wallBestMedian": 1.8
+  },
+  "occlusion-svgf-auto": {
+   "label": "ours: AO (occlusion A-SVGF, shipped)",
+   "kind": "ours",
+   "metric": "gpu",
+   "fastest": 1.8648,
+   "bestMedian": 2.4282,
+   "wallFastest": 3,
+   "wallBestMedian": 3.8
+  }
+ },
+ "rounds": [
+  {
+   "load": [
+    13.794921875,
+    11.09619140625,
+    9.87158203125
+   ],
+   "otherHeadless": 2,
+   "at": "2026-11-19T03:54:17.978Z",
+   "loadAfter": [
+    9.873046875,
+    10.35400390625,
+    9.68798828125
+   ],
+   "exit": 0,
+   "configs": {
+    "oidn-high": {
+     "wall": {
+      "min": 314.3,
+      "median": 356.2,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 215.5,
+      "median": 271.2,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-balanced": {
+     "wall": {
+      "min": 167.9,
+      "median": 169.4,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 85.8,
+      "median": 89.8,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm",
+        "quality": "balanced",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast": {
+     "wall": {
+      "min": 117,
+      "median": 123,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 45.2,
+      "median": 45.7,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-high-fp16": {
+     "wall": {
+      "min": 342.2,
+      "median": 383.8,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 218,
+      "median": 253.5,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast-fp16": {
+     "wall": {
+      "min": 122.9,
+      "median": 131.1,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 36.7,
+      "median": 37.3,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "svgf-auto": {
+     "wall": {
+      "min": 5.8,
+      "median": 6.5,
+      "n": 7
+     },
+     "gpu": {
+      "min": 4.3311,
+      "median": 4.7518,
+      "n": 7
+     },
+     "info": null
+    },
+    "shadows": {
+     "wall": {
+      "min": 1.7,
+      "median": 1.8,
+      "n": 7
+     },
+     "gpu": {
+      "min": 0.6548,
+      "median": 0.7222,
+      "n": 7
+     },
+     "info": null
+    },
+    "occlusion-svgf-auto": {
+     "wall": {
+      "min": 3,
+      "median": 3.8,
+      "n": 7
+     },
+     "gpu": {
+      "min": 1.8648,
+      "median": 2.525,
+      "n": 7
+     },
+     "info": null
+    }
+   }
+  },
+  {
+   "load": [
+    9.873046875,
+    10.35400390625,
+    9.68798828125
+   ],
+   "otherHeadless": 0,
+   "at": "2026-11-19T03:55:39.844Z",
+   "loadAfter": [
+    12.47802734375,
+    10.72119140625,
+    9.9150390625
+   ],
+   "exit": 0,
+   "configs": {
+    "oidn-high": {
+     "wall": {
+      "min": 364.4,
+      "median": 531.3,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 266.9,
+      "median": 405.4,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-balanced": {
+     "wall": {
+      "min": 192.2,
+      "median": 205.3,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 90.8,
+      "median": 97.8,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm",
+        "quality": "balanced",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast": {
+     "wall": {
+      "min": 138.8,
+      "median": 151.9,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 47.1,
+      "median": 48.2,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-high-fp16": {
+     "wall": {
+      "min": 353,
+      "median": 462.4,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 227.5,
+      "median": 356.8,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast-fp16": {
+     "wall": {
+      "min": 133.2,
+      "median": 138.5,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 41.4,
+      "median": 43.6,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "svgf-auto": {
+     "wall": {
+      "min": 7,
+      "median": 14.1,
+      "n": 7
+     },
+     "gpu": {
+      "min": 4.821,
+      "median": 7.1413,
+      "n": 7
+     },
+     "info": null
+    },
+    "shadows": {
+     "wall": {
+      "min": 2.3,
+      "median": 2.8,
+      "n": 7
+     },
+     "gpu": {
+      "min": 0.7178,
+      "median": 0.9039,
+      "n": 7
+     },
+     "info": null
+    },
+    "occlusion-svgf-auto": {
+     "wall": {
+      "min": 3.5,
+      "median": 5.5,
+      "n": 7
+     },
+     "gpu": {
+      "min": 2.0933,
+      "median": 3.2187,
+      "n": 7
+     },
+     "info": null
+    }
+   }
+  },
+  {
+   "load": [
+    12.47802734375,
+    10.72119140625,
+    9.9150390625
+   ],
+   "otherHeadless": 1,
+   "at": "2026-11-19T03:58:21.179Z",
+   "loadAfter": [
+    10.697265625,
+    10.5888671875,
+    9.92236328125
+   ],
+   "exit": 0,
+   "configs": {
+    "oidn-high": {
+     "wall": {
+      "min": 400.4,
+      "median": 449,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 285,
+      "median": 332,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-balanced": {
+     "wall": {
+      "min": 253.8,
+      "median": 276.7,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 129.2,
+      "median": 163.7,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm",
+        "quality": "balanced",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast": {
+     "wall": {
+      "min": 149.1,
+      "median": 157.1,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 53.3,
+      "median": 57.5,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp32",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-high-fp16": {
+     "wall": {
+      "min": 333.9,
+      "median": 385.4,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 234.9,
+      "median": 295.4,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_large",
+        "quality": "high",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "oidn-fast-fp16": {
+     "wall": {
+      "min": 149.4,
+      "median": 155.4,
+      "n": 7
+     },
+     "oidnMs": {
+      "min": 39.8,
+      "median": 42,
+      "n": 7
+     },
+     "info": {
+      "runtime": "wgsl (denoiser-wgsl WgslRuntime; what AutoRuntime picks without WebNN)",
+      "precision": "fp16",
+      "autoexposure": true,
+      "subgroupMatrix": true,
+      "signals": {
+       "diffuse": {
+        "model": "rt_hdr_calb_cnrm_small",
+        "quality": "fast",
+        "aux": "one",
+        "hdr": true
+       }
+      }
+     }
+    },
+    "svgf-auto": {
+     "wall": {
+      "min": 7,
+      "median": 9.4,
+      "n": 7
+     },
+     "gpu": {
+      "min": 4.6836,
+      "median": 7.5342,
+      "n": 7
+     },
+     "info": null
+    },
+    "shadows": {
+     "wall": {
+      "min": 1.8,
+      "median": 2.5,
+      "n": 7
+     },
+     "gpu": {
+      "min": 0.7028,
+      "median": 0.8583,
+      "n": 7
+     },
+     "info": null
+    },
+    "occlusion-svgf-auto": {
+     "wall": {
+      "min": 3.5,
+      "median": 4,
+      "n": 7
+     },
+     "gpu": {
+      "min": 2.08,
+      "median": 2.4282,
+      "n": 7
+     },
+     "info": null
+    }
+   }
+  }
+ ]
+}

@@ -62,6 +62,8 @@
       .box { background: var(--dn-panel); border: 1px solid var(--dn-border); border-radius: 8px; padding: .8rem 1rem; font-size: .88rem; margin-top: 1rem; }
       .box ul { margin: .3rem 0 0; padding-left: 1.1rem; }
       .tag { display: inline-block; font-size: .75rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid var(--dn-accent); color: var(--dn-accent); vertical-align: middle; }
+      .rv-oidn { max-width: 960px; box-sizing: border-box; margin: -.5rem 0 .8rem; padding: .45rem .7rem; font-size: .85rem; border: 2px solid var(--dn-warn); border-top: 0; border-radius: 0 0 8px 8px; background: var(--dn-panel); }
+      .rv-card .rv-opts button[aria-pressed="true"] { outline: 2px solid var(--dn-accent); }
       .rv-show { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; font-size: .85rem; margin: .2rem 0 .4rem; }
       @media (max-width: 760px) { .rv-sidebar { grid-template-columns: 1fr; } table.rv-opts col.c-look { width: 0; } table.rv-opts td.look, table.rv-opts th.look { display: none; } }
     </style>
@@ -83,6 +85,7 @@
         <span class="rv-tag a" id="tag-a">A</span><span class="rv-tag b" id="tag-b">B</span>
       </div>
       <div class="caption"><span id="cap-view">...</span><span id="cap-cost"></span></div>
+      <div class="rv-oidn" id="rv-oidn-note" hidden></div>
 
       <section class="dn-panel" aria-label="view controls" id="rv-controls">
         <div class="dn-group"><span class="dn-label">Scene</span><div class="dn-seg" id="seg-scene">

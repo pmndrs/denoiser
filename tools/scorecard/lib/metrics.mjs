@@ -11,6 +11,11 @@
 //   - FLIP: examples/realtime-denoiser/src/flip.ts (test-bed viewing condition: image spans 46.4 deg).
 // New here (STOCKTAKE §5.2 / TRACKS.md): boil per region (static / moving / disoccluded) relative to the clean
 // reference's own boil in the same pixels, still-camera sigma, lag after events, bias in 8-bit display levels.
+// Additive (E-2b, results/E2b-oidn-vs-svgf.md; existing fields unchanged): `detail.psnrFrame0` (pooled over reset frames:
+// no filter has history there), `detail.regionPsnr` (pooled PSNR per boil region on the same settled pixels, plus
+// `penumbra` = 0.02 < ref < 0.98 on settled frames for scalar signals, `penumbraFrame0`), and `detail.flicker` /
+// `flickerSettled` (compare.mjs's fixed-pixel mean |e_t - e_t-1|, e = signed error; all frames with a previous frame /
+// settled frames). PSNR here is scoreFrame()'s (Reinhard per channel for rgb, clamp for scalars), whatever `tonemap` is.
 import path from 'node:path';
 import {
   frameDir, isScored, readBuffer, readF32, scoreFrame,
@@ -46,6 +51,8 @@ const OETF = new Float32Array(4097);
 for (let i = 0; i <= 4096; i++) { const c = i / 4096; OETF[i] = 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055); }
 const level = (t) => OETF[Math.round(Math.min(Math.max(t, 0), 1) * 4096)];
 
+/** scoreFrame()'s tonemap (tools/rt-capture/lib/capture.mjs): the PSNR fields use it, whatever `tonemap` is */
+const tmPsnr = (x, ch) => (ch === 1 ? Math.min(Math.max(x, 0), 1) : (x > 0 ? x / (1 + x) : 0));
 const pooledDb = (e, k) => (k ? 10 * Math.log10(1 / Math.max(e / k, 1e-12)) : NaN);
 const meanOf = (xs) => { const v = xs.filter(Number.isFinite); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
 
@@ -157,6 +164,9 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
     biasSum: 0, biasN: 0, biasRaw: 0,
     flip: [], nonFinite: 0, frames: 0,
     mean: null, m2: null, nSig: 0,
+    // E-2b additive: frame-0 / per-region / penumbra squared errors, fixed-pixel flicker
+    sse0: 0, cnt0: 0, rse: Object.fromEntries([...REGIONS, 'penumbra', 'penumbra0'].map((r) => [r, { s: 0, n: 0 }])),
+    prevS: null, flk: 0, flkN: 0, flkS: 0, flkSN: 0,
   });
   const S = sources.map(mkSrc);
   const R = { boil: Object.fromEntries(REGIONS.map((r) => [r, newAcc()])), legacy: { s: 0, n: 0 }, h1: null, h2: null, mean: null, m2: null, nSig: 0 };
@@ -329,9 +339,23 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       src.frames++;
       const outT = new Float32Array(N * ch);
       for (let i = 0; i < N * ch; i++) outT[i] = Number.isFinite(out[i]) ? tm(out[i], ch, tmode) : 0;
-      const r = scoreFrame(out, ref, depthW, ch, null);
+      const r = scoreFrame(out, ref, depthW, ch, reset ? null : src.prevS);
       src.sse += r.sse; src.cnt += r.sseCount; src.nonFinite += r.nonFinite;
       if (sinceReset >= o.settle) { src.sseS += r.sse; src.cntS += r.sseCount; }
+      // E-2b additive fields (see the header)
+      src.prevS = r.s;
+      if (reset) { src.sse0 += r.sse; src.cnt0 += r.sseCount; }
+      if (Number.isFinite(r.flicker)) { src.flk += r.flicker; src.flkN++; if (sinceReset >= o.settle) { src.flkS += r.flicker; src.flkSN++; } }
+      if (ch === 1 && reset) { src.rse.penumbra0.s += r.ssePenumbra; src.rse.penumbra0.n += r.ssePenumbraCount; }
+      if (ch === 1 && sinceReset >= o.settle && inRange) { src.rse.penumbra.s += r.ssePenumbra; src.rse.penumbra.n += r.ssePenumbraCount; }
+      if (sinceReset >= o.settle && inRange) {
+        for (let i = 0; i < N; i++) {
+          const rg = region[i]; if (!rg) continue;
+          let e2 = 0;
+          for (let c = 0; c < ch; c++) { const v = out[i * ch + c]; const e = (Number.isFinite(v) ? tmPsnr(v, ch) : 0) - tmPsnr(ref[i * ch + c], ch); e2 += e * e; }
+          const a = src.rse[REGIONS[rg - 1]]; a.s += e2; a.n += ch;
+        }
+      }
       src.rmse.push(r.sseCount ? Math.sqrt(r.sse / r.sseCount) : NaN);
       // bias in display levels (settled frames only)
       if (sinceReset >= o.settle && inRange) {
@@ -447,6 +471,9 @@ export function scoreSignal({ capDir, m, info, signal, sources, opts = {}, log =
       detail: {
         flip: meanOf(s.flip), flipFrames: s.flip.length,
         psnrPooled: pooledDb(s.sse, s.cnt), psnrSettledPooled: pooledDb(s.sseS, s.cntS),
+        psnrFrame0: pooledDb(s.sse0, s.cnt0),
+        regionPsnr: Object.fromEntries(Object.entries(s.rse).map(([k, a]) => [k, pooledDb(a.s, a.n)])),
+        flicker: s.flkN ? s.flk / s.flkN : NaN, flickerSettled: s.flkSN ? s.flkS / s.flkSN : NaN,
       },
       calm: {
         static: regionRes(s.boil.static, R.boil.static),
