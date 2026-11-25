@@ -37,9 +37,7 @@ import GUI from 'three/addons/libs/lil-gui.module.min.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { upscale } from '@pmndrs/upscaler';
 import { ffxReflections, realtimeSpecular } from 'denoiser/three';
-import { ReflectionProbes } from '../probes/ReflectionProbes';
-import { sampleReflectionProbes } from '../probes/ReflectionProbesNode';
-import { AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from '../reflections/common';
+import { ReflectionProbes, sampleReflectionProbes, AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from '@pmndrs/reflections/three';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for hand-written shader maths
