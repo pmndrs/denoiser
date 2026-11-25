@@ -14,7 +14,7 @@ node tools/scorecard/run.mjs --cost-only       # only the 1080p cost; keeps the 
 node tools/scorecard/run.mjs --report-only     # rebuild latest.md / index.html from latest.json
 ```
 
-Options: `--captures <dir>` (read only; default `$SCORECARD_CAPTURES` or the kept captures of the cleanroom worktree),
+Options: `--captures <dir>` (read only; default `$SCORECARD_CAPTURES` or `~/Developer/rt-captures/captures`, the local capture archive),
 `--work <dir>` (raw outputs; default `../scorecard-work-<worktree>`), `--port 5302`, `--skip-replay`, `--keep`,
 `--settle 8`, `--flip-every 4`. `RT_GPU_LOCK` (default `/tmp/rt-gpu.lock`) is held for every replay batch and every timing
 run, never while scoring. The runner starts the test bed's Vite server on the port and stops it at the end.

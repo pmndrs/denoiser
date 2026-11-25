@@ -11,7 +11,7 @@
 //   node tools/scorecard/run.mjs --keep                  # keep the raw outputs (default: deleted after scoring)
 //   node tools/scorecard/run.mjs --report-only           # rebuild latest.md / index.html from latest.json
 //
-// Options: --captures <dir> (default $SCORECARD_CAPTURES or the kept captures of the cleanroom worktree; read only),
+// Options: --captures <dir> (default $SCORECARD_CAPTURES or ~/Developer/rt-captures/captures; read only),
 //   --work <dir> (raw outputs, outside git; default ../scorecard-work-<worktree>), --port 5302, --out <dir>,
 //   --scenes-file <json> (default scenes.json next to this file), --settle 8, --flip-every 4.
 // Env: RT_GPU_LOCK (rule 11), RT_NATIVE_OUTPUTS (native output f32 root laid out outputs/<capture>/<row>/...).
@@ -38,7 +38,7 @@ const log = (...a) => console.log(...a);
 
 const OUT = path.resolve(opt('out', path.join(REPO, 'docs', 'research', 'rt-denoiser', 'scorecard')));
 const WORK = path.resolve(opt('work', path.join(REPO, '..', `scorecard-work-${path.basename(REPO).replace(/^Denoiser-?/, '') || 'main'}`)));
-const SRC_CAPTURES = path.resolve(opt('captures', process.env.SCORECARD_CAPTURES ?? '/Users/dex/Developer/Denoiser-nrd-cleanroom/tools/rt-capture/captures'));
+const SRC_CAPTURES = path.resolve(opt('captures', process.env.SCORECARD_CAPTURES ?? '/Users/dex/Developer/rt-captures/captures'));
 const PORT = opt('port', '5302');
 const BASE = `http://127.0.0.1:${PORT}/`;
 const SETTLE = Number(opt('settle', 8)), FLIP_EVERY = Number(opt('flip-every', 4));
