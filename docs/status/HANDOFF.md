@@ -44,6 +44,7 @@ subgroup-matrix kernel (`mma.ts`, Oct 7); its two blockers are now gone:
   on Vulkan does (f16 -> f32 tensor cores). `examples/wgsl-bench/dawn-net.mjs` runs the network
   there (smoke-tested here on Metal). Not run on the 3060 yet; steps in
   `docs/specs/runtimes.md` "Subgroup matrices on Windows", task on the rt-denoiser TASKS board.
+- How to try it in Chrome (flag, Pipeline Lab toggles): `docs/guides/subgroup-matrices.md`.
 - Numbers, tolerances, per-layer tables: `docs/specs/runtimes.md` "Subgroup matrices v2". All
   timings best-effort (shared Mac, other agents' GPU jobs running), under the rule-11 lock.
 
