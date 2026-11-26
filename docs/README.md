@@ -45,6 +45,10 @@ covers install, quick start, the API sketch, and the device-lifetime rules.
   Informatik): what's released, model sizes vs OIDN, training cost, where weights
   would live, OIDN lock-in and the alternatives, how NRD works and the papers
   behind it, and why we wait for OIDN 3.
+- [learned-filter-weights.md](research/learned-filter-weights.md) — DLSS Ray
+  Reconstruction and AMD FSR Ray Regeneration vs classic denoisers, CNN vs
+  transformer vs U-Net, kernel prediction, and the per-signal learned-weights
+  experiment (#46).
 
 ## Archive (`archive/`)
 
