@@ -452,6 +452,30 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@pmndrs/reflections@npm:0.1.0-alpha.0":
+  version: 0.1.0-alpha.0
+  resolution: "@pmndrs/reflections@npm:0.1.0-alpha.0"
+  peerDependencies:
+    "@babylonjs/core": ">=9.35.0 <10"
+    "@pmndrs/bvh": ^0.1.0
+    "@pmndrs/raytracer": ^0.1.0
+    pixi.js: ">=8.22.0 <9"
+    three: ">=0.187.0"
+  peerDependenciesMeta:
+    "@babylonjs/core":
+      optional: true
+    "@pmndrs/bvh":
+      optional: true
+    "@pmndrs/raytracer":
+      optional: true
+    pixi.js:
+      optional: true
+    three:
+      optional: true
+  checksum: 10c0/c3c995250e5ad28eeba4e77f3beb03e6a31610cd634dc3d9e0f5c7dca7957bf737645490d54e3089d6614e78c19e7326f2fd6cf8910010f18c9d7839a21e4686
+  languageName: node
+  linkType: hard
+
 "@pmndrs/upscaler@npm:0.5.0":
   version: 0.5.0
   resolution: "@pmndrs/upscaler@npm:0.5.0"
@@ -3970,6 +3994,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "three-temporal@workspace:examples/three-temporal"
   dependencies:
+    "@pmndrs/reflections": "npm:0.1.0-alpha.0"
     "@pmndrs/upscaler": "npm:0.5.0"
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
