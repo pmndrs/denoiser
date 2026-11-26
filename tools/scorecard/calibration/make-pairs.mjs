@@ -27,7 +27,7 @@ const REPO = path.resolve(HERE, '..', '..', '..');
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i < 0 ? d : args[i + 1]; };
 const WORK = path.resolve(opt('work', path.join(REPO, '..', `scorecard-work-${path.basename(REPO).replace(/^Denoiser-?/, '') || 'main'}`)));
-const SRC_CAPTURES = path.resolve(opt('captures', process.env.SCORECARD_CAPTURES ?? '/Users/dex/Developer/Denoiser-nrd-cleanroom/tools/rt-capture/captures'));
+const SRC_CAPTURES = path.resolve(opt('captures', process.env.SCORECARD_CAPTURES ?? '/Users/dex/Developer/rt-captures/captures'));
 const BASE = `http://127.0.0.1:${opt('port', '5302')}/`;
 const SEED = Number(opt('seed', 7));
 const cfg = JSON.parse(readFileSync(path.join(HERE, 'sources.json'), 'utf8'));
