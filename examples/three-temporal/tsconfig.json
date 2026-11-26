@@ -9,19 +9,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    // @pmndrs/reflections is unpublished: resolved from a sibling checkout (see vite.config.ts). Temporary.
-    "paths": {
-      "@pmndrs/reflections/three": ["../../../reflections/src/three.ts"],
-      "@pmndrs/reflections/core": ["../../../reflections/src/core.ts"],
-      "@pmndrs/reflections": ["../../../reflections/src/index.ts"],
-      // The linked source sits in the reflections checkout, which has its own node_modules (and @types/three);
-      // resolve three's types to this repo's copy so both sides see one set of declarations (vite dedupes the runtime).
-      "three": ["../../node_modules/@types/three/build/three.module.js"],
-      "three/webgpu": ["../../node_modules/@types/three/build/three.webgpu.js"],
-      "three/tsl": ["../../node_modules/@types/three/build/three.tsl.js"],
-      "three/addons/*": ["../../node_modules/@types/three/examples/jsm/*"]
-    }
+    "isolatedModules": true
   },
   "include": ["src"]
 }

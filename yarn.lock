@@ -3941,7 +3941,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"three-mesh-bvh@npm:^0.9.17, three-mesh-bvh@npm:^0.9.18":
+"three-mesh-bvh@npm:^0.9.17":
   version: 0.9.18
   resolution: "three-mesh-bvh@npm:0.9.18"
   peerDependencies:
@@ -3974,7 +3974,7 @@ __metadata:
     "@webgpu/types": "npm:^0.1.71"
     denoiser: "workspace:*"
     three: "npm:^0.187.0"
-    three-mesh-bvh: "npm:^0.9.18"
+    three-mesh-bvh: "npm:^0.9.17"
     typescript: "npm:^5.9.3"
     vite: "npm:^8.1.4"
   languageName: unknown
