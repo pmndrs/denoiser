@@ -23,6 +23,12 @@ export class Bindings {
     this.entries.push({ name, kind: 'u' });
     return this;
   }
+  /** A storage buffer binding `name: array<u32>` (read-only unless `write`). */
+  storage(name: string, write = false) {
+    this.decls.push(`@group(0) @binding(${this.entries.length}) var<storage, ${write ? 'read_write' : 'read'}> ${name}: array<u32>;`);
+    this.entries.push({ name, kind: write ? 'sb-rw' : 'sb-r' });
+    return this;
+  }
   get wgsl() { return this.decls.join('\n'); }
 }
 

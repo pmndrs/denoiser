@@ -139,7 +139,10 @@ below), `historyFootprint` ['off' | 'neighbour' | 'plane' | 'both'] + `historyFo
 sub-pixel camera jitter: where a pixel would restart because its sample landed on another surface of its own footprint,
 keep the footprint taps' history, capped at dwell / motion frames; restores the history length at silhouettes and
 sub-pixel geometry on a still view, −11 % flicker for +12 % error on those pixels; measured, not adopted:
-results `JITTER-EDGE-HISTORY.md`), `normalSoftThreshold` [0.5], `normalSoftHistory` [per signal; 3 for diffuse / AO, 1 = the hard reset for
+results `JITTER-EDGE-HISTORY.md`), `secondHistory` [false] + `secondHistoryFrames` [32] / `secondHistoryReach` [1.5] (a second history slot per
+pixel for the last other surface it showed, so a pixel alternating between two surfaces under jitter continues each one's own
+history; one more pass, +112 B/px for two signals; −6…−8 % error on those pixels, flicker unchanged; measured, not adopted:
+same results file §5.1), `normalSoftThreshold` [0.5], `normalSoftHistory` [per signal; 3 for diffuse / AO, 1 = the hard reset for
 specular / SO], `historyNormal` ['normal' | 'geometric'] (the history test on `guides.geometricNormal`, +8 B/px;
 loses diffuse / specular on normal-mapped surfaces; measured, not adopted). `antiLagHistoryScale` [false, per signal] (after the anti-lag boost
 the history length becomes (1 − λ)·n instead of 1/α: halves the boil next to a light change but slows the reaction by

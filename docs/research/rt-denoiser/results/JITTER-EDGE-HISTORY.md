@@ -140,7 +140,89 @@ image while moving against the settled image at the same pose):
 - Texture detail in the demodulation factor does not disturb the filter (it only sees the demodulated signal), but it
   flickers in the remodulated output: prefilter it (ray-cone / mip LOD) or leave it to the upscaler.
 
-## 5. Open
+## 5. Second round (2026-11-27): two histories per pixel, gradient anti-lag, the λ max filter
+
+Same bench, now with the pathtracer's texture cone LOD on (its new default), upscaler jitter, α 0.05, upscaler sharpness
+0 / history 64. `D` = `antiLag: 'auto'` + `antiLagHistoryScale`. Single runs, load average 2.8–3.7, no timings except the
+quantised pass times below. Metrics as §3; `pan` = 0.3 rad; ghost = final image while moving against the settled image
+at the same pose; lamp = lights off without a history cut (residual after 1 / 8 / 32 frames, frames to 10 %).
+
+### 5.1 `secondHistory` (new option, default false)
+
+Each pixel keeps a second slot: the last OTHER surface it showed (depth / normal key, and per signal the accumulated
+colour, moments and history length). Where the 2×2 footprint fails the full test against the primary history, the
+taps' second slots are tested with the same plane / normal test and continue THAT surface's history (before the 3×3
+fallback), so a surface never borrows the other one's shading (`historyFootprint`'s error). A separate pass after the
+temporal pass updates the slot: the previous primary becomes the slot when the pixel changed surface, else the slot is
+carried along the pixel's motion vector; it is dropped when its point (re-expressed in the current view, static-world
+assumption) no longer projects within `secondHistoryReach` (1.5) pixels of the pixel, or after `secondHistoryFrames`
+(32) frames unseen.
+
+- **It works as designed:** a pixel alternating between a wall and a bevel shows 64 frames on the wall and 3.7 → 4.7 →
+  5.7 → 6.7 on the bevel, one more per visit (before: 1–3 for ever). A minority surface therefore needs 64 VISITS to
+  reach the cap, so the "below the cap" share does not move (8.9 % → 9.0 %, anti-lag off); ≤ 8 frames 6.1 % → 4.8 %.
+- **What it cannot hold:** three or more surfaces in one pixel (seen often in this scene at 360p: a third surface reads
+  1.6 frames), and surfaces whose normal varies continuously below the pixel size (the corrugated panel, thin curved
+  legs): no key within 18°.
+- **Effect:** error of the time-averaged denoised image on the lost pixels −6…−8 % in all three pairings (D 0.109 →
+  0.100, gradient 0.130 → 0.120, radius 0 0.115 → 0.108), bias unchanged (≤ 0.6 %); flicker unchanged (it is not noise,
+  §0); lag, ghost, sharpness within run-to-run.
+- **Cost:** one more pass (reads 2 geometry + 2 × signals history textures and the slot buffer, writes the slot buffer)
+  and two storage buffers of (2 + 6 × signals) × 4 B per pixel: +112 B/px for two signals on 124 B/px (unpacked f32;
+  about half with f16 colour and moments). Pass time: one timestamp quantum (66 µs, the à-trous iterations read the same)
+  at 640×360 on the M5 Pro in the app's browser pane: not a measurement, queue it for a quiet pass.
+- **Not a default:** a small accuracy gain on 9 % of the pixels for almost double the memory.
+
+### 5.2 The max over 3×3 strata (`antiLagRadius`)
+
+Theory from the pathtracer side: the max of λ over 3×3 strata (9×9 pixels, A-SVGF's own choice) spreads a large λ.
+Confirmed, though not only at edges: it is the max of nine noisy values everywhere. `antiLagRadius: 0` on `D`:
+
+| | D (radius 1) | D, radius 0 |
+|---|---|---|
+| still history p10 / p50, ≤ 8 frames | 5.4 / 36.4, 14.3 % | 18.6 / 61.6, 6.6 % |
+| strafe history p10 / p50, ≤ 8 frames | 6.3 / 34.6, 13.2 % | 16.9 / 58.1, 6.0 % |
+| final flicker still / strafe / pan | 0.00263 / 0.0252 / 0.0422 | 0.00232 / 0.0236 / 0.0396 |
+| lamp r1 / r8 / r32, frames to 10 % | 0.132 / 0.071 / 0.037, 4 | 0.133 / 0.075 / 0.038, 4 |
+| ghost relMSE strafe / pan | 0.00356 / 0.00416 | 0.00396 / 0.00454 |
+
+Flicker −12 % still and −6 % moving at no cost and no lag; ghost +10 % (D's own ghost number moved by 10 % between
+sessions). Worth a rule-9 run on the test bed as a default candidate together with `antiLagHistoryScale`.
+
+### 5.3 `antiLag: 'gradient'` with real samples
+
+The pathtracer bench now feeds `inputs.gradient`: it traces the previous frame again through the current scene (same
+camera, jitter, frame index: the same random numbers) and compares per stratum (the replay form: a whole extra frame;
+A-SVGF proper retraces one sample per stratum). With a neural radiance cache the replay is bit-exact when the cache does
+not train (λ = 0 everywhere, every pixel at the cap except the edge resets) and reads the cache's training drift when it
+does (λ mean 0.0009, p90 0.0019).
+
+| | D (auto) | gradient + history scale | gradient, A-SVGF's reset | gradient + scale, α 0.1 |
+|---|---|---|---|---|
+| still history p10 / p50, ≤ 8 frames | 5.4 / 36.4, 14.3 % | 63.9 / 64, 6.2 % | 9.3 / 24.3, 7.3 % | 63.9 / 64, 6.1 % |
+| strafe history p10 / p50, ≤ 8 frames | 6.3 / 34.6, 13.2 % | 32.9 / 64, 5.1 % | 24.3 / 46.6, 5.1 % | 31.9 / 64, 5.8 % |
+| final flicker still / strafe / pan | 0.00263 / 0.0252 / 0.0422 | 0.00214 / 0.0225 / 0.0381 | 0.00213 / 0.0226 / 0.0382 | 0.00238 / 0.0240 / 0.0399 |
+| lamp r1 / r8 / r32, frames to 10 % | 0.132 / 0.071 / 0.037, 4 | 0.118 / 0.094 / 0.053, 6 | 0.116 / 0.064 / 0.036, 2 | 0.107 / 0.078 / 0.037, 3 |
+| ghost relMSE strafe / pan | 0.00356 / 0.00416 | 0.00568 / 0.00485 | 0.00518 / 0.00604 | 0.00454 / 0.00452 |
+
+- The jitter and the noise no longer read as change: flicker −19 % still, −10 % moving, the still history is at the cap
+  on everything but the edge resets.
+- `antiLagHistoryScale` is the wrong companion for it: a one-frame step gives λ = the relative change once, and the
+  scaled history then decays at α (lamp: 6 frames to 10 %). A-SVGF's own reset (n = 1 / α after a boost) is right when λ
+  is clean: 2 frames, the best of all arms.
+- **Ghosting rises 30–60 %.** `'auto'` compares this frame with the REPROJECTED HISTORY, so it also shortens a history
+  that is simply wrong (a reprojection that smeared, view-dependent light); a true shading gradient is zero for a moving
+  camera in a static scene, and the history then lives 64 frames whatever its quality. `'auto'` is a history check as
+  well as a change detector; `'gradient'` is only the second.
+
+### 5.4 Cheap arms
+
+- `normalTest: 'relative'` on D: lost pixels flicker 0.00493 → 0.00437, error 0.109 → 0.122 (bias +1.0 %); still final
+  0.00255, strafe 0.0240, pan 0.0400; pan ghost 0.00416 → 0.00526.
+- "Accumulate while still" (the bench averages the input over the still frames) WITH jitter: still only; ≤ 8 frames
+  7.0 %, p50 63.9; error on stable pixels 0.111 → 0.063; final flicker on lost pixels 0.00493 → 0.00283.
+
+## 7. Open
 
 - The `'auto'` gradient takes its history sample only where the stratum centre's full test passes; strata on flipped
   pixels are filled from their neighbours. Whether λ near edges (history p50 26 on flipped pixels against 39 overall)

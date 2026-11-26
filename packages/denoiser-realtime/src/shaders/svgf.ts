@@ -229,6 +229,14 @@ export type HistoryFootprint = 'off' | 'neighbour' | 'plane' | 'both';
 export interface TemporalVariant {
   reflection?: ReflectionReprojection[]; hitTest?: boolean[]; fallback?: HistoryFallback; normalTest?: NormalTest;
   soft?: { tol: number; frames: number[] };
+  /**
+   * Option `secondHistory` (our design, results/JITTER-EDGE-HISTORY.md §5.1): a second history slot per pixel (SECOND_WGSL,
+   * secondHistoryPass) holding the last OTHER surface the pixel showed, with its own colour, moments and length. Where
+   * the 2x2 footprint fails the full test against the primary history, the footprint taps' second slots are tested the
+   * same way (their own key) and continue THAT surface's history; tried before the 3x3 fallback. `signals` = how many
+   * signals share the slot buffer.
+   */
+  second?: { signals: number };
   /** Option `historyFootprint` (HistoryFootprint above; absent = 'off') and `historyFootprintDwell` (the cap's numerator, frames x px). */
   footprint?: { mode: 'neighbour' | 'plane' | 'both'; dwell: number };
   /**
@@ -245,6 +253,149 @@ export interface TemporalVariant {
    * next frames.
    */
   lamScale?: boolean[];
+}
+
+/** Words per pixel of the second-history slot buffer: key (linear depth bits, octahedral normal 12 + 12 | age 8) + per signal rgb, n, two moments. */
+export function secondWords(signals: number) { return 2 + 6 * signals; }
+
+/**
+ * Second history slot (option `secondHistory`): reads of last frame's slot buffer `slotPrev` (array<u32>, secondWords per
+ * pixel, row-major) and the tap test against a slot's own key (as tapValid: plane distance, backface, normal). The key's
+ * depth is the surface's linear depth in the PREVIOUS view (secondHistoryPass re-expresses it every frame), so it reads
+ * like geoPrev. Needs REPROJECT_WGSL.
+ */
+export function secondWgsl(signals: number): string {
+  return /* wgsl */ `
+const SEC_WORDS = ${secondWords(signals)}u;
+fn secBase(q: vec2i) -> u32 { return (u32(q.y) * u32(F.dims.x) + u32(q.x)) * SEC_WORDS; }
+fn secGeo(q: vec2i) -> Geo {
+  let b = secBase(q);
+  let v = slotPrev[b + 1u];
+  var g: Geo;
+  g.z = bitcast<f32>(slotPrev[b]);
+  g.n = octDecode(vec2f(f32(v & 4095u), f32((v >> 12u) & 4095u)) / 4095.0 * 2.0 - 1.0);
+  g.rough = 1.0;
+  g.grad = vec2f(0.0);
+  return g;
+}
+fn secValid(q: vec2i, g: Geo, expPrev: vec3f, planeTol: f32, normalTol: f32) -> bool {
+  if (!inside(q)) { return false; }
+  let gq = secGeo(q);
+  if (gq.z <= 0.0) { return false; }
+  let ndn = dot(g.n, gq.n);
+  if (ndn <= 0.0 || ndn < normalTol) { return false; }
+  let Q = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -gq.z);
+  let nAvg = normalize((F.prevView * vec4f(g.n + gq.n, 0.0)).xyz);
+  return abs(dot(nAvg, Q - expPrev)) <= planeTol * length(expPrev);
+}
+fn secColor(q: vec2i, i: u32) -> vec4f {
+  let b = secBase(q) + 2u + 6u * i;
+  return vec4f(bitcast<f32>(slotPrev[b]), bitcast<f32>(slotPrev[b + 1u]), bitcast<f32>(slotPrev[b + 2u]), bitcast<f32>(slotPrev[b + 3u]));
+}
+fn secMoments(q: vec2i, i: u32) -> vec2f {
+  let b = secBase(q) + 6u + 6u * i;
+  return vec2f(bitcast<f32>(slotPrev[b]), bitcast<f32>(slotPrev[b + 1u]));
+}
+`;
+}
+
+/**
+ * Second history slot, the update (option `secondHistory`; runs after the temporal pass). Per pixel p, with q = the
+ * nearest previous texel of p's reprojection: if last frame's PRIMARY surface at q is not the surface p shows now (the
+ * full tap test fails), that primary (geometry key, accumulated colour, moments, length) becomes p's second slot, age 0;
+ * otherwise q's second slot is carried along, age + 1. Either is kept only while its point, re-expressed in the current
+ * view (static-world assumption: the slot has no motion vector of its own), still projects within `reach` pixels of p
+ * and its age is at most `maxAge` frames. So a pixel alternating between two surfaces under a sub-pixel jitter keeps
+ * both, and a surface that really moved away (parallax above a pixel) is dropped.
+ */
+export function secondHistoryPass(kinds: SignalKind[], maxAge: number, reach: number): PassDef {
+  const S = kinds.length;
+  const b = new Bindings();
+  b.uniform('F', 'Frame');
+  b.uniform('P0', 'Params');
+  b.add('geoCur', 'texture_2d<u32>', 'i');
+  b.add('geoPrev', 'texture_2d<u32>', 'i');
+  b.add('motionTex', 'texture_2d<f32>', 'f');
+  b.add('motionZTex', 'texture_2d<f32>', 'f');
+  kinds.forEach((_, i) => {
+    b.add(`accumPrev${i}`, 'texture_2d<f32>', 'f');
+    b.add(`momentsPrev${i}`, 'texture_2d<f32>', 'f');
+  });
+  b.storage('slotPrev');
+  b.storage('slotCur', true);
+  const code = /* wgsl */ `
+${FRAME_WGSL}
+${PARAMS_STRUCT}
+${b.wgsl}
+${REPROJECT_WGSL}
+${secondWgsl(S)}
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+  let p = vec2i(gid.xy);
+  if (!inside(p)) { return; }
+  let o = secBase(p);
+  if (hasFlag(FRAME_RESET)) { slotCur[o] = 0u; slotCur[o + 1u] = 0u; return; }
+  let g = geoTap(geoCur, p);
+  var prevUV = uvOf(p);
+  var e = vec3f(0.0);
+  if (g.z > 0.0) {
+    let mv = textureLoad(motionTex, p, 0).xy;
+    prevUV = prevUV - vec2f(mv.x, -mv.y) * 0.5;
+    let world = (F.viewInv * vec4f(unprojectZ(F.projInv, ndcOf(uvOf(p)), -g.z), 1.0)).xyz;
+    e = expectedPrev(p, g, prevUV, world);
+  }
+  let q = vec2i(floor(prevUV * F.dims));
+  var cz = 0.0;
+  var bits = 0u;
+  var age = 0u;
+  var fromA = false;
+  if (inside(q)) {
+    let ga = geoTap(geoPrev, q);
+    var aIsCur = false;
+    if (g.z > 0.0) { aIsCur = tapValid(q, g, e, P0.planeTol, P0.normalTol); }
+    if (!aIsCur && ga.z > 0.0) {
+      fromA = true;
+      cz = ga.z;
+      bits = textureLoad(geoPrev, q, 0).y & 0x00ffffffu;
+    } else {
+      let sb = secBase(q);
+      cz = bitcast<f32>(slotPrev[sb]);
+      let v = slotPrev[sb + 1u];
+      bits = v & 0x00ffffffu;
+      age = (v >> 24u) + 1u;
+    }
+  }
+  var ok = cz > 0.0 && age <= ${Math.min(255, Math.max(0, Math.round(maxAge)))}u;
+  var zNew = 0.0;
+  if (ok) {
+    let Qc = (F.view * (F.prevViewInv * vec4f(unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -cz), 1.0))).xyz;
+    zNew = -Qc.z;
+    if (zNew > 0.0) {
+      let R = unprojectZ(F.projInv, ndcOf(uvOf(p)), Qc.z);
+      let R1 = unprojectZ(F.projInv, ndcOf(uvOf(p) + F.invDims), Qc.z);
+      ok = length(Qc - R) <= ${reach.toFixed(4)} * 0.70710678 * length(R1 - R);
+    } else {
+      ok = false;
+    }
+  }
+  if (!ok) { slotCur[o] = 0u; slotCur[o + 1u] = 0u; return; }
+  slotCur[o] = bitcast<u32>(zNew);
+  slotCur[o + 1u] = bits | (min(age, 255u) << 24u);
+  ${kinds.map((_, i) => /* wgsl */ `{
+    let d = o + ${2 + 6 * i}u;
+    if (fromA) {
+      let c4 = textureLoad(accumPrev${i}, q, 0);
+      let m = textureLoad(momentsPrev${i}, q, 0).rg;
+      slotCur[d] = bitcast<u32>(c4.r); slotCur[d + 1u] = bitcast<u32>(c4.g); slotCur[d + 2u] = bitcast<u32>(c4.b);
+      slotCur[d + 3u] = bitcast<u32>(c4.a); slotCur[d + 4u] = bitcast<u32>(m.x); slotCur[d + 5u] = bitcast<u32>(m.y);
+    } else {
+      let sd = secBase(q) + ${2 + 6 * i}u;
+      for (var j = 0u; j < 6u; j++) { slotCur[d + j] = slotPrev[sd + j]; }
+    }
+  }`).join('\n  ')}
+}
+`;
+  return { code, entries: b.entries };
 }
 
 /**
@@ -493,6 +644,9 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
   const softN = (i: number) => (soft ? `
         if (sAgree <= 1.0) { n = min(n, 1.0 + ${((soft.frames[i] ?? 1) - 1).toFixed(6)} * sAgree); }   // normalTest 'soft'` : '');
   const foot = tv.footprint;
+  const sec = tv.second;
+  if (sec && (geoN || kinds.some((_, i) => rv(i)))) throw new Error("temporalPass: secondHistory doesn't combine with historyNormal 'geometric' or the reflection variants");
+  const NS = sec ? ' && !useSec' : '';
   if (foot && geoN) throw new Error("temporalPass: historyFootprint doesn't combine with historyNormal 'geometric'");
   const footN = foot ? `
         n = min(n, footCap);   // historyFootprint` : '';
@@ -516,6 +670,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
     else b.add(`outMoments${i}`, 'texture_storage_2d<rg32float, write>', 'rg32float');
     if (rv(i)) b.add(`hit${i}`, 'texture_2d<f32>', 'f');
   });
+  if (sec) b.storage('slotPrev');
   // reflection reprojection variant of one signal (TemporalVariant): surface candidate as today (incl. the
   // 3x3 fallback and the R-8 cap), virtual candidate at virtualUV, then 'virtual' takes the virtual one where
   // its footprint is valid and 'dual' blends both by luminance distance to this frame's 3x3 input mean
@@ -693,7 +848,20 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
         if ((${P}.flags & P_CATMULL) != 0u && r.allValid) {
           hist = clamp(sampleCatmullRom(colorHist${i}, smp, r.prevUV).rgb, lo, hi);
         }
-      } else if (fbMask != 0u) {
+      } ${sec ? `else if (useSec) {
+        // secondHistory: this surface's own history from the footprint taps' second slots
+        for (var k = 0; k < 4; k++) {
+          let w = secW[k];
+          if (w <= 0.0) { continue; }
+          let q = r.base + TAP_OFFS[k];
+          let c4 = secColor(q, ${i}u);
+          hist += c4.rgb * w;
+          nPrev += c4.a * w;
+          mHist += secMoments(q, ${i}u) * w;
+          sumW += w;
+        }
+        hist /= sumW;
+      } ` : ''}else if (fbMask != 0u) {
         for (var k = 0u; k < 9u; k++) {
           if ((fbMask & (1u << k)) == 0u) { continue; }
           let q = fb0 + vec2i(i32(k % 3u) - 1, i32(k / 3u) - 1);
@@ -733,7 +901,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
 ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
-${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}${geoN ? GEO_NORMAL_PACK_WGSL + GEO_NORMAL_REPROJECT_WGSL : ''}${foot ? footprintWgsl(foot.mode) : ''}
+${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}${geoN ? GEO_NORMAL_PACK_WGSL + GEO_NORMAL_REPROJECT_WGSL : ''}${foot ? footprintWgsl(foot.mode) : ''}${sec ? secondWgsl(sec.signals) : ''}
 ${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i, refl(i) !== 'surface') : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
@@ -752,7 +920,9 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var fbMask = 0u;
   var fb0 = vec2i(0);${soft ? `
   var sAgree = 2.0;   // normalTest 'soft': normal agreement of a soft-accepted footprint (2: not soft)` : ''}${foot ? `
-  var footCap = 1e30;   // historyFootprint: history-length cap of a footprint-accepted history (1e30: not one)` : ''}
+  var footCap = 1e30;   // historyFootprint: history-length cap of a footprint-accepted history (1e30: not one)` : ''}${sec ? `
+  var secW = vec4f(0.0);   // secondHistory: bilinear weights of the footprint taps whose second slot is this surface
+  var useSec = false;` : ''}
   if (!reset) {${geoN ? `
     let gnC = unpackGN(textureLoad(gnCur, p, 0).x);   // historyNormal 'geometric'` : ''}
     r = ${RP('P0.normalTol')};${rel ? `
@@ -762,8 +932,18 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     if (!r.allValid) {
       nTol = relNormalTol(p, g, P0.normalTol);
       if (nTol < P0.normalTol) { r = reproject(p, g, P0.planeTol, nTol); }
-    }` : ''}${fallback === '3x3' ? `
+    }` : ''}${sec ? `
+    // secondHistory: the footprint failed against the primary history; test the taps' second slots (their own key)
     if (r.sumW <= 0.01) {
+      var sw = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+      for (var k = 0; k < 4; k++) {
+        if (r.bil[k] < 0.02) { continue; }
+        if (secValid(r.base + TAP_OFFS[k], g, r.expPrev, P0.planeTol, ${NT})) { sw[k] = r.bil[k]; }
+      }
+      secW = vec4f(sw[0], sw[1], sw[2], sw[3]);
+      useSec = secW.x + secW.y + secW.z + secW.w > 0.01;
+    }` : ''}${fallback === '3x3' ? `
+    if (r.sumW <= 0.01${NS}) {
       // SVGF sec. 4.1: 3x3 fallback (thin geometry), equal weights.
       fb0 = vec2i(floor(r.prevUV * F.dims));
       for (var k = 0u; k < 9u; k++) {
@@ -777,7 +957,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}${foot ? /* wgsl */ `
     // historyFootprint (results/JITTER-EDGE-HISTORY.md): where the pixel would restart, the footprint taps whose stored
     // surface one of this pixel's neighbours still shows this frame give the history (same footprint, another sample)
-    if (r.sumW <= 0.01 && fbMask == 0u) {
+    if (r.sumW <= 0.01 && fbMask == 0u${NS}) {
       let ft = footprintTaps(p, g, r, P0.planeTol, ${NT});
       let fw = r.bil * ft.valid;
       let fs = fw.x + fw.y + fw.z + fw.w;
@@ -794,7 +974,7 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }` : ''}${soft ? /* wgsl */ `
     // normalTest 'soft' (results/SVGF-FOLLOWUPS.md): where the full test resets the pixel, the footprint retried at a
     // looser normal threshold gives a short history, its length capped by the taps' normal agreement
-    if (r.sumW <= 0.01 && fbMask == 0u) {
+    if (r.sumW <= 0.01 && fbMask == 0u${NS}) {
       let rs = ${RP(soft.tol.toFixed(6))};
       if (rs.sumW > 0.01) {
         var sa = 0.0;

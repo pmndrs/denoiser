@@ -1121,6 +1121,14 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       ('plane'), more ghosting with 'both'; ~85 % of the flicker there is the jitter moving the sample between surfaces, not
       noise (16 spp per frame: −14 %). Defaults unchanged. A footprint history in modulated radiance was tried and diverges
       (not in the branch). Not a rule-9 evaluation (one scene, single runs, the pathtracer's bench).
+- [x] (chain-edge-history, same branch; results/JITTER-EDGE-HISTORY.md §5) **Second round for the pathtracer chain:** new option
+      `secondHistory` (a second history slot per pixel: works, −6…−8 % error on the pixels that lose history, flicker unchanged,
+      +112 B/px and one pass: not a default); `antiLagRadius: 0` on `'auto'` + `antiLagHistoryScale` (still history p50 36 → 62,
+      flicker −12 % still / −6 % moving, lag unchanged); `antiLag: 'gradient'` fed with retraced samples by the pathtracer bench
+      (flicker −19 % / −10 %, needs A-SVGF's own history reset, not `antiLagHistoryScale`; ghosting +30…60 % because `'auto'` also
+      shortens histories that are merely wrong).
+- [ ] **`antiLagRadius: 0` (with `antiLagHistoryScale`) as a default candidate for `'auto'`:** rule-9 run on the test bed and the
+      real captures (the max over 3×3 strata is a max of nine noisy λ). — found by chain-edge-history, owner orchestrator
 - [ ] **`historyFootprint` on the test bed and the real captures** (rule 9), and the `'auto'` gradient near jittered edges
       (history p50 26 frames on flipped pixels against 39 overall with `antiLagHistoryScale`): only if a renderer asks for the
       option. — found by chain-edge-history, owner orchestrator

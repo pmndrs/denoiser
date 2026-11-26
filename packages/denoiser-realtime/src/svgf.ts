@@ -21,7 +21,7 @@ import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, stabilizePass, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type HistoryFootprint, type NormalTest, type ReflectionReprojection, type SignalKind,
+  PARAMS_SIZE, stabilizePass, temporalPass, variancePass, geoNormalPackPass, secondHistoryPass, secondWords, type HistoryFallback, type HistoryFootprint, type NormalTest, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -254,6 +254,23 @@ export interface SvgfOptions {
   historyFootprint?: HistoryFootprint;
   /** historyFootprint: the cap's numerator (frames x pixels of motion). Default 1: one pixel of motion. */
   historyFootprintDwell?: number;
+  /**
+   * A second history per pixel (results/JITTER-EDGE-HISTORY.md §5.1, our design): for one-sample guides under a sub-pixel
+   * camera jitter, where a silhouette pixel or sub-pixel geometry alternates between two surfaces. Each pixel also keeps
+   * the last OTHER surface it showed (its depth / normal key, accumulated colour, moments and history length, per
+   * signal). Where the 2x2 footprint fails against the primary history, the taps' second slots are tested with the same
+   * plane / normal test and, if they are this surface, continue ITS history (before the 3x3 fallback), so a surface never
+   * borrows the other one's shading. The slot follows the pixel's motion vector and is dropped once its point no longer
+   * projects within `secondHistoryReach` pixels of the pixel (static-world assumption) or after `secondHistoryFrames`
+   * frames unseen. Default false. Cost: one more pass and a storage buffer pair of (2 + 6 x signals) x 4 B per pixel each
+   * (112 B / px for two signals, unpacked f32). Payload 'radiance', no `feedback`, not with historyNormal 'geometric' or
+   * the reflection variants. Structural.
+   */
+  secondHistory?: boolean;
+  /** secondHistory: frames a slot survives without being the pixel's surface. Default 32. */
+  secondHistoryFrames?: number;
+  /** secondHistory: how far (pixels) a slot's point may project from the pixel centre. Default 1.5. */
+  secondHistoryReach?: number;
   /** normalTest 'soft': the looser normal cosine of the retried footprint. Default 0.5. */
   normalSoftThreshold?: number;
   /**
@@ -425,6 +442,9 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     historyNormal: o.historyNormal ?? 'normal',
     historyFootprint: o.historyFootprint ?? 'off',
     historyFootprintDwell: Math.min(1e6, Math.max(0, o.historyFootprintDwell ?? 1)),
+    secondHistory: o.secondHistory ?? false,
+    secondHistoryFrames: Math.min(255, Math.max(1, Math.round(o.secondHistoryFrames ?? 32))),
+    secondHistoryReach: Math.max(0, o.secondHistoryReach ?? 1.5),
     antiLagHistoryScale: o.antiLagHistoryScale ?? false,
     stabilize: o.stabilize ?? false,
     stabilizeAlpha: o.stabilizeAlpha ?? 0.1,
@@ -505,6 +525,7 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.normalTest === 'soft') k.push(o.normalSoftThreshold);
   if (o.historyNormal !== 'normal') k.push(`hn-${o.historyNormal}`);
   if (o.historyFootprint !== 'off') k.push(`fp-${o.historyFootprint}`, o.historyFootprintDwell);
+  if (o.secondHistory) k.push('sec', o.secondHistoryFrames, o.secondHistoryReach);
   if (o.stabilize) k.push('stab');
   return k.join('|');
 }
@@ -538,6 +559,8 @@ export class SvgfPipeline {
   private gradVariant?: GradientVariant;
   /** historyNormal 'geometric': packed geometric normals, ping-pong (current = gn[cur]) */
   private gn: GPUTexture[] = [];
+  /** secondHistory: the slot buffers, ping-pong (current = slot[cur]) */
+  private slot: GPUBuffer[] = [];
 
   constructor(private device: GPUDevice, signals: { kind: SignalKind; opts: ResolvedOptions }[], private label: string) {
     const d = device;
@@ -569,7 +592,7 @@ export class SvgfPipeline {
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
       if (signals.some((s) => reflVariant(s.kind, s.opts))) throw new Error(`${label}: reflectionReprojection / reflectionHitTest need payload 'radiance'`);
-      if (o.historyFallback !== '3x3' || o.normalTest !== 'center' || o.historyFootprint !== 'off') throw new Error(`${label}: historyFallback / normalTest / historyFootprint need payload 'radiance'`);
+      if (o.historyFallback !== '3x3' || o.normalTest !== 'center' || o.historyFootprint !== 'off' || o.secondHistory) throw new Error(`${label}: historyFallback / normalTest / historyFootprint / secondHistory need payload 'radiance'`);
       if (o.historyNormal !== 'normal' || signals.some((s) => s.opts.antiLagHistoryScale)) throw new Error(`${label}: historyNormal / antiLagHistoryScale need payload 'radiance'`);
       for (const s of signals) {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
@@ -595,8 +618,13 @@ export class SvgfPipeline {
         ...(o.normalTest === 'soft' ? { soft: { tol: o.normalSoftThreshold, frames: signals.map((s) => (s.opts.normalSoftHistory >= 1 ? s.opts.normalSoftHistory : s.kind === 'specular' ? 1 : 3)) } } : {}),
         ...(o.historyNormal === 'geometric' ? { geoNormal: true } : {}),
         ...(o.historyFootprint !== 'off' ? { footprint: { mode: o.historyFootprint, dwell: o.historyFootprintDwell } } : {}),
+        ...(o.secondHistory ? { second: { signals: signals.length } } : {}),
         ...(signals.some((s) => s.opts.antiLagHistoryScale) ? { lamScale: signals.map((s) => s.opts.antiLagHistoryScale) } : {}) };
       if (o.historyNormal === 'geometric') make('gnpack', geoNormalPackPass());
+      if (o.secondHistory) {
+        if (o.feedback) throw new Error(`${label}: secondHistory doesn't combine with feedback`);
+        make('second', secondHistoryPass(kinds, o.secondHistoryFrames, o.secondHistoryReach));
+      }
       make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht, ...fb })
         : Object.keys(fb).length ? temporalPass(kinds, fb) : temporalPass(kinds));
       const hw = signals.map((s) => s.opts.spatialHistoryWeight > 0);
@@ -660,6 +688,10 @@ export class SvgfPipeline {
     const d = this.device;
     this.gw = Math.ceil(width / GRADIENT_DOWNSAMPLE);
     this.gh = Math.ceil(height / GRADIENT_DOWNSAMPLE);
+    for (const b of this.slot) b.destroy();
+    this.slot = this.opts.secondHistory && !this.sh ? [0, 1].map((k) => d.createBuffer({
+      label: `${this.label} second history ${k}`, size: width * height * secondWords(this.sigs.length) * 4, usage: GPUBufferUsage.STORAGE,
+    })) : [];
     for (const t of this.gn) t.destroy();
     this.gn = this.opts.historyNormal === 'geometric' && !this.sh ? [0, 1].map((k) => d.createTexture({
       label: `${this.label} geometric normal ${k}`, size: [width, height], format: 'r32uint', usage: storageTex(),
@@ -778,6 +810,7 @@ export class SvgfPipeline {
       motionTex: motion, motionZTex: motionZ ?? gp.dummy, smp: gp.sampler,
     };
     if (this.youngTex) Object.assign(shared, { youngOut: this.youngTex, youngTile: this.youngTex });
+    if (this.slot.length) shared.slotPrev = this.slot[c ^ 1];
     const per = (fn: (s: SignalState, f: SignalFrame, i: number) => Record<string, Res>) => {
       const r: Record<string, Res> = { ...shared };
       this.sigs.forEach((s, i) => {
@@ -835,6 +868,12 @@ export class SvgfPipeline {
       momentsPrev: s.moments[c ^ 1], grad: gradResult[i], outAccum: s.accum[c], outMoments: s.moments[c],
       ...(reflVariant(s.kind, s.opts) ? { hit: needHit(s, f) } : {}),
     }))), gx, gy);
+    if (this.slot.length) {
+      runPass(enc, timer, name('second_history'), this.pipes.second, this.group('second', {
+        ...per((s) => ({ accumPrev: o.feedback ? s.hist! : s.accum[c ^ 1], momentsPrev: s.moments[c ^ 1] })),
+        slotPrev: this.slot[c ^ 1], slotCur: this.slot[c],
+      }), gx, gy);
+    }
     runPass(enc, timer, name('variance'), this.pipes.variance, this.group('variance', per((s) => ({
       accumCur: s.accum[c], momentsCur: s.moments[c], outPing: s.ping[0],
     }))), gx, gy);
@@ -943,6 +982,7 @@ export class SvgfPipeline {
     for (const s of this.sigs) { s.destroyTargets(); s.params.destroy(); }
     for (const b of this.iterParams) b.destroy();
     this.youngTex?.destroy();
+    for (const b of this.slot) b.destroy();
     for (const t of this.gn) t.destroy();
   }
 }
