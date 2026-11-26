@@ -1,5 +1,22 @@
 # Handoff — 2026-10-14
 
+## 2026-11-26: reflection pages on `@pmndrs/reflections` 0.1.0-alpha.0 (branch `reflections-package-release`, replaces #27)
+
+- **Not to merge until `@pmndrs/reflections@0.1.0-alpha.0` is on npm.** `three-temporal` depends on it like any
+  npm package (`"@pmndrs/reflections": "0.1.0-alpha.0"`); the vite alias / tsconfig paths to a local `reflections`
+  checkout and the ambient `@pmndrs/raytracer` declaration are gone. `yarn.lock` gets the entry after the publish
+  (`yarn install`, commit `yarn.lock`); until then `yarn install --immutable` fails.
+- reflection-probes, reflections-rooms, reflections-hybrid and reflect-bench import the probes and the GGX sampling from
+  `@pmndrs/reflections/three` (`src/probes`, `src/reflections/common.ts` deleted). They pin the probes' old behaviour
+  (`lodMapping = 'r187'`, `distanceRoughness = false`, `bake({ bounces: 1 })`); the package's newer defaults are a look
+  change left for the maintainer. They don't use the package's ray tracing (their rays are three-mesh-bvh's), so
+  `@pmndrs/raytracer` / `@pmndrs/bvh` are not installed.
+- Checked against the packed tarball (`npm pack` of reflections `3e1efbd`): `run-headless.mjs reflections probes|rooms|hybrid
+  --ref` vs the pages on main: probes mean <= 0.036/255 (max 1, one 33 that is run-to-run noise in the 'warp' lookup;
+  main's 'hw' lookup throws "hw cube has 4 mips, need 5" on r187, the package's cube array works), rooms <= 0.031 (max 10
+  on a few px), hybrid <= 0.008 (max 1). Frame-to-frame change over 8 frames per scenario x mode: identical to main
+  to 3 decimals. `ssr`, `shadows` checks pass; three-temporal `tsc` and `vite build` pass.
+
 ## 2026-11-20: three r187 (`chore/three-r187`, merged 2026-11-25)
 
 - **three 0.187.0, @types/three ^0.187.0; peer range `>=0.187.0`** (was `>=0.185.0`) in `denoiser` and `denoiser-three`.
@@ -179,7 +196,9 @@ Main was pushed to `origin/main` on this date, including everything above.
   - His PR needs `CubeArrayTexture` (#35053, open) and cube-array sampling (#35045, merged after r186).
 - **Ben's probes on r186, as example code (merged 2026-10-20).** `three-temporal/src/probes` stands in
   for three.js #35046 until it lands (same API; swap the imports for three's then). Not part of the published
-  `denoiser` package. A 2D array of 6 × N faces with roughness mips, our own cube lookup with a 'warp' seam fix,
+  `denoiser` package. **Moved to `@pmndrs/reflections`** (branch `reflections-package-release`, not to merge
+  until that package is on npm; see the 2026-11-26 entry): the three reflection pages import the probes and the GGX sampling
+  (`src/reflections/common.ts`) from it, `src/probes` and `common.ts` are deleted, three-temporal is on r187. A 2D array of 6 × N faces with roughness mips, our own cube lookup with a 'warp' seam fix,
   and a compute prefilter. Extensions over #35046: `sampleReflectionProbes(probes, P, dir, rough)` (any shader;
   the environment node uses the same lookup), `ReflectionProbe.originOffset`, `bake({ environment: false })`.
   - **`reflection-probes.html`:** Ben's two-room example on that code. Matches his PR build within 8-bit noise;

@@ -11,6 +11,7 @@
     "review": "vite --config vite.review.config.ts --port 5262 --strictPort --host 127.0.0.1"
   },
   "dependencies": {
+    "@pmndrs/reflections": "0.1.0-alpha.0",
     "@pmndrs/upscaler": "0.5.0",
     "denoiser": "workspace:*",
     "three": "^0.187.0",

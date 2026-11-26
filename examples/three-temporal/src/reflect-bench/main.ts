@@ -37,9 +37,7 @@ import GUI from 'three/addons/libs/lil-gui.module.min.js';
 import { BVHComputeData, wgslTagFn, rayStruct, rayIntersectionResultStruct } from 'three-mesh-bvh/webgpu';
 import { upscale } from '@pmndrs/upscaler';
 import { ffxReflections, realtimeSpecular } from 'denoiser/three';
-import { ReflectionProbes } from '../probes/ReflectionProbes';
-import { sampleReflectionProbes } from '../probes/ReflectionProbesNode';
-import { AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from '../reflections/common';
+import { ReflectionProbes, sampleReflectionProbes, AccumulateNode, clampSample, ggxLobeSample, pixelSeed } from '@pmndrs/reflections/three';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any; // TSL's node typings are too strict for hand-written shader maths
@@ -249,9 +247,11 @@ async function main() {
 
   // ---- environment lookups: an empty probe set, so every lookup is the prefiltered environment ------------------
   const probes = new ReflectionProbes();
+  // The package's defaults moved since the local copies (W26 / W31 / W37): pin the copies' behaviour (r187 roughness-to-mip, no distance roughness, one capture pass) so the page looks as before.
+  probes.lodMapping = 'r187'; probes.distanceRoughness = false;
   scene.add(probes);
   uEnvSpecular.value = 1;
-  probes.bake(renderer, scene, { resolution: 256, near: 0.1, far: 50 });
+  probes.bake(renderer, scene, { resolution: 256, near: 0.1, far: 50, bounces: 1 });
   uEnvSpecular.value = 0;
   const envLookup = (P: N, d: N, rough: N) => sampleReflectionProbes(probes, P, d, rough);
 
