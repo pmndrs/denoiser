@@ -1,41 +1,96 @@
-# Tracks (from 2026-11-07)
+# Tracks (from 2026-11-07, re-planned 2026-11-25)
 
 _The working board for the reset in [STOCKTAKE-2026-11-06.md](STOCKTAKE-2026-11-06.md) §5.
-Work is bound to measures of success, not dates. The coordinator (the main session) owns this
-file; each track writes only its own `tracks/<id>.md`. Rules: [RULES.md](RULES.md) (clean room,
-binding), [TASKS.md](TASKS.md) "How agents work here" (rules 1–12 still apply, esp. 9, 11, 12),
-[LESSONS.md](LESSONS.md) (read the sections for your area first)._
+The coordinator (the main session) owns this file; each track writes only its own `tracks/<id>.md`.
+Rules: [RULES.md](RULES.md) (clean room, binding), [TASKS.md](TASKS.md) "How agents work here"
+(rules 1–12 still apply, esp. 9, 11, 12), [LESSONS.md](LESSONS.md) (read the sections for your area first)._
+
+## 2026-11-25: build first, tune and prune once at the end (Dennis)
+
+Long tuning rounds and calibration gates were blocking feature work. From now on:
+
+- **Phase 2 builds features and tooling.** Each item lands behind an option, gets a review-bench
+  toggle (Dennis judges on the bench, never URL params), and is measured **once** on the scorecard.
+  Nothing in phase 2 has to beat FFX or native; it has to work, be measured, and leave the shipped
+  default byte-identical unless the item says otherwise.
+- **Hard time cap: 5–10 minutes per tuning, sweep or measurement run.** Longer only for a very
+  serious need, stated in the track report before starting. No parameter sweeps in phase 2: write
+  "could be tuned" findings into the track report's **tune list** and move on.
+- **Phase 3 tunes and prunes, once, for all signals.** Calibration feeds it; the quality targets
+  below are its targets.
 
 ## Board
 
-| track | branch / worktree | model | phase | status |
+| track | where | model | phase | status |
 |---|---|---|---|---|
-| T0-scenes: golden scene registry, G5, G2–G4 paths, perfect-input + reference modes | `track/t0-scenes` · `../Denoiser-track-t0s` | Sonnet | 1 | **done**, merged (42fb730). Captured and VALID: G3 orbit, hold; G4 pan-light-on, -colour, lamp-switch, hold-light-on; G2 occluder. **G4 pan-light-fade fails validation** (motion-Z reprojection, history consistency), so it's left out of the scorecard until checked. Also VALID: G5 turntable, G2 drift / drift-held / drift-frozen, G3 move |
-| T0-scorecard: runner, metrics, dashboard, calibration mode for T1 | `track/t0-scorecard` · `../Denoiser-track-t0c` | Sonnet | 1 | **done**, squash-merged (8a8e128; clip sheets regenerated locally, not in git). Calm headline at stride 8. Cost at 1080p, M5 Pro (GPU / wall ms): ours diffuse+specular 3.60 / 4.50, shadows 0.89 / 1.60 (FFX 0.60 / 1.20), AO 1.52 / 2.20. Next: a lag metric on G1, G1 detail without a resolver, calm clips from 128-frame captures. Further work goes on a new branch from the cleanroom |
-| T0-native: golden captures through native NRD | Dennis's Windows machine | – | 1 | **ready to start**: [native/GOLDEN-BRIEF.md](native/GOLDEN-BRIEF.md) |
-| T1 calibration: Dennis blind A/B | – | Dennis | 1 | **ready**: 40 pairs (10 each: calm, detail, lag, calm-vs-sharp), 256 px windows, 1.3–2 s loops; 5 of the calm pairs are where stride 1 and stride 8 disagree |
-| R reflections (G1, G5) | `track/r-reflections` · `../Denoiser-track-r` | Opus | 1: diagnosis | **diagnosis done** (tracks/r.md on its branch, 8a9a6de, pushed). Ours is unbiased (FFX is 4.5 levels dark, 17.7 on the camera body). Causes: SVGF's specular history is too short (anti-lag never settles on still 1-spp noise), and roughness 0 isn't treated as a mirror. Both fixed together → calmer than FFX on traced, but lags more under motion, and still ~6 % behind on SSR mirrors. Plan F1–F4 (SVGF first; recurrent retired unless it's needed for mirrors; dropoutGuard removed). Waits for T1 |
-| S shadows (G2) | `track/s-shadows` · `../Denoiser-track-s` | Opus | 1: diagnosis | **diagnosis done** (87bfba6). Remaining gap: pops in static penumbrae (p99 1.4–2.9× FFX). **New from the scorecard:** with bilinear history, the moving-camera shadow orbit boils 2.1× FFX in the moving region (0.0515 vs 0.0241; p99 0.255 vs 0.111), and the dense region is 2× too; smooth static is level. That contradicts S's "level with FFX on orbits", so it goes into S's phase 2. Waits for T1 |
-| D diffuse + AO + cost (G3, G4) | `track/d-diffuse` · `../Denoiser-track-d` | Opus | 1: diagnosis | **diagnosis done** (tracks/d.md on its branch, 02154b7). Waits for T1 + native runs on G3/G4 |
+| T0-scenes | on main | – | 1 | **done**. All golden captures VALID except G4 pan-light-fade on the Mac (motion-Z reprojection, history consistency; the Windows capture of it is valid). Kept captures: `~/Developer/rt-captures/captures/` |
+| T0-scorecard | on main | – | 1 | **done**. Calm headline at stride 8. Calibration panel with per-pair notes. Clip sheets are gitignored: regenerate with `node tools/scorecard/calibration/make-pairs.mjs --skip-replay --work ~/Developer/scorecard-work-track-t0c` (no GPU, ~6 min) |
+| T0-native | on main, [native/results/golden/](native/results/golden/README.md) | Dennis's Windows machine | 1 | **done** (groups 1–3). Ours leads native on detail everywhere and on lag after every G4 light change; loses on calm where things hold still and at edges (G3 edges 2–2.7×, G5 static 3.7–5.5×, specular static 2.3–7.6×); wall cost 1.3× RELAX, 1.6× REBLUR at 1080p, GPU passes alone between the two |
+| T1 calibration | review bench, "Blind A/B calibration (40 pairs)" | Dennis | – | **ready, not a gate**: 40 pairs, ~30 min. Feeds phase 3 (which metrics to trust, how much sharpness to give for calm). Do it any time before phase 3 |
+| D diffuse + AO + cost | branch from main | Opus | 2: build | diagnosis done ([tracks/d.md](tracks/d.md)). Build list below |
+| S shadows | branch from main | Opus | 2: build | diagnosis done ([tracks/s.md](tracks/s.md)). Build list below |
+| R reflections | branch from main | Opus | 2: build | diagnosis done ([tracks/r.md](tracks/r.md)). Build list below; starts after D's shared-core items land (shared files) |
+| Tooling | branch from main | Sonnet | 2: build | list below |
 | O OIDN 3 | – | Opus | – | waits for the OIDN 3 release |
 
-## Gates (measures, not dates)
+## Phase 2 build lists
 
-- **Phase 1 → 2 (all tracks):** the dashboard shows today's numbers for ours, FFX and native on
-  G1–G5, **and** each metric used by a gate agreed with Dennis on ≥ 8 of 10 blind A/B pairs (T1),
-  **and** the track's diagnosis report is in.
-- **R exit:** calm (stride 8) ≤ FFX on G1, traced and hybrid, **both with FSR3 1.5× and with no
-  resolver**; bias within 1 level of the reference; motion lag no worse than FFX (orbit RMSE as
-  the guard until the lag metric covers G1); Dennis's visual OK. Reassess after two failed fix attempts.
-- **S exit:** calm ≤ FFX on G2 with the moving occluder, detail (FLIP) better than FFX,
-  ≤ 0.6 ms at 1080p on the M5 Pro, Dennis's visual OK.
-- **D exit:** calm and lag ≤ native (tuned settings) on G3 / G4, diffuse + specular ≤ 4 ms
-  GPU at 1080p on the M5 Pro with wall overhead reported, Dennis's visual OK.
-- **Phase 3 (each track):** option count for the track's signal roughly halved with the
-  scorecard unchanged, a fresh Opus review of the diff with no blocking findings, Dennis's
-  visual OK on the bench → merge into `feat/rt-denoiser-cleanroom` → T6 ships to main.
+Each item: option + bench toggle + one scorecard run (≤ 10 min) + a line in the track report.
+Items marked _tune list_ are not built in phase 2.
 
-## The five numbers (definitions T0-scorecard implements)
+**D (shared SVGF core first; R and S read its anti-lag mechanism):**
+1. D5 host overhead: cached bind groups and views, one compute pass per frame, timestamps opt-in
+   (byte-identical output).
+2. D4 pass fusion: variance into à-trous iteration 0, merged gradient à-trous chain, chroma into
+   the luminance gradient texture (byte-identical).
+3. D2 noise-robust anti-lag as a mechanism with **per-signal parameters** (diffuse, specular, AO),
+   in `shaders/gradient.ts`. Parameter values: _tune list_.
+4. D1 output stabilization pass as a real option for diffuse and specular, and D6 the same through
+   `OcclusionDenoiser`. Clip, α and history cap values: _tune list_.
+5. D3 longer temporal window: _tune list_ (it's a value, not a feature).
+
+**S (own files only):**
+1. One significance-gated anti-lag that combines `clampHistoryNoise` and `antiLagNoise`
+   (fix 1, as a single option, not two experiments).
+2. Stabilizer box scaled by local σ (fix 2) instead of a constant.
+3. Uniform-tile fast path in the temporal pass (fix 3, byte-checked on non-uniform tiles).
+4. `clampGeometry` cost split, contacts hysteresis, fast-camera term (fixes 4–6): _tune list_ /
+   later research.
+
+**R (after D items 2–3 land; specular branches only):**
+1. F2 mirror handling: roughness floor matching three's sampler (α ≥ 0.001) and a clamp-guarded
+   minimum mirror history.
+2. F4 remove `dropoutGuard`.
+3. F1 uses D's per-signal anti-lag; specular values: _tune list_.
+4. Keep `recurrent` until phase 3 decides (R recommends retiring it unless mirrors need it).
+
+**Tooling (Sonnet):**
+1. **A fast scorecard subset that finishes in ≤ 10 min** (one capture per golden scene, the five
+   numbers, one command). Every phase-2 item is measured with it.
+2. Lag metric on G1 and G1 detail without a resolver (the reflection bench).
+3. Calm clips from 128-frame captures (≥ 4 s loops) for the phase-3 calibration refresh.
+
+**Order and authors (3-author cap):** D 1–2 and S 1–3 and Tooling 1 in parallel; then D 3–4; then
+R. Overlapping files go one writer at a time (ownership table below).
+
+## Phase 3: tune and prune (once, all signals)
+
+Inputs: the tune lists, Dennis's calibration answers, the fast scorecard and the full one.
+Targets (formerly the per-track exit gates):
+
+- **Reflections:** calm (stride 8) ≤ FFX on G1, traced and hybrid, with FSR3 1.5× and with no
+  resolver; bias within 1 level; motion lag no worse than FFX.
+- **Shadows:** calm ≤ FFX on G2 with the moving occluder, FLIP better than FFX, ≤ 0.6 ms at 1080p
+  on the M5 Pro.
+- **Diffuse / AO:** calm and lag ≤ native (tuned) on G3 / G4; diffuse + specular ≤ 4 ms GPU at
+  1080p on the M5 Pro, wall overhead reported.
+- **Prune:** option count roughly halved with the scorecard unchanged; a fresh Opus review of the
+  diff with no blocking findings; Dennis's visual OK on the bench → release.
+
+Each tuning run keeps the 5–10 min cap; the phase can have many of them, but no single multi-hour
+sweep without Dennis's OK.
+
+## The five numbers (definitions the scorecard implements)
 
 1. **Calm:** motion-compensated boil (TASKS rule 9 definition, LESSONS "boil"), per region
    (static, moving / dynamic, disoccluded), relative to the clean reference's own boil.
@@ -55,33 +110,29 @@ binding), [TASKS.md](TASKS.md) "How agents work here" (rules 1–12 still apply,
 
 | owner | paths |
 |---|---|
-| T0-scenes | `examples/three-temporal/src/golden/**`, `examples/three-temporal/golden*.html`, G5 assets, `examples/three-temporal/vite.config.ts` (input list only), `examples/three-temporal/GOLDEN.md` |
-| T0-scorecard | `tools/scorecard/**`, `docs/research/rt-denoiser/scorecard/**`, `examples/three-temporal/src/review/calibration*` (new files; register in the review bench without changing other options) |
-| R | `examples/three-temporal/reflect-bench.html`, `examples/three-temporal/src/reflect-bench/**` (moved from `feat/interior-lab`), `packages/denoiser-realtime/src/recurrent.ts`, `shaders/recurrent.ts`, and **only the specular paths** of the SVGF files (ask D for anything shared) |
+| Tooling | `tools/scorecard/**`, `docs/research/rt-denoiser/scorecard/**`, `examples/three-temporal/src/review/calibration*`, `examples/three-temporal/src/golden/**` |
+| R | `examples/three-temporal/reflect-bench.html`, `examples/three-temporal/src/reflect-bench/**`, `packages/denoiser-realtime/src/recurrent.ts`, `shaders/recurrent.ts`, and **only the specular branches** of `svgf.ts` / `shaders/svgf.ts` |
 | S | `packages/denoiser-realtime/src/shadow.ts`, `shaders/shadow.ts`, `examples/three-temporal/src/realtime-shadows.ts` |
 | D | the SVGF core: `svgf.ts`, `shaders/svgf.ts`, `shaders/common.ts`, `shaders/prepass.ts`, `shaders/gradient.ts`, `shaders/bindings.ts`, `common.ts`, `gpu.ts`, occlusion files |
-| R + D, phase 2 | R edits the **specular branches** of `svgf.ts` / `shaders/svgf.ts`; D owns everything shared. Anti-lag stays in D's `shaders/gradient.ts`: D exposes per-signal parameters, R sets the specular ones. One of them edits a shared file at a time; rebase before each commit |
-| everyone | `docs/research/rt-denoiser/tracks/<own id>.md`, `docs/research/rt-denoiser/results/data/<own id>/**` |
+| R + D | D owns everything shared; anti-lag stays in D's `shaders/gradient.ts` with per-signal parameters that R sets. One of them edits a shared file at a time; rebase before each commit |
+| everyone | `docs/research/rt-denoiser/tracks/<own id>.md`, `docs/research/rt-denoiser/results/data/<own id>/**`, review-bench option rows for their own options (`examples/three-temporal/src/review/options.ts`, append only) |
 | coordinator | this file, STOCKTAKE, PLAN, SPEC, TASKS, the status page |
-
-Phase 1 is diagnosis: **no default changes** in `packages/denoiser-realtime`. Instrumentation
-(debug views, counters) and experiments behind options are fine in your own files.
 
 ## Shared resources
 
-- **GPU lock:** `RT_GPU_LOCK=/tmp/rt-gpu.lock` (TASKS rule 11). Anything longer than a short
-  smoke test holds it. **From 2026-11-07 use the fair queue:** `tools/gpu-lock.sh "<agent> <task>" <command…>`
-  (FIFO tickets in `/tmp/rt-gpu.queue`, same lock directory, so it also excludes the old inline
-  loop). One batch per call, **≤ 15 min per hold**; call again for the next batch.
-- **Dev-server ports:** T0-scenes 5301, T0-scorecard 5302, R 5303, S 5304, D 5305
+- **GPU lock:** `tools/gpu-lock.sh "<agent> <task>" <command…>` (fair FIFO queue,
+  `RT_GPU_LOCK=/tmp/rt-gpu.lock`, TASKS rule 11). One batch per call, **≤ 10 min per hold**.
+- **Dev-server ports:** review bench 5262; Tooling 5302, R 5303, S 5304, D 5305
   (`--strictPort --host 127.0.0.1`).
-- **Captures:** `Denoiser-nrd-cleanroom/tools/rt-capture/captures/` holds the kept golden
-  captures (Sponza, Bistro, knot, corner scene). Read them from there by absolute path (set
-  `RT_CAPTURE_DIR`); don't copy them. New outputs go under your own worktree and are deleted
-  when your phase ends.
+- **Captures:** `~/Developer/rt-captures/captures/` (115 GB with outputs; every golden and kept
+  capture). Read by absolute path (`RT_CAPTURE_DIR`); don't copy. New outputs go under your own
+  work dir and are deleted when your phase ends.
+- **Scene assets** are Git LFS. A fresh checkout or worktree has pointer files: run
+  `git lfs checkout examples/three-temporal/scene-assets` (fills from the shared local store, no
+  download).
 
-## Report format (each track, at the end of a phase)
+## Report format (each track, end of phase 2)
 
-`tracks/<id>.md`: what you measured (numbers, commands, commit hashes), ranked causes with the
-evidence for each, proposed fixes with the gate measure each should move and by how much,
-risks, and what you need from other tracks. Then a ≤ 10-line final message to the coordinator.
+`tracks/<id>.md`: what you built (options, commits), the one scorecard run per item (numbers,
+command), the **tune list** (what you'd tune, which way, why), risks, and what you need from other
+tracks. Then a ≤ 10-line final message to the coordinator.

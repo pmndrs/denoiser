@@ -69,6 +69,20 @@ export interface FrameGuides {
    * the payload is resolved at it.
    */
   detailNormal?: GPUTexture;
+  /**
+   * Optional: the previous frame's `depth`, as an r32float copy (same convention,
+   * `reversedDepth` included). Denoisers that reproject keep their own copy of last
+   * frame's geometry; a caller that already keeps one (a renderer's screen history)
+   * can hand it here and save the copy. Denoisers that don't support it ignore it
+   * (today only `Gi1Denoiser` reads it). Give both `previousDepth` and
+   * `previousNormal`, or neither.
+   */
+  previousDepth?: GPUTexture;
+  /**
+   * Optional: the previous frame's `normal`, world space in [-1, 1] (rgba16float /
+   * rgba32float / rgba8snorm), zero where nothing was drawn. See `previousDepth`.
+   */
+  previousNormal?: GPUTexture;
 }
 
 export interface TemporalConfig {
@@ -89,6 +103,13 @@ export interface TemporalDenoiser<Inputs extends object = object> {
   configure(config: TemporalConfig): void;
   /** Denoise one frame (see the frame contract above). Returns the output texture. */
   dispatch(inputs: Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture;
+  /**
+   * Optional: the same frame as `dispatch`, recorded into the caller's encoder instead
+   * of submitted, for pipelines that build the frame's inputs in that same encoder
+   * (a GI technique encoding its screen passes). The caller submits; the output is
+   * valid once that submission runs. No `gpuTimings` for frames encoded this way.
+   */
+  encode?(encoder: GPUCommandEncoder, inputs: Inputs, guides: FrameGuides, camera: FrameCamera): GPUTexture;
   /** Drop all history on the next dispatch (camera cut, teleport, scene switch). */
   resetHistory(): void;
   /** Per-pass GPU times (ms) when timestamp queries are available. */
