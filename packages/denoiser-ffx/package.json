@@ -1,6 +1,6 @@
 {
     "name": "@pmndrs/denoiser-ffx",
-    "description": "Real-time shadow + reflection denoisers for WebGPU: a WGSL port of AMD FidelityFX Denoiser (SDK v1.1.4)",
+    "description": "Real-time shadow + reflection denoisers for WebGPU: a WGSL port of AMD FidelityFX Denoiser (SDK v1.1.4), and AMD GI-1.0's image-space GI denoiser (Capsaicin v1.3)",
     "keywords": [
         "denoiser",
         "webgpu",
