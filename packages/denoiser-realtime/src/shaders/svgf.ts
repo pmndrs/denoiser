@@ -199,6 +199,25 @@ export type HistoryFallback = '3x3' | 'off' | 'strict';
  */
 export type NormalTest = 'center' | 'relative' | 'soft';
 /**
+ * `footprint` (option `historyFootprint`, our design, results/JITTER-EDGE-HISTORY.md): history for guides that are ONE
+ * jittered sample per pixel (a sub-pixel camera jitter for TAA / temporal upscaling). A silhouette pixel, or a pixel over
+ * geometry finer than itself, then shows another surface every few frames, the plane / normal test fails against its own
+ * history, and it restarts although nothing was disoccluded, even at a still camera. Where no tap of the 2x2 footprint
+ * and no 3x3 fallback texel passes (today a restart), two more tests accept footprint taps as "the same pixel footprint,
+ * another sample of it" (the pixel then keeps one history for its footprint, as a TAA resolve does):
+ * - 'neighbour' (the dual of SVGF's 3x3 fallback): the surface the tap stored last frame is still shown by one of this
+ *   pixel's 8 neighbours THIS frame (the neighbour passes the full plane / normal test against the tap through its own
+ *   motion vector). History length capped at dwell / d frames, d = the relative screen motion (pixels per frame) of
+ *   this pixel and that neighbour: the time the other surface's edge needs to cross a pixel.
+ * - 'plane': the tap's stored point lies within the plane distance of this pixel's point, whatever its normal (a crease,
+ *   or a surface whose normal varies below the pixel size). History length capped at dwell / m frames, m = this pixel's
+ *   own screen motion (pixels per frame): how long a point stays inside one pixel.
+ * - 'both': either.
+ * A still camera keeps the full history; at 1 px per frame or more the cap is below 2 frames and the pixel restarts (or
+ * takes normalTest 'soft') exactly as today. Compiled in only when on.
+ */
+export type HistoryFootprint = 'off' | 'neighbour' | 'plane' | 'both';
+/**
  * `soft` (normalTest 'soft', our design, results/SVGF-FOLLOWUPS.md): where neither the 2x2 footprint nor the 3x3 fallback
  * passes the full normal test (today a reset), retry the 2x2 footprint with the normal threshold `tol`; the taps that pass
  * it give the history, with the history length capped at 1 + (frames[i] - 1) s, s = the bilinear-weighted mean over those
@@ -210,6 +229,8 @@ export type NormalTest = 'center' | 'relative' | 'soft';
 export interface TemporalVariant {
   reflection?: ReflectionReprojection[]; hitTest?: boolean[]; fallback?: HistoryFallback; normalTest?: NormalTest;
   soft?: { tol: number; frames: number[] };
+  /** Option `historyFootprint` (HistoryFootprint above; absent = 'off') and `historyFootprintDwell` (the cap's numerator, frames x px). */
+  footprint?: { mode: 'neighbour' | 'plane' | 'both'; dwell: number };
   /**
    * Option `historyNormal: 'geometric'` (results/SVGF-FOLLOWUPS.md): the history's geometry test (normal agreement,
    * backface and the plane distance) uses the renderer's geometric normal (`gnCur` / `gnPrev`, octahedral 16 + 16 bits,
@@ -224,6 +245,63 @@ export interface TemporalVariant {
    * next frames.
    */
   lamScale?: boolean[];
+}
+
+/**
+ * historyFootprint: per 2x2 footprint tap of `r`, whether it is another sample of p's footprint (HistoryFootprint above)
+ * and the motion (pixels per frame) that limits how long: 'neighbour' = the smallest relative motion between p and a
+ * neighbour that shows the tap's surface, 'plane' = p's own motion. Needs REPROJECT_WGSL, `geoCur`, `motionTex`.
+ */
+export function footprintWgsl(mode: 'neighbour' | 'plane' | 'both'): string {
+  const nb = mode !== 'plane';
+  const pl = mode !== 'neighbour';
+  return /* wgsl */ `
+struct FootTaps { valid: vec4f, rel: vec4f }
+fn footprintTaps(p: vec2i, g: Geo, r: Reproj, planeTol: f32, normalTol: f32) -> FootTaps {
+  var valid = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  var rel = array<f32, 4>(0.0, 0.0, 0.0, 0.0);
+  let mvP = textureLoad(motionTex, p, 0).xy;${nb ? `
+  for (var j = 0; j < 9; j++) {
+    if (j == 4) { continue; }
+    let c = p + vec2i(j % 3 - 1, j / 3 - 1);
+    if (!inside(c)) { continue; }
+    let gc = geoTap(geoCur, c);
+    if (gc.z <= 0.0) { continue; }
+    let uv = uvOf(c);
+    let mv = textureLoad(motionTex, c, 0).xy;
+    let prevUV = uv - vec2f(mv.x, -mv.y) * 0.5;
+    let world = (F.viewInv * vec4f(unprojectZ(F.projInv, ndcOf(uv), -gc.z), 1.0)).xyz;
+    let e = expectedPrev(c, gc, prevUV, world);
+    let d = length((mv - mvP) * F.dims) * 0.5;
+    for (var k = 0; k < 4; k++) {
+      if (r.bil[k] < 0.02) { continue; }
+      if (tapValid(r.base + TAP_OFFS[k], gc, e, planeTol, normalTol)) {
+        rel[k] = select(min(rel[k], d), d, valid[k] == 0.0);
+        valid[k] = 1.0;
+      }
+    }
+  }` : ''}${pl ? `
+  let own = length(mvP * F.dims) * 0.5;
+  let nP = (F.prevView * vec4f(g.n, 0.0)).xyz;
+  for (var k = 0; k < 4; k++) {
+    if (r.bil[k] < 0.02) { continue; }
+    let q = r.base + TAP_OFFS[k];
+    if (!inside(q)) { continue; }
+    let gq = geoTap(geoPrev, q);
+    if (gq.z <= 0.0) { continue; }
+    let dQ = unprojectZ(F.prevProjInv, ndcOf(uvOf(q)), -gq.z) - r.expPrev;
+    let nQ = (F.prevView * vec4f(gq.n, 0.0)).xyz;
+    if (min(abs(dot(nP, dQ)), abs(dot(nQ, dQ))) <= planeTol * length(r.expPrev)) {
+      rel[k] = select(min(rel[k], own), own, valid[k] == 0.0);
+      valid[k] = 1.0;
+    }
+  }` : ''}
+  var f: FootTaps;
+  f.valid = vec4f(valid[0], valid[1], valid[2], valid[3]);
+  f.rel = vec4f(rel[0], rel[1], rel[2], rel[3]);
+  return f;
+}
+`;
 }
 
 /** Octahedral 16 + 16-bit packing of the geometric normal (historyNormal 'geometric'); (0, 0) = no surface. */
@@ -414,6 +492,10 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
   const TV = (q: string, tol: string) => (geoN ? `tapValidG(${q}, gnC, r.expPrev, P0.planeTol, ${tol})` : `tapValid(${q}, g, r.expPrev, P0.planeTol, ${tol})`);
   const softN = (i: number) => (soft ? `
         if (sAgree <= 1.0) { n = min(n, 1.0 + ${((soft.frames[i] ?? 1) - 1).toFixed(6)} * sAgree); }   // normalTest 'soft'` : '');
+  const foot = tv.footprint;
+  if (foot && geoN) throw new Error("temporalPass: historyFootprint doesn't combine with historyNormal 'geometric'");
+  const footN = foot ? `
+        n = min(n, footCap);   // historyFootprint` : '';
   const b = new Bindings();
   b.uniform('F', 'Frame');
   kinds.forEach((_, i) => b.uniform(`P${i}`, 'Params'));
@@ -557,7 +639,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
       } else if (sumW > 0.0) {
         n = nS;
       }`}
-      if (sumW > 0.0 || okV) {${softN(i)}
+      if (sumW > 0.0 || okV) {${softN(i)}${footN}
         var a = max(${P}.alpha, 1.0 / n);
         var am = max(${P}.momentsAlpha, 1.0 / n);
         if ((${P}.flags & P_ANTILAG) != 0u) {
@@ -626,7 +708,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
       if (sumW > 0.0) {
         nPrev /= sumW;
         mHist /= sumW;
-        n = min(nPrev + 1.0, historyCap${i}(g, r.world, r.expPrev));${softN(i)}
+        n = min(nPrev + 1.0, historyCap${i}(g, r.world, r.expPrev));${softN(i)}${footN}
         var a = max(${P}.alpha, 1.0 / n);
         var am = max(${P}.momentsAlpha, 1.0 / n);
         if ((${P}.flags & P_ANTILAG) != 0u) {
@@ -651,7 +733,7 @@ export function temporalPass(kinds: SignalKind[], tv: TemporalVariant = {}): Pas
 ${FRAME_WGSL}
 ${PARAMS_STRUCT}
 ${b.wgsl}
-${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}${geoN ? GEO_NORMAL_PACK_WGSL + GEO_NORMAL_REPROJECT_WGSL : ''}
+${REPROJECT_WGSL}${rel ? REL_NORMAL_WGSL : ''}${geoN ? GEO_NORMAL_PACK_WGSL + GEO_NORMAL_REPROJECT_WGSL : ''}${foot ? footprintWgsl(foot.mode) : ''}
 ${kinds.map((k, i) => capWgsl(k, i) + antilagWgsl(i)).join('\n')}${anyVirt ? '\n' + VIRTUAL_WGSL + kinds.map((_, i) => (rv(i) ? virtualUvWgsl(i, refl(i) !== 'surface') : '')).join('\n') : ''}
 
 @compute @workgroup_size(8, 8)
@@ -669,7 +751,8 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   var r: Reproj;
   var fbMask = 0u;
   var fb0 = vec2i(0);${soft ? `
-  var sAgree = 2.0;   // normalTest 'soft': normal agreement of a soft-accepted footprint (2: not soft)` : ''}
+  var sAgree = 2.0;   // normalTest 'soft': normal agreement of a soft-accepted footprint (2: not soft)` : ''}${foot ? `
+  var footCap = 1e30;   // historyFootprint: history-length cap of a footprint-accepted history (1e30: not one)` : ''}
   if (!reset) {${geoN ? `
     let gnC = unpackGN(textureLoad(gnCur, p, 0).x);   // historyNormal 'geometric'` : ''}
     r = ${RP('P0.normalTol')};${rel ? `
@@ -691,7 +774,24 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
     }` : fallback === 'strict' ? `
     // historyFallback 'strict' (T6): no 3x3 fallback; restart unless at least half the bilinear weight is valid
     if (r.sumW < 0.5) { r.sumW = 0.0; }` : `
-    // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}${soft ? /* wgsl */ `
+    // historyFallback 'off' (T6): no 3x3 fallback, a failed footprint restarts the pixel`}${foot ? /* wgsl */ `
+    // historyFootprint (results/JITTER-EDGE-HISTORY.md): where the pixel would restart, the footprint taps whose stored
+    // surface one of this pixel's neighbours still shows this frame give the history (same footprint, another sample)
+    if (r.sumW <= 0.01 && fbMask == 0u) {
+      let ft = footprintTaps(p, g, r, P0.planeTol, ${NT});
+      let fw = r.bil * ft.valid;
+      let fs = fw.x + fw.y + fw.z + fw.w;
+      if (fs > 0.01) {
+        let fc = ${foot.dwell.toFixed(6)} * fs / max(dot(fw, ft.rel), 1e-6);   // dwell time, frames
+        if (fc >= 2.0) {
+          r.w = fw;
+          r.valid = ft.valid;
+          r.sumW = fs;
+          r.allValid = false;
+          footCap = fc;
+        }
+      }
+    }` : ''}${soft ? /* wgsl */ `
     // normalTest 'soft' (results/SVGF-FOLLOWUPS.md): where the full test resets the pixel, the footprint retried at a
     // looser normal threshold gives a short history, its length capped by the taps' normal agreement
     if (r.sumW <= 0.01 && fbMask == 0u) {

@@ -21,7 +21,7 @@ import { withF16Rounding, type F16Rounding } from './f16';
 import { atrousPassSh, P_SH_OFFSET, temporalPassSh, variancePassSh, type ShInputForm, type ShResolve } from './shaders/svgf-sh';
 import {
   atrousPass, P_ANTILAG, P_CATMULL, P_GRADIENT_INPUT, P_KERNEL_BOX3, P_REMODULATE, P_SPEC_NORMAL_POWER, P_VAR_OF_MEAN,
-  PARAMS_SIZE, stabilizePass, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type NormalTest, type ReflectionReprojection, type SignalKind,
+  PARAMS_SIZE, stabilizePass, temporalPass, variancePass, geoNormalPackPass, type HistoryFallback, type HistoryFootprint, type NormalTest, type ReflectionReprojection, type SignalKind,
 } from './shaders/svgf';
 
 /** SVGF / A-SVGF settings shared by every signal. All optional. */
@@ -238,6 +238,22 @@ export interface SvgfOptions {
    * keeps 'center', the only test it supports).
    */
   normalTest?: NormalTest;
+  /**
+   * History where a pixel's one-sample guides changed surface but nothing was disoccluded (results/JITTER-EDGE-HISTORY.md,
+   * our design): for renderers whose guides are sampled under a sub-pixel camera jitter (TAA / temporal upscaling), where
+   * a silhouette pixel or geometry finer than a pixel shows another surface every few frames and the plane / normal test
+   * then restarts it, even at a still camera. 'off' (default, today's behaviour). Otherwise, where neither the 2x2
+   * footprint nor the 3x3 fallback passes, footprint taps that are another sample of the same pixel footprint give the
+   * history (tried before normalTest 'soft'): 'neighbour' = the tap's stored surface is still shown by one of the pixel's
+   * 8 neighbours this frame; 'plane' = the tap's point is within the plane distance of this pixel's, whatever its normal;
+   * 'both' = either. The history length is capped at historyFootprintDwell / motion frames (motion in pixels per frame:
+   * the two surfaces' relative motion for 'neighbour', the pixel's own for 'plane'), so a still view keeps everything and
+   * anything moving a pixel per frame restarts as today. Payload 'radiance' only, not with historyNormal 'geometric';
+   * shared geometry test (first signal's value).
+   */
+  historyFootprint?: HistoryFootprint;
+  /** historyFootprint: the cap's numerator (frames x pixels of motion). Default 1: one pixel of motion. */
+  historyFootprintDwell?: number;
   /** normalTest 'soft': the looser normal cosine of the retried footprint. Default 0.5. */
   normalSoftThreshold?: number;
   /**
@@ -407,6 +423,8 @@ export function resolveOptions(o: SpecularSvgfOptions = {}): ResolvedOptions {
     normalSoftThreshold: o.normalSoftThreshold ?? 0.5,
     normalSoftHistory: o.normalSoftHistory === undefined || o.normalSoftHistory < 0 ? -1 : Math.max(1, o.normalSoftHistory),
     historyNormal: o.historyNormal ?? 'normal',
+    historyFootprint: o.historyFootprint ?? 'off',
+    historyFootprintDwell: Math.min(1e6, Math.max(0, o.historyFootprintDwell ?? 1)),
     antiLagHistoryScale: o.antiLagHistoryScale ?? false,
     stabilize: o.stabilize ?? false,
     stabilizeAlpha: o.stabilizeAlpha ?? 0.1,
@@ -486,6 +504,7 @@ export function structuralKey(o: ResolvedOptions) {
   if (o.normalTest !== 'center') k.push(`nt-${o.normalTest}`);
   if (o.normalTest === 'soft') k.push(o.normalSoftThreshold);
   if (o.historyNormal !== 'normal') k.push(`hn-${o.historyNormal}`);
+  if (o.historyFootprint !== 'off') k.push(`fp-${o.historyFootprint}`, o.historyFootprintDwell);
   if (o.stabilize) k.push('stab');
   return k.join('|');
 }
@@ -550,7 +569,7 @@ export class SvgfPipeline {
     if (this.sh) {
       if (o.antiLag !== 'off' && o.antiLagVersion === 1) throw new Error(`${label}: payload 'sh' needs antiLagVersion 2`);
       if (signals.some((s) => reflVariant(s.kind, s.opts))) throw new Error(`${label}: reflectionReprojection / reflectionHitTest need payload 'radiance'`);
-      if (o.historyFallback !== '3x3' || o.normalTest !== 'center') throw new Error(`${label}: historyFallback / normalTest need payload 'radiance'`);
+      if (o.historyFallback !== '3x3' || o.normalTest !== 'center' || o.historyFootprint !== 'off') throw new Error(`${label}: historyFallback / normalTest / historyFootprint need payload 'radiance'`);
       if (o.historyNormal !== 'normal' || signals.some((s) => s.opts.antiLagHistoryScale)) throw new Error(`${label}: historyNormal / antiLagHistoryScale need payload 'radiance'`);
       for (const s of signals) {
         if (s.opts.remodulate && shResolveOf(s.kind, s.opts) !== 'fused') throw new Error(`${label}: remodulate with payload 'sh' needs resolve 'fused' (otherwise remodulate after your resolve)`);
@@ -575,6 +594,7 @@ export class SvgfPipeline {
       const fb = { ...(o.historyFallback !== '3x3' ? { fallback: o.historyFallback } : {}), ...(o.normalTest !== 'center' ? { normalTest: o.normalTest } : {}),
         ...(o.normalTest === 'soft' ? { soft: { tol: o.normalSoftThreshold, frames: signals.map((s) => (s.opts.normalSoftHistory >= 1 ? s.opts.normalSoftHistory : s.kind === 'specular' ? 1 : 3)) } } : {}),
         ...(o.historyNormal === 'geometric' ? { geoNormal: true } : {}),
+        ...(o.historyFootprint !== 'off' ? { footprint: { mode: o.historyFootprint, dwell: o.historyFootprintDwell } } : {}),
         ...(signals.some((s) => s.opts.antiLagHistoryScale) ? { lamScale: signals.map((s) => s.opts.antiLagHistoryScale) } : {}) };
       if (o.historyNormal === 'geometric') make('gnpack', geoNormalPackPass());
       make('temporal', signals.some((s) => reflVariant(s.kind, s.opts)) ? temporalPass(kinds, { reflection: rr, hitTest: ht, ...fb })

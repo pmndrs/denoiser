@@ -135,7 +135,11 @@ History tests (review target 6, results `T6-boundaries.md`): `historyFallback` [
 'off' | 'strict'] (the SVGF paper's 3×3 fallback when the 2×2 footprint fails; 'off' wins on the test bed but loses
 on Bistro / Sponza AO; measured, not adopted), `normalTest` ['soft' since 2026-10-27 (Dennis q31 (a)) | 'center' |
 'relative'; payload 'sh': 'center' only] (see [History normal test](#history-normal-test-soft-default-or-center-hard)
-below), `normalSoftThreshold` [0.5], `normalSoftHistory` [per signal; 3 for diffuse / AO, 1 = the hard reset for
+below), `historyFootprint` ['off' | 'neighbour' | 'plane' | 'both'] + `historyFootprintDwell` [1] (history for one-sample guides under a
+sub-pixel camera jitter: where a pixel would restart because its sample landed on another surface of its own footprint,
+keep the footprint taps' history, capped at dwell / motion frames; restores the history length at silhouettes and
+sub-pixel geometry on a still view, −11 % flicker for +12 % error on those pixels; measured, not adopted:
+results `JITTER-EDGE-HISTORY.md`), `normalSoftThreshold` [0.5], `normalSoftHistory` [per signal; 3 for diffuse / AO, 1 = the hard reset for
 specular / SO], `historyNormal` ['normal' | 'geometric'] (the history test on `guides.geometricNormal`, +8 B/px;
 loses diffuse / specular on normal-mapped surfaces; measured, not adopted). `antiLagHistoryScale` [false, per signal] (after the anti-lag boost
 the history length becomes (1 − λ)·n instead of 1/α: halves the boil next to a light change but slows the reaction by

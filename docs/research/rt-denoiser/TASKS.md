@@ -1111,6 +1111,19 @@ _(agents add tasks here: `- [ ] <task> — found by <agent>, owner <path or "una
       artefact. Motion that includes the jitter delta (three's raw `velocity` under a jittered projection) does damage:
       shadows boil +24…104 % (above both floors), glossy specular 10 % softer. Fixed in
       `docs/site/guides/realtime-denoisers.mdx`: motion must be jitter-free.
+- [x] (chain-edge-history, branch `fix/jitter-edge-history`; [results/JITTER-EDGE-HISTORY.md](results/JITTER-EDGE-HISTORY.md)) **Jittered
+      guides: history at silhouettes and sub-pixel geometry** (asked by the pathtracer's real-time chain, its TASKS N11.17). T8
+      judged the image and did not look at the history length: with one-sample guides under a per-frame jitter, 8.8 % of the
+      hit pixels of the Classroom stay below the history cap at a STILL camera (6.2 % at ≤ 8 frames), all of them pixels whose
+      sample changes surface; it is the normal test (`normalThreshold` 0: 0.5 %; `planeDistance` 0.1: no change). New option
+      `historyFootprint` ('neighbour' | 'plane' | 'both', default 'off', capped by a dwell time from screen motion) restores
+      the length (0.5 % below the cap with 'both') but is not a win: −11 % final flicker for +12 % error on those pixels
+      ('plane'), more ghosting with 'both'; ~85 % of the flicker there is the jitter moving the sample between surfaces, not
+      noise (16 spp per frame: −14 %). Defaults unchanged. A footprint history in modulated radiance was tried and diverges
+      (not in the branch). Not a rule-9 evaluation (one scene, single runs, the pathtracer's bench).
+- [ ] **`historyFootprint` on the test bed and the real captures** (rule 9), and the `'auto'` gradient near jittered edges
+      (history p50 26 frames on flipped pixels against 39 overall with `antiLagHistoryScale`): only if a renderer asks for the
+      option. — found by chain-edge-history, owner orchestrator
 - [x] (spec-author, b6ad212: SPEC v0.7 §1.1 jitter / motion rows, C-1 with the pixel-centre NDC and a v0.7 correction note, C-6 step 1, §3.2's texel-centre bullet, §8.5.4; LESSONS 2026-10-25 conventions entry corrected) **SPEC C-1 / C-6 vs code: jitter** (results/T8-jitter.md §2). SPEC says the current pixel is reconstructed and
       reprojected at its sample position `uv_s = (p + 0.5 + j)/size`. The code uses the pixel centre, ignoring
       `FrameCamera.jitter` (`common.ts` `reproject` `uvOf(p)`, `recurrent.ts` "jitter ignored"): history stays at the
